@@ -1,0 +1,16 @@
+serviceId: vyb
+specVersion: v1alpha
+location: asia-south1
+schema:
+  source: ./schema
+  datasource:
+    postgresql:
+      database: vyb
+      cloudSql:
+        instanceId: vyb-net
+        schemaValidation: COMPATIBLE
+connectorDirs:
+  - ./identity
+  - ./campus
+  - ./social
+  - ./resources

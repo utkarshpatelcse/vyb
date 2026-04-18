@@ -1,0 +1,45 @@
+query GetUserByFirebaseUid($firebaseUid: String!) @auth(level: NO_ACCESS) {
+  users(where: { firebaseUid: { eq: $firebaseUid }, deletedAt: { isNull: true } }, limit: 1) {
+    id
+    firebaseUid
+    primaryEmail
+    emailVerified
+    displayName
+    avatarUrl
+    status
+    createdAt
+    updatedAt
+  }
+}
+
+mutation CreateUser(
+  $firebaseUid: String!
+  $primaryEmail: String!
+  $emailVerified: Boolean!
+  $displayName: String
+  $avatarUrl: String
+) @auth(level: NO_ACCESS) @transaction {
+  user_insert(
+    data: {
+      firebaseUid: $firebaseUid
+      primaryEmail: $primaryEmail
+      emailVerified: $emailVerified
+      displayName: $displayName
+      avatarUrl: $avatarUrl
+      status: "active"
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation UpdateUserProfile($id: UUID!, $displayName: String, $avatarUrl: String) @auth(level: NO_ACCESS) @transaction {
+  user_update(
+    key: { id: $id }
+    data: {
+      displayName: $displayName
+      avatarUrl: $avatarUrl
+      updatedAt_expr: "request.time"
+    }
+  )
+}

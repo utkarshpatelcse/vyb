@@ -1,0 +1,61 @@
+{
+  "resources": [
+    {
+      "id": "resource-4",
+      "tenantId": "tenant-demo",
+      "membershipId": "bogus-membership-id",
+      "courseId": null,
+      "title": "Smoke Test Live Notes",
+      "description": "Runtime verification for live resource creation.",
+      "type": "notes",
+      "downloads": 0,
+      "status": "pending",
+      "createdAt": "2026-04-18T16:50:09.059Z"
+    },
+    {
+      "id": "resource-3",
+      "tenantId": "tenant-demo",
+      "membershipId": "bogus-membership-id",
+      "courseId": null,
+      "title": "Smoke Test Notes",
+      "description": "Runtime verification for live resource creation.",
+      "type": "notes",
+      "downloads": 0,
+      "status": "pending",
+      "createdAt": "2026-04-18T16:42:39.658Z"
+    },
+    {
+      "id": "resource-1",
+      "tenantId": "tenant-demo",
+      "membershipId": "membership-demo-1",
+      "courseId": "course-dbms",
+      "title": "DBMS Quick Revision Notes",
+      "description": "Concise notes for normalization, transactions, and indexing.",
+      "type": "notes",
+      "downloads": 412,
+      "status": "published",
+      "createdAt": "2026-04-17T12:00:00.000Z"
+    },
+    {
+      "id": "resource-2",
+      "tenantId": "tenant-demo",
+      "membershipId": "membership-demo-2",
+      "courseId": "course-os",
+      "title": "Operating Systems PYQ Pack",
+      "description": "Sorted PYQs with topic tags and short answer pointers.",
+      "type": "pyq",
+      "downloads": 305,
+      "status": "published",
+      "createdAt": "2026-04-16T14:30:00.000Z"
+    }
+  ],
+  "resourceFiles": [
+    {
+      "id": "resource-file-1",
+      "resourceId": "resource-1",
+      "fileName": "dbms-revision.pdf",
+      "mimeType": "application/pdf",
+      "sizeBytes": 384210
+    }
+  ]
+}

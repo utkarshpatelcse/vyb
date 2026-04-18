@@ -1,0 +1,80 @@
+type Post @table(name: "posts", singular: "post", plural: "posts", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  tenant: Tenant!
+  community: Community
+  membership: TenantMembership!
+  kind: String! @default(value: "text")
+  title: String
+  body: String!
+  visibility: String! @default(value: "tenant")
+  status: String! @default(value: "pending")
+  publishedAt: Timestamp @col(name: "published_at")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type PostMedia @table(name: "post_media", singular: "postMedia", plural: "postMediaRecords", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  tenant: Tenant!
+  post: Post!
+  storagePath: String! @col(name: "storage_path")
+  mediaType: String! @col(name: "media_type")
+  mimeType: String! @col(name: "mime_type")
+  sizeBytes: Int64! @col(name: "size_bytes")
+  width: Int
+  height: Int
+  durationMs: Int @col(name: "duration_ms")
+  processingStatus: String! @col(name: "processing_status") @default(value: "pending")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type Comment @table(name: "comments", singular: "comment", plural: "comments", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  tenant: Tenant!
+  post: Post!
+  membership: TenantMembership!
+  parentComment: Comment
+  body: String!
+  status: String! @default(value: "published")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type Reaction @table(name: "reactions", singular: "reaction", plural: "reactions", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  reactionKey: String! @col(name: "reaction_key") @unique
+  post: Post!
+  membership: TenantMembership!
+  reactionType: String! @col(name: "reaction_type")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+extend type Post {
+  tenantId: UUID!
+  communityId: UUID
+  membershipId: UUID!
+}
+
+extend type PostMedia {
+  tenantId: UUID!
+  postId: UUID!
+}
+
+extend type Comment {
+  tenantId: UUID!
+  postId: UUID!
+  membershipId: UUID!
+  parentCommentId: UUID
+}
+
+extend type Reaction {
+  postId: UUID!
+  membershipId: UUID!
+}
+

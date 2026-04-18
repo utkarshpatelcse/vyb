@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowJs": false,
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "ignoreDeprecations": "6.0",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "baseUrl": ".",
+    "paths": {
+      "@campus-loop/contracts": ["packages/contracts/src/index.ts"],
+      "@campus-loop/app-core": ["packages/app-core/src/index.ts"],
+      "@campus-loop/design-tokens": ["packages/design-tokens/src/index.ts"],
+      "@campus-loop/ui-web": ["packages/ui-web/src/index.ts"],
+      "@campus-loop/validation": ["packages/validation/src/index.ts"]
+    }
+  }
+}

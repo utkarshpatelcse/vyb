@@ -1,0 +1,191 @@
+query GetTenantByDomain($domain: String!) @auth(level: NO_ACCESS) {
+  tenantDomains(where: { domain: { eq: $domain }, deletedAt: { isNull: true } }, limit: 1) {
+    id
+    domain
+    verificationMode
+    tenant {
+      id
+      name
+      slug
+      status
+    }
+  }
+}
+
+query GetTenantBySlug($slug: String!) @auth(level: NO_ACCESS) {
+  tenants(where: { slug: { eq: $slug }, deletedAt: { isNull: true } }, limit: 1) {
+    id
+    name
+    slug
+    status
+  }
+}
+
+query GetMembershipContext($userId: UUID!, $tenantId: UUID!) @auth(level: NO_ACCESS) {
+  tenantMemberships(
+    where: { userId: { eq: $userId }, tenantId: { eq: $tenantId }, deletedAt: { isNull: true } }
+    limit: 1
+  ) {
+    id
+    role
+    verificationStatus
+    branch
+    batchYear
+    hostel
+    tenant {
+      id
+      name
+      slug
+    }
+    user {
+      id
+      displayName
+      primaryEmail
+    }
+  }
+}
+
+query ListCommunitiesByTenant($tenantId: UUID!) @auth(level: NO_ACCESS) {
+  communities(
+    where: { tenantId: { eq: $tenantId }, deletedAt: { isNull: true } }
+    orderBy: [{ name: ASC }]
+  ) {
+    id
+    name
+    slug
+    type
+    visibility
+    tenantId
+  }
+}
+
+query GetCommunityBySlug($tenantId: UUID!, $slug: String!) @auth(level: NO_ACCESS) {
+  communities(
+    where: { tenantId: { eq: $tenantId }, slug: { eq: $slug }, deletedAt: { isNull: true } }
+    limit: 1
+  ) {
+    id
+    name
+    slug
+    type
+    visibility
+    tenantId
+  }
+}
+
+query ListCommunitiesForMembership($membershipId: UUID!) @auth(level: NO_ACCESS) {
+  communityMemberships(
+    where: { membershipId: { eq: $membershipId }, deletedAt: { isNull: true } }
+    orderBy: [{ joinedAt: ASC }]
+  ) {
+    id
+    role
+    joinedAt
+    community {
+      id
+      name
+      slug
+      type
+      visibility
+      tenantId
+    }
+  }
+}
+
+mutation CreateTenant($name: String!, $slug: String!, $status: String!) @auth(level: NO_ACCESS) @transaction {
+  tenant_insert(
+    data: {
+      name: $name
+      slug: $slug
+      status: $status
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation CreateTenantDomain(
+  $tenantDomainKey: String!
+  $tenantId: UUID!
+  $domain: String!
+  $isPrimary: Boolean!
+  $verificationMode: String!
+) @auth(level: NO_ACCESS) @transaction {
+  tenantDomain_insert(
+    data: {
+      tenantDomainKey: $tenantDomainKey
+      tenantId: $tenantId
+      domain: $domain
+      isPrimary: $isPrimary
+      verificationMode: $verificationMode
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation CreateTenantMembership(
+  $tenantMembershipKey: String!
+  $tenantId: UUID!
+  $userId: UUID!
+  $role: String!
+  $verificationStatus: String!
+  $branch: String
+  $batchYear: Int
+  $hostel: String
+) @auth(level: NO_ACCESS) @transaction {
+  tenantMembership_insert(
+    data: {
+      tenantMembershipKey: $tenantMembershipKey
+      tenantId: $tenantId
+      userId: $userId
+      role: $role
+      verificationStatus: $verificationStatus
+      branch: $branch
+      batchYear: $batchYear
+      hostel: $hostel
+      joinedAt_expr: "request.time"
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation CreateCommunity(
+  $tenantId: UUID!
+  $type: String!
+  $name: String!
+  $slug: String!
+  $visibility: String!
+) @auth(level: NO_ACCESS) @transaction {
+  community_insert(
+    data: {
+      tenantId: $tenantId
+      type: $type
+      name: $name
+      slug: $slug
+      visibility: $visibility
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation CreateCommunityMembership(
+  $communityMembershipKey: String!
+  $communityId: UUID!
+  $membershipId: UUID!
+  $role: String!
+) @auth(level: NO_ACCESS) @transaction {
+  communityMembership_insert(
+    data: {
+      communityMembershipKey: $communityMembershipKey
+      communityId: $communityId
+      membershipId: $membershipId
+      role: $role
+      joinedAt_expr: "request.time"
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}

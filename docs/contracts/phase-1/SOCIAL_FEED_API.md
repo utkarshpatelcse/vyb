@@ -1,0 +1,75 @@
+# API Contract
+
+Owner: Architecture Team
+Last Updated: 2026-04-18
+Change Summary: Initial contract for tenant/community feed reads.
+
+## 1. Metadata
+
+- API name: List Feed
+- Owner service: `social-service`
+- Consumers: `web`, future `mobile`, `api-gateway`
+- Version: `v1`
+- Status: Draft
+- Linked LLD: `docs/lld/phase-1/SOCIAL_SERVICE_LLD.md`
+
+## 2. Endpoint Definition
+
+- Method: `GET`
+- Path: `/v1/feed`
+- Public or internal: public through gateway
+- Purpose: return a cursor-based list of published posts for a tenant or community
+
+## 3. Authentication and Authorization
+
+- Auth mechanism: gateway verified identity
+- Required roles: verified membership
+- Tenant checks: tenant and optional community must be authorized by campus-service
+- Rate limit policy: moderate per user
+
+## 4. Request Schema
+
+- Headers: auth token or demo identity headers
+- Path params: none
+- Query params: `tenantId`, optional `communityId`, optional `cursor`, optional `limit`
+- Body: none
+
+## 5. Response Schema
+
+- Success response: `tenantId`, `communityId`, `items[]`, `nextCursor`
+- Pagination model: cursor-based
+- Metadata: no total count on hot feed path
+
+## 6. Error Schema
+
+- Validation errors: invalid tenant, limit, or cursor
+- Auth errors: unauthenticated
+- Authorization errors: unauthorized tenant/community access
+- Domain errors: community not found
+- Retryable errors: downstream access resolution timeout
+
+## 7. Side Effects
+
+- Tables written: none
+- Events emitted: none
+- Async jobs triggered: optional `user_activity` write in future
+- Audit log entries: none
+
+## 8. Idempotency and Concurrency
+
+- Idempotency key needed: no
+- Duplicate handling: not applicable
+- Optimistic locking needed: no
+
+## 9. Observability
+
+- Logs: feed reads and filter context
+- Metrics: p95 latency, error rate, empty result rate
+- Alerts: degraded feed latency or repeated permission failures
+
+## 10. Rollout Notes
+
+- Feature flags: tenant-level feed rollout flag is acceptable
+- Backward compatibility: additive fields only
+- Migration steps: route reads to Data Connect social connector
+

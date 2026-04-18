@@ -1,0 +1,13 @@
+type User @table(name: "users", singular: "user", plural: "users", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  firebaseUid: String! @col(name: "firebase_uid") @unique
+  primaryEmail: String! @col(name: "primary_email")
+  emailVerified: Boolean! @col(name: "email_verified") @default(value: false)
+  displayName: String @col(name: "display_name")
+  avatarUrl: String @col(name: "avatar_url")
+  status: String! @default(value: "active")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+

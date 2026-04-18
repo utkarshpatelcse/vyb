@@ -1,0 +1,113 @@
+query ListResourcesByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  resources(
+    where: {
+      tenantId: { eq: $tenantId }
+      status: { eq: "published" }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    courseId
+    membershipId
+    type
+    title
+    description
+    status
+    createdAt
+  }
+}
+
+query ListResourcesByCourse($courseId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  resources(
+    where: {
+      courseId: { eq: $courseId }
+      status: { eq: "published" }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    courseId
+    membershipId
+    type
+    title
+    description
+    status
+    createdAt
+  }
+}
+
+query GetResourceDetail($resourceId: UUID!) @auth(level: NO_ACCESS) {
+  resource(key: { id: $resourceId }) {
+    id
+    tenantId
+    courseId
+    membershipId
+    type
+    title
+    description
+    status
+    createdAt
+    updatedAt
+  }
+  resourceFiles(where: { resourceId: { eq: $resourceId }, deletedAt: { isNull: true } }) {
+    id
+    resourceId
+    fileName
+    mimeType
+    sizeBytes
+    storagePath
+  }
+}
+
+mutation CreateResource(
+  $tenantId: UUID!
+  $courseId: UUID
+  $membershipId: UUID!
+  $type: String!
+  $title: String!
+  $description: String
+) @auth(level: NO_ACCESS) @transaction {
+  resource_insert(
+    data: {
+      tenantId: $tenantId
+      courseId: $courseId
+      membershipId: $membershipId
+      type: $type
+      title: $title
+      description: $description
+      status: "pending"
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation CreateResourceFile(
+  $resourceFileKey: String!
+  $tenantId: UUID!
+  $resourceId: UUID!
+  $storagePath: String!
+  $fileName: String!
+  $mimeType: String!
+  $sizeBytes: Int64!
+) @auth(level: NO_ACCESS) @transaction {
+  resourceFile_insert(
+    data: {
+      resourceFileKey: $resourceFileKey
+      tenantId: $tenantId
+      resourceId: $resourceId
+      storagePath: $storagePath
+      fileName: $fileName
+      mimeType: $mimeType
+      sizeBytes: $sizeBytes
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}

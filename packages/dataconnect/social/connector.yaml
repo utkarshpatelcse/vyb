@@ -1,0 +1,6 @@
+connectorId: social
+generate:
+  adminNodeSdk:
+    outputDir: ../social-admin-sdk
+    package: "@vyb/dataconnect-social-admin"
+    packageJsonDir: ../social-admin-sdk

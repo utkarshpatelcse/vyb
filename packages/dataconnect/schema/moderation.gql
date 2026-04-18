@@ -1,0 +1,75 @@
+type Report @table(name: "reports", singular: "report", plural: "reports", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  tenant: Tenant!
+  membership: TenantMembership!
+  targetType: String! @col(name: "target_type")
+  targetId: String! @col(name: "target_id")
+  reason: String!
+  status: String! @default(value: "open")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type ModerationCase
+  @table(name: "moderation_cases", singular: "moderationCase", plural: "moderationCases", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  tenant: Tenant!
+  report: Report!
+  assignedUser: User
+  decision: String
+  notes: String
+  resolvedAt: Timestamp @col(name: "resolved_at")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type AuditLog @table(name: "audit_logs", singular: "auditLog", plural: "auditLogs", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  tenant: Tenant
+  membership: TenantMembership
+  action: String!
+  entityType: String! @col(name: "entity_type")
+  entityId: String! @col(name: "entity_id")
+  metadataJson: Any @col(name: "metadata_json")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type UserActivity
+  @table(name: "user_activity", singular: "userActivity", plural: "userActivities", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  tenant: Tenant!
+  membership: TenantMembership!
+  activityType: String! @col(name: "activity_type")
+  entityType: String @col(name: "entity_type")
+  entityId: String @col(name: "entity_id")
+  metadataJson: Any @col(name: "metadata_json")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+extend type Report {
+  tenantId: UUID!
+  membershipId: UUID!
+}
+
+extend type ModerationCase {
+  tenantId: UUID!
+  reportId: UUID!
+  assignedUserId: UUID
+}
+
+extend type AuditLog {
+  tenantId: UUID
+  membershipId: UUID
+}
+
+extend type UserActivity {
+  tenantId: UUID!
+  membershipId: UUID!
+}
+

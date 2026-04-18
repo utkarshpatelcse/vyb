@@ -1,0 +1,6 @@
+connectorId: campus
+generate:
+  adminNodeSdk:
+    outputDir: ../campus-admin-sdk
+    package: "@vyb/dataconnect-campus-admin"
+    packageJsonDir: ../campus-admin-sdk

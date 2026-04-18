@@ -1,0 +1,6 @@
+connectorId: identity
+generate:
+  adminNodeSdk:
+    outputDir: ../identity-admin-sdk
+    package: "@vyb/dataconnect-identity-admin"
+    packageJsonDir: ../identity-admin-sdk

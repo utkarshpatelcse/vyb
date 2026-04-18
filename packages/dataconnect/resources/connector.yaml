@@ -1,0 +1,6 @@
+connectorId: resources
+generate:
+  adminNodeSdk:
+    outputDir: ../resources-admin-sdk
+    package: "@vyb/dataconnect-resources-admin"
+    packageJsonDir: ../resources-admin-sdk

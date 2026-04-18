@@ -1,0 +1,33 @@
+{
+  "name": "vyb",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "dev:web": "pnpm --filter @vyb/web dev",
+    "dev:gateway": "pnpm --filter @vyb/api-gateway dev",
+    "dev:identity": "pnpm --filter @vyb/identity-service dev",
+    "dev:campus": "pnpm --filter @vyb/campus-service dev",
+    "dev:social": "pnpm --filter @vyb/social-service dev",
+    "dev:resources": "pnpm --filter @vyb/resources-service dev",
+    "dc:services": "node scripts/run-firebase-cli.mjs dataconnect:services:list",
+    "dc:compile": "node scripts/run-firebase-cli.mjs dataconnect:compile",
+    "dc:sdk": "node scripts/run-firebase-cli.mjs dataconnect:sdk:generate",
+    "dc:deploy": "node scripts/run-firebase-cli.mjs deploy --only dataconnect",
+    "bootstrap:tenant": "node scripts/bootstrap-dataconnect.mjs",
+    "build": "turbo run build",
+    "check": "turbo run check"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "firebase-tools": "^15.15.0",
+    "pnpm": "^10.33.0",
+    "turbo": "latest",
+    "typescript": "latest"
+  }
+}

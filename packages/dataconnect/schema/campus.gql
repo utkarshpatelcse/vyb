@@ -1,0 +1,86 @@
+type Tenant @table(name: "tenants", singular: "tenant", plural: "tenants", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  name: String!
+  slug: String! @unique
+  status: String! @default(value: "active")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type TenantDomain
+  @table(name: "tenant_domains", singular: "tenantDomain", plural: "tenantDomains", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  tenantDomainKey: String! @col(name: "tenant_domain_key") @unique
+  tenant: Tenant!
+  domain: String!
+  isPrimary: Boolean! @col(name: "is_primary") @default(value: false)
+  verificationMode: String! @col(name: "verification_mode") @default(value: "domain")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type TenantMembership
+  @table(name: "tenant_memberships", singular: "tenantMembership", plural: "tenantMemberships", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  tenantMembershipKey: String! @col(name: "tenant_membership_key") @unique
+  tenant: Tenant!
+  user: User!
+  role: String! @default(value: "student")
+  verificationStatus: String! @col(name: "verification_status") @default(value: "pending")
+  course: String
+  branch: String
+  batchYear: Int @col(name: "batch_year")
+  hostel: String
+  joinedAt: Timestamp! @col(name: "joined_at") @default(expr: "request.time")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type Community @table(name: "communities", singular: "community", plural: "communities", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  tenant: Tenant!
+  type: String!
+  name: String!
+  slug: String!
+  visibility: String! @default(value: "tenant")
+  createdBy: User
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type CommunityMembership
+  @table(name: "community_memberships", singular: "communityMembership", plural: "communityMemberships", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  communityMembershipKey: String! @col(name: "community_membership_key") @unique
+  community: Community!
+  membership: TenantMembership!
+  role: String! @default(value: "member")
+  joinedAt: Timestamp! @col(name: "joined_at") @default(expr: "request.time")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+extend type TenantDomain {
+  tenantId: UUID!
+}
+
+extend type TenantMembership {
+  tenantId: UUID!
+  userId: UUID!
+}
+
+extend type Community {
+  tenantId: UUID!
+  createdById: UUID
+}
+
+extend type CommunityMembership {
+  communityId: UUID!
+  membershipId: UUID!
+}
+

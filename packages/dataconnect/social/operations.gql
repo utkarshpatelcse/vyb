@@ -1,0 +1,72 @@
+query ListFeedByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  posts(
+    where: {
+      tenantId: { eq: $tenantId }
+      status: { eq: "published" }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    communityId
+    membershipId
+    kind
+    title
+    body
+    status
+    createdAt
+  }
+}
+
+query ListCommentsByPost($postId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  comments(
+    where: { postId: { eq: $postId }, deletedAt: { isNull: true } }
+    orderBy: [{ createdAt: ASC }]
+    limit: $limit
+  ) {
+    id
+    postId
+    membershipId
+    parentCommentId
+    body
+    status
+    createdAt
+  }
+}
+
+mutation CreatePost(
+  $tenantId: UUID!
+  $communityId: UUID
+  $membershipId: UUID!
+  $kind: String!
+  $title: String
+  $body: String!
+  $status: String!
+) @auth(level: NO_ACCESS) @transaction {
+  post_insert(
+    data: {
+      tenantId: $tenantId
+      communityId: $communityId
+      membershipId: $membershipId
+      kind: $kind
+      title: $title
+      body: $body
+      status: $status
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation SoftDeletePost($id: UUID!) @auth(level: NO_ACCESS) @transaction {
+  post_update(
+    key: { id: $id }
+    data: {
+      status: "removed"
+      deletedAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
