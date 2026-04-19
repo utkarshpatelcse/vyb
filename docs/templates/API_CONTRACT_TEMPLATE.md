@@ -1,13 +1,14 @@
 # API Contract Template
 
 Owner: Architecture Team
-Last Updated: 2026-04-18
-Change Summary: Initial API contract template for public and internal APIs.
+Last Updated: 2026-04-19
+Change Summary: Updated template language for the Phase 1 modular monolith backend.
 
 ## 1. Metadata
 
 - API name:
-- Owner service:
+- Owner module:
+- Runtime:
 - Consumers:
 - Version:
 - Status:

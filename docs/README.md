@@ -1,15 +1,15 @@
 # Vyb Documentation Hub
 
 Owner: Architecture and Product
-Last Updated: 2026-04-18
-Change Summary: Added client platform strategy to support web now and future native apps.
+Last Updated: 2026-04-19
+Change Summary: Synced the docs hub with the modular monolith Phase 1 architecture.
 
 This directory is the single source of truth for product, architecture, delivery, and engineering process.
 
 ## Document Hierarchy
 
 1. `docs/architecture/HLD.md`
-   The living High Level Design. It defines system boundaries, service ownership, core architecture, and scaling strategy.
+   The living High Level Design. It defines system boundaries, module ownership, core architecture, and scaling strategy.
 2. `docs/architecture/CLIENT_PLATFORM_STRATEGY.md`
    The multi-surface client strategy for responsive web and future native apps.
 3. `docs/process/ENGINEERING_RULEBOOK.md`
@@ -19,9 +19,9 @@ This directory is the single source of truth for product, architecture, delivery
 5. `docs/product/MASTER_PLAN.md`
    The execution narrative: what we are building, why, what is done, and what comes next.
 6. `docs/lld/phase-1/`
-   Execution-ready LLDs for the core Phase 1 services.
+   Execution-ready LLDs for the core Phase 1 backend modules.
 7. `docs/contracts/phase-1/`
-   API contracts for the current public Phase 1 gateway endpoints.
+   API contracts for the current public Phase 1 backend endpoints.
 8. `docs/query-reviews/phase-1/`
    Query reviews for the hot paths we expect to matter in Phase 1.
 9. `docs/templates/LLD_TEMPLATE.md`

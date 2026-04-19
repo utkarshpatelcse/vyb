@@ -1,10 +1,10 @@
 # Phase 1 LLD Index
 
 Owner: Architecture Team
-Last Updated: 2026-04-18
-Change Summary: Initial execution-ready LLD set for Phase 1 core services.
+Last Updated: 2026-04-19
+Change Summary: Updated the Phase 1 LLD set to reflect backend modules inside a modular monolith runtime.
 
-## Service LLDs
+## Module LLDs
 
 - `IDENTITY_SERVICE_LLD.md`
 - `CAMPUS_SERVICE_LLD.md`
@@ -13,9 +13,9 @@ Change Summary: Initial execution-ready LLD set for Phase 1 core services.
 
 ## Build Order
 
-1. Identity Service
-2. Campus Service
-3. Social Service
-4. Resources Service
+1. Identity Module
+2. Campus Module
+3. Social Module
+4. Resources Module
 
-This order is intentional because authentication and membership context are prerequisites for all downstream services.
+This order is intentional because authentication and membership context are prerequisites for all downstream modules.

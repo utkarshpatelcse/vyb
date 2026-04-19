@@ -1,8 +1,8 @@
 # Vyb Engineering Rulebook
 
 Owner: Engineering Leadership
-Last Updated: 2026-04-18
-Change Summary: Added multi-surface client rules with explicit PWA and desktop-quality responsive requirements.
+Last Updated: 2026-04-19
+Change Summary: Updated the rulebook for a Phase 1 modular monolith backend with future microservice extraction only by explicit approval.
 
 This rulebook is mandatory. These rules are not optional and are intended to prevent architectural drift, undocumented changes, and unsafe shortcuts.
 
@@ -18,21 +18,23 @@ This rulebook is mandatory. These rules are not optional and are intended to pre
 
 ## 2. Architecture Rules
 
-1. All public backend traffic must pass through the API Gateway.
-2. No client may call internal services directly.
-3. Each service owns its own domain logic, data access layer, and background jobs.
-4. Cross-service database writes are forbidden.
-5. Service boundaries cannot be bypassed for speed.
-6. Shared code must stay small and generic. Business logic must not move into shared packages.
-7. If a feature cannot clearly name its owning service, the design is incomplete.
+1. Phase 1 backend ships as one modular monolith.
+2. All public backend traffic must pass through the backend entry boundary.
+3. No client may call module internals directly.
+4. Each module owns its own domain logic, data access layer, and background jobs.
+5. Cross-module writes are forbidden even inside the monolith.
+6. Module boundaries cannot be bypassed for speed.
+7. Shared code must stay small and generic. Business logic must not move into shared packages.
+8. If a feature cannot clearly name its owning module, the design is incomplete.
 
-## 3. Service Introduction Rules
+## 3. Service Extraction Rules
 
-1. A new service may be introduced only with an ADR.
-2. The ADR must explain why the existing services are not enough.
+1. A new deployable service may be introduced only with an ADR.
+2. The ADR must explain why the modular monolith is no longer enough.
 3. The ADR must explain expected load, cost, failure modes, and rollback plan.
-4. The HLD must be updated before the service is added to the repo.
-5. The Master Plan must mention the service introduction and rollout phase.
+4. The HLD must be updated before the service is added to the runtime plan.
+5. The Master Plan must mention the extraction and rollout phase.
+6. Extraction must preserve table ownership and public API contracts.
 
 ## 4. Client Platform Rules
 
@@ -53,7 +55,7 @@ This rulebook is mandatory. These rules are not optional and are intended to pre
 4. No endpoint may return tenant data without tenant authorization checks.
 5. No endpoint may expose internal database structure directly.
 6. Breaking API changes require versioning or a migration plan.
-7. Service-to-service calls must be listed in the feature LLD.
+7. Cross-module interactions must be listed in the feature LLD.
 
 ## 6. Database Rules
 
@@ -62,7 +64,7 @@ This rulebook is mandatory. These rules are not optional and are intended to pre
 3. Every many-to-many table must have uniqueness constraints.
 4. Every production query path must have reviewed indexes.
 5. Every schema change must document migration steps, backfill needs, and rollback plan.
-6. Direct SQL or direct Data Connect operations may be added only by the owning service.
+6. Direct SQL or direct Data Connect operations may be added only by the owning module.
 7. Soft delete is the default for user-generated content.
 8. Hard delete must be documented and approved for privacy or retention flows only.
 9. Query limits and pagination are mandatory for list APIs.
@@ -70,11 +72,11 @@ This rulebook is mandatory. These rules are not optional and are intended to pre
 
 ## 7. Data Connect Rules
 
-1. Operations must be organized per service under `packages/dataconnect/<service>`.
+1. Operations must be organized per domain under `packages/dataconnect/<domain>`.
 2. Generated SDKs must not be edited by hand.
 3. Sensitive mutations must not be directly exposed to clients without review.
 4. If a client-facing operation is deployed, compatibility risk for older clients must be considered.
-5. Admin SDK usage must stay inside backend services and scripts, never in the web app.
+5. Admin SDK usage must stay inside backend code and scripts, never in the web app.
 
 ## 8. Security Rules
 
@@ -102,11 +104,12 @@ This rulebook is mandatory. These rules are not optional and are intended to pre
 
 ## 11. Observability Rules
 
-1. Every service must emit structured logs.
+1. The backend must emit structured logs.
 2. Every request must carry a request ID or trace ID.
 3. Error messages exposed to clients must be safe and stable.
 4. Privileged actions must be written to `audit_logs`.
 5. High-risk user actions should also emit `user_activity` where useful.
+6. Module-level metrics must remain attributable even inside one runtime.
 
 ## 12. Product Delivery Rules
 
@@ -120,7 +123,7 @@ This rulebook is mandatory. These rules are not optional and are intended to pre
 A task is ready only if:
 
 - scope is clear
-- owning service is known
+- owning module is known
 - LLD exists
 - API contracts are defined
 - schema impact is defined
@@ -156,9 +159,9 @@ Each feature must link to:
 
 ## 16. Anti-Patterns That Are Forbidden
 
-- adding a service without an ADR
+- extracting services casually without an ADR
 - direct client access to privileged business logic
-- direct writes into another service's tables
+- direct writes into another module's tables
 - undocumented third-party SDKs
 - undocumented database indexes
 - implementing features from chat discussions only

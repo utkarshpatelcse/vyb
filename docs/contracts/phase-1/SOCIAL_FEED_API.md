@@ -1,14 +1,15 @@
 # API Contract
 
 Owner: Architecture Team
-Last Updated: 2026-04-18
-Change Summary: Initial contract for tenant/community feed reads.
+Last Updated: 2026-04-19
+Change Summary: Updated contract language for the Phase 1 modular monolith backend.
 
 ## 1. Metadata
 
 - API name: List Feed
-- Owner service: `social-service`
-- Consumers: `web`, future `mobile`, `api-gateway`
+- Owner module: `social`
+- Runtime: `apps/backend`
+- Consumers: `web`, future `mobile`
 - Version: `v1`
 - Status: Draft
 - Linked LLD: `docs/lld/phase-1/SOCIAL_SERVICE_LLD.md`
@@ -17,19 +18,19 @@ Change Summary: Initial contract for tenant/community feed reads.
 
 - Method: `GET`
 - Path: `/v1/feed`
-- Public or internal: public through gateway
+- Public or internal: public through backend
 - Purpose: return a cursor-based list of published posts for a tenant or community
 
 ## 3. Authentication and Authorization
 
-- Auth mechanism: gateway verified identity
+- Auth mechanism: backend edge verified identity
 - Required roles: verified membership
-- Tenant checks: tenant and optional community must be authorized by campus-service
+- Tenant checks: tenant and optional community must be authorized by the campus module
 - Rate limit policy: moderate per user
 
 ## 4. Request Schema
 
-- Headers: auth token or demo identity headers
+- Headers: auth token or approved local dev identity headers
 - Path params: none
 - Query params: `tenantId`, optional `communityId`, optional `cursor`, optional `limit`
 - Body: none
@@ -71,5 +72,4 @@ Change Summary: Initial contract for tenant/community feed reads.
 
 - Feature flags: tenant-level feed rollout flag is acceptable
 - Backward compatibility: additive fields only
-- Migration steps: route reads to Data Connect social connector
-
+- Migration steps: keep contract stable while feed reads move fully onto Data Connect-backed module queries

@@ -34,15 +34,7 @@ importers:
         specifier: latest
         version: 6.0.3
 
-  apps/api-gateway: {}
-
-  apps/campus-service: {}
-
-  apps/identity-service: {}
-
-  apps/resources-service: {}
-
-  apps/social-service: {}
+  apps/backend: {}
 
   apps/web:
     dependencies:

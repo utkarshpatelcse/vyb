@@ -1,16 +1,17 @@
 # Query Review
 
 Owner: Architecture Team
-Last Updated: 2026-04-18
-Change Summary: Initial review for membership context lookup.
+Last Updated: 2026-04-19
+Change Summary: Updated query review language for the Phase 1 modular monolith backend.
 
 ## 1. Metadata
 
 - Query name: Membership Context Lookup
-- Owning service: `campus-service`
+- Owning module: `campus`
+- Runtime: `apps/backend`
 - Linked LLD: `docs/lld/phase-1/CAMPUS_SERVICE_LLD.md`
 - Reviewer: Architecture Team
-- Date: 2026-04-18
+- Date: 2026-04-19
 
 ## 2. Purpose
 
@@ -46,7 +47,7 @@ Change Summary: Initial review for membership context lookup.
 
 ## 7. Failure and Degradation
 
-- What happens if query is slow: gateway and downstream endpoints degrade
+- What happens if query is slow: backend edge and downstream module handlers degrade
 - Fallback behavior: return pending membership or temporary error
 - Timeout policy: low timeout with visible retry path
 
@@ -55,4 +56,3 @@ Change Summary: Initial review for membership context lookup.
 - Approved: yes
 - Changes required: none
 - Notes: keep this query extremely small and cache cautiously per request scope
-

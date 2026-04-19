@@ -6,5 +6,5 @@ Planned direction:
 
 - React Native / Expo
 - Android and iOS support
-- consumes the same gateway APIs and shared contracts as web
+- consumes the same backend APIs and shared contracts as web
 - keeps native presentation separate from web presentation

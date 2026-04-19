@@ -1,14 +1,15 @@
 # API Contract
 
 Owner: Architecture Team
-Last Updated: 2026-04-18
-Change Summary: Initial contract for post creation.
+Last Updated: 2026-04-19
+Change Summary: Updated contract language for the Phase 1 modular monolith backend.
 
 ## 1. Metadata
 
 - API name: Create Post
-- Owner service: `social-service`
-- Consumers: `web`, future `mobile`, `api-gateway`
+- Owner module: `social`
+- Runtime: `apps/backend`
+- Consumers: `web`, future `mobile`
 - Version: `v1`
 - Status: Draft
 - Linked LLD: `docs/lld/phase-1/SOCIAL_SERVICE_LLD.md`
@@ -17,19 +18,19 @@ Change Summary: Initial contract for post creation.
 
 - Method: `POST`
 - Path: `/v1/posts`
-- Public or internal: public through gateway
+- Public or internal: public through backend
 - Purpose: create a text or image post within an authorized tenant/community scope
 
 ## 3. Authentication and Authorization
 
-- Auth mechanism: gateway verified identity
+- Auth mechanism: backend edge verified identity
 - Required roles: verified membership
 - Tenant checks: membership must be valid for target tenant/community
 - Rate limit policy: moderate with burst protection
 
 ## 4. Request Schema
 
-- Headers: auth token or demo identity headers
+- Headers: auth token or approved local dev identity headers
 - Path params: none
 - Query params: none
 - Body: `tenantId`, optional `communityId`, `membershipId`, `kind`, `title`, `body`
@@ -71,5 +72,4 @@ Change Summary: Initial contract for post creation.
 
 - Feature flags: post creation may be gated per tenant
 - Backward compatibility: additive fields only
-- Migration steps: replace in-memory starter with Data Connect create mutation
-
+- Migration steps: replace starter persistence with Data Connect-backed module writes while keeping the public contract stable

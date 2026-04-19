@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
@@ -5,3 +7,31 @@ export function isNonEmptyString(value: unknown): value is string {
 export function isPositiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
+
+export const onboardingProfileSchema = z
+  .object({
+    firstName: z.string().trim().min(2, "First name must be at least 2 characters long."),
+    lastName: z
+      .union([z.string().trim().min(1, "Last name must be a valid string when provided."), z.literal(""), z.null()])
+      .optional(),
+    course: z.string().trim().min(2, "Course is required."),
+    stream: z.string().trim().min(2, "Stream is required."),
+    year: z.coerce.number().int().min(1, "Year must be between 1 and 6.").max(6, "Year must be between 1 and 6."),
+    section: z.string().trim().min(1, "Section is required.").max(12, "Section must be shorter than 12 characters."),
+    isHosteller: z.boolean(),
+    hostelName: z.union([z.string().trim().min(1), z.literal(""), z.null()]).optional(),
+    phoneNumber: z
+      .union([z.string().trim().regex(/^[+\d][\d\s-]{7,18}$/u, "Phone number format is invalid."), z.literal(""), z.null()])
+      .optional()
+  })
+  .superRefine((payload, ctx) => {
+    if (payload.isHosteller && !payload.hostelName) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["hostelName"],
+        message: "Hostel name is required for hostellers."
+      });
+    }
+  });
+
+export type OnboardingProfileInput = z.infer<typeof onboardingProfileSchema>;

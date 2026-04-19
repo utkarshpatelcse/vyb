@@ -1,7 +1,10 @@
 import { applicationDefault, getApp, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
+import { loadWorkspaceRootEnv } from "./server-env";
 
 function getFirebaseAdminApp() {
+  loadWorkspaceRootEnv();
+
   const existing = getApps().find((app) => app.name === "web-auth");
   if (existing) {
     return existing;

@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
-import { PwaInstallPrompt } from "../src/components/pwa-install-prompt";
 import { ServiceWorkerRegister } from "../src/components/service-worker-register";
 
 export const metadata: Metadata = {
@@ -27,7 +26,6 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
     <html lang="en">
       <body>
         <ServiceWorkerRegister />
-        <PwaInstallPrompt />
         {children}
       </body>
     </html>

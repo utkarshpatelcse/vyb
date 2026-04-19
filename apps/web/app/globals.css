@@ -19,6 +19,39 @@ body {
   font-family: "Segoe UI", "Trebuchet MS", sans-serif;
 }
 
+.vyb-auth-page {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 1rem;
+  background-color: #050505;
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(138, 43, 226, 0.15) 0%, transparent 40%),
+    radial-gradient(circle at 80% 70%, rgba(255, 0, 255, 0.1) 0%, transparent 40%);
+  color: #fff;
+  overflow: hidden;
+}
+
+.vyb-auth-glow {
+  display: none;
+  position: absolute;
+  width: 400px;
+  height: 400px;
+  background: #8a2be2;
+  filter: blur(150px);
+  opacity: 0.2;
+  z-index: 0;
+}
+
+.vyb-auth-shell {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 400px;
+}
+
 a {
   color: inherit;
   text-decoration: none;
@@ -356,6 +389,136 @@ a {
   margin-top: 1.5rem;
 }
 
+.cl-auth-shell {
+  min-height: 100vh;
+}
+
+.cl-auth-layout {
+  display: grid;
+  gap: 1.5rem;
+  align-items: stretch;
+  padding: 2rem 0 4rem;
+}
+
+.cl-auth-hero {
+  display: grid;
+  align-content: start;
+  gap: 1.15rem;
+  padding: 1rem 0 0.5rem;
+}
+
+.cl-auth-hero h1,
+.cl-auth-stage-header h2 {
+  margin: 0;
+  letter-spacing: -0.05em;
+}
+
+.cl-auth-hero h1 {
+  max-width: 11ch;
+  font-size: clamp(2.6rem, 6vw, 5.1rem);
+  line-height: 0.94;
+}
+
+.cl-auth-copy,
+.cl-auth-stage-header p {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--cl-color-muted);
+  line-height: 1.7;
+}
+
+.cl-auth-proof-grid,
+.cl-auth-metrics {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.cl-auth-signal,
+.cl-auth-metrics div {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1.4rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+    rgba(8, 16, 27, 0.44);
+}
+
+.cl-auth-signal {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.95rem;
+  padding: 1rem;
+}
+
+.cl-auth-signal span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.7rem;
+  height: 2.7rem;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, rgba(125, 226, 255, 0.2), rgba(186, 255, 67, 0.16));
+  color: var(--cl-color-paper);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.cl-auth-signal strong,
+.cl-auth-metrics strong {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 1rem;
+}
+
+.cl-auth-signal p,
+.cl-auth-metrics span {
+  margin: 0;
+  color: var(--cl-color-muted);
+  line-height: 1.55;
+}
+
+.cl-auth-metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.cl-auth-metrics div {
+  padding: 1rem 1.1rem;
+}
+
+.cl-auth-stage {
+  position: relative;
+  overflow: hidden;
+  padding: 0;
+}
+
+.cl-auth-stage-glow {
+  position: absolute;
+  inset: -6rem auto auto 55%;
+  width: 16rem;
+  height: 16rem;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(125, 226, 255, 0.24), transparent 65%);
+  pointer-events: none;
+}
+
+.cl-auth-stage-inner {
+  position: relative;
+  display: grid;
+  gap: 1.25rem;
+  padding: 1.5rem;
+}
+
+.cl-auth-stage-header {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.cl-auth-stage-header h2 {
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 0.94;
+}
+
 .cl-grid-two > .cl-shell-card {
   padding: 1.5rem;
 }
@@ -439,10 +602,13 @@ a {
 .cl-auth-card {
   display: grid;
   gap: 0.85rem;
-  padding: 1rem;
+  padding: 1.15rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 1.25rem;
-  background: rgba(255, 255, 255, 0.04);
+  border-radius: 1.35rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+    rgba(255, 255, 255, 0.025);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .cl-form-card h3,
@@ -491,8 +657,8 @@ a {
 }
 
 .cl-auth-mode-switch .cl-auth-mode-active {
-  background: rgba(125, 226, 255, 0.14);
-  color: var(--cl-color-cyan);
+  background: linear-gradient(135deg, rgba(125, 226, 255, 0.18), rgba(186, 255, 67, 0.12));
+  color: var(--cl-color-paper);
 }
 
 .cl-auth-footnote {
@@ -518,10 +684,14 @@ a {
   width: 100%;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 1rem;
-  background: rgba(9, 16, 27, 0.78);
+  background: rgba(7, 13, 22, 0.82);
   color: var(--cl-color-text);
   padding: 0.85rem 0.95rem;
   font: inherit;
+  transition:
+    border-color var(--cl-motion-fast),
+    background-color var(--cl-motion-fast),
+    transform var(--cl-motion-fast);
 }
 
 .cl-field textarea {
@@ -538,6 +708,8 @@ a {
 .cl-field textarea:focus-visible {
   outline: 2px solid rgba(125, 226, 255, 0.22);
   outline-offset: 1px;
+  border-color: rgba(125, 226, 255, 0.28);
+  background: rgba(8, 16, 27, 0.95);
 }
 
 .cl-form-actions {
@@ -549,6 +721,171 @@ a {
 .cl-form-actions button[disabled] {
   opacity: 0.7;
   cursor: wait;
+}
+
+.vyb-auth-card {
+  width: 100%;
+  max-width: 400px;
+  min-height: 100vh;
+  background: #0a0a0c;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 2.5rem 1.9rem;
+  font-family: "Inter", "Segoe UI", sans-serif;
+}
+
+.vyb-auth-header {
+  text-align: center;
+  margin-bottom: 2.2rem;
+}
+
+.vyb-auth-branding {
+  margin: 0;
+  font-size: 3rem;
+  font-weight: 900;
+  letter-spacing: -0.12em;
+  background: linear-gradient(45deg, #8a2be2, #ff00ff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  color: transparent;
+}
+
+.vyb-auth-subtitle {
+  margin: 0.5rem 0 0;
+  color: #a0a0a0;
+  font-size: 0.95rem;
+}
+
+.vyb-social-btn {
+  width: 100%;
+  padding: 0.95rem;
+  border-radius: 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #fff;
+  color: #000;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  transition:
+    transform var(--cl-motion-fast),
+    background-color var(--cl-motion-fast);
+  margin-bottom: 1.5rem;
+}
+
+.vyb-social-btn:hover:not(:disabled) {
+  transform: scale(0.985);
+  background: #eeeeee;
+}
+
+.vyb-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: #a0a0a0;
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  margin-bottom: 1.5rem;
+}
+
+.vyb-line {
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.vyb-auth-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.vyb-form-group {
+  display: grid;
+}
+
+.vyb-input-field {
+  width: 100%;
+  padding: 1rem;
+  border-radius: 0.9rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: #fff;
+  outline: none;
+  font-size: 0.95rem;
+  transition:
+    border-color var(--cl-motion-fast),
+    background-color var(--cl-motion-fast);
+}
+
+.vyb-input-field::placeholder {
+  color: rgba(255, 255, 255, 0.52);
+}
+
+.vyb-input-field:focus {
+  border-color: #ff00ff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.vyb-forgot-btn {
+  justify-self: end;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #ff00ff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.vyb-main-btn {
+  width: 100%;
+  padding: 1rem;
+  border-radius: 0.9rem;
+  border: 0;
+  background: linear-gradient(45deg, #8a2be2, #ff00ff);
+  color: #fff;
+  font-weight: 800;
+  font-size: 1rem;
+  cursor: pointer;
+  margin-top: 0.25rem;
+  box-shadow: 0 10px 20px rgba(138, 43, 226, 0.3);
+  transition: transform var(--cl-motion-fast);
+}
+
+.vyb-main-btn:active {
+  transform: scale(0.98);
+}
+
+.vyb-auth-message {
+  margin: 1rem 0 0;
+  color: #f4d5ff;
+  line-height: 1.6;
+  font-size: 0.9rem;
+}
+
+.vyb-footer-text {
+  margin-top: auto;
+  padding-top: 1.8rem;
+  text-align: center;
+  font-size: 0.9rem;
+  color: #a0a0a0;
+}
+
+.vyb-footer-text p {
+  margin: 0;
+}
+
+.vyb-toggle-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #ff00ff;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .cl-session-pill {
@@ -618,6 +955,32 @@ a {
   .cl-grid-two {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .cl-auth-layout {
+    grid-template-columns: minmax(0, 1.1fr) minmax(380px, 0.9fr);
+    gap: 2rem;
+    padding-top: 3rem;
+  }
+
+  .vyb-auth-glow {
+    display: block;
+  }
+}
+
+@media (min-width: 768px) {
+  .vyb-auth-glow {
+    display: block;
+  }
+
+  .vyb-auth-card {
+    min-height: 700px;
+    border-radius: 40px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow:
+      0 25px 50px rgba(0, 0, 0, 0.5),
+      0 0 30px rgba(138, 43, 226, 0.2);
+    backdrop-filter: blur(10px);
+  }
 }
 
 @media (max-width: 959px) {
@@ -663,5 +1026,720 @@ a {
 
   .cl-install-banner button {
     width: 100%;
+  }
+
+  .cl-auth-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .vyb-auth-page {
+    padding: 0;
+  }
+
+  .vyb-auth-card {
+    min-height: 100vh;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
+.vyb-home,
+.vyb-dashboard {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+.vyb-home-shell,
+.vyb-dashboard-shell {
+  position: relative;
+  z-index: 1;
+  width: min(calc(100% - 2rem), 1180px);
+  margin: 0 auto;
+  padding: 1.25rem 0 4rem;
+}
+
+.vyb-home-glow {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(120px);
+  opacity: 0.26;
+  pointer-events: none;
+}
+
+.vyb-home-glow-one {
+  top: 2rem;
+  left: -8rem;
+  width: 22rem;
+  height: 22rem;
+  background: rgba(138, 43, 226, 0.32);
+}
+
+.vyb-home-glow-two {
+  top: 18rem;
+  right: -8rem;
+  width: 24rem;
+  height: 24rem;
+  background: rgba(255, 0, 255, 0.16);
+}
+
+.vyb-page-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 2rem;
+  padding: 0 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #f4d5ff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.vyb-primary-button,
+.vyb-secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3rem;
+  padding: 0 1.2rem;
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    transform var(--cl-motion-fast),
+    background-color var(--cl-motion-fast),
+    border-color var(--cl-motion-fast),
+    box-shadow var(--cl-motion-fast);
+}
+
+.vyb-primary-button {
+  border: 0;
+  background: linear-gradient(45deg, #8a2be2, #ff00ff);
+  color: #ffffff;
+  box-shadow: 0 14px 30px rgba(138, 43, 226, 0.28);
+}
+
+.vyb-secondary-button {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--cl-color-text);
+}
+
+.vyb-primary-button:hover,
+.vyb-secondary-button:hover {
+  transform: translateY(-1px);
+}
+
+.vyb-home-header,
+.vyb-dashboard-header,
+.vyb-profile-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.vyb-home-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.85rem;
+  color: var(--cl-color-text);
+}
+
+.vyb-home-brand span {
+  display: grid;
+  place-items: center;
+  width: 2.9rem;
+  height: 2.9rem;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, rgba(138, 43, 226, 0.24), rgba(255, 0, 255, 0.18));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+.vyb-home-brand strong,
+.vyb-home-brand p {
+  display: block;
+  margin: 0;
+}
+
+.vyb-home-brand p {
+  color: var(--cl-color-muted);
+  font-size: 0.9rem;
+}
+
+.vyb-home-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.vyb-home-nav a {
+  color: var(--cl-color-muted);
+  font-size: 0.95rem;
+}
+
+.vyb-home-nav a:hover {
+  color: var(--cl-color-text);
+}
+
+.vyb-home-hero,
+.vyb-dashboard-hero {
+  display: grid;
+  gap: 1.5rem;
+  align-items: stretch;
+  margin-top: 3rem;
+}
+
+.vyb-home-copy h1,
+.vyb-dashboard-hero h1,
+.vyb-auth-panel-head h2,
+.vyb-profile-header h1,
+.vyb-section-head h2 {
+  margin: 0.8rem 0 1rem;
+  letter-spacing: -0.05em;
+  line-height: 0.98;
+}
+
+.vyb-home-copy h1 {
+  max-width: 11ch;
+  font-size: clamp(3rem, 7vw, 5.8rem);
+}
+
+.vyb-home-copy p,
+.vyb-home-card p,
+.vyb-home-feature p,
+.vyb-phase-item p,
+.vyb-auth-panel-head p,
+.vyb-story-list p,
+.vyb-inline-message,
+.vyb-profile-header p,
+.vyb-toggle-card p,
+.vyb-dashboard-hero p,
+.vyb-dashboard-card p,
+.vyb-section-head p {
+  margin: 0;
+  color: var(--cl-color-muted);
+  line-height: 1.7;
+}
+
+.vyb-home-hero-actions,
+.vyb-auth-actions,
+.vyb-profile-actions,
+.vyb-dashboard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+}
+
+.vyb-home-card,
+.vyb-auth-panel,
+.vyb-home-feature,
+.vyb-phase-item,
+.vyb-launch-panel,
+.vyb-toggle-card,
+.vyb-dashboard-card,
+.vyb-dashboard-status,
+.vyb-session-card,
+.vyb-profile-shell {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1.6rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+    rgba(8, 16, 27, 0.58);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(18px);
+}
+
+.vyb-home-card,
+.vyb-launch-panel,
+.vyb-dashboard-card,
+.vyb-dashboard-status {
+  padding: 1.4rem;
+}
+
+.vyb-home-list,
+.vyb-story-list,
+.vyb-phase-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.vyb-home-list {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.vyb-home-list li {
+  color: var(--cl-color-paper);
+  line-height: 1.55;
+}
+
+.vyb-home-section {
+  display: grid;
+  gap: 1.25rem;
+  margin-top: 3rem;
+}
+
+.vyb-section-head h2 {
+  max-width: 16ch;
+  font-size: clamp(2rem, 4vw, 3rem);
+}
+
+.vyb-home-grid,
+.vyb-dashboard-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.vyb-home-feature,
+.vyb-phase-item {
+  padding: 1.25rem;
+}
+
+.vyb-home-feature h3,
+.vyb-dashboard-card h2,
+.vyb-home-card h2 {
+  margin: 0 0 0.65rem;
+}
+
+.vyb-auth-page {
+  padding: 0.8rem;
+  background-color: #050505;
+  background-image:
+    radial-gradient(circle at 18% 22%, rgba(138, 43, 226, 0.24) 0%, transparent 34%),
+    radial-gradient(circle at 82% 16%, rgba(255, 0, 255, 0.14) 0%, transparent 24%),
+    linear-gradient(180deg, #050507 0%, #09080e 100%);
+}
+
+.vyb-auth-shell {
+  width: min(100%, 460px);
+  max-width: 460px;
+  margin: 0 auto;
+}
+
+.vyb-auth-layout-grid {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.vyb-auth-layout-grid-clean {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.vyb-auth-story,
+.vyb-auth-panel,
+.vyb-profile-page {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1.9rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+    rgba(9, 9, 14, 0.84);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+}
+
+.vyb-auth-story,
+.vyb-profile-page {
+  padding: 1.5rem;
+}
+
+.vyb-auth-panel {
+  padding: 1.08rem;
+}
+
+.vyb-auth-panel-clean {
+  padding: 1.08rem;
+  backdrop-filter: blur(16px);
+}
+
+.vyb-auth-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 0.7rem;
+}
+
+.vyb-auth-brand > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 0.82rem;
+  background: linear-gradient(135deg, #8a2be2, #ff00ff);
+  color: #ffffff;
+  font-size: 1.02rem;
+  font-weight: 800;
+}
+
+.vyb-auth-brand strong {
+  display: block;
+  color: #ffffff;
+  letter-spacing: 0.16em;
+  font-size: 0.82rem;
+}
+
+.vyb-auth-brand p {
+  margin: 0.12rem 0 0;
+  color: var(--cl-color-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.vyb-auth-panel-head {
+  display: grid;
+  gap: 0.32rem;
+}
+
+.vyb-auth-panel-head h2,
+.vyb-profile-header h1,
+.vyb-dashboard-hero h1 {
+  font-size: clamp(2rem, 4vw, 3.2rem);
+}
+
+.vyb-auth-panel-clean .vyb-auth-panel-head h2 {
+  margin: 0.35rem 0 0.55rem;
+  font-size: clamp(1.95rem, 5.8vw, 2.8rem);
+  line-height: 0.94;
+  letter-spacing: -0.05em;
+}
+
+.vyb-auth-panel-clean .vyb-auth-panel-head p {
+  max-width: 22ch;
+  font-size: 0.94rem;
+  line-height: 1.42;
+}
+
+.vyb-auth-panel .vyb-page-badge {
+  min-height: 1.78rem;
+  padding: 0 0.72rem;
+  font-size: 0.74rem;
+}
+
+.vyb-story-list article {
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1.3rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.vyb-story-list strong,
+.vyb-toggle-card strong,
+.vyb-session-card strong,
+.vyb-phase-item strong {
+  display: block;
+  margin-bottom: 0.4rem;
+}
+
+.vyb-auth-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+  padding: 0.35rem;
+  margin: 1.25rem 0 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.vyb-auth-switch button {
+  min-height: 2.75rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--cl-color-muted);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.vyb-auth-switch .vyb-auth-switch-active {
+  background: linear-gradient(45deg, rgba(138, 43, 226, 0.28), rgba(255, 0, 255, 0.2));
+  color: #ffffff;
+}
+
+.vyb-session-card span {
+  color: var(--cl-color-muted);
+  line-height: 1.55;
+}
+
+.vyb-google-button {
+  width: 100%;
+  margin-top: 0.72rem;
+  padding: 0.82rem 0.95rem;
+  border-radius: 0.92rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #ffffff;
+  color: #0a0a0a;
+  font: inherit;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  cursor: pointer;
+}
+
+.vyb-auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0.85rem 0;
+}
+
+.vyb-auth-divider div {
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.vyb-auth-divider span {
+  color: var(--cl-color-muted);
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+}
+
+.vyb-auth-form,
+.vyb-profile-shell,
+.vyb-profile-header {
+  display: grid;
+  gap: 0.82rem;
+}
+
+.vyb-auth-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0;
+  color: var(--cl-color-muted);
+  font-size: 0.84rem;
+}
+
+.vyb-field {
+  display: grid;
+  gap: 0.34rem;
+}
+
+.vyb-field span {
+  color: #ffffff;
+  font-size: 0.82rem;
+}
+
+.vyb-field input,
+.vyb-field select {
+  width: 100%;
+  min-height: 2.72rem;
+  padding: 0.72rem 0.85rem;
+  border-radius: 0.92rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--cl-color-text);
+  font: inherit;
+}
+
+.vyb-auth-panel .vyb-primary-button {
+  min-height: 2.72rem;
+}
+
+.vyb-field select option {
+  color: #0a0a0c !important;
+  background: #ffffff !important;
+}
+
+.vyb-field input[readonly] {
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.vyb-field input:focus-visible,
+.vyb-field select:focus-visible {
+  outline: 2px solid rgba(255, 0, 255, 0.18);
+  outline-offset: 1px;
+  border-color: rgba(255, 0, 255, 0.24);
+}
+
+.vyb-inline-link {
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #f4d5ff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.vyb-inline-message {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.78rem 0.88rem;
+  border-radius: 0.92rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.vyb-inline-message strong {
+  color: #ffffff;
+  font-size: 0.9rem;
+}
+
+.vyb-inline-message span {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.88rem;
+}
+
+.vyb-inline-message code {
+  width: fit-content;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-family: "IBM Plex Mono", "Fira Code", monospace;
+}
+
+.vyb-inline-message small {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.78rem;
+  line-height: 1.42;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.vyb-inline-message-neutral {
+  background: rgba(244, 213, 255, 0.08);
+  border-color: rgba(244, 213, 255, 0.12);
+}
+
+.vyb-inline-message-success {
+  background: rgba(92, 255, 154, 0.08);
+  border-color: rgba(92, 255, 154, 0.16);
+}
+
+.vyb-inline-message-error {
+  background: rgba(255, 99, 132, 0.1);
+  border-color: rgba(255, 99, 132, 0.18);
+}
+
+.vyb-session-card {
+  display: grid;
+  gap: 0.3rem;
+  margin: 1rem 0;
+  padding: 1rem;
+}
+
+.vyb-profile-page {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.vyb-profile-grid,
+.vyb-dashboard-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.vyb-toggle-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+}
+
+.vyb-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.vyb-switch input {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.vyb-dashboard-status {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.vyb-dashboard-status span {
+  color: var(--cl-color-muted);
+}
+
+@media (min-width: 900px) {
+  .vyb-home-hero,
+  .vyb-dashboard-hero {
+    grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  }
+
+  .vyb-home-grid,
+  .vyb-dashboard-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .vyb-profile-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 899px) {
+  .vyb-home-header,
+  .vyb-dashboard-header,
+  .vyb-profile-topbar,
+  .vyb-toggle-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .vyb-home-nav {
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 0.15rem;
+  }
+
+  .vyb-home-header > .vyb-primary-button,
+  .vyb-dashboard-actions > .vyb-secondary-button,
+  .vyb-profile-topbar > .vyb-secondary-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 719px) {
+  .vyb-home-shell,
+  .vyb-dashboard-shell {
+    width: min(calc(100% - 1rem), 100%);
+  }
+
+  .vyb-home-copy h1 {
+    max-width: 10ch;
+  }
+
+  .vyb-auth-page {
+    padding: 0.75rem;
+  }
+
+  .vyb-auth-panel,
+  .vyb-auth-story,
+  .vyb-profile-page {
+    border-radius: 1.4rem;
+  }
+
+  .vyb-auth-panel-clean .vyb-auth-panel-head h2 {
+    font-size: 2.3rem;
   }
 }

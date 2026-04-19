@@ -14,11 +14,11 @@
     "jsx": "preserve",
     "baseUrl": ".",
     "paths": {
-      "@campus-loop/contracts": ["packages/contracts/src/index.ts"],
-      "@campus-loop/app-core": ["packages/app-core/src/index.ts"],
-      "@campus-loop/design-tokens": ["packages/design-tokens/src/index.ts"],
-      "@campus-loop/ui-web": ["packages/ui-web/src/index.ts"],
-      "@campus-loop/validation": ["packages/validation/src/index.ts"]
+      "@vyb/contracts": ["packages/contracts/src/index.ts"],
+      "@vyb/app-core": ["packages/app-core/src/index.ts"],
+      "@vyb/design-tokens": ["packages/design-tokens/src/index.ts"],
+      "@vyb/ui-web": ["packages/ui-web/src/index.tsx"],
+      "@vyb/validation": ["packages/validation/src/index.ts"]
     }
   }
 }

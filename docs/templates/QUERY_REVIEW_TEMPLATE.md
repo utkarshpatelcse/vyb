@@ -1,13 +1,14 @@
 # Query Review Template
 
 Owner: Architecture Team
-Last Updated: 2026-04-18
-Change Summary: Initial query review template for performance-sensitive data access.
+Last Updated: 2026-04-19
+Change Summary: Updated template language for the Phase 1 modular monolith backend.
 
 ## 1. Metadata
 
 - Query name:
-- Owning service:
+- Owning module:
+- Runtime:
 - Linked LLD:
 - Reviewer:
 - Date:

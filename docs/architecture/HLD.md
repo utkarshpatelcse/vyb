@@ -1,12 +1,12 @@
 # Vyb High Level Design
 
 Owner: Architecture Team
-Last Updated: 2026-04-18
-Change Summary: Renamed the product to Vyb and added an admin-reviewed college join-request workflow to the core architecture.
+Last Updated: 2026-04-19
+Change Summary: Switched Phase 1 runtime to a modular monolith backend, preserved extraction-ready domain boundaries, and kept college join requests as a first-class campus module concern.
 
 ## 1. Document Purpose
 
-This HLD defines the target architecture for Vyb, a service-oriented campus platform that combines verified social interaction, academic utility, and future campus commerce. It is a living document and must be updated whenever the architecture changes.
+This HLD defines the target architecture for Vyb. It is the source of truth for how we ship Phase 1 as a modular monolith while preserving a clean path to future microservice extraction.
 
 ## 2. Product Goal
 
@@ -21,8 +21,6 @@ Vyb should become the digital HQ of campus life. The platform must balance:
 
 ## 3. Phase Strategy
 
-The architecture is service-first from day zero, but product scope is phased to reduce risk.
-
 ### Phase 1: Identity and Utility
 
 - verified authentication
@@ -35,7 +33,7 @@ The architecture is service-first from day zero, but product scope is phased to 
 ### Phase 2: Engagement
 
 - short-form video / reels
-- comments and richer interaction
+- richer comments and ranking refinement
 - anonymous Nook with strict moderation
 - polls and lightweight engagement loops
 
@@ -51,41 +49,58 @@ The architecture is service-first from day zero, but product scope is phased to 
 - streaks and progress tracking
 - mentor and resource recommendations
 
-## 4. Architecture Principles
+## 4. Architecture Decision
 
-- Service boundaries are defined from the beginning.
-- Deployment can evolve, but ownership boundaries cannot be blurry.
-- Each service owns its data, APIs, background jobs, and documentation.
-- No direct cross-service database writes.
-- All external traffic enters through an API Gateway.
+Phase 1 runtime will be a modular monolith.
+
+That means:
+
+- Vyb ships with one public backend deployable in Phase 1
+- the backend contains domain modules with strict ownership boundaries
+- the module boundaries must be good enough that future extraction into microservices is possible without rewriting the whole product
+- separate deployables are not the default; extraction is a later optimization, not the starting point
+
+This choice exists because we want:
+
+- lower ops complexity
+- simpler local development
+- one deployable backend for early hosting
+- less distributed failure handling before product-market fit
+- cleaner iteration speed while still enforcing domain boundaries
+
+## 5. Core Architecture Principles
+
+- Module boundaries are defined from the beginning.
+- Deployment can stay unified while ownership remains explicit.
+- Each module owns its domain logic, data access rules, validation, and documentation.
+- No direct writes into another module's owned tables, even inside the monolith.
+- All public backend traffic enters through one backend boundary in Phase 1.
+- Gateway concerns such as auth, rate limiting, request IDs, and input validation live at the backend edge layer.
 - Every write path must be auditable.
 - Every production feature must be observable.
-- Every new service or external dependency requires an ADR.
-- Every feature must be designed through LLD before coding starts.
+- Every future service extraction requires an ADR and HLD update.
 - Backend APIs must remain client-agnostic so web and native clients can evolve safely.
 - Shared UI must happen through design tokens and primitive rules, not by forcing one surface's components onto another.
 - Responsive web quality is mandatory; desktop cannot be treated as an afterthought.
 
-## 5. Recommended Repository Shape
+## 6. Recommended Repository Shape
 
 ```text
 vyb/
   apps/
     web/
     mobile/
-    api-gateway/
-    identity-service/
-    campus-service/
-    social-service/
-    resources-service/
-    media-service/
-    moderation-service/
-    notification-service/
-    worker-service/
-    wallet-service/              # Phase 3
-    marketplace-service/         # Phase 3
-    competition-service/         # Phase 3
-    growth-ai-service/           # Phase 4
+    backend/
+      src/
+        lib/
+        modules/
+          shared/
+          identity/
+          campus/
+          social/
+          resources/
+          moderation/
+          media/
   packages/
     contracts/
     validation/
@@ -111,14 +126,15 @@ vyb/
 
 - `apps/web` is the Phase 1 shipping client using Next.js and PWA capabilities.
 - `apps/mobile` is a future React Native / Expo client and must be considered in architecture decisions from the start.
+- `apps/backend` is the only Phase 1 backend deployable.
 - Shared logic should live in `packages/contracts`, `packages/validation`, and `packages/app-core`.
 - Shared styling decisions should live in `packages/design-tokens`.
 - Surface-specific components should live in `packages/ui-web` and `packages/ui-native`.
 - Do not bake web-only navigation, DOM assumptions, or CSS-specific logic into shared domain packages.
 
-## 6. Deployable Services
+## 7. Phase 1 Deployables
 
-### 6.1 Web App
+### 7.1 Web App
 
 - Next.js App Router + PWA
 - mobile-first UI
@@ -128,40 +144,41 @@ vyb/
 - installable app shell with manifest and service worker
 - no privileged business logic
 
-### 6.1.1 Future Native App
+### 7.2 Backend Monolith
 
-- React Native / Expo recommended for Android and iOS
-- consumes the same gateway APIs and contracts as the web client
-- may use surface-specific components, but must reuse shared validation, contracts, and business-flow logic where practical
-- feature design must define mobile and desktop behavior before implementation starts
-
-### 6.2 API Gateway
-
-The gateway is mandatory and is the only public entry for backend business APIs.
+The backend monolith is the only public backend runtime in Phase 1.
 
 Responsibilities:
 
-- auth token verification
-- App Check verification where applicable
+- auth token verification at the edge
+- App Check verification later where applicable
 - request validation
 - rate limiting
-- IP and tenant-aware throttling
-- request ID / trace ID injection
+- request ID and trace propagation
 - structured logging
-- API version routing
-- gateway-level caching only where safe
+- public API routing
+- module orchestration
+- Data Connect access for privileged business flows
 
-### 6.3 Identity Service
+### 7.3 Future Native App
+
+- React Native / Expo recommended for Android and iOS
+- consumes the same backend APIs and contracts as the web client
+- may use surface-specific components, but must reuse shared validation, contracts, and business-flow logic where practical
+- feature design must define mobile and desktop behavior before implementation starts
+
+## 8. Phase 1 Module Map
+
+### 8.1 Identity Module
 
 Owns:
 
-- user profile identity
+- internal user identity
 - Firebase Auth mapping
-- email/domain verification
-- role assignment
-- session context for downstream services
+- profile bootstrap
+- current user context
 
-### 6.4 Campus Service
+### 8.2 Campus Module
 
 Owns:
 
@@ -169,9 +186,9 @@ Owns:
 - tenant domains
 - college join requests and admin review decisions
 - memberships
-- communities such as batch, branch, hostel, club, general
+- communities such as batch, branch, hostel, club, and general
 
-### 6.5 Social Service
+### 8.3 Social Module
 
 Owns:
 
@@ -181,7 +198,7 @@ Owns:
 - social ranking metadata
 - future reels metadata
 
-### 6.6 Resources Service
+### 8.4 Resources Module
 
 Owns:
 
@@ -190,75 +207,42 @@ Owns:
 - file metadata
 - vault permissions
 
-### 6.7 Media Service
+### 8.5 Future Modules
 
-Owns:
-
-- upload orchestration
-- file metadata registration
-- compression and validation policy
-- future transcoding workflow
-
-### 6.8 Moderation Service
-
-Owns:
-
-- reports
-- moderation cases
-- content state transitions
-- abuse controls
-- anonymous content review policy
-
-### 6.9 Notification Service
-
-Owns:
-
-- push notification jobs
-- digests
-- email and in-app notification routing
-
-### 6.10 Worker Service
-
-Owns asynchronous jobs:
-
-- media processing
-- moderation fan-out
+- moderation
+- media
 - notifications
-- future search indexing
-- future analytics rollups
+- worker jobs
+- wallet
+- marketplace
+- competitions
+- growth AI
 
-### 6.11 Future Services
+These remain module candidates first. They become separate services only through approved extraction.
 
-- `wallet-service`
-- `marketplace-service`
-- `competition-service`
-- `growth-ai-service`
+## 9. Request Flow
 
-These services must not be introduced until their ADRs, HLD updates, and SRS updates are approved.
-
-## 7. Service Interaction Model
-
-### 7.1 Public Request Flow
+### 9.1 Public Request Flow
 
 ```text
-Client -> API Gateway -> Target Service -> Data Connect Admin SDK -> PostgreSQL
-Client -> Firebase Storage -> Media registration API -> Moderation / Worker pipeline
-Unknown-domain user -> API Gateway -> Campus Service -> college join request queue -> admin decision
+Client -> Backend edge layer -> Target module -> Data Connect Admin SDK -> PostgreSQL
+Client -> Firebase Storage -> Backend media registration flow -> Moderation / worker logic
+Unknown-domain user -> Backend edge layer -> Campus module -> college join request queue -> admin decision
 ```
 
-### 7.2 Internal Call Rules
+### 9.2 Internal Interaction Rules
 
-- Web never calls internal services directly.
-- Web only calls public gateway APIs and Firebase Auth / Firebase Storage.
-- Service-to-service communication must be explicit and documented.
-- For synchronous internal calls, prefer HTTP/JSON with typed contracts in `packages/contracts`.
-- For asynchronous workflows, use an outbox pattern first. Introduce message brokers only through ADR.
+- Web never calls module internals directly.
+- Web only calls the public backend APIs plus Firebase Auth / Firebase Storage.
+- Module-to-module calls must be explicit and documented in the relevant LLD.
+- Prefer direct module invocation inside the monolith over synthetic internal HTTP.
+- If asynchronous workflows are needed, start with an outbox pattern. Introduce a broker only through ADR.
 
-### 7.3 Ownership Matrix
+### 9.3 Ownership Matrix
 
-| Capability | Owner Service | May Be Read By | May Be Written By |
+| Capability | Owner Module | Read Access | Write Access |
 |---|---|---|---|
-| Users | Identity | Gateway, Campus | Identity |
+| Users | Identity | Campus, Social, Resources | Identity |
 | Tenant membership | Campus | Identity, Social, Resources, Moderation | Campus |
 | Communities | Campus | Social, Resources | Campus |
 | College join requests | Campus | Identity, Admin surfaces | Campus |
@@ -269,16 +253,16 @@ Unknown-domain user -> API Gateway -> Campus Service -> college join request que
 | Media metadata | Media | Social, Resources, Moderation | Media |
 | Reports | Moderation | Social, Resources | Moderation |
 
-## 8. Data Architecture
+## 10. Data Architecture
 
-## 8.1 Database Strategy
+### 10.1 Database Strategy
 
 - Primary database: PostgreSQL via Firebase Data Connect
-- Service-level connectors and operations stored under `packages/dataconnect/<service>`
-- Privileged writes happen through Node services using the Data Connect Admin SDK
-- Client SDK usage is allowed only for approved low-risk read flows; sensitive business writes must go through service APIs
+- Domain-owned connectors and operations remain organized under `packages/dataconnect/<domain>`
+- Privileged writes happen through the backend using the Data Connect Admin SDK
+- Client SDK usage is allowed only for approved, low-risk read flows
 
-## 8.2 Mandatory Table Standards
+### 10.2 Mandatory Table Standards
 
 Every core table must include:
 
@@ -294,14 +278,14 @@ Recommended when relevant:
 - `deleted_by`
 - `version`
 
-## 8.3 Mandatory Multi-Tenant Rules
+### 10.3 Mandatory Multi-Tenant Rules
 
 - Every tenant-scoped table must include `tenant_id`
 - Tenant filtering is never optional in code
 - Public queries must validate tenant membership before data access
 - Cross-tenant joins in application logic are forbidden unless explicitly documented
 
-## 8.4 Phase 1 Core Tables
+### 10.4 Phase 1 Core Tables
 
 - `tenants`
 - `tenant_domains`
@@ -322,7 +306,7 @@ Recommended when relevant:
 - `audit_logs`
 - `user_activity`
 
-## 8.5 Required Unique Constraints
+### 10.5 Required Unique Constraints
 
 - `tenant_domains (tenant_id, domain)`
 - `users (firebase_uid)`
@@ -333,7 +317,7 @@ Recommended when relevant:
 - `reactions (post_id, membership_id, reaction_type)` or stricter `(post_id, membership_id)` if single reaction only
 - `resource_files (resource_id, storage_path)`
 
-## 8.6 Required Phase 1 Indexes
+### 10.6 Required Phase 1 Indexes
 
 - `posts (tenant_id, created_at desc)`
 - `posts (community_id, created_at desc)`
@@ -348,27 +332,28 @@ Recommended when relevant:
 - `reports (tenant_id, status, created_at desc)`
 - `user_activity (tenant_id, membership_id, created_at desc)`
 
-## 8.7 Soft Delete Policy
+### 10.7 Soft Delete Policy
 
 - Use `deleted_at` instead of hard delete for user-generated and auditable entities
 - Hard delete is allowed only for irreversible privacy or retention workflows and must be handled through approved jobs
 - Queries must default to excluding deleted rows
 
-## 9. Authentication and Authorization
+## 11. Authentication and Authorization
 
 - Authentication source: Firebase Auth
+- Authentication is verified at the backend edge
 - College access control: domain-based verification plus an admin-reviewed onboarding path for unknown domains
 - Authorization source of truth: `tenant_memberships` and role claims
 - Roles in Phase 1: `student`, `faculty`, `alumni`, `moderator`, `admin`
-- Service authorization must not trust client-provided role data
+- Module authorization must not trust client-provided role data
 - Unknown domains must never auto-create live tenants without an admin approval record
 
-## 10. Media Architecture
+## 12. Media Architecture
 
 - File storage: Firebase Storage
 - Web uploads use client-side compression for large images before upload
-- Uploads must include metadata such as `tenant_id`, `uploader_id`, `content_type`, and `origin_service`
-- Uploaded media is not considered publishable until server-side metadata registration succeeds
+- Uploads must include metadata such as `tenant_id`, `uploader_id`, `content_type`, and `origin_module`
+- Uploaded media is not publishable until backend metadata registration succeeds
 - Reels in Phase 2 require validation for size, duration, MIME type, and transcoding strategy
 
 ### Storage Path Convention
@@ -378,16 +363,9 @@ tenants/{tenantId}/users/{userId}/social/{postId}/{fileName}
 tenants/{tenantId}/users/{userId}/resources/{resourceId}/{fileName}
 ```
 
-## 11. Moderation and Safety
+## 13. Observability
 
-- Every reportable entity must be traceable to a verified membership
-- Content states: `draft`, `pending`, `published`, `removed`
-- Sensitive modules such as anonymous posting, marketplace, and wallet require separate moderation policy documents before launch
-- No anonymous feature launches without abuse escalation workflow
-
-## 12. Observability
-
-Mandatory for every service:
+Mandatory for the backend:
 
 - structured logs
 - request ID
@@ -397,29 +375,29 @@ Mandatory for every service:
 - failure counters
 - audit logs for privileged actions
 
-Recommended later:
+Mandatory per module:
 
-- distributed tracing
-- SLO dashboards
-- alerting per service
+- ownership of its success and failure metrics
+- explicit log events for high-risk writes
+- clear error shapes at the public API boundary
 
-## 13. Security Requirements
+## 14. Future Microservice Extraction Path
 
-- Gateway-enforced rate limiting
-- input validation at gateway and service boundary
-- App Check for Firebase-integrated client traffic
-- no secrets in client bundles
-- no direct admin SDK usage in web app
-- signed URLs or guarded read access for restricted resources where required
-- audit logs for moderation and admin actions
+Modules may be extracted later, but only when at least one of these becomes true:
 
-## 14. Query and Performance Rules
+- traffic or latency isolation is needed
+- team ownership needs separate deploy cadence
+- security or compliance boundaries require isolation
+- async processing or scaling patterns become materially different
 
-- No unbounded list queries in production APIs
-- Cursor pagination is preferred over offset pagination for feeds
-- Hot queries must be reviewed with index support before release
-- If a query touches more than one service's owned data, design the join at the API layer, not through direct foreign writes
-- High-volume counters should be derived asynchronously once scale requires it
+Extraction rules:
+
+- extract one module at a time
+- create the new service directory only when the extraction is approved
+- preserve API contracts first
+- keep table ownership unchanged
+- replace internal module calls with HTTP or async calls only after an ADR
+- do not extract multiple modules at once without evidence
 
 ## 15. Wallet and Competition Constraints
 
@@ -446,4 +424,4 @@ Wallet is intentionally excluded from Phase 1. When introduced later:
 - whether notifications start with email only or include push
 - whether search is deferred fully or basic metadata search is introduced in Phase 1
 - whether faculty and alumni onboarding use the same verification workflow
-- whether approved college join requests auto-seed a default community template or require admin template selection
+- whether approved college join requests auto-seed a default community template or require admin template choice

@@ -1,14 +1,15 @@
 # API Contract
 
 Owner: Architecture Team
-Last Updated: 2026-04-18
-Change Summary: Initial contract for current-user context.
+Last Updated: 2026-04-19
+Change Summary: Updated contract language for the Phase 1 modular monolith backend.
 
 ## 1. Metadata
 
 - API name: Get Current User
-- Owner service: `identity-service`
-- Consumers: `web`, future `mobile`, `api-gateway`
+- Owner module: `identity`
+- Runtime: `apps/backend`
+- Consumers: `web`, future `mobile`
 - Version: `v1`
 - Status: Draft
 - Linked LLD: `docs/lld/phase-1/IDENTITY_SERVICE_LLD.md`
@@ -17,19 +18,19 @@ Change Summary: Initial contract for current-user context.
 
 - Method: `GET`
 - Path: `/v1/me`
-- Public or internal: public through gateway
+- Public or internal: public through backend
 - Purpose: return canonical user profile and current membership summary
 
 ## 3. Authentication and Authorization
 
-- Auth mechanism: Firebase ID token at gateway; starter scaffold uses demo headers
+- Auth mechanism: Firebase ID token verified at the backend edge; starter scaffold supports local dev headers
 - Required roles: authenticated verified user
 - Tenant checks: membership summary must belong to the caller
 - Rate limit policy: moderate per user
 
 ## 4. Request Schema
 
-- Headers: auth token or demo identity headers
+- Headers: auth token or approved local dev identity headers
 - Path params: none
 - Query params: none
 - Body: none
@@ -46,7 +47,7 @@ Change Summary: Initial contract for current-user context.
 - Auth errors: unauthenticated
 - Authorization errors: blocked account
 - Domain errors: user not bootstrapped
-- Retryable errors: downstream membership context timeout
+- Retryable errors: downstream campus membership context timeout
 
 ## 7. Side Effects
 
@@ -71,5 +72,4 @@ Change Summary: Initial contract for current-user context.
 
 - Feature flags: none
 - Backward compatibility: additive only
-- Migration steps: wire to Data Connect identity and campus connectors
-
+- Migration steps: keep contract stable while backend module reads move fully onto Data Connect

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { readDevSessionFromCookieStore } from "../../../src/lib/dev-session";
-import { proxyGatewayMutation } from "../../../src/lib/gateway";
+import { proxyBackendMutation } from "../../../src/lib/backend";
 
 export async function POST(request: Request) {
   const viewer = readDevSessionFromCookieStore(await cookies());
@@ -11,7 +11,7 @@ export async function POST(request: Request) {
       {
         error: {
           code: "UNAUTHENTICATED",
-          message: "Dev session required hai. Pehle preview session start karo."
+          message: "You must sign in before creating a post."
         }
       },
       { status: 401 }
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       {
         error: {
           code: "INVALID_JSON",
-          message: "Request body valid JSON hona chahiye."
+          message: "Request body must be valid JSON."
         }
       },
       { status: 400 }
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    return await proxyGatewayMutation(
+    return await proxyBackendMutation(
       "/v1/posts",
       "POST",
       {
@@ -56,8 +56,8 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error: {
-          code: "GATEWAY_UNAVAILABLE",
-          message: "API gateway abhi reachable nahi hai."
+          code: "BACKEND_UNAVAILABLE",
+          message: "The backend is unavailable right now."
         }
       },
       { status: 502 }

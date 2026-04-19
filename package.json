@@ -4,12 +4,9 @@
   "private": true,
   "packageManager": "pnpm@10.33.0",
   "scripts": {
+    "dev": "turbo run dev --filter=@vyb/web",
     "dev:web": "pnpm --filter @vyb/web dev",
-    "dev:gateway": "pnpm --filter @vyb/api-gateway dev",
-    "dev:identity": "pnpm --filter @vyb/identity-service dev",
-    "dev:campus": "pnpm --filter @vyb/campus-service dev",
-    "dev:social": "pnpm --filter @vyb/social-service dev",
-    "dev:resources": "pnpm --filter @vyb/resources-service dev",
+    "dev:backend": "pnpm --filter @vyb/backend dev",
     "dc:services": "node scripts/run-firebase-cli.mjs dataconnect:services:list",
     "dc:compile": "node scripts/run-firebase-cli.mjs dataconnect:compile",
     "dc:sdk": "node scripts/run-firebase-cli.mjs dataconnect:sdk:generate",
@@ -19,7 +16,8 @@
     "check": "turbo run check"
   },
   "dependencies": {
-    "firebase-admin": "^13.8.0"
+    "firebase-admin": "^13.8.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "latest",

@@ -1,16 +1,17 @@
 # Query Review
 
 Owner: Architecture Team
-Last Updated: 2026-04-18
-Change Summary: Initial review for feed list query.
+Last Updated: 2026-04-19
+Change Summary: Updated query review language for the Phase 1 modular monolith backend.
 
 ## 1. Metadata
 
 - Query name: Tenant Feed Query
-- Owning service: `social-service`
+- Owning module: `social`
+- Runtime: `apps/backend`
 - Linked LLD: `docs/lld/phase-1/SOCIAL_SERVICE_LLD.md`
 - Reviewer: Architecture Team
-- Date: 2026-04-18
+- Date: 2026-04-19
 
 ## 2. Purpose
 
@@ -55,4 +56,3 @@ Change Summary: Initial review for feed list query.
 - Approved: yes
 - Changes required: none
 - Notes: avoid counts or heavyweight joins on the feed list path
-

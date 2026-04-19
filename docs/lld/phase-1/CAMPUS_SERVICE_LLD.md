@@ -1,19 +1,20 @@
-# Campus Service LLD
+# Campus Module LLD
 
 ## 1. Metadata
 
-- Feature name: Campus Service Phase 1
+- Feature name: Campus Module Phase 1
 - Owner: Backend Platform
+- Runtime: `apps/backend`
 - Phase: Phase 1
-- Date: 2026-04-18
+- Date: 2026-04-19
 - Status: Draft
 - Linked SRS section: 2.2 Tenant and Community Management, 2.3 College Join Requests
-- Linked HLD section: Campus Service, Data Architecture, Authentication and Authorization
+- Linked HLD section: Phase 1 Module Map, Data Architecture, Authentication and Authorization
 - Linked ADRs: None yet
 
 ## 2. Problem Statement
 
-We need a tenant-aware ownership layer for colleges, domains, memberships, communities, and college onboarding requests. Every downstream service depends on this service to know who belongs where and what data they may access.
+We need a tenant-aware module for colleges, domains, memberships, communities, and college onboarding requests. Every downstream module depends on campus ownership to know who belongs where and what data they may access.
 
 ## 3. Scope
 
@@ -25,7 +26,7 @@ In scope:
 - tenant memberships
 - roles and verification status
 - communities and community memberships
-- membership summary resolution for downstream services
+- membership summary resolution for downstream modules
 
 Out of scope:
 
@@ -34,29 +35,21 @@ Out of scope:
 - placement cells
 - club event management
 
-## 4. Owning Service
+## 4. Owning Module
 
-- Primary owner: `campus-service`
-- Secondary dependencies: `identity-service`, `social-service`, `resources-service`
+- Primary owner: `campus`
+- Runtime boundary: `apps/backend/src/modules/campus`
+- Secondary dependencies: `identity`, `social`, `resources`
 
 ## 5. User Flows
 
-- Flow 1: bootstrap request arrives from identity-service, campus-service matches email domain to tenant and creates a verified or pending membership.
+- Flow 1: identity resolution reaches campus, campus matches email domain to a tenant and creates a verified membership where possible.
 - Flow 2: a user with an unknown domain submits a college join request with college name, address, website, phone, and requested domains.
 - Flow 3: an admin reviews the college join request and can approve, reject, or send it back for changes.
 - Flow 4: user opens home and receives active tenant plus relevant communities such as batch, hostel, branch, and general.
-- Flow 5: downstream services ask campus-service to validate whether a membership can post or upload into a specific community.
+- Flow 5: downstream modules ask campus logic to validate whether a membership may act in a given tenant or community.
 
 ## 6. API Design
-
-### `POST /internal/memberships/bootstrap`
-
-- caller: `identity-service`
-- auth requirement: internal service auth only
-- request schema: user id, email domain, profile hints
-- response schema: tenant match result, membership summary, onboarding flags
-- error schema: invalid payload, no tenant match, internal error
-- rate limit policy: internal only
 
 ### `GET /v1/communities/my`
 
@@ -88,43 +81,28 @@ Out of scope:
 - caller: admin console
 - auth requirement: platform admin required
 - request schema: decision `approve`, `reject`, or `changes_requested`, plus optional reviewer note
-- response schema: updated request status, reviewer note, downstream tenant bootstrap result if approved
+- response schema: updated request status and downstream tenant bootstrap result if approved
 - error schema: invalid decision, request not found, forbidden
 - rate limit policy: low per admin
 
-### `POST /internal/access/resolve`
+## 7. Module Interactions
 
-- caller: `social-service`, `resources-service`, `moderation-service`
-- auth requirement: internal service auth only
-- request schema: membership id, tenant id, optional community id, action
-- response schema: allowed or denied with canonical context
-- error schema: invalid membership, tenant mismatch, forbidden action
-- rate limit policy: internal only
+- calling module: `identity`
+- target module: `campus`
+- reason: resolve tenant match and create or fetch membership state
+- interaction type: direct in-process call
+- failure handling: identity returns unresolved onboarding state
 
-## 7. Service-To-Service Calls
-
-- caller service: `identity-service`
-- callee service: `campus-service`
-- reason: bootstrap membership state
-- sync or async: sync
-- failure handling: return pending onboarding state
-
-- caller service: `identity-service`
-- callee service: `campus-service`
-- reason: determine whether an unknown-domain user should be shown a college join-request path
-- sync or async: sync
-- failure handling: return unresolved onboarding state
-
-- caller service: `social-service`
-- callee service: `campus-service`
+- calling module: `social`
+- target module: `campus`
 - reason: authorize posting and reading in tenant or community scope
-- sync or async: sync
-- failure handling: reject publish or read request
+- interaction type: direct in-process call
+- failure handling: fail closed for writes
 
-- caller service: `resources-service`
-- callee service: `campus-service`
+- calling module: `resources`
+- target module: `campus`
 - reason: authorize uploads and tenant-scoped access
-- sync or async: sync
+- interaction type: direct in-process call
 - failure handling: reject action
 
 ## 8. Data Model Changes
@@ -159,55 +137,48 @@ Out of scope:
 - supporting index: `college_join_requests (status, created_at desc)`
 - why this is safe: filtered operational queue
 
-- query name: list communities for active membership
-- filter fields: `tenant_id`, membership relations, `deleted_at is null`
-- sort order: type then name
-- expected scale: on home and switcher views
-- supporting index: `communities (tenant_id, type, created_at desc)` and `community_memberships (community_id, membership_id)`
-- why this is safe: bounded tenant-scoped result set
-
 ## 10. Validation and Security
 
 - auth checks: only verified memberships get tenant access
 - tenant checks: all community and membership reads require canonical tenant resolution
-- input validation: community slug, type, visibility, bootstrap payload, requested college domains, and contact fields
-- abuse prevention: block duplicate memberships, duplicate active college requests, and invalid cross-tenant access
+- input validation: community slug, type, visibility, requested domains, and contact fields
+- abuse prevention: block duplicate memberships, duplicate active join requests, and invalid cross-tenant access
 - audit logging: membership verification changes, college request decisions, community creation, admin edits
 
 ## 11. Observability
 
-- logs: membership bootstrap, college join request submissions, admin decisions, access denials, community fetches
-- metrics: verified membership rate, pending verification count, join request volume, decision latency, access resolution latency
+- logs: membership bootstrap, join request submissions, admin decisions, access denials, community fetches
+- metrics: verified membership rate, pending verification count, join request volume, decision latency
 - alerts: spike in forbidden access or tenant mismatch errors
-- trace IDs: required on all internal access calls
+- trace IDs: required on all calls
 
 ## 12. Failure Modes
 
 - unknown domain: return college join-request onboarding path
 - duplicate bootstrap requests: idempotent membership upsert
-- duplicate active college requests: return current pending request instead of creating a new one
+- duplicate active join requests: return current pending request instead of creating a new one
 - corrupted community references: hide inaccessible communities and log anomaly
 
 ## 13. Rollout Plan
 
-- feature flags: none for baseline membership model
-- migration order: create tenant tables, create college join request table, seed one college, create community templates
+- feature flags: join-request submission may be soft-launched before admin decisions go live
+- migration order: create tenant tables, create join request table, seed one college, create community templates
 - rollback plan: freeze new signups if tenant resolution becomes unreliable
 
 ## 14. Test Plan
 
-- unit tests: domain normalization, role resolution, community grouping
-- integration tests: bootstrap membership creation, college join request submission, admin approval flow, access resolution, community listing
-- contract tests: internal access APIs, `communities/my`, and college join request endpoints
-- manual QA: verified student path, unknown-domain path, admin queue review, admin community seed validation
+- unit tests: domain normalization, role resolution, community grouping, join request validation
+- integration tests: membership creation, join request submission, admin approval flow, community listing
+- contract tests: `communities/my` and join request endpoints
+- manual QA: verified student path, unknown-domain path, admin queue review
 
 ## 15. Documentation Updates Required
 
 - HLD: if tenant model changes
 - SRS: if onboarding or community scope changes
-- Master Plan: when first tenant is seeded
-- API docs: membership bootstrap, college join request, and access resolve
-- Runbook: tenant seeding guide
+- Master Plan: when the first college join request flow ships
+- API docs: communities and join request endpoints
+- Runbook: tenant seeding and approval guide
 
 ## 16. Open Questions
 

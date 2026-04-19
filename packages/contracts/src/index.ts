@@ -70,6 +70,90 @@ export interface MeResponse {
   membershipSummary: MembershipSummary;
 }
 
+export interface ViewerSessionPayload {
+  userId: string;
+  email: string;
+  displayName: string;
+  membershipId: string;
+  tenantId: string;
+  role: MembershipSummary["role"];
+}
+
+export interface SessionBootstrapRequest {
+  idToken: string;
+  displayName?: string;
+}
+
+export interface SessionBootstrapResponse {
+  session: ViewerSessionPayload;
+  profileCompleted: boolean;
+  nextPath: "/dashboard" | "/onboarding";
+}
+
+export interface ProfileRecord {
+  userId: string;
+  tenantId: string;
+  primaryEmail: string;
+  collegeName: string;
+  firstName: string;
+  lastName: string | null;
+  fullName: string;
+  course: string;
+  stream: string;
+  branch: string;
+  year: number;
+  section: string;
+  isHosteller: boolean;
+  hostelName: string | null;
+  phoneNumber: string | null;
+  profileCompleted: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProfileResponse {
+  profileCompleted: boolean;
+  allowedEmailDomain: string;
+  collegeName: string;
+  profile: ProfileRecord | null;
+}
+
+export interface UpsertProfileRequest {
+  firstName: string;
+  lastName?: string | null;
+  course: string;
+  stream: string;
+  year: number;
+  section: string;
+  isHosteller: boolean;
+  hostelName?: string | null;
+  phoneNumber?: string | null;
+}
+
+export interface ClientShellResponse {
+  shell: "pwa-first";
+  mobileInstallable: boolean;
+  desktopResponsive: boolean;
+  nativeReadyContracts: boolean;
+  backendRuntime: "modular-monolith";
+  launchCampus: {
+    id: string;
+    name: string;
+    domain: string;
+  };
+  hero: {
+    eyebrow: string;
+    title: string;
+    summary: string;
+  };
+  pillars: Array<{
+    title: string;
+    description: string;
+  }>;
+  phaseOne: string[];
+  trustPoints: string[];
+}
+
 export interface CommunitiesMyResponse {
   tenant: {
     id: string;

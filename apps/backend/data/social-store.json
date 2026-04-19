@@ -1,0 +1,40 @@
+{
+  "posts": [
+    {
+      "id": "post-1",
+      "tenantId": "tenant-demo",
+      "communityId": "community-general",
+      "membershipId": "membership-demo-1",
+      "kind": "text",
+      "title": "Prototype Night",
+      "body": "Club demo night is live. Bring your build, record a clip, and drop your wins before 9 PM.",
+      "status": "published",
+      "reactions": 124,
+      "comments": 18,
+      "createdAt": "2026-04-18T08:15:00.000Z"
+    },
+    {
+      "id": "post-2",
+      "tenantId": "tenant-demo",
+      "communityId": "community-batch",
+      "membershipId": "membership-demo-1",
+      "kind": "text",
+      "title": "Placement Prep Sprint",
+      "body": "Shared DSA revision sheet plus mock interview slots for tomorrow evening.",
+      "status": "published",
+      "reactions": 88,
+      "comments": 26,
+      "createdAt": "2026-04-18T06:45:00.000Z"
+    }
+  ],
+  "comments": [
+    {
+      "id": "comment-1",
+      "postId": "post-1",
+      "membershipId": "membership-demo-2",
+      "body": "Bringing the hostel attendance bot prototype.",
+      "createdAt": "2026-04-18T08:22:00.000Z"
+    }
+  ],
+  "reactions": []
+}

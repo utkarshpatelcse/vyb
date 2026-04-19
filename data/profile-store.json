@@ -1,0 +1,24 @@
+{
+  "profiles": [
+    {
+      "userId": "H7R1veGKRIfPHjOLLSIJTAndoQ32",
+      "tenantId": "0a115f7c6bd94d58868eb16b1fc87fbb",
+      "primaryEmail": "ashwani.2226cse1211@kiet.edu",
+      "collegeName": "KIET Group of Institutions Delhi-NCR",
+      "firstName": "Ashwani",
+      "lastName": null,
+      "fullName": "Ashwani",
+      "course": "B.Tech",
+      "stream": "Computer Science and Engineering",
+      "branch": "Computer Science and Engineering",
+      "year": 4,
+      "section": "A",
+      "isHosteller": false,
+      "hostelName": null,
+      "phoneNumber": null,
+      "profileCompleted": true,
+      "createdAt": "2026-04-19T07:31:00.672Z",
+      "updatedAt": "2026-04-19T07:31:00.672Z"
+    }
+  ]
+}

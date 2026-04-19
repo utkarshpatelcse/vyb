@@ -1,19 +1,20 @@
-# Social Service LLD
+# Social Module LLD
 
 ## 1. Metadata
 
-- Feature name: Social Service Phase 1
+- Feature name: Social Module Phase 1
 - Owner: Social Platform
+- Runtime: `apps/backend`
 - Phase: Phase 1
-- Date: 2026-04-18
+- Date: 2026-04-19
 - Status: Draft
-- Linked SRS section: 2.3 Campus Square Feed and 2.5 Moderation
-- Linked HLD section: Social Service, Media Architecture, Moderation and Safety
+- Linked SRS section: 2.4 Campus Square Feed and 2.6 Moderation
+- Linked HLD section: Phase 1 Module Map, Media Architecture, Observability
 - Linked ADRs: None yet
 
 ## 2. Problem Statement
 
-We need a trustworthy campus feed where verified members can create text and image posts, comment, react, and report unsafe content. The service must remain tenant-safe, community-aware, and ready for future ranking and reels without forcing that complexity into Phase 1.
+We need a trustworthy campus feed where verified members can create text and image posts, comment, react, and later report unsafe content. The module must remain tenant-safe, community-aware, and ready for future ranking and reels without forcing that complexity into Phase 1.
 
 ## 3. Scope
 
@@ -23,8 +24,8 @@ In scope:
 - feed reads by tenant and community
 - comments
 - reactions
-- report handoff to moderation
 - publish state handling
+- extraction-ready domain boundaries
 
 Out of scope:
 
@@ -34,17 +35,18 @@ Out of scope:
 - ranking personalization
 - direct messaging
 
-## 4. Owning Service
+## 4. Owning Module
 
-- Primary owner: `social-service`
-- Secondary dependencies: `campus-service`, `media-service`, `moderation-service`
+- Primary owner: `social`
+- Runtime boundary: `apps/backend/src/modules/social`
+- Secondary dependencies: `campus`, future `media`, future `moderation`
 
 ## 5. User Flows
 
 - Flow 1: verified member creates a text or image post in a tenant or community scope.
 - Flow 2: user opens the feed and sees the latest published posts from allowed scopes.
 - Flow 3: user comments or reacts on a post.
-- Flow 4: user reports a post or comment, and moderation-service receives a review case trigger.
+- Flow 4: user later reports a post or comment when moderation support is enabled.
 
 ## 6. API Design
 
@@ -84,25 +86,25 @@ Out of scope:
 - error schema: post not found, unauthorized scope
 - rate limit policy: moderate per user
 
-## 7. Service-To-Service Calls
+## 7. Module Interactions
 
-- caller service: `social-service`
-- callee service: `campus-service`
+- calling layer: backend edge
+- target module: `social`
+- reason: public feed, post, comment, and reaction APIs
+- interaction type: direct in-process invocation
+- failure handling: return safe API errors
+
+- calling module: `social`
+- target module: `campus`
 - reason: validate membership permission for feed reads and writes
-- sync or async: sync
-- failure handling: fail closed for writes, fail safe for reads
+- interaction type: direct in-process domain call
+- failure handling: fail closed for writes, safe fallback for local dev reads where explicitly allowed
 
-- caller service: `social-service`
-- callee service: `media-service`
+- calling module: `social`
+- target module: future `media`
 - reason: validate media registration before publish
-- sync or async: sync
+- interaction type: direct call first, later extractable
 - failure handling: keep post in draft or pending state
-
-- caller service: `social-service`
-- callee service: `moderation-service`
-- reason: create report or review case
-- sync or async: async preferred
-- failure handling: accept user report and retry downstream delivery
 
 ## 8. Data Model Changes
 
@@ -139,24 +141,23 @@ Out of scope:
 ## 10. Validation and Security
 
 - auth checks: membership must be verified for posting, commenting, and reacting
-- tenant checks: all reads and writes validated through campus-service
+- tenant checks: reads and writes validated through campus-owned context
 - input validation: body length, media count, allowed MIME types, reaction enum
-- abuse prevention: post and comment rate limits, content status workflow, reporting
-- audit logging: moderator removals and privileged edits
+- abuse prevention: post and comment rate limits, content status workflow
+- audit logging: moderator removals and privileged edits when moderation lands
 
 ## 11. Observability
 
-- logs: post create, feed read, comment create, reaction upsert, report trigger
-- metrics: feed latency, post creation success rate, report rate, comment depth
+- logs: post create, feed read, comment create, reaction upsert
+- metrics: feed latency, post creation success rate, comment volume
 - alerts: error spikes on post publish or feed retrieval
-- trace IDs: required for cross-service calls
+- trace IDs: required at the backend boundary and through module calls
 
 ## 12. Failure Modes
 
-- campus access resolution fails: reads fail closed with safe error, writes blocked
+- campus access resolution fails: writes fail closed, reads may fall back only in explicit starter mode
 - media registration missing: post remains draft or pending
 - reaction race: last write wins under unique constraint and upsert behavior
-- moderation handoff delayed: report accepted and retried asynchronously
 
 ## 13. Rollout Plan
 
@@ -169,7 +170,7 @@ Out of scope:
 - unit tests: post validation, reaction upsert, feed cursor handling
 - integration tests: post create with campus access, comment create, feed pagination
 - contract tests: post create, feed read, comment create, reaction update
-- manual QA: create post, browse feed, react, comment, report
+- manual QA: create post, browse feed, react, comment
 
 ## 15. Documentation Updates Required
 
@@ -177,7 +178,7 @@ Out of scope:
 - SRS: if social scope expands
 - Master Plan: when feed ships to first tenant
 - API docs: all public social endpoints
-- Runbook: feed moderation and outage handling
+- Runbook: feed outage and moderation handling
 
 ## 16. Open Questions
 

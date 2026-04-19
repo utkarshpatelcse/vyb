@@ -1,16 +1,17 @@
 # Query Review
 
 Owner: Architecture Team
-Last Updated: 2026-04-18
-Change Summary: Initial review for resources listing.
+Last Updated: 2026-04-19
+Change Summary: Updated query review language for the Phase 1 modular monolith backend.
 
 ## 1. Metadata
 
 - Query name: Recent Resources Query
-- Owning service: `resources-service`
+- Owning module: `resources`
+- Runtime: `apps/backend`
 - Linked LLD: `docs/lld/phase-1/RESOURCES_SERVICE_LLD.md`
 - Reviewer: Architecture Team
-- Date: 2026-04-18
+- Date: 2026-04-19
 
 ## 2. Purpose
 
@@ -55,4 +56,3 @@ Change Summary: Initial review for resources listing.
 - Approved: yes
 - Changes required: none
 - Notes: full-text search is intentionally deferred to keep this query lean
-

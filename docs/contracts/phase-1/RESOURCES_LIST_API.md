@@ -1,14 +1,15 @@
 # API Contract
 
 Owner: Architecture Team
-Last Updated: 2026-04-18
-Change Summary: Initial contract for resource listing.
+Last Updated: 2026-04-19
+Change Summary: Updated contract language for the Phase 1 modular monolith backend.
 
 ## 1. Metadata
 
 - API name: List Resources
-- Owner service: `resources-service`
-- Consumers: `web`, future `mobile`, `api-gateway`
+- Owner module: `resources`
+- Runtime: `apps/backend`
+- Consumers: `web`, future `mobile`
 - Version: `v1`
 - Status: Draft
 - Linked LLD: `docs/lld/phase-1/RESOURCES_SERVICE_LLD.md`
@@ -17,19 +18,19 @@ Change Summary: Initial contract for resource listing.
 
 - Method: `GET`
 - Path: `/v1/resources`
-- Public or internal: public through gateway
+- Public or internal: public through backend
 - Purpose: list recent or course-filtered academic resources for a tenant
 
 ## 3. Authentication and Authorization
 
-- Auth mechanism: gateway verified identity
+- Auth mechanism: backend edge verified identity
 - Required roles: verified membership
 - Tenant checks: tenant and course must belong to caller membership context
 - Rate limit policy: moderate per user
 
 ## 4. Request Schema
 
-- Headers: auth token or demo identity headers
+- Headers: auth token or approved local dev identity headers
 - Path params: none
 - Query params: `tenantId`, optional `courseId`, optional `cursor`, optional `limit`
 - Body: none
@@ -71,5 +72,4 @@ Change Summary: Initial contract for resource listing.
 
 - Feature flags: upload may be behind a tenant flag while browse is public to verified members
 - Backward compatibility: additive only
-- Migration steps: connect to Data Connect resource listing operations
-
+- Migration steps: keep contract stable while backend module reads move fully onto Data Connect operations

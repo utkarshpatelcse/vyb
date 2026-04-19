@@ -4,10 +4,11 @@ export interface DevSession {
   displayName: string;
   membershipId: string;
   tenantId: string;
-  role: "student";
+  role: "student" | "faculty" | "alumni" | "moderator" | "admin";
 }
 
-export const DEV_SESSION_COOKIE = "vyb-dev-session";
+export const DEV_SESSION_COOKIE = "vyb-session";
+export const PROFILE_COMPLETION_COOKIE = "vyb-profile-complete";
 const DEFAULT_TENANT_ID = "tenant-demo";
 
 function sanitizeSeed(value: string) {
@@ -21,6 +22,7 @@ export function createViewerSession(input: {
   userId?: string;
   membershipId?: string;
   tenantId?: string;
+  role?: DevSession["role"];
 }): DevSession {
   const email = input.email.trim().toLowerCase();
   const displayName = input.displayName.trim() || "Vyb Explorer";
@@ -32,7 +34,7 @@ export function createViewerSession(input: {
     displayName,
     membershipId: input.membershipId?.trim() || `membership-${seed}`,
     tenantId: input.tenantId?.trim() || DEFAULT_TENANT_ID,
-    role: "student"
+    role: input.role ?? "student"
   };
 }
 
@@ -68,7 +70,13 @@ export function decodeDevSession(value: string | null | undefined): DevSession |
       displayName: decoded.displayName,
       membershipId: decoded.membershipId,
       tenantId: decoded.tenantId,
-      role: decoded.role === "student" ? "student" : "student"
+      role:
+        decoded.role === "faculty" ||
+        decoded.role === "alumni" ||
+        decoded.role === "moderator" ||
+        decoded.role === "admin"
+          ? decoded.role
+          : "student"
     };
   } catch {
     return null;

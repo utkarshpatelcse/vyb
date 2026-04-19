@@ -1,19 +1,20 @@
-# Resources Service LLD
+# Resources Module LLD
 
 ## 1. Metadata
 
-- Feature name: Resources Service Phase 1
+- Feature name: Resources Module Phase 1
 - Owner: Academic Platform
+- Runtime: `apps/backend`
 - Phase: Phase 1
-- Date: 2026-04-18
+- Date: 2026-04-19
 - Status: Draft
-- Linked SRS section: 2.4 Resource Vault and 2.5 Moderation
-- Linked HLD section: Resources Service, Media Architecture, Query and Performance Rules
+- Linked SRS section: 2.5 Resource Vault and 2.6 Moderation
+- Linked HLD section: Phase 1 Module Map, Media Architecture, Query and Performance Rules
 - Linked ADRs: None yet
 
 ## 2. Problem Statement
 
-We need an academic resource vault where verified members can upload and browse notes and academic files under tenant-safe rules. The system must support course metadata, future search improvements, and moderation without turning Phase 1 into a complex document management platform.
+We need an academic resource vault where verified members can upload and browse notes and academic files under tenant-safe rules. The module must support course metadata, future search improvements, and moderation without turning Phase 1 into a complex document management platform.
 
 ## 3. Scope
 
@@ -23,7 +24,7 @@ In scope:
 - notes and academic file registration
 - browse by tenant and course
 - recent resource listing
-- moderation handoff
+- extraction-ready module boundaries
 
 Out of scope:
 
@@ -32,17 +33,18 @@ Out of scope:
 - assignment grading
 - faculty workflows beyond basic upload capability
 
-## 4. Owning Service
+## 4. Owning Module
 
-- Primary owner: `resources-service`
-- Secondary dependencies: `campus-service`, `media-service`, `moderation-service`
+- Primary owner: `resources`
+- Runtime boundary: `apps/backend/src/modules/resources`
+- Secondary dependencies: `campus`, future `media`, future `moderation`
 
 ## 5. User Flows
 
 - Flow 1: verified member uploads a note file, creates resource metadata, and associates it with a course.
 - Flow 2: user browses recent resources or filters by course.
 - Flow 3: user opens a resource detail page and accesses attached files.
-- Flow 4: user reports a harmful or invalid resource for moderation review.
+- Flow 4: user later reports a harmful or invalid resource for moderation review.
 
 ## 6. API Design
 
@@ -72,25 +74,25 @@ Out of scope:
 - error schema: not found, unauthorized scope
 - rate limit policy: moderate per user
 
-## 7. Service-To-Service Calls
+## 7. Module Interactions
 
-- caller service: `resources-service`
-- callee service: `campus-service`
+- calling layer: backend edge
+- target module: `resources`
+- reason: public resource create, list, and detail APIs
+- interaction type: direct in-process invocation
+- failure handling: return safe API errors
+
+- calling module: `resources`
+- target module: `campus`
 - reason: validate tenant membership and upload access
-- sync or async: sync
+- interaction type: direct in-process domain call
 - failure handling: reject upload or read request
 
-- caller service: `resources-service`
-- callee service: `media-service`
+- calling module: `resources`
+- target module: future `media`
 - reason: validate file registration and ownership before publish
-- sync or async: sync
+- interaction type: direct call first, later extractable
 - failure handling: keep resource draft or reject creation
-
-- caller service: `resources-service`
-- callee service: `moderation-service`
-- reason: create review case for reported resources
-- sync or async: async preferred
-- failure handling: retry asynchronously
 
 ## 8. Data Model Changes
 
@@ -134,16 +136,15 @@ Out of scope:
 
 ## 11. Observability
 
-- logs: resource create, browse, detail read, moderation report trigger
-- metrics: upload success rate, browse latency, course-filter usage, report rate
+- logs: resource create, browse, detail read
+- metrics: upload success rate, browse latency, course-filter usage
 - alerts: spikes in invalid upload attempts or failed file registration
-- trace IDs: required across access and media validation
+- trace IDs: required across the backend boundary and module interactions
 
 ## 12. Failure Modes
 
 - course mismatch with tenant: reject create request
 - missing file registration: reject resource publish
-- moderation downstream delay: accept report and retry
 - large file or bad MIME type: fail fast with validation error
 
 ## 13. Rollout Plan
@@ -156,8 +157,8 @@ Out of scope:
 
 - unit tests: course ownership checks, metadata validation, file registration validation
 - integration tests: resource create, browse by tenant, browse by course, detail fetch
-- contract tests: create and list resources APIs
-- manual QA: upload note, browse by course, open detail, report resource
+- contract tests: create, list, and detail resource APIs
+- manual QA: upload note, browse by course, open detail
 
 ## 15. Documentation Updates Required
 

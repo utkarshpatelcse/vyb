@@ -1,8 +1,8 @@
 # Vyb Master Plan
 
 Owner: Product and Engineering
-Last Updated: 2026-04-18
-Change Summary: Renamed the product to Vyb and formalized admin-reviewed college join requests as part of Phase 1 onboarding.
+Last Updated: 2026-04-19
+Change Summary: Added the KIET-first professional web entry flow, backend-verified session bootstrap, and mandatory profile completion gating for the current Phase 1 launch surface.
 
 ## 1. Why We Are Building This
 
@@ -19,28 +19,28 @@ We are in architecture and foundation mode.
 
 What is decided:
 
-- the product will be service-first from the beginning
-- all public backend traffic will go through an API Gateway
+- Phase 1 backend ships as a modular monolith
+- all public backend traffic enters through one backend runtime
 - PostgreSQL via Firebase Data Connect is the system of record
 - Firebase Storage will hold uploaded media and files
 - Firebase Auth is the identity provider
+- the launch campus is KIET Group of Institutions Delhi-NCR with `@kiet.edu` as the only approved auth domain for now
 - the Phase 1 client is responsive web, but the backend and shared packages must stay native-ready
 - unknown college domains must go through an admin-reviewed join-request flow
 - wallet, competitions, and anonymous features are deferred until the base is stable
 
 What is not started yet:
 
-- production-ready business flows
-- deeper business logic implementation
-- auth-token verified gateway flow
+- production-ready business flows for college join requests
 - moderation publish flow for newly created content
+- media upload registration and file pipelines
 
 ## 3. Core Product Thesis
 
 Students do not stay for empty social feeds. They stay where the network is trusted and useful. Therefore the launch wedge is:
 
 - verified campus identity
-- community spaces by batch/branch/hostel
+- community spaces by batch, branch, and hostel
 - useful notes and resources
 - simple campus feed
 
@@ -71,6 +71,7 @@ Exit criteria:
 - a user can post to the correct community
 - a user can upload and browse notes
 - moderation can review and remove reported content
+- the system runs as `web + backend`, not a fleet of early services
 
 ### Phase 2: Engagement
 
@@ -117,7 +118,7 @@ Before implementation:
 - update SRS
 - update HLD if architecture changes
 - write LLD
-- write ADR if infra/dependency changes
+- write ADR if infra or dependency changes
 
 During implementation:
 
@@ -132,54 +133,51 @@ After implementation:
 
 ## 6. Current Completed Work
 
-- product direction aligned around a service-first architecture
-- high-level service boundaries defined
-- multi-surface client strategy defined for web and future native apps
+- product direction aligned around explicit domain boundaries
+- multi-surface client strategy defined for web now and native later
 - documentation foundation created
 - non-negotiable engineering rules defined
-- Phase 1 LLDs created for identity, campus, social, and resources services
+- Phase 1 LLDs created for identity, campus, social, and resources
 - workspace tooling scaffolded with pnpm workspaces and Turbo
 - responsive PWA-first web shell scaffolded
-- web shell connected to gateway reads with graceful fallback
-- cookie-backed dev session added for auth-aware local workflow testing
-- web route handlers added for gateway-backed post and resource creation
-- starter `api-gateway`, `identity-service`, and `campus-service` code scaffolded
-- Data Connect service config, schema, and service-owned connectors scaffolded
+- professional SSR home page and responsive auth shell are now implemented for the current KIET-first launch flow
+- web shell connected to backend reads with graceful fallback
+- Firebase Auth login plus secure cookie-backed web session is scaffolded
+- backend session bootstrap now verifies Firebase tokens before issuing the web session cookie
+- profile completion is now required before an authenticated user reaches the dashboard
+- Data Connect service config, schema, and domain-owned connectors are scaffolded
 - Data Connect connectors compile successfully and generated admin SDKs are available
 - shared server config helpers now load root env and initialize Firebase Admin/Data Connect clients
 - Phase 1 API contracts and query reviews created
-- starter `social-service` and `resources-service` code scaffolded
-- `api-gateway` now enforces explicit actor context for protected routes and emits request IDs
-- `social-service` and `resources-service` now persist local dev state to JSON-backed stores
-- identity, campus, social, and resources services now try live Data Connect flows before falling back to local starter data
-- Data Connect service deployed to Firebase with campus, identity, social, and resources connectors live
-- bootstrap script executed successfully and seeded the first tenant/domain/community scaffold
-- Firebase Admin Data Connect access now uses connector-isolated app instances to avoid cross-connector operation collisions
-- live identity, campus, social-create, and resources-create flows verified against the remote Data Connect backend
+- KIET tenant and `@kiet.edu` domain were seeded successfully
+- live identity, campus, social-create, and resources-create flows were verified against remote Data Connect
+- Phase 1 backend runtime has now been collapsed into one modular monolith app with internal domain modules
+- local development is now intended to run as `pnpm dev` or `web + backend`, not six separate terminals
 
 ## 7. Current Next Actions
 
-1. freeze Phase 1 scope
-2. replace demo header auth with Firebase token verification in the gateway
+1. freeze the modular-monolith Phase 1 runtime as the baseline
+2. extend backend token verification beyond session bootstrap to the rest of the authenticated API edge
 3. implement the college join-request submission and admin decision workflow
-4. add service-level rate limiting and richer structured error metadata
-5. start real upload registration and resource file flows through media-service
-6. add moderation publish/review flows so pending posts/resources can move into public lists
-7. replace dev-session auth shell with Firebase Auth once backend auth verification is enabled
+4. add backend-edge rate limiting and richer structured error metadata
+5. start real upload registration and resource file flows through the media module
+6. add moderation publish and review flows so pending posts and resources can move into public lists
+7. introduce a simple admin surface for onboarding and moderation operations
 
 ## 8. Decision Log Snapshot
 
 - Reels are not part of Phase 1
 - Wallet is not part of Phase 1
-- API Gateway is mandatory from the start
+- Phase 1 backend is a modular monolith, not a multi-deployable service fleet
 - `deleted_at`, index strategy, unique constraints, and `user_activity` are mandatory baseline design concerns
 - desktop-quality responsive web and future native readiness are both required from the start
 - no new college or domain should go live without an auditable admin approval path
+- microservices remain a future extraction path, not a default build-time assumption
 
 ## 9. Risks To Track
 
 - scope creep into Phase 2 and Phase 3 features
-- over-engineering too many deployables before the first campus launch
+- over-engineering extraction before the first campus launch
 - weak content moderation policy
 - empty feed problem if utility content is not seeded
 - operational complexity if documentation discipline slips

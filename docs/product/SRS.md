@@ -1,8 +1,8 @@
 # Vyb Software Requirements Specification
 
 Owner: Product Team
-Last Updated: 2026-04-18
-Change Summary: Renamed the product to Vyb and added the admin-reviewed college join-request workflow for unknown domains.
+Last Updated: 2026-04-19
+Change Summary: Added the KIET-first verified auth rollout, profile completion requirements, and the backend-driven landing/auth experience for the current Phase 1 web surface.
 
 ## 1. Introduction
 
@@ -14,7 +14,7 @@ This SRS defines the functional and non-functional requirements for Vyb. It is a
 
 Vyb is a verified digital campus platform for students, faculty, and alumni. Phase 1 focuses on identity, communities, social posting, academic resources, and controlled college onboarding.
 
-Phase 1 ships through the web client, but the system architecture and shared code strategy must support future native Android and iOS applications without major backend redesign.
+Phase 1 ships through the web client and one backend runtime. The architecture must remain ready for future native Android and iOS applications and later microservice extraction without forcing that operational complexity today.
 
 ### 1.3 Intended Users
 
@@ -31,10 +31,15 @@ Phase 1 ships through the web client, but the system architecture and shared cod
 ### 2.1 Authentication and Identity
 
 - Users shall sign in through Firebase Auth.
+- Users shall verify email-password accounts through Firebase email verification before authenticated app access is granted.
 - The system shall map each authenticated account to an internal user record.
 - The system shall support domain-based college verification.
+- The system shall reject non-college or non-approved domains from the authenticated app flow.
+- The initial production rollout shall accept only `@kiet.edu` accounts while the implementation remains extensible for additional approved colleges later.
 - The system shall support an onboarding path for colleges where domain verification is not yet configured.
 - The system shall support role assignment through tenant memberships.
+- Newly authenticated users shall complete a baseline campus profile before entering the main dashboard.
+- The baseline campus profile shall capture first name, optional last name, course, stream or specialization, year, section, and optional hostel details.
 
 ### 2.2 Tenant and Community Management
 
@@ -48,7 +53,7 @@ Phase 1 ships through the web client, but the system architecture and shared cod
 - If a user signs in with an unrecognized college domain, the system shall allow submission of a new college join request.
 - A college join request shall capture college name, address, website, requester name, requester college email, requester phone number, and one or more requested domains.
 - The system shall prevent silent auto-creation of a live college tenant from an unknown domain.
-- Platform admins shall be able to approve, reject, or revert a college join request for more details.
+- Platform admins shall be able to approve, reject, or send back a college join request for changes.
 - Approval of a college join request shall create or unlock the corresponding college tenant and approved domains.
 - The requester shall be able to receive a request status such as pending, approved, rejected, or changes requested.
 
@@ -91,15 +96,15 @@ The following are intentionally deferred out of Phase 1:
 
 ### 4.1 Security
 
-- All public APIs must pass through the API Gateway.
+- All public APIs must pass through the Phase 1 backend entry boundary.
 - Authentication and authorization must both be enforced.
 - Sensitive actions must be audited.
 - Tenant isolation must be enforced consistently.
 
 ### 4.2 Scalability
 
-- The architecture shall be service-oriented from the start.
-- Services shall have explicit ownership and independently evolvable contracts.
+- Phase 1 shall ship as a modular monolith backend.
+- Domain boundaries shall be explicit enough for future service extraction.
 - Query design shall be index-aware.
 
 ### 4.3 Reliability
@@ -119,6 +124,7 @@ The following are intentionally deferred out of Phase 1:
 - Every feature shall have an LLD before coding.
 - Every architecture change shall update the HLD.
 - Every new service or dependency shall have an ADR.
+- Module ownership shall remain explicit inside the monolith.
 
 ### 4.6 Multi-Surface Experience
 
@@ -133,10 +139,16 @@ The following are intentionally deferred out of Phase 1:
 ### 5.1 Client Applications
 
 - Next.js web app
+- SSR marketing and auth entry surfaces backed by the Phase 1 backend
 - PWA-capable mobile-friendly experience
 - future React Native / Expo mobile app for Android and iOS
 
-### 5.2 External Systems
+### 5.2 Backend Runtime
+
+- one modular-monolith Node backend in Phase 1
+- future module extraction into services only through approved ADRs
+
+### 5.3 External Systems
 
 - Firebase Auth
 - Firebase Data Connect
@@ -156,14 +168,17 @@ The following are intentionally deferred out of Phase 1:
 - Phase 1 avoids anonymous posting
 - Phase 1 avoids short-form video complexity
 - Documentation is mandatory and not optional
+- Phase 1 backend hosting must not require multiple deployables for core identity, campus, social, and resources flows
 
 ## 8. Acceptance Criteria For Phase 1
 
 - A verified student can join the correct college space
+- A verified `@kiet.edu` student can complete profile setup before entering the dashboard
 - An unknown-domain student can submit a college join request instead of being stranded
 - A platform admin can approve, reject, or send back a college join request
 - The student can enter relevant communities
 - The student can create a post and see it in the feed
 - The student can upload and browse academic resources
 - A moderator can review a reported item and take action
+- The Phase 1 system can run with one backend runtime plus the web client
 - All major Phase 1 APIs are documented and tenant-safe

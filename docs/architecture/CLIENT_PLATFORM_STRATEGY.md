@@ -1,8 +1,8 @@
 # Vyb Client Platform Strategy
 
 Owner: Architecture Team
-Last Updated: 2026-04-18
-Change Summary: Added explicit PWA-first guidance for Phase 1 and stronger desktop-quality responsive requirements.
+Last Updated: 2026-04-19
+Change Summary: Synced the client strategy with the Phase 1 modular monolith backend.
 
 ## 1. Purpose
 
@@ -20,7 +20,7 @@ The goal is to avoid painting the system into a web-only corner while also avoid
 
 - ship `apps/web` using Next.js and PWA capabilities
 - design every core flow to work well on mobile and desktop browsers
-- keep backend contracts client-agnostic
+- keep backend contracts client-agnostic through one backend runtime
 - provide installable mobile web behavior where browser support allows it
 
 ### Future Native
@@ -63,6 +63,12 @@ The goal is to avoid painting the system into a web-only corner while also avoid
 - web-only page composition
 - SSR and PWA behavior
 - installability, manifest, service worker registration, and app-shell UX
+
+### apps/backend
+
+- public HTTP entry for Phase 1
+- modular domain handlers for identity, campus, social, and resources
+- client-agnostic API contracts
 
 ### apps/mobile
 

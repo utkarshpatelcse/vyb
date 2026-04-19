@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node ../../scripts/dev-web-with-backend.mjs",
+    "dev:next": "next dev",
     "build": "next build",
     "start": "next start",
     "check": "tsc --noEmit"
@@ -12,6 +13,7 @@
     "@vyb/app-core": "workspace:*",
     "@vyb/contracts": "workspace:*",
     "@vyb/design-tokens": "workspace:*",
+    "@vyb/validation": "workspace:*",
     "@vyb/ui-web": "workspace:*",
     "firebase": "^12.4.0",
     "firebase-admin": "^13.8.0",

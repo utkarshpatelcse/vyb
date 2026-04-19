@@ -1,14 +1,15 @@
 # API Contract
 
 Owner: Architecture Team
-Last Updated: 2026-04-18
-Change Summary: Initial contract for current membership community listing.
+Last Updated: 2026-04-19
+Change Summary: Updated contract language for the Phase 1 modular monolith backend.
 
 ## 1. Metadata
 
 - API name: List My Communities
-- Owner service: `campus-service`
-- Consumers: `web`, future `mobile`, `api-gateway`
+- Owner module: `campus`
+- Runtime: `apps/backend`
+- Consumers: `web`, future `mobile`
 - Version: `v1`
 - Status: Draft
 - Linked LLD: `docs/lld/phase-1/CAMPUS_SERVICE_LLD.md`
@@ -17,19 +18,19 @@ Change Summary: Initial contract for current membership community listing.
 
 - Method: `GET`
 - Path: `/v1/communities/my`
-- Public or internal: public through gateway
+- Public or internal: public through backend
 - Purpose: return tenant summary and communities for the active membership
 
 ## 3. Authentication and Authorization
 
-- Auth mechanism: gateway verified identity
+- Auth mechanism: backend edge verified identity
 - Required roles: verified membership
 - Tenant checks: resolved membership must belong to exactly one active tenant context
 - Rate limit policy: moderate per user
 
 ## 4. Request Schema
 
-- Headers: auth token or demo identity headers
+- Headers: auth token or approved local dev identity headers
 - Path params: none
 - Query params: none
 - Body: none
@@ -71,5 +72,4 @@ Change Summary: Initial contract for current membership community listing.
 
 - Feature flags: none
 - Backward compatibility: additive only
-- Migration steps: replace demo payload with Data Connect-backed membership context
-
+- Migration steps: keep response contract stable while backend module moves fully onto Data Connect-backed membership context

@@ -55,6 +55,8 @@ export async function getFirebaseClientAuth() {
 
 export function createGoogleProvider() {
   const provider = new GoogleAuthProvider();
+  provider.addScope("email");
+  provider.addScope("profile");
   provider.setCustomParameters({
     prompt: "select_account"
   });

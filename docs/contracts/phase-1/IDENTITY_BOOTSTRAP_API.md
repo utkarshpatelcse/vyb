@@ -1,14 +1,15 @@
 # API Contract
 
 Owner: Architecture Team
-Last Updated: 2026-04-18
-Change Summary: Initial contract for identity bootstrap.
+Last Updated: 2026-04-19
+Change Summary: Updated contract language for the Phase 1 modular monolith backend.
 
 ## 1. Metadata
 
 - API name: Identity Bootstrap
-- Owner service: `identity-service`
-- Consumers: `web`, future `mobile`, `api-gateway`
+- Owner module: `identity`
+- Runtime: `apps/backend`
+- Consumers: `web`, future `mobile`
 - Version: `v1`
 - Status: Draft
 - Linked LLD: `docs/lld/phase-1/IDENTITY_SERVICE_LLD.md`
@@ -17,19 +18,19 @@ Change Summary: Initial contract for identity bootstrap.
 
 - Method: `POST`
 - Path: `/v1/auth/bootstrap`
-- Public or internal: public through gateway
+- Public or internal: public through backend
 - Purpose: create or hydrate the internal user and return onboarding status
 
 ## 3. Authentication and Authorization
 
-- Auth mechanism: Firebase ID token at gateway; starter scaffold uses demo headers
+- Auth mechanism: Firebase ID token verified at the backend edge; starter scaffold supports local dev headers
 - Required roles: authenticated user
 - Tenant checks: none at bootstrap, tenant resolution may still return pending
 - Rate limit policy: strict per user and IP
 
 ## 4. Request Schema
 
-- Headers: auth token or demo identity headers
+- Headers: auth token or approved local dev identity headers
 - Path params: none
 - Query params: none
 - Body: `displayName?`, `avatarUrl?`
@@ -46,7 +47,7 @@ Change Summary: Initial contract for identity bootstrap.
 - Auth errors: invalid or missing auth token
 - Authorization errors: blocked account state
 - Domain errors: unsupported identity state
-- Retryable errors: downstream campus resolution timeout
+- Retryable errors: downstream campus module resolution timeout
 
 ## 7. Side Effects
 
@@ -71,5 +72,4 @@ Change Summary: Initial contract for identity bootstrap.
 
 - Feature flags: not required initially
 - Backward compatibility: additive only
-- Migration steps: none before real Data Connect integration
-
+- Migration steps: keep contract stable while implementation moves fully onto backend module handlers

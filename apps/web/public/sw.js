@@ -1,6 +1,29 @@
+const CACHE_NAME = "vyb-shell-v2";
+const STATIC_PATHS = [
+  "/",
+  "/manifest.webmanifest",
+  "/icons/icon.svg",
+  "/icons/maskable-icon.svg"
+];
+
+function isCacheableAsset(request) {
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) {
+    return false;
+  }
+
+  return (
+    request.destination === "style" ||
+    request.destination === "script" ||
+    request.destination === "font" ||
+    request.destination === "image" ||
+    STATIC_PATHS.includes(url.pathname)
+  );
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open("vyb-shell-v1").then((cache) => cache.addAll(["/"]))
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_PATHS))
   );
   self.skipWaiting();
 });
@@ -10,7 +33,7 @@ self.addEventListener("activate", (event) => {
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter((key) => key !== "vyb-shell-v1")
+          .filter((key) => key !== CACHE_NAME)
           .map((key) => caches.delete(key))
       )
     )
@@ -23,26 +46,38 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => networkResponse)
+        .catch(async () => {
+          const cache = await caches.open(CACHE_NAME);
+          return cache.match("/") || Response.error();
+        })
+    );
+    return;
+  }
+
+  if (!isCacheableAsset(event.request)) {
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-
-      return fetch(event.request)
+      const networkFetch = fetch(event.request)
         .then((networkResponse) => {
-          if (!networkResponse || networkResponse.status !== 200) {
-            return networkResponse;
+          if (networkResponse && networkResponse.status === 200) {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseClone);
+            });
           }
-
-          const responseClone = networkResponse.clone();
-          caches.open("vyb-shell-v1").then((cache) => {
-            cache.put(event.request, responseClone);
-          });
 
           return networkResponse;
         })
-        .catch(() => caches.match("/"));
+        .catch(() => cachedResponse);
+
+      return cachedResponse || networkFetch;
     })
   );
 });
