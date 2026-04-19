@@ -10,7 +10,7 @@
 - Status: Draft
 - Linked SRS section: 2.1 Authentication and Identity
 - Linked HLD section: Phase 1 Module Map, Authentication and Authorization
-- Linked ADRs: None yet
+- Linked ADRs: ADR-001 Phase 1 Hosting Topology
 
 ## 2. Problem Statement
 
@@ -140,6 +140,7 @@ Out of scope:
 - input validation: sanitize display name, avatar URL, and bootstrap payload
 - abuse prevention: rate limit bootstrap and `me` access
 - audit logging: bootstrap, profile changes, onboarding state changes where needed
+- production hosting: Cloud Run service identity should back Firebase Admin and Data Connect access instead of a JSON credential path
 
 ## 11. Observability
 
@@ -157,7 +158,7 @@ Out of scope:
 ## 13. Rollout Plan
 
 - feature flags: none required for baseline bootstrap
-- migration order: create `users` table, add indexes, deploy bootstrap and me handlers
+- migration order: create `users` table, add indexes, deploy bootstrap and me handlers, then wire the hosted web client to the Cloud Run backend
 - rollback plan: keep auth-disabled flows behind the backend boundary if bootstrap becomes unstable
 
 ## 14. Test Plan

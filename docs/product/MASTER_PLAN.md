@@ -2,7 +2,7 @@
 
 Owner: Product and Engineering
 Last Updated: 2026-04-19
-Change Summary: Added the KIET-first professional web entry flow, backend-verified session bootstrap, mandatory profile completion gating, and the authenticated `/home` feed landing surface.
+Change Summary: Added the KIET-first professional web entry flow, backend-verified session bootstrap, mandatory profile completion gating, the authenticated `/home` feed landing surface, and the Phase 1 Cloud Run plus Vercel hosting preparation.
 
 ## 1. Why We Are Building This
 
@@ -150,6 +150,8 @@ After implementation:
 - Data Connect service config, schema, and domain-owned connectors are scaffolded
 - Data Connect connectors compile successfully and generated admin SDKs are available
 - shared server config helpers now load root env and initialize Firebase Admin/Data Connect clients
+- repo-level deployment assets are now prepared for hosting the backend monolith on Cloud Run
+- a Cloud Run deployment guide and hosting ADR now document the production web plus backend rollout path
 - Phase 1 API contracts and query reviews created
 - KIET tenant and `@kiet.edu` domain were seeded successfully
 - live identity, campus, social-create, and resources-create flows were verified against remote Data Connect
@@ -158,7 +160,7 @@ After implementation:
 
 ## 7. Current Next Actions
 
-1. freeze the modular-monolith Phase 1 runtime as the baseline
+1. deploy the backend monolith to Cloud Run and connect the Vercel web app to the hosted API
 2. bind the `/home` feed shell to live backend feed, stories, and community data instead of placeholder content
 3. extend backend token verification beyond session bootstrap to the rest of the authenticated API edge
 4. implement the college join-request submission and admin decision workflow

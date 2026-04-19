@@ -2,7 +2,7 @@
 
 Owner: Product Team
 Last Updated: 2026-04-19
-Change Summary: Added the KIET-first verified auth rollout, profile completion requirements, and the authenticated home-feed landing flow for the current Phase 1 web surface.
+Change Summary: Added the KIET-first verified auth rollout, profile completion requirements, the authenticated home-feed landing flow for the current Phase 1 web surface, and the Phase 1 hosting topology requirement.
 
 ## 1. Introduction
 
@@ -114,6 +114,7 @@ The following are intentionally deferred out of Phase 1:
 - User-generated writes shall be durable and traceable.
 - Async jobs shall be retry-safe and idempotent.
 - Upload failures shall not produce orphaned published content.
+- The production backend runtime shall remain deployable as one Cloud Run service for core identity, campus, social, and resources flows.
 
 ### 4.4 Performance
 
@@ -150,6 +151,7 @@ The following are intentionally deferred out of Phase 1:
 ### 5.2 Backend Runtime
 
 - one modular-monolith Node backend in Phase 1
+- production hosting shall support Google Cloud service identity for Firebase Admin and Data Connect access
 - future module extraction into services only through approved ADRs
 
 ### 5.3 External Systems
@@ -157,6 +159,8 @@ The following are intentionally deferred out of Phase 1:
 - Firebase Auth
 - Firebase Data Connect
 - Firebase Storage
+- Google Cloud Run for the Phase 1 backend host
+- Vercel for the Phase 1 web host
 - Gemini API in later phases
 
 ## 6. Core Data Requirements

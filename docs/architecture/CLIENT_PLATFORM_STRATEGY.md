@@ -2,7 +2,7 @@
 
 Owner: Architecture Team
 Last Updated: 2026-04-19
-Change Summary: Synced the client strategy with the Phase 1 modular monolith backend and the public-landing plus authenticated-home-feed web flow.
+Change Summary: Synced the client strategy with the Phase 1 modular monolith backend, the public-landing plus authenticated-home-feed web flow, and the Vercel plus Cloud Run production hosting split.
 
 ## 1. Purpose
 
@@ -23,6 +23,7 @@ The goal is to avoid painting the system into a web-only corner while also avoid
 - keep backend contracts client-agnostic through one backend runtime
 - provide installable mobile web behavior where browser support allows it
 - send authenticated users to a useful `/home` feed first while keeping profile details on a separate route
+- host the Phase 1 web surface on Vercel and point it at the single Cloud Run backend
 
 ### Future Native
 

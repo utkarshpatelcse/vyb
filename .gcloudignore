@@ -1,0 +1,15 @@
+.gcloudignore
+.git
+.gitignore
+.cache
+.next
+.tmp
+.turbo
+node_modules
+**/node_modules
+.env
+.env.*
+deploy/cloudrun/*.env
+firebase-debug.log
+secrets
+*.log

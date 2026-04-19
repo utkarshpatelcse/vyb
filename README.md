@@ -20,6 +20,7 @@ Modular-monolith campus platform architecture with a responsive web client in Ph
 - Firebase Admin now isolates Data Connect connectors per app instance to avoid cross-connector operation cache collisions
 - Local dev can fall back to a configured tenant slug/domain while the stricter domain lookup path is still being hardened
 - Unknown college domains are intended to flow into an admin-reviewed college join-request workflow instead of creating tenants automatically
+- The repo now includes Cloud Run deployment assets for the backend monolith and a deployment guide for the current `vybnet-e2242` project
 
 ## Starter Commands
 
@@ -28,6 +29,13 @@ Modular-monolith campus platform architecture with a responsive web client in Ph
 - `pnpm dev:backend`
 - `node scripts/run-firebase-cli.mjs dataconnect:sdk:generate`
 - `node scripts/bootstrap-dataconnect.mjs --tenant-name "Your College" --tenant-slug your-college --domain yourcollege.edu`
+
+## Production Hosting
+
+- `apps/web` is intended to ship on Vercel
+- `apps/backend` is intended to ship on Google Cloud Run
+- the repo root [Dockerfile](/e:/CAMPUS%20LOOP/Dockerfile:1) builds the backend monolith container for Cloud Run
+- deployment steps live in [docs/process/CLOUD_RUN_BACKEND_DEPLOYMENT.md](/e:/CAMPUS%20LOOP/docs/process/CLOUD_RUN_BACKEND_DEPLOYMENT.md:1)
 
 ## Core Directories
 

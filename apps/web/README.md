@@ -15,3 +15,4 @@ Responsibilities:
 - route handlers for post and resource creation through the backend
 - SSR and client rendering where appropriate
 - no privileged backend business logic
+- recommended production host is Vercel, with the backend API base URL pointing at Cloud Run

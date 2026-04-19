@@ -2,7 +2,7 @@
 
 Owner: Architecture Team
 Last Updated: 2026-04-19
-Change Summary: Switched Phase 1 runtime to a modular monolith backend, preserved extraction-ready domain boundaries, kept college join requests as a first-class campus module concern, and clarified the public-landing plus authenticated-home-feed web split.
+Change Summary: Switched Phase 1 runtime to a modular monolith backend, preserved extraction-ready domain boundaries, kept college join requests as a first-class campus module concern, clarified the public-landing plus authenticated-home-feed web split, and recorded the Phase 1 hosting topology of Vercel plus Cloud Run.
 
 ## 1. Document Purpose
 
@@ -162,7 +162,14 @@ Responsibilities:
 - module orchestration
 - Data Connect access for privileged business flows
 
-### 7.3 Future Native App
+### 7.3 Phase 1 Hosting Topology
+
+- `apps/web` is recommended to deploy on Vercel for the Phase 1 shipping surface.
+- `apps/backend` is recommended to deploy on Google Cloud Run as one public backend service.
+- This hosting split does not change the architectural rule that Phase 1 owns one backend deployable, not multiple backend services.
+- The backend runtime should use Cloud Run service identity for Firebase Admin and Data Connect access instead of a checked-in service-account JSON path.
+
+### 7.4 Future Native App
 
 - React Native / Expo recommended for Android and iOS
 - consumes the same backend APIs and contracts as the web client
