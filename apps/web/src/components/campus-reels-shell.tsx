@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
+import { consumeCampusUploads } from "../lib/campus-upload-store";
 import { SignOutButton } from "./sign-out-button";
 
 type ReelCategory = "All" | "Trending" | "Tech" | "Campus life" | "Sports" | "Creators";
@@ -163,23 +165,6 @@ function formatDuration(seconds: number) {
   return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
-function formatUploadTitle(fileName: string) {
-  const baseName = fileName.replace(/\.[^.]+$/, "");
-
-  return baseName
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function createHandleFromName(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ".")
-    .replace(/^\.+|\.+$/g, "") || "campus.creator";
-}
-
 function buildFeedBatch(source: ReelItem[], batchIndex: number, size: number) {
   if (source.length === 0) {
     return [] as ReelFeedItem[];
@@ -192,45 +177,6 @@ function buildFeedBatch(source: ReelItem[], batchIndex: number, size: number) {
       ...reel,
       feedId: `${reel.id}-${batchIndex}-${index}`
     };
-  });
-}
-
-function loadVideoMetadata(file: File) {
-  return new Promise<{ duration: number; height: number; objectUrl: string; width: number }>((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file);
-    const video = document.createElement("video");
-    let settled = false;
-
-    const cleanup = () => {
-      video.removeAttribute("src");
-      video.load();
-    };
-
-    video.preload = "metadata";
-    video.playsInline = true;
-    video.muted = true;
-
-    video.onloadedmetadata = () => {
-      settled = true;
-      resolve({
-        duration: video.duration,
-        height: video.videoHeight,
-        objectUrl,
-        width: video.videoWidth
-      });
-      cleanup();
-    };
-
-    video.onerror = () => {
-      if (!settled) {
-        URL.revokeObjectURL(objectUrl);
-      }
-
-      cleanup();
-      reject(new Error("Unable to read video metadata."));
-    };
-
-    video.src = objectUrl;
   });
 }
 
@@ -306,6 +252,63 @@ function SendIcon() {
   );
 }
 
+function ShareIcon() {
+  return (
+    <IconBase>
+      <path d="M9.1 10.5 14.7 7.2M9.1 13.5l5.6 3.3" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="6.5" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.9" />
+      <circle cx="17.6" cy="5.8" r="3" fill="none" stroke="currentColor" strokeWidth="1.9" />
+      <circle cx="17.6" cy="18.2" r="3" fill="none" stroke="currentColor" strokeWidth="1.9" />
+    </IconBase>
+  );
+}
+
+function RepostIcon() {
+  return (
+    <IconBase>
+      <path d="M7 6.5h6.1A3.9 3.9 0 0 1 17 10.4v5.3" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="m14.5 13.2 2.5 2.5 2.5-2.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M17 17.5h-6.1A3.9 3.9 0 0 1 7 13.6V8.3" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="m9.5 10.8-2.5-2.5-2.5 2.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+    </IconBase>
+  );
+}
+
+function MoreIcon() {
+  return (
+    <IconBase>
+      <circle cx="12" cy="5.2" r="1.5" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+      <circle cx="12" cy="18.8" r="1.5" fill="currentColor" />
+    </IconBase>
+  );
+}
+
+function ReportIcon() {
+  return (
+    <IconBase>
+      <path d="M6 20V5.2A1.2 1.2 0 0 1 7.2 4h8.9l-1.5 3.1 1.9 3.5H8.2A1.2 1.2 0 0 0 7 11.8V20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </IconBase>
+  );
+}
+
+function DislikeIcon() {
+  return (
+    <IconBase>
+      <path d="M9.5 14.5v4.1a1.7 1.7 0 0 0 3.1.9l2.4-4.1h2.5a1.7 1.7 0 0 0 1.7-1.4l1-6.1A1.7 1.7 0 0 0 18.5 6H10a2 2 0 0 0-1.8 1.1L6.5 10v4.5zM4 10.2v5.3" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </IconBase>
+  );
+}
+
+function HideIcon() {
+  return (
+    <IconBase>
+      <path d="M3.5 12S7 6.5 12 6.5 20.5 12 20.5 12 17 17.5 12 17.5 3.5 12 3.5 12Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="m4 4 16 16M14.3 14.4A3 3 0 0 1 9.6 9.7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </IconBase>
+  );
+}
+
 function VolumeIcon() {
   return (
     <IconBase>
@@ -363,6 +366,7 @@ export function CampusReelsShell({
   stream,
   role
 }: CampusReelsShellProps) {
+  const router = useRouter();
   const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH);
   const [rightWidth, setRightWidth] = useState(DEFAULT_RIGHT_WIDTH);
   const [activeResize, setActiveResize] = useState<ResizeSide | null>(null);
@@ -371,20 +375,25 @@ export function CampusReelsShell({
   const [activeFeedId, setActiveFeedId] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState(true);
   const [likedIds, setLikedIds] = useState<string[]>([]);
+  const [repostedIds, setRepostedIds] = useState<string[]>([]);
+  const [dislikedIds, setDislikedIds] = useState<string[]>([]);
+  const [reportedIds, setReportedIds] = useState<string[]>([]);
+  const [hiddenIds, setHiddenIds] = useState<string[]>([]);
   const [followedCreators, setFollowedCreators] = useState<string[]>(["campus.frame"]);
   const [pausedFeedId, setPausedFeedId] = useState<string | null>(null);
+  const [expandedCaptionIds, setExpandedCaptionIds] = useState<string[]>([]);
   const [uploadedReels, setUploadedReels] = useState<ReelItem[]>([]);
   const [uploadMessage, setUploadMessage] = useState("Upload 9:16 portrait clips to make the Vibes feed feel native.");
   const [isUploading, setIsUploading] = useState(false);
   const [burstFeedId, setBurstFeedId] = useState<string | null>(null);
+  const [openMenuFeedId, setOpenMenuFeedId] = useState<string | null>(null);
   const resizeState = useRef<{ side: ResizeSide; startX: number; startWidth: number } | null>(null);
   const feedContainerRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const batchRef = useRef(1);
   const slideRefs = useRef<Record<string, HTMLElement | null>>({});
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const uploadedObjectUrlsRef = useRef<string[]>([]);
+  const actionMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const tapTimerRef = useRef<number | null>(null);
   const holdTimerRef = useRef<number | null>(null);
   const likeBurstTimerRef = useRef<number | null>(null);
@@ -411,6 +420,37 @@ export function CampusReelsShell({
   useEffect(() => {
     window.localStorage.setItem(RIGHT_WIDTH_STORAGE_KEY, String(rightWidth));
   }, [rightWidth]);
+
+  useEffect(() => {
+    const uploads = consumeCampusUploads(["vibe"]);
+
+    if (uploads.length === 0) {
+      return;
+    }
+
+    const nextUploads = uploads
+      .filter((item) => item.mediaKind === "video" && item.mediaUrl)
+      .map((item) => ({
+        id: item.id,
+        title: item.title || "New campus vibe",
+        creator: item.author,
+        caption: item.caption,
+        posterUrl: "",
+        videoUrl: item.mediaUrl!,
+        likes: 0,
+        comments: 0,
+        shares: 0,
+        duration: formatDuration(item.durationSeconds ?? 0),
+        category: "Creators" as const,
+        soundtrack: "Original audio",
+        location: item.location
+      }));
+
+    if (nextUploads.length > 0) {
+      setUploadedReels((current) => [...nextUploads, ...current]);
+      setUploadMessage(`${nextUploads.length} vibe${nextUploads.length === 1 ? "" : "s"} added from the shared uploader.`);
+    }
+  }, []);
 
   useEffect(() => {
     if (!activeResize) {
@@ -470,6 +510,27 @@ export function CampusReelsShell({
 
   function toggleFollow(creator: string) {
     setFollowedCreators((current) => (current.includes(creator) ? current.filter((item) => item !== creator) : [...current, creator]));
+  }
+
+  function toggleCaption(feedId: string) {
+    setExpandedCaptionIds((current) => (current.includes(feedId) ? current.filter((item) => item !== feedId) : [...current, feedId]));
+  }
+
+  function toggleRepost(id: string) {
+    setRepostedIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  }
+
+  function toggleDislike(id: string) {
+    setDislikedIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  }
+
+  function toggleReport(id: string) {
+    setReportedIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  }
+
+  function hideReel(id: string) {
+    setHiddenIds((current) => (current.includes(id) ? current : [...current, id]));
+    setOpenMenuFeedId(null);
   }
 
   function isDesktopViewport() {
@@ -592,66 +653,6 @@ export function CampusReelsShell({
     }, 0);
   }
 
-  async function handleUploadChange(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files ?? []);
-    event.target.value = "";
-
-    if (files.length === 0) {
-      return;
-    }
-
-    setIsUploading(true);
-    setUploadMessage("Checking portrait ratio for your uploads...");
-
-    const nextUploads: ReelItem[] = [];
-    let rejectedCount = 0;
-
-    for (const file of files) {
-      try {
-        const metadata = await loadVideoMetadata(file);
-
-        if (metadata.height <= metadata.width) {
-          URL.revokeObjectURL(metadata.objectUrl);
-          rejectedCount += 1;
-          continue;
-        }
-
-        uploadedObjectUrlsRef.current.push(metadata.objectUrl);
-
-        nextUploads.push({
-          id: `upload-${Date.now()}-${nextUploads.length}`,
-          title: formatUploadTitle(file.name) || "New campus vibe",
-          creator: createHandleFromName(viewerName),
-          caption: "Fresh portrait upload shared straight from your camera roll.",
-          posterUrl: "",
-          videoUrl: metadata.objectUrl,
-          likes: 0,
-          comments: 0,
-          shares: 0,
-          duration: formatDuration(metadata.duration),
-          category: activeCategory === "All" ? "Creators" : activeCategory,
-          soundtrack: "Original audio",
-          location: collegeName
-        });
-      } catch {
-        rejectedCount += 1;
-      }
-    }
-
-    if (nextUploads.length > 0) {
-      setUploadedReels((current) => [...nextUploads, ...current]);
-      setUploadMessage(
-        rejectedCount > 0
-          ? `${nextUploads.length} portrait vibe${nextUploads.length === 1 ? "" : "s"} added. ${rejectedCount} landscape file${rejectedCount === 1 ? "" : "s"} skipped.`
-          : `${nextUploads.length} portrait vibe${nextUploads.length === 1 ? "" : "s"} added to your feed.`
-      );
-    } else {
-      setUploadMessage("Only portrait videos are supported in Vibes right now. Try a 9:16 clip.");
-    }
-
-    setIsUploading(false);
-  }
-
   const navItems = [
     { label: "Home", href: "/home", icon: <HomeIcon /> },
     { label: "Events", href: "/events", icon: <EventsIcon /> },
@@ -661,7 +662,7 @@ export function CampusReelsShell({
   ];
 
   const categories: ReelCategory[] = ["All", "Trending", "Tech", "Campus life", "Sports", "Creators"];
-  const catalog = [...uploadedReels, ...REELS];
+  const catalog = [...uploadedReels, ...REELS].filter((reel) => !hiddenIds.includes(reel.id));
   const sourceReels = activeCategory === "All" ? catalog : catalog.filter((reel) => reel.category === activeCategory);
 
   useEffect(() => {
@@ -675,7 +676,7 @@ export function CampusReelsShell({
     if (feedContainerRef.current) {
       feedContainerRef.current.scrollTo({ top: 0, behavior: "auto" });
     }
-  }, [activeCategory, uploadedReels.length]);
+  }, [activeCategory, uploadedReels.length, hiddenIds.length]);
 
   useEffect(() => {
     const root = feedContainerRef.current;
@@ -711,7 +712,7 @@ export function CampusReelsShell({
     return () => {
       observer.disconnect();
     };
-  }, [activeCategory, sourceReels.length, uploadedReels.length]);
+  }, [activeCategory, sourceReels.length, uploadedReels.length, hiddenIds.length]);
 
   useEffect(() => {
     const root = feedContainerRef.current;
@@ -773,14 +774,44 @@ export function CampusReelsShell({
   }, [activeFeedId, pausedFeedId]);
 
   useEffect(() => {
+    if (!openMenuFeedId) {
+      return;
+    }
+
+    const currentMenuFeedId = openMenuFeedId;
+
+    function handlePointerDown(event: globalThis.PointerEvent) {
+      const menuRoot = actionMenuRefs.current[currentMenuFeedId];
+
+      if (menuRoot && event.target instanceof Node && !menuRoot.contains(event.target)) {
+        setOpenMenuFeedId(null);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpenMenuFeedId(null);
+      }
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openMenuFeedId]);
+
+  useEffect(() => {
+    setOpenMenuFeedId(null);
+  }, [activeFeedId]);
+
+  useEffect(() => {
     return () => {
       clearTapTimer();
       clearHoldTimer();
       clearLikeBurstTimer();
-
-      for (const objectUrl of uploadedObjectUrlsRef.current) {
-        URL.revokeObjectURL(objectUrl);
-      }
     };
   }, []);
 
@@ -824,13 +855,17 @@ export function CampusReelsShell({
       />
 
       <section className="vyb-campus-main vyb-reels-main">
-        <input ref={fileInputRef} type="file" accept="video/*" multiple className="vyb-reels-file-input" onChange={handleUploadChange} />
-
         <div className="vyb-reels-screen">
           <div className="vyb-reels-feed" ref={feedContainerRef}>
             {feedReels.map((reel) => {
               const liked = likedIds.includes(reel.id);
+              const reposted = repostedIds.includes(reel.id);
+              const disliked = dislikedIds.includes(reel.id);
+              const reported = reportedIds.includes(reel.id);
               const followed = followedCreators.includes(reel.creator);
+              const isCaptionExpanded = expandedCaptionIds.includes(reel.feedId);
+              const shouldShowCaptionToggle = reel.caption.length > 58;
+              const isMenuOpen = openMenuFeedId === reel.feedId;
 
               return (
                 <article
@@ -884,16 +919,21 @@ export function CampusReelsShell({
                       <div className="vyb-reel-bottom">
                         <div className="vyb-reel-copy">
                           <div className="vyb-reel-creator-row">
-                            <div>
-                              <strong>@{reel.creator}</strong>
-                              <span>{reel.title}</span>
-                            </div>
+                            <strong>@{reel.creator}</strong>
                             <button type="button" className={`vyb-reel-follow-button${followed ? " is-active" : ""}`} onClick={() => toggleFollow(reel.creator)}>
                               {followed ? "Following" : "Follow"}
                             </button>
                           </div>
 
-                          <p>{reel.caption}</p>
+                          <div className={`vyb-reel-caption-block${isCaptionExpanded ? " is-expanded" : ""}`}>
+                            <p className="vyb-reel-caption">{reel.caption}</p>
+                          </div>
+
+                          {shouldShowCaptionToggle ? (
+                            <button type="button" className="vyb-reel-caption-toggle" onClick={() => toggleCaption(reel.feedId)}>
+                              {isCaptionExpanded ? "See less" : "See more"}
+                            </button>
+                          ) : null}
 
                           <div className="vyb-reel-meta">
                             <span>
@@ -908,18 +948,71 @@ export function CampusReelsShell({
                         </div>
 
                         <div className="vyb-reel-actions">
-                          <button type="button" className={`vyb-reel-action-button${liked ? " is-active" : ""}`} onClick={() => toggleLike(reel.id)}>
+                          <button type="button" className={`vyb-reel-action-button${liked ? " is-active" : ""}`} aria-label="Like vibe" onClick={() => toggleLike(reel.id)}>
                             <HeartIcon />
                             <span>{formatMetric(reel.likes + (liked ? 1 : 0))}</span>
                           </button>
-                          <button type="button" className="vyb-reel-action-button">
+                          <button type="button" className="vyb-reel-action-button" aria-label="Open comments">
                             <CommentIcon />
                             <span>{formatMetric(reel.comments)}</span>
                           </button>
-                          <button type="button" className="vyb-reel-action-button">
-                            <SendIcon />
+                          <button type="button" className="vyb-reel-action-button" aria-label="Share vibe">
+                            <ShareIcon />
                             <span>{formatMetric(reel.shares)}</span>
                           </button>
+                          <button type="button" className={`vyb-reel-action-button${reposted ? " is-active" : ""}`} aria-label="Repost vibe" onClick={() => toggleRepost(reel.id)}>
+                            <RepostIcon />
+                            <span>Repost</span>
+                          </button>
+                          <div
+                            className={`vyb-reel-more-wrap${isMenuOpen ? " is-open" : ""}`}
+                            ref={(node) => {
+                              actionMenuRefs.current[reel.feedId] = node;
+                            }}
+                          >
+                            <button
+                              type="button"
+                              className={`vyb-reel-action-button vyb-reel-more-button${isMenuOpen ? " is-active" : ""}`}
+                              aria-label="More actions"
+                              onClick={() => setOpenMenuFeedId((current) => (current === reel.feedId ? null : reel.feedId))}
+                            >
+                              <MoreIcon />
+                              <span>More</span>
+                            </button>
+
+                            {isMenuOpen ? (
+                              <div className="vyb-reel-more-menu" role="menu" aria-label="More vibe actions">
+                                <button
+                                  type="button"
+                                  className={`vyb-reel-menu-item${reported ? " is-active" : ""}`}
+                                  role="menuitem"
+                                  onClick={() => {
+                                    toggleReport(reel.id);
+                                    setOpenMenuFeedId(null);
+                                  }}
+                                >
+                                  <ReportIcon />
+                                  <span>{reported ? "Reported" : "Report"}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`vyb-reel-menu-item${disliked ? " is-active" : ""}`}
+                                  role="menuitem"
+                                  onClick={() => {
+                                    toggleDislike(reel.id);
+                                    setOpenMenuFeedId(null);
+                                  }}
+                                >
+                                  <DislikeIcon />
+                                  <span>{disliked ? "Disliked" : "Dislike"}</span>
+                                </button>
+                                <button type="button" className="vyb-reel-menu-item" role="menuitem" onClick={() => hideReel(reel.id)}>
+                                  <HideIcon />
+                                  <span>Hide</span>
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -956,9 +1049,9 @@ export function CampusReelsShell({
             <span>{role} creators are discovering the fastest reach through short campus edits.</span>
           </div>
 
-          <button type="button" className="vyb-reels-side-upload" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+          <button type="button" className="vyb-reels-side-upload" onClick={() => router.push(`/create?kind=vibe&from=${encodeURIComponent("/vibes")}`)} disabled={isUploading}>
             <PlayIcon />
-            <span>{isUploading ? "Adding..." : "Upload portrait vibe"}</span>
+            <span>{isUploading ? "Adding..." : "Upload vibe"}</span>
           </button>
           <p className="vyb-reels-side-note">{uploadMessage}</p>
         </div>

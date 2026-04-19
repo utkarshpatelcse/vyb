@@ -1,19 +1,24 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
+import { consumeCampusUploads } from "../lib/campus-upload-store";
 import { SignOutButton } from "./sign-out-button";
 
 type StoryItem = {
   id: string;
   handle: string;
   imageUrl: string;
+  mediaType?: "image" | "video";
 };
 
 type PostItem = {
   id: string;
   author: string;
   caption: string;
+  mediaType?: "image" | "video" | null;
+  mediaUrl?: string | null;
   imageUrl?: string | null;
   likes: string;
   location: string;
@@ -110,6 +115,17 @@ function SendIcon() {
   );
 }
 
+function ShareIcon() {
+  return (
+    <IconBase>
+      <path d="M9.1 10.5 14.7 7.2M9.1 13.5l5.6 3.3" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="6.5" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.9" />
+      <circle cx="17.6" cy="5.8" r="3" fill="none" stroke="currentColor" strokeWidth="1.9" />
+      <circle cx="17.6" cy="18.2" r="3" fill="none" stroke="currentColor" strokeWidth="1.9" />
+    </IconBase>
+  );
+}
+
 function HeartIcon() {
   return (
     <IconBase>
@@ -129,7 +145,10 @@ function CommentIcon() {
 function ShuffleIcon() {
   return (
     <IconBase>
-      <path d="M16 4h4v4M4 8h3.2c1.6 0 3.1.8 4 2.1l1.6 2.2A5 5 0 0 0 16.8 15H20M4 16h3.2c1.6 0 3.1-.8 4-2.1l1-1.4M16 20h4v-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M7 6.5h6.1A3.9 3.9 0 0 1 17 10.4v5.3" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="m14.5 13.2 2.5 2.5 2.5-2.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M17 17.5h-6.1A3.9 3.9 0 0 1 7 13.6V8.3" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="m9.5 10.8-2.5-2.5-2.5 2.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
     </IconBase>
   );
 }
@@ -176,7 +195,9 @@ export function CampusHomeShell({
   stories,
   initialPosts
 }: CampusHomeShellProps) {
+  const router = useRouter();
   const [feedPosts, setFeedPosts] = useState(initialPosts);
+  const [storyFeed, setStoryFeed] = useState(stories);
   const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH);
   const [rightWidth, setRightWidth] = useState(DEFAULT_RIGHT_WIDTH);
   const [activeResize, setActiveResize] = useState<ResizeSide | null>(null);
@@ -280,9 +301,56 @@ export function CampusHomeShell({
     };
   }, [flashMessage]);
 
-  function openComposer() {
+  useEffect(() => {
+    const uploads = consumeCampusUploads(["post", "story"]);
+
+    if (uploads.length === 0) {
+      return;
+    }
+
+    const nextStories = uploads
+      .filter((item) => item.kind === "story")
+      .map((item) => ({
+        id: item.id,
+        handle: item.author,
+        imageUrl: item.mediaUrl ?? `https://i.pravatar.cc/120?u=${encodeURIComponent(item.author)}`,
+        mediaType: (item.mediaKind === "video" ? "video" : "image") as "image" | "video"
+      }));
+
+    const nextPosts = uploads
+      .filter((item) => item.kind === "post")
+      .map((item) => ({
+        id: item.id,
+        author: item.author,
+        caption: item.caption,
+        imageUrl: item.mediaKind === "image" ? item.mediaUrl : null,
+        likes: "0",
+        location: item.location,
+        mediaType: item.mediaKind,
+        mediaUrl: item.mediaUrl,
+        title: item.title ?? null
+      }));
+
+    if (nextStories.length > 0) {
+      setStoryFeed((current) => [...nextStories, ...current]);
+    }
+
+    if (nextPosts.length > 0) {
+      setFeedPosts((current) => [...nextPosts, ...current]);
+    }
+
+    setFlashMessage(
+      nextStories.length > 0 && nextPosts.length > 0
+        ? "Story and post were added from the shared uploader."
+        : nextStories.length > 0
+          ? "Story added from the shared uploader."
+          : "Post added from the shared uploader."
+    );
+  }, []);
+
+  function openComposer(kind: "post" | "story" = "post") {
     setComposerMessage(null);
-    setComposerOpen(true);
+    router.push(`/create?kind=${kind}&from=${encodeURIComponent("/home")}`);
   }
 
   function closeComposer() {
@@ -421,7 +489,7 @@ export function CampusHomeShell({
             <button type="button" className="vyb-campus-top-icon" aria-label="Notifications">
               <BellIcon />
             </button>
-            <button type="button" className="vyb-campus-post-trigger" onClick={openComposer}>
+            <button type="button" className="vyb-campus-post-trigger" onClick={() => openComposer("post")}>
               <AddPostIcon />
               <span>Create post</span>
             </button>
@@ -439,7 +507,7 @@ export function CampusHomeShell({
             <button type="button" className="vyb-campus-top-icon" aria-label="Notifications">
               <BellIcon />
             </button>
-            <button type="button" className="vyb-campus-post-trigger vyb-campus-post-trigger-mobile" onClick={openComposer}>
+            <button type="button" className="vyb-campus-post-trigger vyb-campus-post-trigger-mobile" onClick={() => openComposer("post")}>
               <AddPostIcon />
               <span>Post</span>
             </button>
@@ -453,10 +521,21 @@ export function CampusHomeShell({
 
         <div className="vyb-campus-feed-stack">
           <div className="vyb-campus-stories">
-            {stories.map((story) => (
+            <button type="button" className="vyb-campus-story vyb-campus-story-add" onClick={() => openComposer("story")}>
+              <span className="vyb-campus-story-ring vyb-campus-story-ring-add">
+                <AddPostIcon />
+              </span>
+              <span>Your story</span>
+            </button>
+
+            {storyFeed.map((story) => (
               <button key={story.id} type="button" className="vyb-campus-story">
                 <span className="vyb-campus-story-ring">
-                  <img src={story.imageUrl} alt={story.handle} />
+                  {story.mediaType === "video" ? (
+                    <video src={story.imageUrl} muted playsInline autoPlay loop />
+                  ) : (
+                    <img src={story.imageUrl} alt={story.handle} />
+                  )}
                 </span>
                 <span>{story.handle}</span>
               </button>
@@ -479,8 +558,10 @@ export function CampusHomeShell({
                   </button>
                 </div>
 
-                {post.imageUrl ? (
-                  <img src={post.imageUrl} alt={post.caption} className="vyb-campus-post-image" />
+                {post.mediaUrl && post.mediaType === "video" ? (
+                  <video src={post.mediaUrl} className="vyb-campus-post-image" controls playsInline muted loop />
+                ) : post.imageUrl || post.mediaUrl ? (
+                  <img src={post.imageUrl ?? post.mediaUrl ?? ""} alt={post.caption} className="vyb-campus-post-image" />
                 ) : (
                   <div className="vyb-campus-post-copy-panel">
                     {post.title ? <strong>{post.title}</strong> : null}
@@ -497,7 +578,7 @@ export function CampusHomeShell({
                       <CommentIcon />
                     </button>
                     <button type="button" className="vyb-campus-action-icon" aria-label="Share post">
-                      <SendIcon />
+                      <ShareIcon />
                     </button>
                     <button type="button" className="vyb-campus-action-icon" aria-label="Repost post">
                       <ShuffleIcon />
