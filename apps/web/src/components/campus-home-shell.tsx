@@ -113,6 +113,46 @@ function AddPostIcon() {
   );
 }
 
+function MediaIcon() {
+  return (
+    <IconBase>
+      <path
+        d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5zm0 9 4.5-4.5 3 3 4.5-5.5 4 5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="9" cy="9" r="1.6" fill="currentColor" />
+    </IconBase>
+  );
+}
+
+function StoryIcon() {
+  return (
+    <IconBase>
+      <circle cx="12" cy="12" r="8.2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+    </IconBase>
+  );
+}
+
+function GlobeIcon() {
+  return (
+    <IconBase>
+      <path
+        d="M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm-6.5 8h13M12 4a12.5 12.5 0 0 1 0 16M12 4a12.5 12.5 0 0 0 0 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </IconBase>
+  );
+}
+
 function HeartIcon() {
   return (
     <IconBase>
@@ -184,7 +224,6 @@ export function CampusHomeShell({
   const [feedPosts, setFeedPosts] = useState(initialPosts);
   const [recommendedUsers, setRecommendedUsers] = useState(suggestedUsers);
   const [selectedStory, setSelectedStory] = useState<StoryCard | null>(null);
-  const [draftTitle, setDraftTitle] = useState("");
   const [draftBody, setDraftBody] = useState("");
   const [composerMessage, setComposerMessage] = useState<string | null>(null);
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
@@ -227,11 +266,10 @@ export function CampusHomeShell({
   );
 
   async function handleQuickPostPublish() {
-    const title = draftTitle.trim();
     const body = draftBody.trim();
 
-    if (!title && !body) {
-      setComposerMessage("Add a title or message before publishing.");
+    if (!body) {
+      setComposerMessage("Write a caption before publishing.");
       return;
     }
 
@@ -245,7 +283,7 @@ export function CampusHomeShell({
           "content-type": "application/json"
         },
         body: JSON.stringify({
-          title,
+          title: body.slice(0, 72),
           body,
           kind: "text",
           placement: "feed",
@@ -268,7 +306,6 @@ export function CampusHomeShell({
       }
 
       setFeedPosts((current) => [payload.item!, ...current]);
-      setDraftTitle("");
       setDraftBody("");
       setIsComposerOpen(false);
       setFlashMessage("Your post is now live across campus.");
@@ -550,8 +587,11 @@ export function CampusHomeShell({
             aria-label="Create a post"
             onClick={(event) => event.stopPropagation()}
           >
+            <div className="vyb-campus-compose-handle" aria-hidden="true" />
+
             <div className="vyb-campus-compose-head">
-              <div>
+              <div className="vyb-campus-compose-head-copy">
+                <span className="vyb-campus-compose-kicker">Live feed</span>
                 <strong>Create post</strong>
                 <span>Publish instantly to the live campus feed.</span>
               </div>
@@ -560,26 +600,77 @@ export function CampusHomeShell({
               </button>
             </div>
 
-            <label className="vyb-campus-compose-field">
-              <span>Title</span>
-              <input
-                value={draftTitle}
-                onChange={(event) => setDraftTitle(event.target.value)}
-                placeholder="Prototype Night"
-                disabled={isSubmitting}
-              />
-            </label>
+            <div className="vyb-campus-compose-grid">
+              <div className="vyb-campus-compose-main">
+                <div className="vyb-campus-compose-user">
+                  <div className="vyb-campus-compose-avatar" aria-hidden="true">
+                    {(viewerName.trim() || viewerUsername).slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="vyb-campus-compose-user-copy">
+                    <strong>{viewerName}</strong>
+                    <span>@{viewerUsername}</span>
+                  </div>
+                  <span className="vyb-campus-compose-user-pill">Public post</span>
+                </div>
 
-            <label className="vyb-campus-compose-field">
-              <span>Message</span>
-              <textarea
-                value={draftBody}
-                onChange={(event) => setDraftBody(event.target.value)}
-                placeholder="What is happening on campus today?"
-                rows={5}
-                disabled={isSubmitting}
-              />
-            </label>
+                <label className="vyb-campus-compose-field">
+                  <span>Caption</span>
+                  <textarea
+                    value={draftBody}
+                    onChange={(event) => setDraftBody(event.target.value)}
+                    placeholder="What's on your mind?"
+                    rows={5}
+                    disabled={isSubmitting}
+                  />
+                </label>
+
+                {composerMessage ? <p className="vyb-campus-compose-message">{composerMessage}</p> : null}
+              </div>
+
+              <aside className="vyb-campus-compose-side">
+                <div className="vyb-campus-compose-side-copy">
+                  <strong>Tools</strong>
+                </div>
+
+                <div className="vyb-campus-compose-option-list">
+                  <Link href="/create?kind=post&from=%2Fhome" className="vyb-campus-compose-option">
+                    <div className="vyb-campus-compose-option-copy">
+                      <span className="vyb-campus-compose-option-icon ic-media">
+                        <MediaIcon />
+                      </span>
+                      <strong>Media</strong>
+                    </div>
+                  </Link>
+
+                  <Link href="/create?kind=story&from=%2Fhome" className="vyb-campus-compose-option">
+                    <div className="vyb-campus-compose-option-copy">
+                      <span className="vyb-campus-compose-option-icon ic-story">
+                        <StoryIcon />
+                      </span>
+                      <strong>Story</strong>
+                    </div>
+                  </Link>
+
+                  <Link href="/create?kind=vibe&from=%2Fhome" className="vyb-campus-compose-option">
+                    <div className="vyb-campus-compose-option-copy">
+                      <span className="vyb-campus-compose-option-icon ic-vibe">
+                        <ReelsIcon />
+                      </span>
+                      <strong>Vibe</strong>
+                    </div>
+                  </Link>
+
+                  <div className="vyb-campus-compose-option is-static">
+                    <div className="vyb-campus-compose-option-copy">
+                      <span className="vyb-campus-compose-option-icon ic-globe">
+                        <GlobeIcon />
+                      </span>
+                      <strong>Campus</strong>
+                    </div>
+                  </div>
+                </div>
+              </aside>
+            </div>
 
             <div className="vyb-campus-compose-link-row">
               <span>Need image or video?</span>
@@ -587,8 +678,6 @@ export function CampusHomeShell({
                 Open full uploader
               </Link>
             </div>
-
-            {composerMessage ? <p className="vyb-campus-compose-message">{composerMessage}</p> : null}
 
             <div className="vyb-campus-compose-actions">
               <button type="button" className="vyb-campus-compose-secondary" onClick={() => setIsComposerOpen(false)} disabled={isSubmitting}>

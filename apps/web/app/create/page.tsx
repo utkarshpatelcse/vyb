@@ -18,6 +18,14 @@ export default async function CreatePage() {
   }
 
   const viewerName = profile.profile?.fullName ?? viewer.displayName;
+  const viewerUsername = profile.profile?.username ?? viewer.email.split("@")[0];
 
-  return <CampusUploadShell viewerName={viewerName} viewerEmail={viewer.email} collegeName={profile.collegeName} />;
+  return (
+    <CampusUploadShell
+      viewerName={viewerName}
+      viewerUsername={viewerUsername}
+      viewerEmail={viewer.email}
+      collegeName={profile.collegeName}
+    />
+  );
 }
