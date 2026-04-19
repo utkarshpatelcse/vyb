@@ -368,8 +368,8 @@ export function CampusHomeShell({
   const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
   const navItems = [
     { label: "Home", href: "/home", icon: <HomeIcon />, active: true },
-    { label: "Events", href: "/home", icon: <EventsIcon /> },
-    { label: "Reels", href: "/home", icon: <ReelsIcon /> },
+    { label: "Events", href: "/events", icon: <EventsIcon /> },
+    { label: "Vibes", href: "/vibes", icon: <ReelsIcon /> },
     { label: "Market", href: "/market", icon: <MarketIcon /> },
     { label: "Profile", href: "/dashboard", icon: <ProfileIcon /> }
   ];

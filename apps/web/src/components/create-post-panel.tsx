@@ -63,7 +63,7 @@ export function CreatePostPanel({
   return (
     <div className="cl-form-card">
       <h3>Create a campus post</h3>
-      <p className="cl-panel-note">Phase 1 me text posts start kar rahe hain, lekin same flow baad me image/reels support karega.</p>
+      <p className="cl-panel-note">Phase 1 me text posts start kar rahe hain, lekin same flow baad me image/Vibes support karega.</p>
       <label className="cl-field">
         <span>Scope</span>
         <select value={communityId} onChange={(event) => setCommunityId(event.target.value)} disabled={!enabled || isPending}>

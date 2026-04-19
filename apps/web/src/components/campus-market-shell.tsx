@@ -429,9 +429,9 @@ export function CampusMarketShell({
 
   const navItems = [
     { label: "Home", href: "/home", icon: <HomeIcon /> },
-    { label: "Events", href: "/home", icon: <EventsIcon /> },
+    { label: "Events", href: "/events", icon: <EventsIcon /> },
     { label: "Market", href: "/market", icon: <MarketIcon />, active: true },
-    { label: "Reels", href: "/home", icon: <ReelsIcon /> },
+    { label: "Vibes", href: "/vibes", icon: <ReelsIcon /> },
     { label: "Profile", href: "/dashboard", icon: <ProfileIcon /> }
   ];
 
@@ -543,70 +543,11 @@ export function CampusMarketShell({
         </header>
 
         <div className="vyb-market-shell">
-          <section className="vyb-market-hero">
-            <div className="vyb-market-hero-copy">
-              <span className="vyb-market-kicker">Trusted campus exchange</span>
-              <h1>Buy, sell, and borrow without leaving {collegeName}.</h1>
-              <p>
-                Verified students can move gear, notes, and quick requests faster with a marketplace tuned for campus handoffs
-                and familiar pickup spots.
-              </p>
-
-              <div className="vyb-market-hero-actions">
-                <button type="button" className="vyb-market-primary-action">
-                  <PlusIcon />
-                  <span>List an item</span>
-                </button>
-                <button type="button" className="vyb-market-secondary-action" onClick={() => setActiveTab("buying")}>
-                  Browse requests
-                </button>
-              </div>
-
-              <div className="vyb-market-stat-row">
-                <div className="vyb-market-stat-card">
-                  <span>Live listings</span>
-                  <strong>{tabCounts.sale}</strong>
-                </div>
-                <div className="vyb-market-stat-card">
-                  <span>Requests open</span>
-                  <strong>{tabCounts.buying + tabCounts.lend}</strong>
-                </div>
-                <div className="vyb-market-stat-card">
-                  <span>Avg. reply</span>
-                  <strong>18 min</strong>
-                </div>
-              </div>
-            </div>
-
-            <div className="vyb-market-hero-aside">
-              <div className="vyb-market-highlight-card">
-                <span className="vyb-market-highlight-pill">Hot this week</span>
-                <strong>Exam sprint essentials are moving fastest</strong>
-                <p>Study bundles, calculators, and desk gear are getting the quickest responses across the campus feed.</p>
-              </div>
-
-              <div className="vyb-market-trust-grid">
-                <div className="vyb-market-trust-pill">
-                  <ShieldIcon />
-                  <span>Verified campus only</span>
-                </div>
-                <div className="vyb-market-trust-pill">
-                  <BoltIcon />
-                  <span>Fast local handoffs</span>
-                </div>
-                <div className="vyb-market-trust-pill">
-                  <PackageIcon />
-                  <span>Low-friction pickup spots</span>
-                </div>
-              </div>
-            </div>
-          </section>
-
           <section className="vyb-market-toolbar">
             <div className="vyb-market-toolbar-copy">
               <div>
                 <span className="vyb-market-section-label">{getTabLabel(activeTab)}</span>
-                <h2>Find the right campus deal faster</h2>
+                <h2>Marketplace feed for verified campus deals</h2>
               </div>
               <p>
                 {visibleCount} result{visibleCount === 1 ? "" : "s"} showing in {collegeName}

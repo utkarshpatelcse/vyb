@@ -225,9 +225,9 @@ export function CampusProfileShell({
 
   const navItems = [
     { label: "Home", href: "/home", icon: <HomeIcon /> },
-    { label: "Events", href: "/home", icon: <EventsIcon /> },
+    { label: "Events", href: "/events", icon: <EventsIcon /> },
     { label: "Market", href: "/market", icon: <MarketIcon /> },
-    { label: "Reels", href: "/home", icon: <ReelsIcon /> },
+    { label: "Vibes", href: "/vibes", icon: <ReelsIcon /> },
     { label: "Profile", href: "/dashboard", icon: <ProfileIcon />, active: true }
   ];
 
