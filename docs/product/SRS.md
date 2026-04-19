@@ -2,7 +2,7 @@
 
 Owner: Product Team
 Last Updated: 2026-04-19
-Change Summary: Added the KIET-first verified auth rollout, profile completion requirements, and the backend-driven landing/auth experience for the current Phase 1 web surface.
+Change Summary: Added the KIET-first verified auth rollout, profile completion requirements, and the authenticated home-feed landing flow for the current Phase 1 web surface.
 
 ## 1. Introduction
 
@@ -38,8 +38,10 @@ Phase 1 ships through the web client and one backend runtime. The architecture m
 - The initial production rollout shall accept only `@kiet.edu` accounts while the implementation remains extensible for additional approved colleges later.
 - The system shall support an onboarding path for colleges where domain verification is not yet configured.
 - The system shall support role assignment through tenant memberships.
-- Newly authenticated users shall complete a baseline campus profile before entering the main dashboard.
+- Newly authenticated users shall complete a baseline campus profile before entering the main authenticated home feed.
 - The baseline campus profile shall capture first name, optional last name, course, stream or specialization, year, section, and optional hostel details.
+- After successful profile completion, the authenticated user shall land on the main home feed that prioritizes stories, posts, and short-form discovery surfaces.
+- The dashboard route shall remain available as a secondary profile-oriented surface rather than the first post-auth landing screen.
 
 ### 2.2 Tenant and Community Management
 
@@ -140,6 +142,8 @@ The following are intentionally deferred out of Phase 1:
 
 - Next.js web app
 - SSR marketing and auth entry surfaces backed by the Phase 1 backend
+- authenticated home feed surface for the first post-auth experience
+- secondary profile/dashboard surface for account and campus details
 - PWA-capable mobile-friendly experience
 - future React Native / Expo mobile app for Android and iOS
 
@@ -173,10 +177,11 @@ The following are intentionally deferred out of Phase 1:
 ## 8. Acceptance Criteria For Phase 1
 
 - A verified student can join the correct college space
-- A verified `@kiet.edu` student can complete profile setup before entering the dashboard
+- A verified `@kiet.edu` student can complete profile setup before entering the authenticated home feed
 - An unknown-domain student can submit a college join request instead of being stranded
 - A platform admin can approve, reject, or send back a college join request
 - The student can enter relevant communities
+- The student lands on the main home feed after successful onboarding instead of being dropped into the profile page first
 - The student can create a post and see it in the feed
 - The student can upload and browse academic resources
 - A moderator can review a reported item and take action

@@ -10,6 +10,7 @@ Modular-monolith campus platform architecture with a responsive web client in Ph
 - A PWA-first responsive web shell is scaffolded in `apps/web`
 - The web shell can now read backend data with graceful fallback
 - The web shell now supports Firebase Auth login plus a secure cookie-backed viewer session for posts/resources
+- Authenticated users now land on a responsive `/home` feed surface after onboarding, while `/dashboard` is reserved for profile-style account details
 - A single backend runtime now hosts identity, campus, social, and resources modules for Phase 1
 - Data Connect schema and domain-owned connectors are scaffolded under `packages/dataconnect`
 - Backend social and resources modules now persist local dev data to JSON-backed stores

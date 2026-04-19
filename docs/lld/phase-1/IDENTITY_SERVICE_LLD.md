@@ -46,7 +46,7 @@ Out of scope:
 
 - Flow 1: user signs in with Firebase, backend edge validates identity, identity module creates or updates the internal `users` record, then resolves membership through the campus module.
 - Flow 2: user opens the app later, backend edge forwards the authenticated context, identity returns canonical `me` data with membership summary.
-- Flow 3: first-launch users from the approved college domain complete a campus profile before reaching the dashboard.
+- Flow 3: first-launch users from the approved college domain complete a campus profile before reaching the authenticated home feed.
 - Flow 4: user without a recognized domain receives an onboarding state that points toward the college join-request flow owned by the campus module.
 
 ## 6. API Design
@@ -65,7 +65,7 @@ Out of scope:
 - caller: web auth route or future native client
 - auth requirement: Firebase ID token in request body
 - request schema: `idToken`, optional display-name hint
-- response schema: session payload, profile-completion state, next-path decision
+- response schema: session payload, profile-completion state, next-path decision pointing to `/home` or `/onboarding`
 - error schema: invalid token, invalid domain, unverified email, unresolved campus access
 - rate limit policy: strict per user and IP
 
@@ -90,7 +90,7 @@ Out of scope:
 - caller: web or future native client
 - auth requirement: authenticated actor context required
 - request schema: first name, optional last name, course, stream or specialization, year, section, hosteller status, optional hostel and phone number
-- response schema: saved campus profile and completion state
+- response schema: saved campus profile and completion state that unlocks the authenticated home feed
 - error schema: invalid payload, unauthorized, invalid domain
 - rate limit policy: moderate per user
 
@@ -165,7 +165,7 @@ Out of scope:
 - unit tests: actor parsing, bootstrap idempotency, profile normalization
 - integration tests: bootstrap flow with campus resolution and session issuance
 - contract tests: `bootstrap`, `session/bootstrap`, `me`, and `profile` endpoints plus onboarding-state responses
-- manual QA: first login, repeat login, profile completion, unrecognized domain path
+- manual QA: first login, repeat login, profile completion, `/home` landing, profile/dashboard access, unrecognized domain path
 
 ## 15. Documentation Updates Required
 

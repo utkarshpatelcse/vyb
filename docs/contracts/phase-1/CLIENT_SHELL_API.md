@@ -2,7 +2,7 @@
 
 Owner: Architecture Team
 Last Updated: 2026-04-19
-Change Summary: Documented the backend-driven client-shell payload used by the SSR home surface.
+Change Summary: Documented the backend-driven client-shell payload used by the public SSR landing surface and clarified that authenticated users move to `/home`.
 
 ## 1. Metadata
 
@@ -19,7 +19,7 @@ Change Summary: Documented the backend-driven client-shell payload used by the S
 - Method: `GET`
 - Path: `/v1/client-shell`
 - Public or internal: public through backend
-- Purpose: provide lightweight backend-driven SSR content for the Phase 1 landing surface
+- Purpose: provide lightweight backend-driven SSR content for the public Phase 1 landing surface before authenticated users enter `/home`
 
 ## 3. Authentication and Authorization
 

@@ -2,7 +2,7 @@
 
 Owner: Architecture Team
 Last Updated: 2026-04-19
-Change Summary: Added the backend session-bootstrap, profile, and client-shell contracts for the current Phase 1 web entry flow.
+Change Summary: Added the backend session-bootstrap, profile, and client-shell contracts for the current Phase 1 web entry flow and authenticated home-feed landing.
 
 ## Contracts
 

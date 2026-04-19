@@ -2,7 +2,7 @@
 
 Owner: Architecture Team
 Last Updated: 2026-04-19
-Change Summary: Synced the client strategy with the Phase 1 modular monolith backend.
+Change Summary: Synced the client strategy with the Phase 1 modular monolith backend and the public-landing plus authenticated-home-feed web flow.
 
 ## 1. Purpose
 
@@ -22,6 +22,7 @@ The goal is to avoid painting the system into a web-only corner while also avoid
 - design every core flow to work well on mobile and desktop browsers
 - keep backend contracts client-agnostic through one backend runtime
 - provide installable mobile web behavior where browser support allows it
+- send authenticated users to a useful `/home` feed first while keeping profile details on a separate route
 
 ### Future Native
 
@@ -54,6 +55,7 @@ The goal is to avoid painting the system into a web-only corner while also avoid
 - critical journeys must support keyboard and mouse on web
 - mobile and desktop should feel like the same product, not the same exact layout
 - mobile web should feel app-like through shell navigation, motion, spacing, and PWA install support
+- logged-in users should land on useful campus content first, not on a profile management screen
 
 ## 6. Recommended Repo Allocation
 

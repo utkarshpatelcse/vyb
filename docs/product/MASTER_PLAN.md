@@ -2,7 +2,7 @@
 
 Owner: Product and Engineering
 Last Updated: 2026-04-19
-Change Summary: Added the KIET-first professional web entry flow, backend-verified session bootstrap, and mandatory profile completion gating for the current Phase 1 launch surface.
+Change Summary: Added the KIET-first professional web entry flow, backend-verified session bootstrap, mandatory profile completion gating, and the authenticated `/home` feed landing surface.
 
 ## 1. Why We Are Building This
 
@@ -144,7 +144,9 @@ After implementation:
 - web shell connected to backend reads with graceful fallback
 - Firebase Auth login plus secure cookie-backed web session is scaffolded
 - backend session bootstrap now verifies Firebase tokens before issuing the web session cookie
-- profile completion is now required before an authenticated user reaches the dashboard
+- profile completion is now required before an authenticated user reaches the main in-app home feed
+- authenticated users now land on a responsive `/home` feed shell with stories, posts, reels-style navigation, and a separate profile/dashboard route
+- profile reads and onboarding saves now have local fallback behavior for development when the backend is temporarily unavailable
 - Data Connect service config, schema, and domain-owned connectors are scaffolded
 - Data Connect connectors compile successfully and generated admin SDKs are available
 - shared server config helpers now load root env and initialize Firebase Admin/Data Connect clients
@@ -157,12 +159,13 @@ After implementation:
 ## 7. Current Next Actions
 
 1. freeze the modular-monolith Phase 1 runtime as the baseline
-2. extend backend token verification beyond session bootstrap to the rest of the authenticated API edge
-3. implement the college join-request submission and admin decision workflow
-4. add backend-edge rate limiting and richer structured error metadata
-5. start real upload registration and resource file flows through the media module
-6. add moderation publish and review flows so pending posts and resources can move into public lists
-7. introduce a simple admin surface for onboarding and moderation operations
+2. bind the `/home` feed shell to live backend feed, stories, and community data instead of placeholder content
+3. extend backend token verification beyond session bootstrap to the rest of the authenticated API edge
+4. implement the college join-request submission and admin decision workflow
+5. add backend-edge rate limiting and richer structured error metadata
+6. start real upload registration and resource file flows through the media module
+7. add moderation publish and review flows so pending posts and resources can move into public lists
+8. introduce a simple admin surface for onboarding and moderation operations
 
 ## 8. Decision Log Snapshot
 

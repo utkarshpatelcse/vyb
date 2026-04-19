@@ -11,6 +11,7 @@ Responsibilities:
 - backend-backed shell reads with graceful fallback mode
 - Firebase Auth login UI with secure server-side session bootstrap
 - cookie-backed viewer session for SSR, route handlers, and backend-backed auth-aware testing
+- authenticated `/home` feed landing surface plus a secondary `/dashboard` profile route
 - route handlers for post and resource creation through the backend
 - SSR and client rendering where appropriate
 - no privileged backend business logic

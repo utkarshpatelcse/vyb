@@ -2,7 +2,7 @@
 
 Owner: Architecture Team
 Last Updated: 2026-04-19
-Change Summary: Added the Phase 1 campus-profile read and update contract for post-auth onboarding.
+Change Summary: Added the Phase 1 campus-profile read and update contract for post-auth onboarding and home-feed gating.
 
 ## 1. Metadata
 
@@ -19,7 +19,7 @@ Change Summary: Added the Phase 1 campus-profile read and update contract for po
 - Method: `GET`, `PUT`
 - Path: `/v1/profile`
 - Public or internal: public through backend
-- Purpose: read and update the post-auth campus profile required before dashboard access
+- Purpose: read and update the post-auth campus profile required before authenticated home-feed access
 
 ## 3. Authentication and Authorization
 
@@ -74,4 +74,4 @@ Change Summary: Added the Phase 1 campus-profile read and update contract for po
 
 - Feature flags: none
 - Backward compatibility: additive only
-- Migration steps: move the interim profile persistence onto final Phase 1 storage once the owned schema is extended
+- Migration steps: move the interim profile persistence onto final Phase 1 storage once the owned schema is extended while preserving the `/home` post-onboarding route behavior

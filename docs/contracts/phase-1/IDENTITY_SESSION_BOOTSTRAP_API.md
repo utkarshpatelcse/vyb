@@ -2,7 +2,7 @@
 
 Owner: Architecture Team
 Last Updated: 2026-04-19
-Change Summary: Added the backend session-bootstrap contract for verified KIET-first web authentication.
+Change Summary: Added the backend session-bootstrap contract for verified KIET-first web authentication with authenticated home-feed routing.
 
 ## 1. Metadata
 
@@ -19,7 +19,7 @@ Change Summary: Added the backend session-bootstrap contract for verified KIET-f
 - Method: `POST`
 - Path: `/v1/auth/session/bootstrap`
 - Public or internal: public through backend
-- Purpose: verify a Firebase ID token, enforce launch-domain access, and return the authenticated session payload plus the next route decision
+- Purpose: verify a Firebase ID token, enforce launch-domain access, and return the authenticated session payload plus the next route decision for `/home` or `/onboarding`
 
 ## 3. Authentication and Authorization
 
@@ -72,4 +72,4 @@ Change Summary: Added the backend session-bootstrap contract for verified KIET-f
 
 - Feature flags: none
 - Backward compatibility: additive only
-- Migration steps: extend the same verification pattern to the remaining authenticated backend edge over time
+- Migration steps: extend the same verification pattern to the remaining authenticated backend edge over time while keeping web route decisions aligned with the authenticated home-feed landing flow

@@ -2,7 +2,7 @@
 
 Owner: Architecture Team
 Last Updated: 2026-04-19
-Change Summary: Switched Phase 1 runtime to a modular monolith backend, preserved extraction-ready domain boundaries, and kept college join requests as a first-class campus module concern.
+Change Summary: Switched Phase 1 runtime to a modular monolith backend, preserved extraction-ready domain boundaries, kept college join requests as a first-class campus module concern, and clarified the public-landing plus authenticated-home-feed web split.
 
 ## 1. Document Purpose
 
@@ -125,6 +125,7 @@ vyb/
 ### Client Surface Strategy
 
 - `apps/web` is the Phase 1 shipping client using Next.js and PWA capabilities.
+- `apps/web` contains a public SSR landing at `/`, an authenticated home-feed landing at `/home`, and a separate profile/dashboard surface.
 - `apps/mobile` is a future React Native / Expo client and must be considered in architecture decisions from the start.
 - `apps/backend` is the only Phase 1 backend deployable.
 - Shared logic should live in `packages/contracts`, `packages/validation`, and `packages/app-core`.
@@ -140,6 +141,7 @@ vyb/
 - mobile-first UI
 - desktop-strong responsive layouts
 - server-rendered routes where useful
+- public marketing and auth entry routes plus an authenticated home-feed route after onboarding
 - direct upload UX for media and resources
 - installable app shell with manifest and service worker
 - no privileged business logic
