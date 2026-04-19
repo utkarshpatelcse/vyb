@@ -2,7 +2,7 @@ import { getFirebaseAdminAuth } from "../../../../../packages/config/src/index.m
 import { readJson, sendError, sendJson } from "../../lib/http.mjs";
 import { buildFallbackDisplayName, resolveLiveContext } from "../shared/viewer-context.mjs";
 import { getAllowedCollegeDomains, isAllowedCollegeEmail, launchCollege, normalizeEmail } from "./college-access.mjs";
-import { getProfileByUserId, upsertProfile } from "./profile-repository.mjs";
+import { getProfileByUserId, updateUsername, upsertProfile } from "./profile-repository.mjs";
 import { z } from "zod";
 
 function requireNonEmptyString(value) {
@@ -37,6 +37,12 @@ function buildProfileResponse({ profile, collegeName }) {
 
 const profileSchema = z
   .object({
+    username: z
+      .string()
+      .trim()
+      .min(3, "User ID must be at least 3 characters long.")
+      .max(24, "User ID must be 24 characters or fewer.")
+      .regex(/^[a-z0-9](?:[a-z0-9._]{1,22}[a-z0-9])?$/u, "Use lowercase letters, numbers, dots, and underscores only."),
     firstName: z.string().trim().min(2, "First name must be at least 2 characters long."),
     lastName: z
       .union([z.string().trim().min(1, "Last name must be a valid string when provided."), z.literal(""), z.null()])
@@ -60,6 +66,15 @@ const profileSchema = z
       });
     }
   });
+
+const usernameUpdateSchema = z.object({
+  username: z
+    .string()
+    .trim()
+    .min(3, "User ID must be at least 3 characters long.")
+    .max(24, "User ID must be 24 characters or fewer.")
+    .regex(/^[a-z0-9](?:[a-z0-9._]{1,22}[a-z0-9])?$/u, "Use lowercase letters, numbers, dots, and underscores only.")
+});
 
 function buildSessionPayload({ displayName, email, membership, tenant, userId }) {
   return {
@@ -311,22 +326,38 @@ export async function handleIdentityRoute({ request, response, url, context }) {
     const lastName = normalizeOptionalString(normalizedPayload.lastName);
     const fullName = [firstName, lastName].filter(Boolean).join(" ");
 
-    const profile = await upsertProfile({
-      userId: resolved.viewer.id,
-      tenantId: resolved.live.tenant.id,
-      primaryEmail: resolved.viewer.primaryEmail,
-      collegeName: resolved.live.tenant.name,
-      firstName,
-      lastName,
-      fullName,
-      course: normalizedPayload.course.trim(),
-      stream: normalizedPayload.stream.trim(),
-      year: normalizedPayload.year,
-      section: normalizedPayload.section.trim().toUpperCase(),
-      isHosteller: normalizedPayload.isHosteller,
-      hostelName: normalizeOptionalString(normalizedPayload.hostelName),
-      phoneNumber: normalizePhoneNumber(normalizedPayload.phoneNumber)
-    });
+    let profile;
+    try {
+      profile = await upsertProfile({
+        userId: resolved.viewer.id,
+        tenantId: resolved.live.tenant.id,
+        primaryEmail: resolved.viewer.primaryEmail,
+        collegeName: resolved.live.tenant.name,
+        username: normalizedPayload.username.trim(),
+        firstName,
+        lastName,
+        fullName,
+        course: normalizedPayload.course.trim(),
+        stream: normalizedPayload.stream.trim(),
+        year: normalizedPayload.year,
+        section: normalizedPayload.section.trim().toUpperCase(),
+        isHosteller: normalizedPayload.isHosteller,
+        hostelName: normalizeOptionalString(normalizedPayload.hostelName),
+        phoneNumber: normalizePhoneNumber(normalizedPayload.phoneNumber)
+      });
+    } catch (error) {
+      if (error?.code === "USERNAME_TAKEN") {
+        sendError(response, 409, "USERNAME_TAKEN", "That user ID is already taken.");
+        return true;
+      }
+
+      if (error?.code === "INVALID_USERNAME") {
+        sendError(response, 400, "INVALID_USERNAME", error.message);
+        return true;
+      }
+
+      throw error;
+    }
 
     sendJson(
       response,
@@ -337,6 +368,49 @@ export async function handleIdentityRoute({ request, response, url, context }) {
       })
     );
     return true;
+  }
+
+  if (request.method === "PATCH" && url.pathname === "/v1/profile/username") {
+    const resolved = await resolveLiveContext(context.actor);
+    if (!resolved?.live?.tenant) {
+      sendError(response, 401, "UNAUTHENTICATED", "An authenticated membership is required.");
+      return true;
+    }
+
+    const payload = await readJson(request);
+    if (payload === null) {
+      sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+      return true;
+    }
+
+    const parsed = usernameUpdateSchema.safeParse(payload);
+    if (!parsed.success) {
+      sendError(response, 400, "INVALID_USERNAME", parsed.error.issues[0]?.message ?? "User ID is invalid.");
+      return true;
+    }
+
+    try {
+      const profile = await updateUsername({
+        userId: resolved.viewer.id,
+        username: parsed.data.username
+      });
+
+      if (!profile) {
+        sendError(response, 404, "PROFILE_NOT_FOUND", "Complete your profile before changing your user ID.");
+        return true;
+      }
+
+      sendJson(response, 200, { profile });
+      return true;
+    } catch (error) {
+      if (error?.code === "USERNAME_TAKEN") {
+        sendError(response, 409, "USERNAME_TAKEN", "That user ID is already taken.");
+        return true;
+      }
+
+      sendError(response, 400, "INVALID_USERNAME", error instanceof Error ? error.message : "User ID is invalid.");
+      return true;
+    }
   }
 
   return false;

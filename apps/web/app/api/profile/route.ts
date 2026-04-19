@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import type { UpsertProfileRequest } from "@vyb/contracts";
-import { onboardingProfileSchema } from "@vyb/validation";
+import { onboardingProfileSchema } from "../../../../../packages/validation/src/index";
 import { fetchBackendJson, proxyBackendMutation } from "../../../src/lib/backend";
 import {
   DEV_SESSION_COOKIE,

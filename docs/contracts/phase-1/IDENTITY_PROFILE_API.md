@@ -2,7 +2,7 @@
 
 Owner: Architecture Team
 Last Updated: 2026-04-19
-Change Summary: Added the Phase 1 campus-profile read and update contract for post-auth onboarding and home-feed gating.
+Change Summary: Added the Phase 1 campus-profile read, onboarding user-ID capture, and post-onboarding user-ID update contract.
 
 ## 1. Metadata
 
@@ -16,8 +16,8 @@ Change Summary: Added the Phase 1 campus-profile read and update contract for po
 
 ## 2. Endpoint Definition
 
-- Method: `GET`, `PUT`
-- Path: `/v1/profile`
+- Method: `GET`, `PUT`, `PATCH`
+- Path: `/v1/profile`, `/v1/profile/username`
 - Public or internal: public through backend
 - Purpose: read and update the post-auth campus profile required before authenticated home-feed access
 
@@ -35,7 +35,8 @@ Change Summary: Added the Phase 1 campus-profile read and update contract for po
 - Query params: none
 - Body:
   - `GET`: none
-  - `PUT`: `firstName`, optional `lastName`, `course`, `stream`, `year`, `section`, `isHosteller`, optional `hostelName`, optional `phoneNumber`
+  - `PUT`: `username`, `firstName`, optional `lastName`, `course`, `stream`, `year`, `section`, `isHosteller`, optional `hostelName`, optional `phoneNumber`
+  - `PATCH /v1/profile/username`: `username`
 
 ## 5. Response Schema
 
@@ -45,10 +46,10 @@ Change Summary: Added the Phase 1 campus-profile read and update contract for po
 
 ## 6. Error Schema
 
-- Validation errors: invalid profile payload
+- Validation errors: invalid profile payload or invalid user ID
 - Auth errors: unauthenticated
 - Authorization errors: invalid college domain or missing membership
-- Domain errors: none beyond launch-domain enforcement
+- Domain errors: duplicate user ID
 - Retryable errors: temporary persistence failure
 
 ## 7. Side Effects
@@ -66,8 +67,8 @@ Change Summary: Added the Phase 1 campus-profile read and update contract for po
 
 ## 9. Observability
 
-- Logs: profile reads and updates
-- Metrics: completion rate, update success rate
+- Logs: profile reads, profile updates, user-ID updates
+- Metrics: completion rate, update success rate, user-ID collision rate
 - Alerts: repeated profile update failures
 
 ## 10. Rollout Notes

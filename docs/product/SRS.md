@@ -2,7 +2,7 @@
 
 Owner: Product Team
 Last Updated: 2026-04-19
-Change Summary: Added the KIET-first verified auth rollout, profile completion requirements, the authenticated home-feed landing flow for the current Phase 1 web surface, and the Phase 1 hosting topology requirement.
+Change Summary: Added the KIET-first verified auth rollout, profile completion requirements, the authenticated home-feed landing flow for the current Phase 1 web surface, the Phase 1 hosting topology requirement, and the first live social requirements for user IDs, search, follows, stories, and vibes.
 
 ## 1. Introduction
 
@@ -39,9 +39,10 @@ Phase 1 ships through the web client and one backend runtime. The architecture m
 - The system shall support an onboarding path for colleges where domain verification is not yet configured.
 - The system shall support role assignment through tenant memberships.
 - Newly authenticated users shall complete a baseline campus profile before entering the main authenticated home feed.
-- The baseline campus profile shall capture first name, optional last name, course, stream or specialization, year, section, and optional hostel details.
+- The baseline campus profile shall capture a unique campus user ID, first name, optional last name, course, stream or specialization, year, section, and optional hostel details.
 - After successful profile completion, the authenticated user shall land on the main home feed that prioritizes stories, posts, and short-form discovery surfaces.
 - The dashboard route shall remain available as a secondary profile-oriented surface rather than the first post-auth landing screen.
+- Authenticated users shall be able to change their campus user ID later from the profile route.
 
 ### 2.2 Tenant and Community Management
 
@@ -62,10 +63,14 @@ Phase 1 ships through the web client and one backend runtime. The architecture m
 ### 2.4 Campus Square Feed
 
 - Verified users shall create text and image posts.
+- Verified users shall create short-form video vibes for the dedicated discovery surface.
 - Posts shall belong to a tenant and optionally to a community.
 - Users shall browse posts in reverse chronological order initially.
 - Users shall comment on posts.
 - Users shall react to posts.
+- Users shall search other campus profiles by user ID or name.
+- Users shall follow or unfollow other campus profiles inside the same tenant.
+- Users shall publish time-limited stories and those stories shall be visible to the author plus followed users.
 - Reported or unsafe content shall be reviewable by moderators.
 
 ### 2.5 Resource Vault
@@ -86,7 +91,6 @@ Phase 1 ships through the web client and one backend runtime. The architecture m
 
 The following are intentionally deferred out of Phase 1:
 
-- reels
 - anonymous Nook
 - wallet
 - marketplace
@@ -186,7 +190,10 @@ The following are intentionally deferred out of Phase 1:
 - A platform admin can approve, reject, or send back a college join request
 - The student can enter relevant communities
 - The student lands on the main home feed after successful onboarding instead of being dropped into the profile page first
-- The student can create a post and see it in the feed
+- The student can create a post and see it in the live feed
+- The student can set a campus user ID, search other verified users by that ID, and follow them
+- The student can publish a story and followed users can see it in their story lane
+- The student can upload a vibe and see it on the dedicated short-form discovery route
 - The student can upload and browse academic resources
 - A moderator can review a reported item and take action
 - The Phase 1 system can run with one backend runtime plus the web client

@@ -45,6 +45,7 @@ pnpm-debug.log*
 *.sqlite
 *.sqlite3
 *.db
+apps/backend/src/data/social-store.json
 
 # OS and editor files
 .DS_Store

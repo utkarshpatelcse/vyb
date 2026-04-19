@@ -1,7 +1,29 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { getCampusVibes, proxyBackendMutation } from "../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../src/lib/dev-session";
-import { proxyBackendMutation } from "../../../src/lib/backend";
+
+export async function GET() {
+  const viewer = readDevSessionFromCookieStore(await cookies());
+
+  if (!viewer) {
+    return NextResponse.json(
+      {
+        error: {
+          code: "UNAUTHENTICATED",
+          message: "You must sign in before viewing vibes."
+        }
+      },
+      { status: 401 }
+    );
+  }
+
+  try {
+    return NextResponse.json(await getCampusVibes(viewer));
+  } catch {
+    return NextResponse.json({ tenantId: viewer.tenantId, communityId: null, items: [], nextCursor: null });
+  }
+}
 
 export async function POST(request: Request) {
   const viewer = readDevSessionFromCookieStore(await cookies());
@@ -11,7 +33,7 @@ export async function POST(request: Request) {
       {
         error: {
           code: "UNAUTHENTICATED",
-          message: "You must sign in before creating a post."
+          message: "You must sign in before uploading a vibe."
         }
       },
       { status: 401 }
@@ -20,22 +42,19 @@ export async function POST(request: Request) {
 
   const payload = (await request.json().catch(() => null)) as
     | {
-        title?: string;
+        title?: string | null;
         body?: string;
-        communityId?: string | null;
-        kind?: "text" | "image" | "video";
         mediaUrl?: string | null;
         location?: string | null;
-        placement?: "feed" | "vibe";
       }
     | null;
 
-  if (!payload) {
+  if (!payload?.mediaUrl) {
     return NextResponse.json(
       {
         error: {
-          code: "INVALID_JSON",
-          message: "Request body must be valid JSON."
+          code: "INVALID_VIBE",
+          message: "Add a video before publishing your vibe."
         }
       },
       { status: 400 }
@@ -49,12 +68,12 @@ export async function POST(request: Request) {
       {
         tenantId: viewer.tenantId,
         membershipId: viewer.membershipId,
-        communityId: payload.communityId ?? null,
-        placement: payload.placement ?? "feed",
-        kind: payload.kind ?? "text",
+        communityId: null,
+        placement: "vibe",
+        kind: "video",
         title: payload.title ?? "",
         body: payload.body ?? "",
-        mediaUrl: payload.mediaUrl ?? null,
+        mediaUrl: payload.mediaUrl,
         location: payload.location ?? null
       },
       viewer
@@ -64,7 +83,7 @@ export async function POST(request: Request) {
       {
         error: {
           code: "BACKEND_UNAVAILABLE",
-          message: "The backend is unavailable right now."
+          message: "The vibe service is unavailable right now."
         }
       },
       { status: 502 }

@@ -1,26 +1,126 @@
-import { getFirebaseDataConnect } from "../../../../../packages/config/src/index.mjs";
-import {
-  connectorConfig as socialConnectorConfig,
-  createPost as createPostMutation,
-  listFeedByTenant
-} from "../../../../../packages/dataconnect/social-admin-sdk/esm/index.esm.js";
 import { readJson, sendError, sendJson } from "../../lib/http.mjs";
+import {
+  getProfileByUsername,
+  getProfileByUserId,
+  listProfilesByTenant,
+  searchProfiles
+} from "../identity/profile-repository.mjs";
 import { resolveLiveContext } from "../shared/viewer-context.mjs";
-import { createComment, createPost, findPostById, listPosts, upsertReaction } from "./repository.mjs";
+import {
+  countPostsByUser,
+  createComment,
+  createPost,
+  createStory,
+  findPostById,
+  followUser,
+  getFollowStats,
+  isFollowing,
+  listPosts,
+  listPostsByUser,
+  listStories,
+  unfollowUser,
+  upsertReaction
+} from "./repository.mjs";
 
-const allowedPostKinds = new Set(["text", "image"]);
+const allowedPostKinds = new Set(["text", "image", "video"]);
 const allowedReactionTypes = new Set(["fire", "support", "like"]);
+const allowedStoryMediaTypes = new Set(["image", "video"]);
 
 function requireNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-function parseLimit(value) {
-  const parsed = Number(value ?? "20");
+function parseLimit(value, fallback = 20) {
+  const parsed = Number(value ?? String(fallback));
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 50) {
     return null;
   }
   return parsed;
+}
+
+function buildFeedPayload(item) {
+  return {
+    ...item
+  };
+}
+
+async function buildUserSearchItems({ tenantId, viewerUserId, query, limit }) {
+  const profiles = await searchProfiles({
+    tenantId,
+    query,
+    limit,
+    excludedUserId: viewerUserId
+  });
+
+  return Promise.all(
+    profiles.map(async (profile) => {
+      const followStats = await getFollowStats({
+        tenantId,
+        userId: profile.userId
+      });
+
+      return {
+        userId: profile.userId,
+        username: profile.username,
+        displayName: profile.fullName,
+        collegeName: profile.collegeName,
+        course: profile.course,
+        stream: profile.stream,
+        isFollowing: await isFollowing({
+          tenantId,
+          followerUserId: viewerUserId,
+          followingUserId: profile.userId
+        }),
+        stats: {
+          posts: await countPostsByUser({
+            tenantId,
+            userId: profile.userId,
+            placement: "feed"
+          }),
+          followers: followStats.followers,
+          following: followStats.following
+        }
+      };
+    })
+  );
+}
+
+async function buildSuggestedUserItems({ tenantId, viewerUserId, limit }) {
+  const profiles = (await listProfilesByTenant(tenantId))
+    .filter((profile) => profile.userId !== viewerUserId)
+    .slice(0, limit);
+
+  return Promise.all(
+    profiles.map(async (profile) => {
+      const followStats = await getFollowStats({
+        tenantId,
+        userId: profile.userId
+      });
+
+      return {
+        userId: profile.userId,
+        username: profile.username,
+        displayName: profile.fullName,
+        collegeName: profile.collegeName,
+        course: profile.course,
+        stream: profile.stream,
+        isFollowing: await isFollowing({
+          tenantId,
+          followerUserId: viewerUserId,
+          followingUserId: profile.userId
+        }),
+        stats: {
+          posts: await countPostsByUser({
+            tenantId,
+            userId: profile.userId,
+            placement: "feed"
+          }),
+          followers: followStats.followers,
+          following: followStats.following
+        }
+      };
+    })
+  );
 }
 
 export function getSocialModuleHealth() {
@@ -35,9 +135,15 @@ export async function handleSocialRoute({ request, response, url, context }) {
     return false;
   }
 
+  const resolved = await resolveLiveContext(context.actor);
+  if (!resolved?.viewer) {
+    return false;
+  }
+
   if (request.method === "GET" && url.pathname === "/v1/feed") {
     const tenantId = url.searchParams.get("tenantId");
     const communityId = url.searchParams.get("communityId");
+    const authorUserId = url.searchParams.get("authorUserId");
     const limit = parseLimit(url.searchParams.get("limit"));
 
     if (!requireNonEmptyString(tenantId)) {
@@ -50,47 +156,47 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
-    const resolved = await resolveLiveContext(context.actor);
-    if (resolved?.live?.tenant) {
-      try {
-        const data = await listFeedByTenant(getFirebaseDataConnect(socialConnectorConfig), {
-          tenantId: resolved.live.tenant.id,
-          limit
-        });
+    const items = await listPosts({
+      tenantId,
+      communityId,
+      limit,
+      placement: "feed",
+      userId: authorUserId ?? null
+    });
 
-        const items = data.data.posts
-          .filter((item) => (communityId ? item.communityId === communityId : true))
-          .map((item) => ({
-            id: item.id,
-            tenantId: item.tenantId,
-            communityId: item.communityId ?? null,
-            membershipId: item.membershipId,
-            kind: item.kind,
-            title: item.title ?? "Untitled post",
-            body: item.body,
-            status: item.status,
-            reactions: 0,
-            comments: 0,
-            createdAt: item.createdAt
-          }));
-
-        sendJson(response, 200, {
-          tenantId: resolved.live.tenant.id,
-          communityId,
-          items,
-          nextCursor: null
-        });
-        return true;
-      } catch {
-        // fall through to local starter data
-      }
-    }
-
-    const items = await listPosts({ tenantId, communityId, limit });
     sendJson(response, 200, {
       tenantId,
       communityId,
-      items,
+      items: items.map(buildFeedPayload),
+      nextCursor: null
+    });
+    return true;
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/vibes") {
+    const tenantId = url.searchParams.get("tenantId");
+    const limit = parseLimit(url.searchParams.get("limit"), 24);
+
+    if (!requireNonEmptyString(tenantId)) {
+      sendError(response, 400, "INVALID_TENANT", "tenantId is required.");
+      return true;
+    }
+
+    if (limit === null) {
+      sendError(response, 400, "INVALID_LIMIT", "limit must be an integer between 1 and 50.");
+      return true;
+    }
+
+    const items = await listPosts({
+      tenantId,
+      limit,
+      placement: "vibe"
+    });
+
+    sendJson(response, 200, {
+      tenantId,
+      communityId: null,
+      items: items.map(buildFeedPayload),
       nextCursor: null
     });
     return true;
@@ -108,64 +214,242 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
-    if (!requireNonEmptyString(payload.membershipId)) {
-      sendError(response, 400, "INVALID_MEMBERSHIP", "membershipId is required.");
-      return true;
-    }
-
     if (!allowedPostKinds.has(payload.kind ?? "text")) {
-      sendError(response, 400, "INVALID_KIND", "kind must be one of text or image.");
+      sendError(response, 400, "INVALID_KIND", "kind must be one of text, image, or video.");
       return true;
     }
 
-    if (!requireNonEmptyString(payload.body) || payload.body.trim().length < 8) {
-      sendError(response, 400, "INVALID_BODY", "body must be at least 8 characters long.");
+    if (!requireNonEmptyString(payload.body) && !requireNonEmptyString(payload.mediaUrl)) {
+      sendError(response, 400, "INVALID_BODY", "Add a caption, message, or media before publishing.");
       return true;
     }
 
-    const resolved = await resolveLiveContext(context.actor);
-    if (resolved?.live?.tenant && resolved.live.membership) {
-      try {
-        const created = await createPostMutation(getFirebaseDataConnect(socialConnectorConfig), {
-          tenantId: resolved.live.tenant.id,
-          communityId: requireNonEmptyString(payload.communityId) ? payload.communityId : null,
-          membershipId: resolved.live.membership.id,
-          kind: payload.kind ?? "text",
-          title: requireNonEmptyString(payload.title) ? payload.title.trim() : "Untitled post",
-          body: payload.body.trim(),
-          status: "pending"
-        });
-
-        sendJson(response, 201, {
-          item: {
-            id: created.data.post_insert.id,
-            tenantId: resolved.live.tenant.id,
-            communityId: requireNonEmptyString(payload.communityId) ? payload.communityId : null,
-            membershipId: resolved.live.membership.id,
-            kind: payload.kind ?? "text",
-            title: requireNonEmptyString(payload.title) ? payload.title.trim() : "Untitled post",
-            body: payload.body.trim(),
-            status: "pending",
-            reactions: 0,
-            comments: 0,
-            createdAt: new Date().toISOString()
-          }
-        });
-        return true;
-      } catch {
-        // fall through to local starter data
-      }
+    const profile = await getProfileByUserId(resolved.viewer.id);
+    if (!profile?.profileCompleted) {
+      sendError(response, 403, "PROFILE_INCOMPLETE", "Complete your profile before publishing.");
+      return true;
     }
 
     const item = await createPost({
       tenantId: payload.tenantId,
       communityId: payload.communityId ?? null,
-      membershipId: payload.membershipId,
+      userId: resolved.viewer.id,
+      membershipId: payload.membershipId ?? context.actor.id,
+      authorUsername: profile.username,
+      authorName: profile.fullName,
+      placement: payload.placement === "vibe" ? "vibe" : "feed",
       kind: payload.kind ?? "text",
-      title: requireNonEmptyString(payload.title) ? payload.title.trim() : "Untitled post",
-      body: payload.body.trim()
+      mediaUrl: requireNonEmptyString(payload.mediaUrl) ? payload.mediaUrl.trim() : null,
+      location: requireNonEmptyString(payload.location) ? payload.location.trim() : profile.collegeName,
+      title: requireNonEmptyString(payload.title) ? payload.title.trim() : "Campus update",
+      body: requireNonEmptyString(payload.body) ? payload.body.trim() : ""
     });
+
+    sendJson(response, 201, {
+      item: buildFeedPayload(item)
+    });
+    return true;
+  }
+
+  if (request.method === "POST" && url.pathname === "/v1/stories") {
+    const payload = await readJson(request);
+    if (!payload || typeof payload !== "object") {
+      sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+      return true;
+    }
+
+    if (!requireNonEmptyString(payload.tenantId)) {
+      sendError(response, 400, "INVALID_TENANT", "tenantId is required.");
+      return true;
+    }
+
+    if (!allowedStoryMediaTypes.has(payload.mediaType ?? "")) {
+      sendError(response, 400, "INVALID_MEDIA_TYPE", "Stories support image or video media.");
+      return true;
+    }
+
+    if (!requireNonEmptyString(payload.mediaUrl)) {
+      sendError(response, 400, "MISSING_MEDIA", "Add story media before publishing.");
+      return true;
+    }
+
+    const profile = await getProfileByUserId(resolved.viewer.id);
+    if (!profile?.profileCompleted) {
+      sendError(response, 403, "PROFILE_INCOMPLETE", "Complete your profile before publishing stories.");
+      return true;
+    }
+
+    const item = await createStory({
+      tenantId: payload.tenantId,
+      userId: resolved.viewer.id,
+      username: profile.username,
+      displayName: profile.fullName,
+      mediaType: payload.mediaType,
+      mediaUrl: payload.mediaUrl.trim(),
+      caption: requireNonEmptyString(payload.caption) ? payload.caption.trim() : ""
+    });
+
     sendJson(response, 201, { item });
+    return true;
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/stories") {
+    const tenantId = url.searchParams.get("tenantId");
+    if (!requireNonEmptyString(tenantId)) {
+      sendError(response, 400, "INVALID_TENANT", "tenantId is required.");
+      return true;
+    }
+
+    const items = await listStories({
+      tenantId,
+      viewerUserId: resolved.viewer.id
+    });
+
+    sendJson(response, 200, { items });
+    return true;
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/users/search") {
+    const tenantId = url.searchParams.get("tenantId");
+    const query = url.searchParams.get("q") ?? "";
+    const trimmedQuery = query.trim();
+    const suggested = url.searchParams.get("suggested") === "1";
+    const limit = parseLimit(url.searchParams.get("limit"), 12);
+
+    if (!requireNonEmptyString(tenantId)) {
+      sendError(response, 400, "INVALID_TENANT", "tenantId is required.");
+      return true;
+    }
+
+    if (limit === null) {
+      sendError(response, 400, "INVALID_LIMIT", "limit must be an integer between 1 and 50.");
+      return true;
+    }
+
+    const items = suggested
+      ? await buildSuggestedUserItems({
+          tenantId,
+          viewerUserId: resolved.viewer.id,
+          limit
+        })
+      : trimmedQuery
+        ? await buildUserSearchItems({
+            tenantId,
+            viewerUserId: resolved.viewer.id,
+            query: trimmedQuery,
+            limit
+          })
+        : [];
+
+    sendJson(response, 200, {
+      query: trimmedQuery,
+      items
+    });
+    return true;
+  }
+
+  const publicProfileMatch = request.method === "GET" ? url.pathname.match(/^\/v1\/users\/([^/]+)$/) : null;
+  if (publicProfileMatch) {
+    const tenantId = url.searchParams.get("tenantId");
+    if (!requireNonEmptyString(tenantId)) {
+      sendError(response, 400, "INVALID_TENANT", "tenantId is required.");
+      return true;
+    }
+
+    const profile = await getProfileByUsername({
+      tenantId,
+      username: decodeURIComponent(publicProfileMatch[1])
+    });
+
+    if (!profile) {
+      sendError(response, 404, "USER_NOT_FOUND", "That campus profile was not found.");
+      return true;
+    }
+
+    const followStats = await getFollowStats({
+      tenantId,
+      userId: profile.userId
+    });
+    const posts = await listPostsByUser({
+      tenantId,
+      userId: profile.userId,
+      limit: 24,
+      placement: "feed"
+    });
+
+    sendJson(response, 200, {
+      profile: {
+        userId: profile.userId,
+        username: profile.username,
+        displayName: profile.fullName,
+        collegeName: profile.collegeName,
+        course: profile.course,
+        stream: profile.stream
+      },
+      stats: {
+        posts: posts.length,
+        followers: followStats.followers,
+        following: followStats.following
+      },
+      isFollowing: await isFollowing({
+        tenantId,
+        followerUserId: resolved.viewer.id,
+        followingUserId: profile.userId
+      }),
+      isViewerProfile: profile.userId === resolved.viewer.id,
+      posts
+    });
+    return true;
+  }
+
+  const followMatch =
+    request.method === "PUT" || request.method === "DELETE"
+      ? url.pathname.match(/^\/v1\/users\/([^/]+)\/follow$/)
+      : null;
+  if (followMatch) {
+    const tenantId = url.searchParams.get("tenantId");
+    if (!requireNonEmptyString(tenantId)) {
+      sendError(response, 400, "INVALID_TENANT", "tenantId is required.");
+      return true;
+    }
+
+    const target = await getProfileByUsername({
+      tenantId,
+      username: decodeURIComponent(followMatch[1])
+    });
+
+    if (!target) {
+      sendError(response, 404, "USER_NOT_FOUND", "That campus profile was not found.");
+      return true;
+    }
+
+    if (request.method === "PUT") {
+      await followUser({
+        tenantId,
+        followerUserId: resolved.viewer.id,
+        followingUserId: target.userId
+      });
+    } else {
+      await unfollowUser({
+        tenantId,
+        followerUserId: resolved.viewer.id,
+        followingUserId: target.userId
+      });
+    }
+
+    const followStats = await getFollowStats({
+      tenantId,
+      userId: target.userId
+    });
+
+    sendJson(response, 200, {
+      username: target.username,
+      isFollowing: request.method === "PUT",
+      stats: {
+        followers: followStats.followers,
+        following: followStats.following
+      }
+    });
     return true;
   }
 

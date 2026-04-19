@@ -1,54 +1,36 @@
 "use client";
 
+import type { FeedCard, StoryCard, UserSearchItem } from "@vyb/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
-import { consumeCampusUploads } from "../lib/campus-upload-store";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { SignOutButton } from "./sign-out-button";
-
-type StoryItem = {
-  id: string;
-  handle: string;
-  imageUrl: string;
-  mediaType?: "image" | "video";
-};
-
-type PostItem = {
-  id: string;
-  author: string;
-  caption: string;
-  mediaType?: "image" | "video" | null;
-  mediaUrl?: string | null;
-  imageUrl?: string | null;
-  likes: string;
-  location: string;
-  title?: string | null;
-};
 
 type CampusHomeShellProps = {
   viewerName: string;
+  viewerUsername: string;
   collegeName: string;
   viewerEmail: string;
   course?: string | null;
   stream?: string | null;
   role: string;
-  stories: StoryItem[];
-  initialPosts: PostItem[];
+  stories: StoryCard[];
+  initialPosts: FeedCard[];
+  suggestedUsers: UserSearchItem[];
 };
 
-type ResizeSide = "left" | "right";
+function formatMetric(value: number) {
+  return new Intl.NumberFormat("en-IN", {
+    notation: value > 999 ? "compact" : "standard",
+    maximumFractionDigits: 1
+  }).format(value);
+}
 
-const DEFAULT_LEFT_WIDTH = 260;
-const DEFAULT_RIGHT_WIDTH = 320;
-const MIN_LEFT_WIDTH = 220;
-const MAX_LEFT_WIDTH = 360;
-const MIN_RIGHT_WIDTH = 280;
-const MAX_RIGHT_WIDTH = 420;
-const LEFT_WIDTH_STORAGE_KEY = "vyb-campus-left-width";
-const RIGHT_WIDTH_STORAGE_KEY = "vyb-campus-right-width";
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
+function layoutStyle() {
+  return {
+    "--vyb-campus-left-width": "260px",
+    "--vyb-campus-right-width": "320px"
+  } as CSSProperties;
 }
 
 function IconBase({ children }: { children: ReactNode }) {
@@ -99,6 +81,14 @@ function ProfileIcon() {
   );
 }
 
+function SearchIcon() {
+  return (
+    <IconBase>
+      <path d="m20 20-3.8-3.8M10.8 17a6.2 6.2 0 1 1 0-12.4 6.2 6.2 0 0 1 0 12.4Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </IconBase>
+  );
+}
+
 function BellIcon() {
   return (
     <IconBase>
@@ -115,13 +105,10 @@ function SendIcon() {
   );
 }
 
-function ShareIcon() {
+function AddPostIcon() {
   return (
     <IconBase>
-      <path d="M9.1 10.5 14.7 7.2M9.1 13.5l5.6 3.3" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="6.5" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.9" />
-      <circle cx="17.6" cy="5.8" r="3" fill="none" stroke="currentColor" strokeWidth="1.9" />
-      <circle cx="17.6" cy="18.2" r="3" fill="none" stroke="currentColor" strokeWidth="1.9" />
+      <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />
     </IconBase>
   );
 }
@@ -142,13 +129,13 @@ function CommentIcon() {
   );
 }
 
-function ShuffleIcon() {
+function ShareIcon() {
   return (
     <IconBase>
-      <path d="M7 6.5h6.1A3.9 3.9 0 0 1 17 10.4v5.3" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="m14.5 13.2 2.5 2.5 2.5-2.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M17 17.5h-6.1A3.9 3.9 0 0 1 7 13.6V8.3" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="m9.5 10.8-2.5-2.5-2.5 2.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9.1 10.5 14.7 7.2M9.1 13.5l5.6 3.3" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="6.5" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.9" />
+      <circle cx="17.6" cy="5.8" r="3" fill="none" stroke="currentColor" strokeWidth="1.9" />
+      <circle cx="17.6" cy="18.2" r="3" fill="none" stroke="currentColor" strokeWidth="1.9" />
     </IconBase>
   );
 }
@@ -177,115 +164,41 @@ function CloseIcon() {
   );
 }
 
-function AddPostIcon() {
-  return (
-    <IconBase>
-      <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />
-    </IconBase>
-  );
+function getProfileHref(username: string, viewerUsername: string) {
+  return username === viewerUsername ? "/dashboard" : `/u/${encodeURIComponent(username)}`;
 }
 
 export function CampusHomeShell({
   viewerName,
+  viewerUsername,
   collegeName,
   viewerEmail,
   course,
   stream,
   role,
   stories,
-  initialPosts
+  initialPosts,
+  suggestedUsers
 }: CampusHomeShellProps) {
   const router = useRouter();
   const [feedPosts, setFeedPosts] = useState(initialPosts);
-  const [storyFeed, setStoryFeed] = useState(stories);
-  const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH);
-  const [rightWidth, setRightWidth] = useState(DEFAULT_RIGHT_WIDTH);
-  const [activeResize, setActiveResize] = useState<ResizeSide | null>(null);
-  const [composerOpen, setComposerOpen] = useState(false);
+  const [recommendedUsers, setRecommendedUsers] = useState(suggestedUsers);
+  const [selectedStory, setSelectedStory] = useState<StoryCard | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftBody, setDraftBody] = useState("");
   const [composerMessage, setComposerMessage] = useState<string | null>(null);
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
+  const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const resizeState = useRef<{ side: ResizeSide; startX: number; startWidth: number } | null>(null);
+  const [followBusyUsername, setFollowBusyUsername] = useState<string | null>(null);
 
   useEffect(() => {
-    const storedLeftWidth = Number.parseInt(window.localStorage.getItem(LEFT_WIDTH_STORAGE_KEY) ?? "", 10);
-    const storedRightWidth = Number.parseInt(window.localStorage.getItem(RIGHT_WIDTH_STORAGE_KEY) ?? "", 10);
-
-    if (Number.isFinite(storedLeftWidth)) {
-      setLeftWidth(clamp(storedLeftWidth, MIN_LEFT_WIDTH, MAX_LEFT_WIDTH));
-    }
-
-    if (Number.isFinite(storedRightWidth)) {
-      setRightWidth(clamp(storedRightWidth, MIN_RIGHT_WIDTH, MAX_RIGHT_WIDTH));
-    }
-  }, []);
+    setFeedPosts(initialPosts);
+  }, [initialPosts]);
 
   useEffect(() => {
-    window.localStorage.setItem(LEFT_WIDTH_STORAGE_KEY, String(leftWidth));
-  }, [leftWidth]);
-
-  useEffect(() => {
-    window.localStorage.setItem(RIGHT_WIDTH_STORAGE_KEY, String(rightWidth));
-  }, [rightWidth]);
-
-  useEffect(() => {
-    if (!activeResize) {
-      return;
-    }
-
-    function handlePointerMove(event: globalThis.PointerEvent) {
-      const currentResize = resizeState.current;
-
-      if (!currentResize) {
-        return;
-      }
-
-      if (currentResize.side === "left") {
-        const nextWidth = clamp(currentResize.startWidth + (event.clientX - currentResize.startX), MIN_LEFT_WIDTH, MAX_LEFT_WIDTH);
-        setLeftWidth(nextWidth);
-        return;
-      }
-
-      const nextWidth = clamp(currentResize.startWidth - (event.clientX - currentResize.startX), MIN_RIGHT_WIDTH, MAX_RIGHT_WIDTH);
-      setRightWidth(nextWidth);
-    }
-
-    function handlePointerUp() {
-      resizeState.current = null;
-      setActiveResize(null);
-    }
-
-    document.body.classList.add("vyb-campus-is-resizing");
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-
-    return () => {
-      document.body.classList.remove("vyb-campus-is-resizing");
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-    };
-  }, [activeResize]);
-
-  useEffect(() => {
-    if (!composerOpen) {
-      return;
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setComposerOpen(false);
-        setComposerMessage(null);
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [composerOpen]);
+    setRecommendedUsers(suggestedUsers);
+  }, [suggestedUsers]);
 
   useEffect(() => {
     if (!flashMessage) {
@@ -294,85 +207,26 @@ export function CampusHomeShell({
 
     const timeoutId = window.setTimeout(() => {
       setFlashMessage(null);
-    }, 3200);
+    }, 2600);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
   }, [flashMessage]);
 
-  useEffect(() => {
-    const uploads = consumeCampusUploads(["post", "story"]);
+  const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
+  const navItems = useMemo(
+    () => [
+      { label: "Home", href: "/home", icon: <HomeIcon />, active: true },
+      { label: "Events", href: "/events", icon: <EventsIcon /> },
+      { label: "Vibes", href: "/vibes", icon: <ReelsIcon /> },
+      { label: "Market", href: "/market", icon: <MarketIcon /> },
+      { label: "Profile", href: "/dashboard", icon: <ProfileIcon /> }
+    ],
+    []
+  );
 
-    if (uploads.length === 0) {
-      return;
-    }
-
-    const nextStories = uploads
-      .filter((item) => item.kind === "story")
-      .map((item) => ({
-        id: item.id,
-        handle: item.author,
-        imageUrl: item.mediaUrl ?? `https://i.pravatar.cc/120?u=${encodeURIComponent(item.author)}`,
-        mediaType: (item.mediaKind === "video" ? "video" : "image") as "image" | "video"
-      }));
-
-    const nextPosts = uploads
-      .filter((item) => item.kind === "post")
-      .map((item) => ({
-        id: item.id,
-        author: item.author,
-        caption: item.caption,
-        imageUrl: item.mediaKind === "image" ? item.mediaUrl : null,
-        likes: "0",
-        location: item.location,
-        mediaType: item.mediaKind,
-        mediaUrl: item.mediaUrl,
-        title: item.title ?? null
-      }));
-
-    if (nextStories.length > 0) {
-      setStoryFeed((current) => [...nextStories, ...current]);
-    }
-
-    if (nextPosts.length > 0) {
-      setFeedPosts((current) => [...nextPosts, ...current]);
-    }
-
-    setFlashMessage(
-      nextStories.length > 0 && nextPosts.length > 0
-        ? "Story and post were added from the shared uploader."
-        : nextStories.length > 0
-          ? "Story added from the shared uploader."
-          : "Post added from the shared uploader."
-    );
-  }, []);
-
-  function openComposer(kind: "post" | "story" = "post") {
-    setComposerMessage(null);
-    router.push(`/create?kind=${kind}&from=${encodeURIComponent("/home")}`);
-  }
-
-  function closeComposer() {
-    setComposerMessage(null);
-    setComposerOpen(false);
-  }
-
-  function startResizeDrag(side: ResizeSide, event: PointerEvent<HTMLButtonElement>) {
-    if (window.innerWidth < 900) {
-      return;
-    }
-
-    event.preventDefault();
-    resizeState.current = {
-      side,
-      startX: event.clientX,
-      startWidth: side === "left" ? leftWidth : rightWidth
-    };
-    setActiveResize(side);
-  }
-
-  function handleComposerSubmit() {
+  async function handleQuickPostPublish() {
     const title = draftTitle.trim();
     const body = draftBody.trim();
 
@@ -384,70 +238,84 @@ export function CampusHomeShell({
     setComposerMessage(null);
     setIsSubmitting(true);
 
-    void (async () => {
-      try {
-        const response = await fetch("/api/posts", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json"
-          },
-          body: JSON.stringify({
-            title,
-            body,
-            communityId: null
-          })
-        });
+    try {
+      const response = await fetch("/api/posts", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          title,
+          body,
+          kind: "text",
+          placement: "feed",
+          location: collegeName
+        })
+      });
 
-        const payload = (await response.json().catch(() => null)) as
-          | {
-              error?: {
-                message?: string;
-              };
-            }
-          | null;
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            item?: FeedCard;
+            error?: {
+              message?: string;
+            };
+          }
+        | null;
 
-        if (!response.ok) {
-          setComposerMessage(payload?.error?.message ?? "We could not publish your post right now.");
-          return;
-        }
-
-        setFeedPosts((currentPosts) => [
-          {
-            id: `new-${Date.now()}`,
-            author: viewerEmail.split("@")[0] ?? viewerName,
-            title: title || "Campus update",
-            caption: body || title || "A new update just landed in the campus feed.",
-            imageUrl: null,
-            likes: "0",
-            location: collegeName
-          },
-          ...currentPosts
-        ]);
-        setDraftTitle("");
-        setDraftBody("");
-        setFlashMessage("Post published to the campus feed.");
-        setComposerOpen(false);
-      } finally {
-        setIsSubmitting(false);
+      if (!response.ok || !payload?.item) {
+        setComposerMessage(payload?.error?.message ?? "We could not publish your post right now.");
+        return;
       }
-    })();
+
+      setFeedPosts((current) => [payload.item!, ...current]);
+      setDraftTitle("");
+      setDraftBody("");
+      setIsComposerOpen(false);
+      setFlashMessage("Your post is now live across campus.");
+      router.refresh();
+    } catch {
+      setComposerMessage("We could not publish your post right now.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
-  const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
-  const navItems = [
-    { label: "Home", href: "/home", icon: <HomeIcon />, active: true },
-    { label: "Events", href: "/events", icon: <EventsIcon /> },
-    { label: "Vibes", href: "/vibes", icon: <ReelsIcon /> },
-    { label: "Market", href: "/market", icon: <MarketIcon /> },
-    { label: "Profile", href: "/dashboard", icon: <ProfileIcon /> }
-  ];
-  const layoutStyle = {
-    "--vyb-campus-left-width": `${leftWidth}px`,
-    "--vyb-campus-right-width": `${rightWidth}px`
-  } as CSSProperties;
+  async function handleFollowToggle(username: string, shouldFollow: boolean) {
+    setFollowBusyUsername(username);
+
+    try {
+      const response = await fetch(`/api/follows/${encodeURIComponent(username)}`, {
+        method: shouldFollow ? "PUT" : "DELETE"
+      });
+
+      if (!response.ok) {
+        setFlashMessage("We could not update that follow right now.");
+        return;
+      }
+
+      setRecommendedUsers((current) =>
+        current.map((item) =>
+          item.username === username
+            ? {
+                ...item,
+                isFollowing: shouldFollow,
+                stats: {
+                  ...item.stats,
+                  followers: Math.max(0, item.stats.followers + (shouldFollow ? 1 : -1))
+                }
+              }
+            : item
+        )
+      );
+      setFlashMessage(shouldFollow ? `You are now following @${username}.` : `You unfollowed @${username}.`);
+      router.refresh();
+    } finally {
+      setFollowBusyUsername(null);
+    }
+  }
 
   return (
-    <main className="vyb-campus-home" style={layoutStyle}>
+    <main className="vyb-campus-home" style={layoutStyle()}>
       <aside className="vyb-campus-sidebar vyb-campus-rail">
         <Link href="/home" className="vyb-campus-branding">
           VYB
@@ -465,18 +333,11 @@ export function CampusHomeShell({
         <div className="vyb-campus-sidebar-footer">
           <div className="vyb-campus-sidebar-user">
             <strong>{viewerName}</strong>
-            <span>{collegeName}</span>
+            <span>@{viewerUsername}</span>
           </div>
           <SignOutButton className="vyb-campus-signout" />
         </div>
       </aside>
-
-      <button
-        type="button"
-        className={`vyb-campus-resizer vyb-campus-resizer-left${activeResize === "left" ? " is-active" : ""}`}
-        aria-label="Resize left sidebar"
-        onPointerDown={(event) => startResizeDrag("left", event)}
-      />
 
       <section className="vyb-campus-main">
         <header className="vyb-campus-topbar">
@@ -486,10 +347,13 @@ export function CampusHomeShell({
           </div>
 
           <div className="vyb-campus-top-actions">
+            <Link href="/search" className="vyb-campus-top-icon vyb-campus-top-link" aria-label="Search campus users">
+              <SearchIcon />
+            </Link>
             <button type="button" className="vyb-campus-top-icon" aria-label="Notifications">
               <BellIcon />
             </button>
-            <button type="button" className="vyb-campus-post-trigger" onClick={() => openComposer("post")}>
+            <button type="button" className="vyb-campus-post-trigger" onClick={() => setIsComposerOpen(true)}>
               <AddPostIcon />
               <span>Create post</span>
             </button>
@@ -504,15 +368,12 @@ export function CampusHomeShell({
             VYB
           </Link>
           <div className="vyb-campus-mobile-actions">
-            <button type="button" className="vyb-campus-top-icon" aria-label="Notifications">
-              <BellIcon />
-            </button>
-            <button type="button" className="vyb-campus-post-trigger vyb-campus-post-trigger-mobile" onClick={() => openComposer("post")}>
+            <Link href="/search" className="vyb-campus-top-icon vyb-campus-top-link" aria-label="Search campus users">
+              <SearchIcon />
+            </Link>
+            <button type="button" className="vyb-campus-post-trigger vyb-campus-post-trigger-mobile" onClick={() => setIsComposerOpen(true)}>
               <AddPostIcon />
               <span>Post</span>
-            </button>
-            <button type="button" className="vyb-campus-top-icon" aria-label="Messages">
-              <SendIcon />
             </button>
           </div>
         </header>
@@ -521,36 +382,45 @@ export function CampusHomeShell({
 
         <div className="vyb-campus-feed-stack">
           <div className="vyb-campus-stories">
-            <button type="button" className="vyb-campus-story vyb-campus-story-add" onClick={() => openComposer("story")}>
+            <button type="button" className="vyb-campus-story vyb-campus-story-add" onClick={() => router.push("/create?kind=story&from=%2Fhome")}>
               <span className="vyb-campus-story-ring vyb-campus-story-ring-add">
                 <AddPostIcon />
               </span>
               <span>Your story</span>
             </button>
 
-            {storyFeed.map((story) => (
-              <button key={story.id} type="button" className="vyb-campus-story">
+            {stories.map((story) => (
+              <button key={story.id} type="button" className="vyb-campus-story" onClick={() => setSelectedStory(story)}>
                 <span className="vyb-campus-story-ring">
                   {story.mediaType === "video" ? (
-                    <video src={story.imageUrl} muted playsInline autoPlay loop />
+                    <video src={story.mediaUrl} muted playsInline autoPlay loop />
                   ) : (
-                    <img src={story.imageUrl} alt={story.handle} />
+                    <img src={story.mediaUrl} alt={story.username} />
                   )}
                 </span>
-                <span>{story.handle}</span>
+                <span>{story.username}</span>
               </button>
             ))}
           </div>
 
           <div className="vyb-campus-feed">
+            {feedPosts.length === 0 ? (
+              <div className="vyb-campus-empty-state">
+                <strong>No campus posts yet</strong>
+                <span>Be the first one to publish something everyone at KIET can see.</span>
+              </div>
+            ) : null}
+
             {feedPosts.map((post) => (
               <article key={post.id} className="vyb-campus-feed-card">
                 <div className="vyb-campus-card-top">
                   <div className="vyb-campus-card-author">
-                    <span className="vyb-campus-card-avatar">{post.author.slice(0, 1).toUpperCase()}</span>
+                    <span className="vyb-campus-card-avatar">{post.author.displayName.slice(0, 1).toUpperCase()}</span>
                     <div>
-                      <strong>{post.author}</strong>
-                      <span>{post.location}</span>
+                      <Link href={getProfileHref(post.author.username, viewerUsername)}>
+                        <strong>{post.author.username}</strong>
+                      </Link>
+                      <span>{post.location ?? collegeName}</span>
                     </div>
                   </div>
                   <button type="button" className="vyb-campus-icon-button" aria-label="Post options">
@@ -558,14 +428,14 @@ export function CampusHomeShell({
                   </button>
                 </div>
 
-                {post.mediaUrl && post.mediaType === "video" ? (
+                {post.mediaUrl && post.kind === "video" ? (
                   <video src={post.mediaUrl} className="vyb-campus-post-image" controls playsInline muted loop />
-                ) : post.imageUrl || post.mediaUrl ? (
-                  <img src={post.imageUrl ?? post.mediaUrl ?? ""} alt={post.caption} className="vyb-campus-post-image" />
+                ) : post.mediaUrl ? (
+                  <img src={post.mediaUrl} alt={post.body || post.title} className="vyb-campus-post-image" />
                 ) : (
                   <div className="vyb-campus-post-copy-panel">
                     {post.title ? <strong>{post.title}</strong> : null}
-                    <p>{post.caption}</p>
+                    <p>{post.body}</p>
                   </div>
                 )}
 
@@ -580,9 +450,6 @@ export function CampusHomeShell({
                     <button type="button" className="vyb-campus-action-icon" aria-label="Share post">
                       <ShareIcon />
                     </button>
-                    <button type="button" className="vyb-campus-action-icon" aria-label="Repost post">
-                      <ShuffleIcon />
-                    </button>
                   </div>
                   <button type="button" className="vyb-campus-action-icon" aria-label="Save post">
                     <BookmarkIcon />
@@ -590,9 +457,9 @@ export function CampusHomeShell({
                 </div>
 
                 <div className="vyb-campus-card-copy">
-                  <p className="vyb-campus-card-likes">{post.likes} likes</p>
+                  <p className="vyb-campus-card-likes">{formatMetric(post.reactions)} likes</p>
                   <p>
-                    <strong>{post.author}</strong> {post.caption}
+                    <strong>{post.author.username}</strong> {post.body}
                   </p>
                 </div>
               </article>
@@ -601,13 +468,6 @@ export function CampusHomeShell({
         </div>
       </section>
 
-      <button
-        type="button"
-        className={`vyb-campus-resizer vyb-campus-resizer-right${activeResize === "right" ? " is-active" : ""}`}
-        aria-label="Resize right sidebar"
-        onPointerDown={(event) => startResizeDrag("right", event)}
-      />
-
       <aside className="vyb-campus-right-panel vyb-campus-rail">
         <div className="vyb-campus-side-card">
           <span className="vyb-campus-side-label">Your vibe</span>
@@ -615,27 +475,45 @@ export function CampusHomeShell({
             <img src={`https://i.pravatar.cc/120?u=${encodeURIComponent(viewerEmail)}`} alt={viewerName} />
             <div>
               <strong>{viewerName}</strong>
-              <span>{identityLine}</span>
+              <span>@{viewerUsername}</span>
             </div>
           </div>
+          <p className="vyb-campus-side-copy">{identityLine}</p>
         </div>
 
         <div className="vyb-campus-side-card">
-          <span className="vyb-campus-side-label">Suggested vibes</span>
-          <div className="vyb-campus-suggestion">
-            <div>
-              <strong>ashwani_vyb</strong>
-              <span>Same campus, same rhythm</span>
-            </div>
-            <button type="button">Follow</button>
+          <div className="vyb-campus-side-header">
+            <span className="vyb-campus-side-label">Suggested vibes</span>
+            <Link href="/search" className="vyb-campus-inline-link">
+              Search
+            </Link>
           </div>
-          <div className="vyb-campus-suggestion">
-            <div>
-              <strong>kiet.creators</strong>
-              <span>Events, launches, and stories</span>
+
+          {recommendedUsers.length === 0 ? (
+            <p className="vyb-campus-side-copy">Campus suggestions will appear here as more profiles go live.</p>
+          ) : null}
+
+          {recommendedUsers.map((user) => (
+            <div key={user.userId} className="vyb-campus-suggestion">
+              <div>
+                <Link href={`/u/${encodeURIComponent(user.username)}`}>
+                  <strong>{user.username}</strong>
+                </Link>
+                <span>{user.displayName}</span>
+              </div>
+              <button
+                type="button"
+                disabled={followBusyUsername === user.username}
+                onClick={() => handleFollowToggle(user.username, !user.isFollowing)}
+              >
+                {followBusyUsername === user.username
+                  ? "..."
+                  : user.isFollowing
+                    ? "Following"
+                    : "Follow"}
+              </button>
             </div>
-            <button type="button">Follow</button>
-          </div>
+          ))}
         </div>
 
         <div className="vyb-campus-side-card">
@@ -663,8 +541,8 @@ export function CampusHomeShell({
         ))}
       </nav>
 
-      {composerOpen ? (
-        <div className="vyb-campus-compose-backdrop" role="presentation" onClick={closeComposer}>
+      {isComposerOpen ? (
+        <div className="vyb-campus-compose-backdrop" role="presentation" onClick={() => setIsComposerOpen(false)}>
           <div
             className="vyb-campus-compose-sheet"
             role="dialog"
@@ -675,9 +553,9 @@ export function CampusHomeShell({
             <div className="vyb-campus-compose-head">
               <div>
                 <strong>Create post</strong>
-                <span>Share an update with your verified campus feed.</span>
+                <span>Publish instantly to the live campus feed.</span>
               </div>
-              <button type="button" className="vyb-campus-compose-close" aria-label="Close composer" onClick={closeComposer}>
+              <button type="button" className="vyb-campus-compose-close" aria-label="Close composer" onClick={() => setIsComposerOpen(false)}>
                 <CloseIcon />
               </button>
             </div>
@@ -703,16 +581,49 @@ export function CampusHomeShell({
               />
             </label>
 
+            <div className="vyb-campus-compose-link-row">
+              <span>Need image or video?</span>
+              <Link href="/create?kind=post&from=%2Fhome" className="vyb-campus-inline-link">
+                Open full uploader
+              </Link>
+            </div>
+
             {composerMessage ? <p className="vyb-campus-compose-message">{composerMessage}</p> : null}
 
             <div className="vyb-campus-compose-actions">
-              <button type="button" className="vyb-campus-compose-secondary" onClick={closeComposer} disabled={isSubmitting}>
+              <button type="button" className="vyb-campus-compose-secondary" onClick={() => setIsComposerOpen(false)} disabled={isSubmitting}>
                 Cancel
               </button>
-              <button type="button" className="vyb-campus-compose-primary" onClick={handleComposerSubmit} disabled={isSubmitting}>
+              <button type="button" className="vyb-campus-compose-primary" onClick={handleQuickPostPublish} disabled={isSubmitting}>
                 {isSubmitting ? "Publishing..." : "Publish post"}
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedStory ? (
+        <div className="vyb-story-viewer-backdrop" role="presentation" onClick={() => setSelectedStory(null)}>
+          <div className="vyb-story-viewer" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <div className="vyb-story-viewer-head">
+              <div>
+                <strong>@{selectedStory.username}</strong>
+                <span>{selectedStory.displayName}</span>
+              </div>
+              <button type="button" className="vyb-campus-compose-secondary" onClick={() => setSelectedStory(null)}>
+                Close
+              </button>
+            </div>
+
+            <div className="vyb-story-viewer-media">
+              {selectedStory.mediaType === "video" ? (
+                <video src={selectedStory.mediaUrl} controls autoPlay muted playsInline loop />
+              ) : (
+                <img src={selectedStory.mediaUrl} alt={selectedStory.username} />
+              )}
+            </div>
+
+            {selectedStory.caption ? <p className="vyb-story-viewer-caption">{selectedStory.caption}</p> : null}
           </div>
         </div>
       ) : null}

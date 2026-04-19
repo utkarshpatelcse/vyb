@@ -8,8 +8,16 @@ export function isPositiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
 
+export const usernameSchema = z
+  .string()
+  .trim()
+  .min(3, "User ID must be at least 3 characters long.")
+  .max(24, "User ID must be 24 characters or fewer.")
+  .regex(/^[a-z0-9](?:[a-z0-9._]{1,22}[a-z0-9])?$/u, "Use lowercase letters, numbers, dots, and underscores only.");
+
 export const onboardingProfileSchema = z
   .object({
+    username: usernameSchema,
     firstName: z.string().trim().min(2, "First name must be at least 2 characters long."),
     lastName: z
       .union([z.string().trim().min(1, "Last name must be a valid string when provided."), z.literal(""), z.null()])

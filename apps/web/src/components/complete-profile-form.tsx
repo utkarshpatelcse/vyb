@@ -1,7 +1,7 @@
 "use client";
 
 import type { ProfileRecord } from "@vyb/contracts";
-import { onboardingProfileSchema } from "@vyb/validation";
+import { onboardingProfileSchema } from "../../../../packages/validation/src/index";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -16,6 +16,8 @@ import {
 function toFieldLabel(path: Array<string | number>) {
   const key = String(path[0] ?? "field");
   switch (key) {
+    case "username":
+      return "User ID";
     case "firstName":
       return "First name";
     case "lastName":
@@ -109,6 +111,7 @@ export function CompleteProfileForm({
   const initialCourseAndStream = useMemo(() => inferCourseAndStream(initialProfile ?? {}), [initialProfile]);
   const [firstName, setFirstName] = useState(initialProfile?.firstName ?? fallbackName.firstName);
   const [lastName, setLastName] = useState(initialProfile?.lastName ?? fallbackName.lastName);
+  const [username, setUsername] = useState(initialProfile?.username ?? "");
   const [course, setCourse] = useState(initialProfile?.course ?? initialCourseAndStream.course ?? defaultCourse);
   const streamOptions = useMemo(() => getStreamOptions(course), [course]);
   const yearOptions = useMemo(() => getYearOptionsForCourse(course), [course]);
@@ -137,6 +140,7 @@ export function CompleteProfileForm({
     setMessage(null);
 
     const normalizedPayload = {
+      username: username.trim().toLowerCase(),
       firstName: firstName.trim(),
       lastName: lastName.trim() || null,
       course: course.trim(),
@@ -231,6 +235,18 @@ export function CompleteProfileForm({
         </label>
 
         <label className="vyb-field">
+          <span>User ID</span>
+          <input
+            value={username}
+            onChange={(event) => setUsername(event.target.value.toLowerCase().replace(/\s+/gu, "_"))}
+            placeholder="yourcampusid"
+            autoCapitalize="none"
+            spellCheck={false}
+          />
+          <small>This is how friends will search and find you on Vyb.</small>
+        </label>
+
+        <label className="vyb-field">
           <span>First name</span>
           <input value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="Aarav" />
         </label>
@@ -322,7 +338,7 @@ export function CompleteProfileForm({
 
       <div className="vyb-profile-actions">
         <button type="button" className="vyb-primary-button" onClick={handleSubmit} disabled={isPending}>
-          {isPending ? "Saving profile..." : "Continue to dashboard"}
+          {isPending ? "Saving profile..." : "Continue to home"}
         </button>
       </div>
 

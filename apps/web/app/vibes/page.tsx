@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { CampusReelsShell } from "../../src/components/campus-reels-shell";
-import { getViewerMe, getViewerProfile } from "../../src/lib/backend";
+import { getCampusVibes, getViewerMe, getViewerProfile } from "../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
 
 export default async function VibesPage() {
@@ -11,7 +11,11 @@ export default async function VibesPage() {
     redirect("/login");
   }
 
-  const [profile, me] = await Promise.all([getViewerProfile(viewer).catch(() => null), getViewerMe(viewer).catch(() => null)]);
+  const [profile, me, vibes] = await Promise.all([
+    getViewerProfile(viewer).catch(() => null),
+    getViewerMe(viewer).catch(() => null),
+    getCampusVibes(viewer).catch(() => ({ tenantId: viewer.tenantId, communityId: null, items: [], nextCursor: null }))
+  ]);
 
   if (!profile?.profileCompleted) {
     redirect("/onboarding");
@@ -22,11 +26,13 @@ export default async function VibesPage() {
   return (
     <CampusReelsShell
       viewerName={viewerName}
+      viewerUsername={profile.profile?.username ?? viewer.email.split("@")[0]}
       collegeName={profile.collegeName}
       viewerEmail={viewer.email}
       course={profile.profile?.course}
       stream={profile.profile?.stream}
       role={me?.membershipSummary.role ?? viewer.role}
+      initialVibes={vibes.items}
     />
   );
 }

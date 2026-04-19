@@ -1,8 +1,8 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { getViewerMe, getViewerProfile } from "../../src/lib/backend";
-import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
 import { CampusProfileShell } from "../../src/components/campus-profile-shell";
+import { getCampusUserProfile, getViewerMe, getViewerProfile } from "../../src/lib/backend";
+import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
 
 export default async function DashboardPage() {
   const viewer = readDevSessionFromCookieStore(await cookies());
@@ -13,35 +13,33 @@ export default async function DashboardPage() {
 
   const [profile, me] = await Promise.all([
     getViewerProfile(viewer).catch(() => null),
-    getViewerMe(viewer).catch(() => null),
+    getViewerMe(viewer).catch(() => null)
   ]);
 
-  if (!profile?.profileCompleted) {
+  if (!profile?.profileCompleted || !profile.profile?.username) {
     redirect("/onboarding");
   }
 
-  // Derived social data
-  const handle = profile.profile?.fullName 
-    ? profile.profile.fullName.split(" ")[0].toLowerCase() + "_vyb"
-    : viewer.email.split("@")[0];
+  const publicProfile = await getCampusUserProfile(viewer, profile.profile.username).catch(() => null);
 
   return (
     <CampusProfileShell
-      viewerName={profile.profile?.fullName ?? viewer.displayName}
-      handle={handle}
+      viewerName={publicProfile?.profile.displayName ?? profile.profile.fullName ?? viewer.displayName}
+      username={publicProfile?.profile.username ?? profile.profile.username}
+      viewerUsername={profile.profile.username}
       collegeName={profile.collegeName}
       viewerEmail={viewer.email}
-      course={profile.profile?.course}
-      stream={profile.profile?.stream}
+      course={profile.profile.course}
+      stream={profile.profile.stream}
       role={me?.membershipSummary.role ?? viewer.role}
-      bio="Content creator & Filmmaker | Building the future of campus social vibes. 🚀"
-      location={`${profile.collegeName}, India`}
       stats={{
-        posts: "208",
-        followers: "97.5K",
-        following: "121",
-        likes: "3.2M"
+        posts: publicProfile?.stats.posts ?? 0,
+        followers: publicProfile?.stats.followers ?? 0,
+        following: publicProfile?.stats.following ?? 0
       }}
+      posts={publicProfile?.posts ?? []}
+      isOwnProfile={true}
+      isFollowing={false}
     />
   );
 }

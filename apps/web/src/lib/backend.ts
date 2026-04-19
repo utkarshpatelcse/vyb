@@ -1,10 +1,17 @@
 import "server-only";
 import type {
   ClientShellResponse,
+  CreateStoryResponse,
+  FeedListResponse,
   MeResponse,
+  PublicProfileResponse,
   ProfileResponse,
   SessionBootstrapRequest,
-  SessionBootstrapResponse
+  SessionBootstrapResponse,
+  StoryListResponse,
+  UpdateUsernameRequest,
+  UpdateUsernameResponse,
+  UserSearchResponse
 } from "@vyb/contracts";
 import type { DevSession } from "./dev-session";
 import { buildFallbackProfileResponse } from "./profile-fallback";
@@ -89,7 +96,7 @@ export async function postBackendJson<TResponse>(
 
 export async function proxyBackendMutation(
   path: string,
-  method: "POST" | "PUT" | "DELETE",
+  method: "POST" | "PUT" | "PATCH" | "DELETE",
   payload: unknown,
   viewer: DevSession
 ) {
@@ -179,4 +186,93 @@ export async function getViewerMe(viewer: DevSession) {
 
 export async function bootstrapViewerSession(payload: SessionBootstrapRequest) {
   return postBackendJson<SessionBootstrapResponse>("/v1/auth/session/bootstrap", payload);
+}
+
+export async function getCampusFeed(viewer: DevSession, options?: { authorUserId?: string; limit?: number }) {
+  const params = new URLSearchParams({
+    tenantId: viewer.tenantId,
+    limit: String(options?.limit ?? 24)
+  });
+
+  if (options?.authorUserId) {
+    params.set("authorUserId", options.authorUserId);
+  }
+
+  return fetchBackendJson<FeedListResponse>(`/v1/feed?${params.toString()}`, viewer);
+}
+
+export async function getCampusVibes(viewer: DevSession, limit = 24) {
+  const params = new URLSearchParams({
+    tenantId: viewer.tenantId,
+    limit: String(limit)
+  });
+
+  return fetchBackendJson<FeedListResponse>(`/v1/vibes?${params.toString()}`, viewer);
+}
+
+export async function getCampusStories(viewer: DevSession) {
+  const params = new URLSearchParams({
+    tenantId: viewer.tenantId
+  });
+
+  return fetchBackendJson<StoryListResponse>(`/v1/stories?${params.toString()}`, viewer);
+}
+
+export async function searchCampusUsers(viewer: DevSession, query: string, limit = 12) {
+  const params = new URLSearchParams({
+    tenantId: viewer.tenantId,
+    q: query,
+    limit: String(limit)
+  });
+
+  return fetchBackendJson<UserSearchResponse>(`/v1/users/search?${params.toString()}`, viewer);
+}
+
+export async function getSuggestedCampusUsers(viewer: DevSession, limit = 5) {
+  const params = new URLSearchParams({
+    tenantId: viewer.tenantId,
+    suggested: "1",
+    limit: String(limit)
+  });
+
+  return fetchBackendJson<UserSearchResponse>(`/v1/users/search?${params.toString()}`, viewer);
+}
+
+export async function getCampusUserProfile(viewer: DevSession, username: string) {
+  const params = new URLSearchParams({
+    tenantId: viewer.tenantId
+  });
+
+  return fetchBackendJson<PublicProfileResponse>(`/v1/users/${encodeURIComponent(username)}?${params.toString()}`, viewer);
+}
+
+export async function updateViewerUsername(viewer: DevSession, payload: UpdateUsernameRequest) {
+  const response = await fetch(`${API_BASE_URL}/v1/profile/username`, {
+    method: "PATCH",
+    headers: buildBackendHeaders(viewer),
+    body: JSON.stringify(payload),
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Backend request failed for /v1/profile/username with ${response.status}`);
+  }
+
+  return readResponseJson<UpdateUsernameResponse>(response);
+}
+
+export async function createCampusStory(viewer: DevSession, payload: {
+  mediaType: "image" | "video";
+  mediaUrl: string;
+  caption?: string | null;
+}) {
+  return postBackendJson<CreateStoryResponse>(
+    "/v1/stories",
+    {
+      tenantId: viewer.tenantId,
+      ...payload
+    },
+    viewer
+  );
 }

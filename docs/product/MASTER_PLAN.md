@@ -2,7 +2,7 @@
 
 Owner: Product and Engineering
 Last Updated: 2026-04-19
-Change Summary: Added the KIET-first professional web entry flow, backend-verified session bootstrap, mandatory profile completion gating, the authenticated `/home` feed landing surface, and the Phase 1 Cloud Run plus Vercel hosting preparation.
+Change Summary: Added the KIET-first professional web entry flow, backend-verified session bootstrap, mandatory profile completion gating, the authenticated `/home` feed landing surface, the Phase 1 Cloud Run plus Vercel hosting preparation, and the first live campus-social flow for posts, stories, vibes, search, follows, and user IDs.
 
 ## 1. Why We Are Building This
 
@@ -32,7 +32,7 @@ What is decided:
 What is not started yet:
 
 - production-ready business flows for college join requests
-- moderation publish flow for newly created content
+- durable production storage for the current starter social graph and profile persistence
 - media upload registration and file pipelines
 
 ## 3. Core Product Thesis
@@ -146,6 +146,13 @@ After implementation:
 - backend session bootstrap now verifies Firebase tokens before issuing the web session cookie
 - profile completion is now required before an authenticated user reaches the main in-app home feed
 - authenticated users now land on a responsive `/home` feed shell with stories, posts, reels-style navigation, and a separate profile/dashboard route
+- the authenticated `/home` route now reads live backend feed data instead of hardcoded placeholder posts
+- newly created campus posts now publish directly into the shared feed so other signed-in campus users can see them
+- active stories are now stored through the backend and only surface to the author plus followed campus profiles
+- a dedicated `/search` route now lets users discover people by user ID and follow or unfollow them
+- onboarding now requires a user-chosen campus user ID and the profile/dashboard route now allows changing that user ID later
+- the `/dashboard` and public `/u/[username]` profile routes now render real posts and follow counts instead of mock profile data
+- the `/vibes` route now reads real backend-backed short-form uploads instead of a fully dummy starter catalog
 - profile reads and onboarding saves now have local fallback behavior for development when the backend is temporarily unavailable
 - Data Connect service config, schema, and domain-owned connectors are scaffolded
 - Data Connect connectors compile successfully and generated admin SDKs are available
@@ -161,14 +168,14 @@ After implementation:
 
 ## 7. Current Next Actions
 
-1. deploy the backend monolith to Cloud Run and connect the Vercel web app to the hosted API
-2. bind the `/home` feed shell to live backend feed, stories, and community data instead of placeholder content
-3. extend backend token verification beyond session bootstrap to the rest of the authenticated API edge
-4. implement the college join-request submission and admin decision workflow
-5. add backend-edge rate limiting and richer structured error metadata
-6. start real upload registration and resource file flows through the media module
-7. add moderation publish and review flows so pending posts and resources can move into public lists
-8. introduce a simple admin surface for onboarding and moderation operations
+1. move the current starter social graph and profile persistence into durable production storage
+2. extend backend token verification beyond session bootstrap to the rest of the authenticated API edge
+3. implement the college join-request submission and admin decision workflow
+4. add backend-edge rate limiting and richer structured error metadata
+5. start real upload registration and resource file flows through the media module
+6. add moderation publish and review flows for posts, stories, vibes, and resources
+7. introduce a simple admin surface for onboarding and moderation operations
+8. refine ranking, comments, and richer story-viewer behavior on top of the live feed baseline
 
 ## 8. Decision Log Snapshot
 
@@ -187,4 +194,4 @@ After implementation:
 - weak content moderation policy
 - empty feed problem if utility content is not seeded
 - operational complexity if documentation discipline slips
-- current public list queries only return `published` items, so freshly created `pending` content will not appear until moderation or author-preview logic is added
+- the current real social flow still depends on a starter persistence layer, so data durability across redeploys remains a production risk until it moves to durable storage

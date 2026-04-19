@@ -2,7 +2,7 @@
 
 Owner: Architecture Team
 Last Updated: 2026-04-19
-Change Summary: Switched Phase 1 runtime to a modular monolith backend, preserved extraction-ready domain boundaries, kept college join requests as a first-class campus module concern, clarified the public-landing plus authenticated-home-feed web split, and recorded the Phase 1 hosting topology of Vercel plus Cloud Run.
+Change Summary: Switched Phase 1 runtime to a modular monolith backend, preserved extraction-ready domain boundaries, kept college join requests as a first-class campus module concern, clarified the public-landing plus authenticated-home-feed web split, recorded the Phase 1 hosting topology of Vercel plus Cloud Run, and captured the live campus-social flow for user IDs, follows, stories, and vibes.
 
 ## 1. Document Purpose
 
@@ -27,6 +27,7 @@ Vyb should become the digital HQ of campus life. The platform must balance:
 - college and community onboarding
 - admin-reviewed college join requests for unknown domains
 - Campus Square feed with text and image posts
+- campus user IDs, profile search, follows, and time-limited stories
 - Resource Vault for notes and academic files
 - moderation and admin controls
 
@@ -202,6 +203,9 @@ Owns:
 Owns:
 
 - feed posts
+- follow graph
+- story visibility and active-story lanes
+- public profile discovery by campus user ID
 - comments
 - reactions
 - social ranking metadata

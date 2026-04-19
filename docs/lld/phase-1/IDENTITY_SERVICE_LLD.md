@@ -27,6 +27,7 @@ In scope:
 - domain extraction from verified email
 - current user context API
 - profile completion state and profile update API
+- unique campus user ID capture and update
 - onboarding state for unknown domains
 
 Out of scope:
@@ -89,9 +90,18 @@ Out of scope:
 
 - caller: web or future native client
 - auth requirement: authenticated actor context required
-- request schema: first name, optional last name, course, stream or specialization, year, section, hosteller status, optional hostel and phone number
+- request schema: unique campus user ID, first name, optional last name, course, stream or specialization, year, section, hosteller status, optional hostel and phone number
 - response schema: saved campus profile and completion state that unlocks the authenticated home feed
 - error schema: invalid payload, unauthorized, invalid domain
+- rate limit policy: moderate per user
+
+### `PATCH /v1/profile/username`
+
+- caller: web or future native client
+- auth requirement: authenticated actor context required
+- request schema: unique campus user ID
+- response schema: updated profile
+- error schema: invalid user ID, duplicate user ID, profile not found
 - rate limit policy: moderate per user
 
 ## 7. Module Interactions
@@ -144,8 +154,8 @@ Out of scope:
 
 ## 11. Observability
 
-- logs: bootstrap attempts, session bootstrap failures, profile updates, unknown-domain onboarding responses
-- metrics: bootstrap success rate, duplicate bootstrap rate, profile completion rate, unknown-domain onboarding rate
+- logs: bootstrap attempts, session bootstrap failures, profile updates, campus user-ID updates, unknown-domain onboarding responses
+- metrics: bootstrap success rate, duplicate bootstrap rate, profile completion rate, user-ID collision rate, unknown-domain onboarding rate
 - alerts: sustained bootstrap failures or unusual onboarding spikes
 - trace IDs: required on all requests
 
@@ -163,10 +173,10 @@ Out of scope:
 
 ## 14. Test Plan
 
-- unit tests: actor parsing, bootstrap idempotency, profile normalization
+- unit tests: actor parsing, bootstrap idempotency, profile normalization, user-ID validation
 - integration tests: bootstrap flow with campus resolution and session issuance
-- contract tests: `bootstrap`, `session/bootstrap`, `me`, and `profile` endpoints plus onboarding-state responses
-- manual QA: first login, repeat login, profile completion, `/home` landing, profile/dashboard access, unrecognized domain path
+- contract tests: `bootstrap`, `session/bootstrap`, `me`, `profile`, and `profile/username` endpoints plus onboarding-state responses
+- manual QA: first login, repeat login, profile completion, `/home` landing, profile/dashboard access, campus user-ID search and edit, unrecognized domain path
 
 ## 15. Documentation Updates Required
 

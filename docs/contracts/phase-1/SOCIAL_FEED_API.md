@@ -2,7 +2,7 @@
 
 Owner: Architecture Team
 Last Updated: 2026-04-19
-Change Summary: Updated contract language for the Phase 1 modular monolith backend.
+Change Summary: Updated the feed contract for the live campus-social flow with author identity, media payloads, and real published-feed reads.
 
 ## 1. Metadata
 
@@ -19,7 +19,7 @@ Change Summary: Updated contract language for the Phase 1 modular monolith backe
 - Method: `GET`
 - Path: `/v1/feed`
 - Public or internal: public through backend
-- Purpose: return a cursor-based list of published posts for a tenant or community
+- Purpose: return a list of published campus-feed posts for a tenant, optionally filtered by community or author
 
 ## 3. Authentication and Authorization
 
@@ -32,18 +32,19 @@ Change Summary: Updated contract language for the Phase 1 modular monolith backe
 
 - Headers: auth token or approved local dev identity headers
 - Path params: none
-- Query params: `tenantId`, optional `communityId`, optional `cursor`, optional `limit`
+- Query params: `tenantId`, optional `communityId`, optional `authorUserId`, optional `limit`
 - Body: none
 
 ## 5. Response Schema
 
 - Success response: `tenantId`, `communityId`, `items[]`, `nextCursor`
-- Pagination model: cursor-based
+- Feed items include author summary, post placement, media URL, and location
+- Pagination model: simple limit-based read in the current implementation
 - Metadata: no total count on hot feed path
 
 ## 6. Error Schema
 
-- Validation errors: invalid tenant, limit, or cursor
+- Validation errors: invalid tenant or limit
 - Auth errors: unauthenticated
 - Authorization errors: unauthorized tenant/community access
 - Domain errors: community not found
@@ -72,4 +73,4 @@ Change Summary: Updated contract language for the Phase 1 modular monolith backe
 
 - Feature flags: tenant-level feed rollout flag is acceptable
 - Backward compatibility: additive fields only
-- Migration steps: keep contract stable while feed reads move fully onto Data Connect-backed module queries
+- Migration steps: keep contract stable while feed reads move from the current starter store onto durable production storage

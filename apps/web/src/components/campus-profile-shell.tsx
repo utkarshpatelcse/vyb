@@ -1,52 +1,33 @@
 "use client";
 
+import type { FeedCard } from "@vyb/contracts";
 import Link from "next/link";
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { SignOutButton } from "./sign-out-button";
-
-type PostItem = {
-  id: string;
-  imageUrl: string;
-  views?: string;
-  isReel?: boolean;
-};
 
 type CampusProfileShellProps = {
   viewerName: string;
-  handle: string;
+  username: string;
+  viewerUsername: string;
   collegeName: string;
-  viewerEmail: string;
+  viewerEmail?: string | null;
   course?: string | null;
   stream?: string | null;
   role: string;
-  bio?: string;
-  location?: string;
   stats: {
-    posts: string;
-    followers: string;
-    following: string;
-    likes: string;
+    posts: number;
+    followers: number;
+    following: number;
   };
+  posts: FeedCard[];
+  isOwnProfile: boolean;
+  isFollowing: boolean;
 };
 
-type ResizeSide = "left" | "right";
-
-const DEFAULT_LEFT_WIDTH = 260;
-const DEFAULT_RIGHT_WIDTH = 320;
-const MIN_LEFT_WIDTH = 220;
-const MAX_LEFT_WIDTH = 360;
-const MIN_RIGHT_WIDTH = 280;
-const MAX_RIGHT_WIDTH = 420;
-const LEFT_WIDTH_STORAGE_KEY = "vyb-campus-left-width";
-const RIGHT_WIDTH_STORAGE_KEY = "vyb-campus-right-width";
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function IconBase({ children, className = "" }: { children: ReactNode; className?: string }) {
+function IconBase({ children }: { children: ReactNode }) {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className={`vyb-campus-icon ${className}`}>
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="vyb-campus-icon">
       {children}
     </svg>
   );
@@ -76,14 +57,6 @@ function ReelsIcon() {
   );
 }
 
-function ProfileIcon() {
-  return (
-    <IconBase>
-      <path d="M12 12a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm-6 7.2C6 16.9 8.7 15 12 15s6 1.9 6 4.2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </IconBase>
-  );
-}
-
 function MarketIcon() {
   return (
     <IconBase>
@@ -92,156 +65,145 @@ function MarketIcon() {
   );
 }
 
-function GridIcon() {
+function ProfileIcon() {
   return (
     <IconBase>
-      <path d="M3 3h7v7H3V3zm11 0h7v7h-7V3zm0 11h7v7h-7v-7zM3 14h7v7H3v-7z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M12 12a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm-6 7.2C6 16.9 8.7 15 12 15s6 1.9 6 4.2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </IconBase>
   );
 }
 
-function BookmarkIcon() {
-  return (
-    <IconBase>
-      <path d="M7 4.5h10a1 1 0 0 1 1 1v14l-6-3-6 3v-14a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </IconBase>
-  );
-}
-
-function MsgIcon() {
-  return (
-    <IconBase>
-      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="m22 6-10 7L2 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </IconBase>
-  );
-}
-
-function LocationIcon() {
-  return (
-    <IconBase>
-      <path d="M12 21s-6-5.5-6-10a6 6 0 0 1 12 0c0 4.5-6 10-6 10z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="12" cy="11" r="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
-    </IconBase>
-  );
-}
-
-function FilmIcon() {
-  return (
-    <IconBase>
-      <path d="M2 3h20v18H2V3zm0 4h20M2 17h20M7 3v18M17 3v18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </IconBase>
-  );
+function formatMetric(value: number) {
+  return new Intl.NumberFormat("en-IN", {
+    notation: value > 999 ? "compact" : "standard",
+    maximumFractionDigits: 1
+  }).format(value);
 }
 
 export function CampusProfileShell({
   viewerName,
-  handle,
+  username,
+  viewerUsername,
   collegeName,
   viewerEmail,
   course,
   stream,
   role,
-  bio,
-  location,
-  stats
+  stats,
+  posts,
+  isOwnProfile,
+  isFollowing
 }: CampusProfileShellProps) {
-  const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH);
-  const [rightWidth, setRightWidth] = useState(DEFAULT_RIGHT_WIDTH);
-  const [activeResize, setActiveResize] = useState<ResizeSide | null>(null);
-  const [activeTab, setActiveTab] = useState<"posts" | "reels" | "saved">("posts");
-  const resizeState = useRef<{ side: ResizeSide; startX: number; startWidth: number } | null>(null);
+  const router = useRouter();
+  const [editableUsername, setEditableUsername] = useState(username);
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [followingState, setFollowingState] = useState(isFollowing);
+  const [followerCount, setFollowerCount] = useState(stats.followers);
 
-  useEffect(() => {
-    const storedLeftWidth = Number.parseInt(window.localStorage.getItem(LEFT_WIDTH_STORAGE_KEY) ?? "", 10);
-    const storedRightWidth = Number.parseInt(window.localStorage.getItem(RIGHT_WIDTH_STORAGE_KEY) ?? "", 10);
-
-    if (Number.isFinite(storedLeftWidth)) {
-      setLeftWidth(clamp(storedLeftWidth, MIN_LEFT_WIDTH, MAX_LEFT_WIDTH));
-    }
-
-    if (Number.isFinite(storedRightWidth)) {
-      setRightWidth(clamp(storedRightWidth, MIN_RIGHT_WIDTH, MAX_RIGHT_WIDTH));
-    }
-  }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem(LEFT_WIDTH_STORAGE_KEY, String(leftWidth));
-  }, [leftWidth]);
-
-  useEffect(() => {
-    window.localStorage.setItem(RIGHT_WIDTH_STORAGE_KEY, String(rightWidth));
-  }, [rightWidth]);
-
-  useEffect(() => {
-    if (!activeResize) return;
-
-    function handlePointerMove(event: globalThis.PointerEvent) {
-      const currentResize = resizeState.current;
-      if (!currentResize) return;
-
-      if (currentResize.side === "left") {
-        const nextWidth = clamp(currentResize.startWidth + (event.clientX - currentResize.startX), MIN_LEFT_WIDTH, MAX_LEFT_WIDTH);
-        setLeftWidth(nextWidth);
-      } else {
-        const nextWidth = clamp(currentResize.startWidth - (event.clientX - currentResize.startX), MIN_RIGHT_WIDTH, MAX_RIGHT_WIDTH);
-        setRightWidth(nextWidth);
-      }
-    }
-
-    function handlePointerUp() {
-      resizeState.current = null;
-      setActiveResize(null);
-    }
-
-    document.body.classList.add("vyb-campus-is-resizing");
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-
-    return () => {
-      document.body.classList.remove("vyb-campus-is-resizing");
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-    };
-  }, [activeResize]);
-
-  function startResizeDrag(side: ResizeSide, event: PointerEvent<HTMLButtonElement>) {
-    if (window.innerWidth < 900) return;
-    event.preventDefault();
-    resizeState.current = {
-      side,
-      startX: event.clientX,
-      startWidth: side === "left" ? leftWidth : rightWidth
-    };
-    setActiveResize(side);
-  }
-
-  const mockPosts: PostItem[] = Array.from({ length: 9 }).map((_, i) => ({
-    id: String(i + 1),
-    imageUrl: `https://picsum.photos/400/540?random=${i + 10}`,
-    views: `${Math.floor(Math.random() * 100) + 1}K`,
-    isReel: i % 2 === 0
-  }));
-
-  const navItems = [
-    { label: "Home", href: "/home", icon: <HomeIcon /> },
-    { label: "Events", href: "/events", icon: <EventsIcon /> },
-    { label: "Vibes", href: "/vibes", icon: <ReelsIcon /> },
-    { label: "Market", href: "/market", icon: <MarketIcon /> },
-    { label: "Profile", href: "/dashboard", icon: <ProfileIcon />, active: true }
-  ];
+  const navItems = useMemo(
+    () => [
+      { label: "Home", href: "/home", icon: <HomeIcon /> },
+      { label: "Events", href: "/events", icon: <EventsIcon /> },
+      { label: "Vibes", href: "/vibes", icon: <ReelsIcon /> },
+      { label: "Market", href: "/market", icon: <MarketIcon /> },
+      { label: "Profile", href: "/dashboard", icon: <ProfileIcon />, active: true }
+    ],
+    []
+  );
 
   const layoutStyle = {
-    "--vyb-campus-left-width": `${leftWidth}px`,
-    "--vyb-campus-right-width": `${rightWidth}px`
+    "--vyb-campus-left-width": "260px",
+    "--vyb-campus-right-width": "320px"
   } as CSSProperties;
+
+  async function handleUsernameSave() {
+    const normalized = editableUsername.trim().toLowerCase();
+    if (!normalized || normalized === username) {
+      return;
+    }
+
+    setBusy(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch("/api/profile/username", {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          username: normalized
+        })
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            error?: {
+              message?: string;
+            };
+          }
+        | null;
+
+      if (!response.ok) {
+        setMessage(payload?.error?.message ?? "We could not update your user ID.");
+        return;
+      }
+
+      setMessage("Your user ID is updated.");
+      router.refresh();
+    } catch {
+      setMessage("We could not update your user ID.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleFollowToggle() {
+    if (isOwnProfile) {
+      return;
+    }
+
+    setBusy(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch(`/api/follows/${encodeURIComponent(username)}`, {
+        method: followingState ? "DELETE" : "PUT"
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            error?: {
+              message?: string;
+            };
+          }
+        | null;
+
+      if (!response.ok) {
+        setMessage(payload?.error?.message ?? "We could not update that follow right now.");
+        return;
+      }
+
+      setFollowingState((current) => !current);
+      setFollowerCount((current) => Math.max(0, current + (followingState ? -1 : 1)));
+      router.refresh();
+    } catch {
+      setMessage("We could not update that follow right now.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
 
   return (
     <main className="vyb-campus-home" style={layoutStyle}>
       <aside className="vyb-campus-sidebar vyb-campus-rail">
-        <Link href="/home" className="vyb-campus-branding">VYB</Link>
+        <Link href="/home" className="vyb-campus-branding">
+          VYB
+        </Link>
+
         <nav className="vyb-campus-nav">
           {navItems.map((item) => (
             <Link key={item.label} href={item.href} className={`vyb-campus-nav-item${item.active ? " is-active" : ""}`}>
@@ -250,127 +212,142 @@ export function CampusProfileShell({
             </Link>
           ))}
         </nav>
+
         <div className="vyb-campus-sidebar-footer">
           <div className="vyb-campus-sidebar-user">
             <strong>{viewerName}</strong>
-            <span>{collegeName}</span>
+            <span>@{username}</span>
           </div>
           <SignOutButton className="vyb-campus-signout" />
         </div>
       </aside>
 
-      <button
-        type="button"
-        className={`vyb-campus-resizer vyb-campus-resizer-left${activeResize === "left" ? " is-active" : ""}`}
-        onPointerDown={(event) => startResizeDrag("left", event)}
-      />
-
       <section className="vyb-campus-main">
-        {/* Desktop Header Replacement */}
-        <div className="vyb-profile-header">
-          <div className="vyb-profile-banner" style={{backgroundImage: "url('https://images.unsplash.com/photo-1541339907198-e08756ebafe1?auto=format&fit=crop&w=1200&q=80')"}}></div>
-          
-          <div className="vyb-profile-top-row">
-            <div className="vyb-profile-avatar-wrap">
-              <img src={`https://i.pravatar.cc/150?u=${encodeURIComponent(viewerEmail)}`} alt={viewerName} />
-            </div>
-            <div className="vyb-profile-actions">
-              <button className="vyb-profile-msg-btn" aria-label="Message"><MsgIcon /></button>
-              <button className="vyb-profile-follow-btn">Edit Profile</button>
-            </div>
-          </div>
+        <div className="vyb-profile-surface">
+          <div className="vyb-profile-hero-card">
+            <div className="vyb-profile-hero-top">
+              <div className="vyb-profile-hero-copy">
+                <span className="vyb-page-badge">{isOwnProfile ? "Your profile" : "Campus profile"}</span>
+                <h1>{viewerName}</h1>
+                <p>@{username}</p>
+                <span className="vyb-profile-identity-line">{identityLine}</span>
+              </div>
 
-          <div className="vyb-profile-details">
-            <h1 className="vyb-profile-name">{viewerName}</h1>
-            <p className="vyb-profile-handle">@{handle}</p>
-            
-            <div className="vyb-profile-bio-item">
-              <FilmIcon /> {bio || "Content creator & Filmmaker"}
-            </div>
-            <div className="vyb-profile-bio-item">
-              <LocationIcon /> {location || identityLine}
-            </div>
-          </div>
-
-          <div className="vyb-profile-stats">
-            <div className="vyb-profile-stat-box">
-              <strong>{stats.posts}</strong>
-              <span>Posts</span>
-            </div>
-            <div className="vyb-profile-stat-box">
-              <strong>{stats.followers}</strong>
-              <span>Followers</span>
-            </div>
-            <div className="vyb-profile-stat-box">
-              <strong>{stats.following}</strong>
-              <span>Following</span>
-            </div>
-            <div className="vyb-profile-stat-box">
-              <strong>{stats.likes}</strong>
-              <span>Likes</span>
-            </div>
-          </div>
-
-          <div className="vyb-profile-tabs">
-            <div 
-              className={`vyb-profile-tab${activeTab === "posts" ? " is-active" : ""}`}
-              onClick={() => setActiveTab("posts")}
-            >
-              <GridIcon />
-            </div>
-            <div 
-              className={`vyb-profile-tab${activeTab === "reels" ? " is-active" : ""}`}
-              onClick={() => setActiveTab("reels")}
-            >
-              <FilmIcon />
-            </div>
-            <div 
-              className={`vyb-profile-tab${activeTab === "saved" ? " is-active" : ""}`}
-              onClick={() => setActiveTab("saved")}
-            >
-              <BookmarkIcon />
-            </div>
-          </div>
-
-          <div className="vyb-profile-grid">
-            {mockPosts.map((post) => (
-              <div key={post.id} className="vyb-profile-post-item">
-                <img src={post.imageUrl} alt="Profile post" />
-                {post.isReel && (
-                  <div className="vyb-profile-view-count">
-                    <ReelsIcon /> {post.views}
-                  </div>
+              <div className="vyb-profile-hero-actions">
+                {isOwnProfile ? (
+                  <Link href="/create?kind=post&from=%2Fdashboard" className="vyb-primary-button">
+                    Create post
+                  </Link>
+                ) : (
+                  <button type="button" className="vyb-primary-button" disabled={busy} onClick={handleFollowToggle}>
+                    {busy ? "Updating..." : followingState ? "Following" : "Follow"}
+                  </button>
                 )}
               </div>
+            </div>
+
+            <div className="vyb-profile-stats-grid">
+              <div className="vyb-profile-stat-tile">
+                <strong>{formatMetric(stats.posts)}</strong>
+                <span>Posts</span>
+              </div>
+              <div className="vyb-profile-stat-tile">
+                <strong>{formatMetric(followerCount)}</strong>
+                <span>Followers</span>
+              </div>
+              <div className="vyb-profile-stat-tile">
+                <strong>{formatMetric(stats.following)}</strong>
+                <span>Following</span>
+              </div>
+            </div>
+
+            {isOwnProfile ? (
+              <div className="vyb-profile-inline-form">
+                <label className="vyb-field">
+                  <span>Change your user ID</span>
+                  <input
+                    value={editableUsername}
+                    onChange={(event) => setEditableUsername(event.target.value.toLowerCase())}
+                    autoCapitalize="none"
+                    spellCheck={false}
+                  />
+                </label>
+                <button type="button" className="vyb-secondary-button" disabled={busy} onClick={handleUsernameSave}>
+                  {busy ? "Saving..." : "Save user ID"}
+                </button>
+              </div>
+            ) : null}
+
+            {message ? <p className="vyb-inline-message">{message}</p> : null}
+          </div>
+
+          <div className="vyb-profile-posts-grid">
+            {posts.length === 0 ? (
+              <div className="vyb-campus-empty-state">
+                <strong>No posts yet</strong>
+                <span>{isOwnProfile ? "Your posts will appear here as soon as you publish them." : "This profile has not posted anything yet."}</span>
+              </div>
+            ) : null}
+
+            {posts.map((post) => (
+              <article key={post.id} className="vyb-profile-post-card">
+                <div className="vyb-profile-post-media">
+                  {post.mediaUrl && post.kind === "video" ? (
+                    <video src={post.mediaUrl} controls playsInline muted loop />
+                  ) : post.mediaUrl ? (
+                    <img src={post.mediaUrl} alt={post.body || post.title} />
+                  ) : (
+                    <div className="vyb-campus-post-copy-panel">
+                      <strong>{post.title}</strong>
+                      <p>{post.body}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="vyb-profile-post-copy">
+                  <strong>{post.title}</strong>
+                  <p>{post.body}</p>
+                  <span>{formatMetric(post.reactions)} likes</span>
+                </div>
+              </article>
             ))}
           </div>
         </div>
       </section>
 
-      <button
-        type="button"
-        className={`vyb-campus-resizer vyb-campus-resizer-right${activeResize === "right" ? " is-active" : ""}`}
-        onPointerDown={(event) => startResizeDrag("right", event)}
-      />
-
       <aside className="vyb-campus-right-panel vyb-campus-rail">
         <div className="vyb-campus-side-card">
-          <span className="vyb-campus-side-label">Campus Access</span>
+          <span className="vyb-campus-side-label">Verified campus</span>
           <div className="vyb-campus-side-user">
-             <strong>{collegeName}</strong>
-             <span>{role}</span>
+            <strong>{collegeName}</strong>
+            <span>{role}</span>
           </div>
         </div>
+
+        {viewerEmail ? (
+          <div className="vyb-campus-side-card">
+            <span className="vyb-campus-side-label">Verified contact</span>
+            <div className="vyb-campus-side-user">
+              <span className="vyb-campus-side-copy">{viewerEmail}</span>
+            </div>
+          </div>
+        ) : null}
+
         <div className="vyb-campus-side-card">
-          <span className="vyb-campus-side-label">Verified Contact</span>
-          <div className="vyb-campus-side-user">
-            <span style={{fontSize: '0.85rem', color: 'var(--vyb-campus-dim)'}}>{viewerEmail}</span>
+          <span className="vyb-campus-side-label">Quick links</span>
+          <div className="vyb-campus-side-actions">
+            <Link href="/home" className="vyb-campus-profile-link">
+              Back to home
+            </Link>
+            {username !== viewerUsername ? (
+              <Link href={`/u/${encodeURIComponent(viewerUsername)}`} className="vyb-campus-profile-link">
+                View your profile
+              </Link>
+            ) : null}
           </div>
         </div>
-        <SignOutButton className="vyb-campus-signout vyb-campus-signout-wide" />
       </aside>
 
-      {/* Mobile Bottom Nav */}
       <nav className="vyb-campus-bottom-nav">
         {navItems.map((item) => (
           <Link key={item.label} href={item.href} className={`vyb-campus-bottom-item${item.active ? " is-active" : ""}`}>

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
-import { queueCampusUpload, type CampusQueuedUpload, type CampusUploadKind, type CampusUploadMediaKind } from "../lib/campus-upload-store";
+import type { CampusUploadKind, CampusUploadMediaKind } from "../lib/campus-upload-store";
 
 type CampusUploadShellProps = {
   collegeName: string;
@@ -57,6 +57,18 @@ function parseKind(value: string | null): CampusUploadKind {
   }
 
   return "post";
+}
+
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 10 * 1024 * 1024;
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error("We could not read this file."));
+    reader.readAsDataURL(file);
+  });
 }
 
 function getSummary(kind: CampusUploadKind) {
@@ -125,6 +137,7 @@ export function CampusUploadShell({ collegeName, viewerEmail, viewerName }: Camp
   const [title, setTitle] = useState("");
   const [caption, setCaption] = useState("");
   const [mediaUrl, setMediaUrl] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [mediaKind, setMediaKind] = useState<CampusUploadMediaKind>(null);
   const [durationSeconds, setDurationSeconds] = useState<number | null>(null);
   const [isPortraitVideo, setIsPortraitVideo] = useState<boolean | null>(null);
@@ -160,6 +173,7 @@ export function CampusUploadShell({ collegeName, viewerEmail, viewerName }: Camp
 
     const objectUrl = URL.createObjectURL(file);
     setMediaUrl(objectUrl);
+    setSelectedFile(file);
     setMediaKind(nextMediaKind);
     setDurationSeconds(null);
     setIsPortraitVideo(null);
@@ -183,7 +197,7 @@ export function CampusUploadShell({ collegeName, viewerEmail, viewerName }: Camp
     router.push(publishTarget);
   }
 
-  function handlePublish() {
+  async function handlePublish() {
     const trimmedTitle = title.trim();
     const trimmedCaption = caption.trim();
 
@@ -209,28 +223,77 @@ export function CampusUploadShell({ collegeName, viewerEmail, viewerName }: Camp
       return;
     }
 
-    const item: CampusQueuedUpload = {
-      id: `upload-${Date.now()}`,
-      author: viewerEmail.split("@")[0] ?? viewerName,
-      caption:
-        trimmedCaption ||
-        (selectedKind === "story"
-          ? "New story from campus."
-          : selectedKind === "vibe"
-            ? "Fresh vibe dropped on campus."
-            : "New update just landed in the campus feed."),
-      createdAt: new Date().toISOString(),
-      durationSeconds,
-      kind: selectedKind,
-      location: collegeName,
-      mediaKind,
-      mediaUrl,
-      title: trimmedTitle || null
-    };
+    if (selectedFile) {
+      const maxBytes = mediaKind === "video" ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+
+      if (selectedFile.size > maxBytes) {
+        setMessage(
+          mediaKind === "video"
+            ? "Video is too large right now. Keep it under 10 MB."
+            : "Image is too large right now. Keep it under 4 MB."
+        );
+        return;
+      }
+    }
 
     setIsPublishing(true);
-    queueCampusUpload(item);
-    router.push(returnTo);
+    setMessage(null);
+
+    try {
+      const uploadedMediaUrl = selectedFile ? await fileToDataUrl(selectedFile) : null;
+      const route = selectedKind === "story" ? "/api/stories" : selectedKind === "vibe" ? "/api/vibes" : "/api/posts";
+      const payload =
+        selectedKind === "story"
+          ? {
+              mediaType: mediaKind,
+              mediaUrl: uploadedMediaUrl,
+              caption: trimmedCaption || null
+            }
+          : selectedKind === "vibe"
+            ? {
+                title: trimmedTitle || null,
+                body: trimmedCaption || "Fresh campus vibe.",
+                mediaUrl: uploadedMediaUrl,
+                location: collegeName
+              }
+            : {
+                title: trimmedTitle || "",
+                body:
+                  trimmedCaption ||
+                  (mediaKind ? "New campus post." : trimmedTitle || "New campus update."),
+                kind: mediaKind ?? "text",
+                mediaUrl: uploadedMediaUrl,
+                location: collegeName
+              };
+
+      const response = await fetch(route, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const responsePayload = (await response.json().catch(() => null)) as
+        | {
+            error?: {
+              message?: string;
+            };
+          }
+        | null;
+
+      if (!response.ok) {
+        setMessage(responsePayload?.error?.message ?? "We could not publish this right now.");
+        return;
+      }
+
+      router.push(returnTo);
+      router.refresh();
+    } catch {
+      setMessage("We could not publish this right now.");
+    } finally {
+      setIsPublishing(false);
+    }
   }
 
   return (

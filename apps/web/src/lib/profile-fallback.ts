@@ -57,6 +57,18 @@ function toOptionalString(value: string | null | undefined) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
+function buildFallbackUsername(value: string) {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/^@+/u, "")
+    .replace(/[^a-z0-9._]+/gu, "_")
+    .replace(/[._]{2,}/gu, "_")
+    .replace(/^[._]+|[._]+$/gu, "");
+
+  return normalized.slice(0, 24) || "vyb_user";
+}
+
 function buildCollegeName(existing?: string | null) {
   return existing?.trim() || launchCollege.name;
 }
@@ -72,7 +84,12 @@ export async function buildFallbackProfileResponse(viewer: DevSession): Promise<
     profileCompleted: Boolean(profile?.profileCompleted),
     allowedEmailDomain: launchCollege.domain,
     collegeName: buildCollegeName(profile?.collegeName),
-    profile
+    profile: profile
+      ? {
+          ...profile,
+          username: profile.username ?? buildFallbackUsername(profile.primaryEmail.split("@")[0] ?? profile.userId)
+        }
+      : null
   };
 }
 
@@ -89,6 +106,7 @@ export async function upsertFallbackProfile(viewer: DevSession, payload: UpsertP
     tenantId: viewer.tenantId,
     primaryEmail: viewer.email,
     collegeName: buildCollegeName(existing?.collegeName),
+    username: existing?.username ?? buildFallbackUsername(firstName || viewer.email.split("@")[0] || viewer.userId),
     firstName,
     lastName,
     fullName,
