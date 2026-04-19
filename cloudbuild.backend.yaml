@@ -3,6 +3,9 @@ substitutions:
   _REGION: asia-south1
   _AR_REPO: vyb
 
+options:
+  logging: CLOUD_LOGGING_ONLY
+
 steps:
   - name: gcr.io/cloud-builders/docker
     args:

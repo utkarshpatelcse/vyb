@@ -199,3 +199,5 @@ Then create a GitHub trigger in Google Cloud:
 11. Create the trigger.
 
 After that, each push to `main` builds the backend image and deploys a new Cloud Run revision automatically.
+
+The repo's trigger config uses `CLOUD_LOGGING_ONLY` so user-specified trigger service accounts can run without requiring a custom logs bucket.
