@@ -2,9 +2,9 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getViewerMe, getViewerProfile } from "../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
-import { CampusProfileShell } from "../../src/components/campus-profile-shell";
+import { CampusMarketShell } from "../../src/components/campus-market-shell";
 
-export default async function DashboardPage() {
+export default async function MarketPage() {
   const viewer = readDevSessionFromCookieStore(await cookies());
 
   if (!viewer) {
@@ -20,28 +20,14 @@ export default async function DashboardPage() {
     redirect("/onboarding");
   }
 
-  // Derived social data
-  const handle = profile.profile?.fullName 
-    ? profile.profile.fullName.split(" ")[0].toLowerCase() + "_vyb"
-    : viewer.email.split("@")[0];
-
   return (
-    <CampusProfileShell
+    <CampusMarketShell
       viewerName={profile.profile?.fullName ?? viewer.displayName}
-      handle={handle}
       collegeName={profile.collegeName}
       viewerEmail={viewer.email}
       course={profile.profile?.course}
       stream={profile.profile?.stream}
       role={me?.membershipSummary.role ?? viewer.role}
-      bio="Content creator & Filmmaker | Building the future of campus social vibes. 🚀"
-      location={`${profile.collegeName}, India`}
-      stats={{
-        posts: "208",
-        followers: "97.5K",
-        following: "121",
-        likes: "3.2M"
-      }}
     />
   );
 }

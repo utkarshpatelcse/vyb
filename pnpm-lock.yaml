@@ -11,6 +11,9 @@ importers:
       firebase-admin:
         specifier: ^13.8.0
         version: 13.8.0
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: latest
@@ -50,6 +53,9 @@ importers:
       '@vyb/ui-web':
         specifier: workspace:*
         version: link:../../packages/ui-web
+      '@vyb/validation':
+        specifier: workspace:*
+        version: link:../../packages/validation
       firebase:
         specifier: ^12.4.0
         version: 12.12.0
@@ -120,7 +126,11 @@ importers:
         specifier: '>=18'
         version: 19.2.5
 
-  packages/validation: {}
+  packages/validation:
+    dependencies:
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
 
 packages:
 

@@ -19,6 +19,26 @@
       "profileCompleted": true,
       "createdAt": "2026-04-19T07:25:12.945Z",
       "updatedAt": "2026-04-19T07:25:12.945Z"
+    },
+    {
+      "userId": "nk3IU15zsZSLl0VRhuog5KZPDvn1",
+      "tenantId": "0a115f7c6bd94d58868eb16b1fc87fbb",
+      "primaryEmail": "utkarsh.2226cse1210@kiet.edu",
+      "collegeName": "Kiet College",
+      "firstName": "Vyb",
+      "lastName": "Student",
+      "fullName": "Vyb Student",
+      "course": "B.Tech",
+      "stream": "Computer Science and Engineering",
+      "branch": "Computer Science and Engineering",
+      "year": 1,
+      "section": "C",
+      "isHosteller": false,
+      "hostelName": null,
+      "phoneNumber": null,
+      "profileCompleted": true,
+      "createdAt": "2026-04-19T09:34:17.502Z",
+      "updatedAt": "2026-04-19T09:34:17.502Z"
     }
   ]
 }
