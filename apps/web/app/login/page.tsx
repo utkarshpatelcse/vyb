@@ -9,14 +9,14 @@ export default async function LoginPage() {
   const profileCompleted = cookieStore.get(PROFILE_COMPLETION_COOKIE)?.value === "1";
 
   if (viewer) {
-    redirect(profileCompleted ? "/dashboard" : "/onboarding");
+    redirect(profileCompleted ? "/home" : "/onboarding");
   }
 
   return (
     <main className="vyb-auth-page">
       <div className="vyb-auth-glow" aria-hidden="true" />
       <div className="vyb-auth-shell">
-        <DevSessionCard viewer={null} redirectTo="/dashboard" />
+        <DevSessionCard viewer={null} redirectTo="/home" />
       </div>
     </main>
   );

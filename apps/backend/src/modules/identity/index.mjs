@@ -161,13 +161,13 @@ export async function handleIdentityRoute({ request, response, url, context }) {
       sendJson(response, 200, {
         session,
         profileCompleted: Boolean(storedProfile?.profileCompleted),
-        nextPath: storedProfile?.profileCompleted ? "/dashboard" : "/onboarding"
+        nextPath: storedProfile?.profileCompleted ? "/home" : "/onboarding"
       });
       console.info("[identity] session-bootstrap:success", {
         uid: decoded.uid,
         email,
         tenantId: session.tenantId,
-        nextPath: storedProfile?.profileCompleted ? "/dashboard" : "/onboarding"
+        nextPath: storedProfile?.profileCompleted ? "/home" : "/onboarding"
       });
       return true;
     } catch (error) {

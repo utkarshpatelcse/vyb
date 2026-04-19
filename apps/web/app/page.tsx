@@ -1,10 +1,19 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { getClientShellData } from "../src/lib/backend";
-import { readDevSessionFromCookieStore } from "../src/lib/dev-session";
+import { PROFILE_COMPLETION_COOKIE, readDevSessionFromCookieStore } from "../src/lib/dev-session";
 
 export default async function HomePage() {
-  const [shell, viewer] = await Promise.all([getClientShellData(), readDevSessionFromCookieStore(await cookies())]);
+  const cookieStore = await cookies();
+  const viewer = readDevSessionFromCookieStore(cookieStore);
+  const profileCompleted = cookieStore.get(PROFILE_COMPLETION_COOKIE)?.value === "1";
+
+  if (viewer) {
+    redirect(profileCompleted ? "/home" : "/onboarding");
+  }
+
+  const shell = await getClientShellData();
 
   return (
     <main className="vyb-home">
@@ -27,7 +36,7 @@ export default async function HomePage() {
             <a href="#launch">Launch Campus</a>
           </nav>
 
-          <Link href={viewer ? "/dashboard" : "/login"} className="vyb-primary-button">
+          <Link href="/login" className="vyb-primary-button">
             Get Started
           </Link>
         </header>
@@ -39,7 +48,7 @@ export default async function HomePage() {
             <p>{shell.hero.summary}</p>
 
             <div className="vyb-home-hero-actions">
-              <Link href={viewer ? "/dashboard" : "/login"} className="vyb-primary-button">
+              <Link href="/login" className="vyb-primary-button">
                 Get Started
               </Link>
               <a href="#phase-one" className="vyb-secondary-button">

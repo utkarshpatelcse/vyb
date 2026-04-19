@@ -408,17 +408,17 @@ async function activateServerSession(user: User) {
   logAuthEvent("info", "session-bootstrap:success", {
     uid: user.uid,
     email: normalizedEmail,
-    nextPath: payload?.nextPath ?? "/dashboard"
+    nextPath: payload?.nextPath ?? "/home"
   });
 
   return {
-    nextPath: payload?.nextPath ?? "/dashboard"
+    nextPath: payload?.nextPath ?? "/home"
   };
 }
 
 export function DevSessionCard({
   viewer,
-  redirectTo = "/dashboard"
+  redirectTo = "/home"
 }: {
   viewer: {
     displayName: string;
@@ -936,7 +936,7 @@ export function DevSessionCard({
         <div className="vyb-auth-panel-head">
           <span className="vyb-page-badge">Session Active</span>
           <h2>You are already signed in.</h2>
-          <p>Your authenticated session is ready. Continue to your dashboard or sign out from this browser.</p>
+          <p>Your authenticated session is ready. Continue to your home feed or sign out from this browser.</p>
         </div>
 
         <div className="vyb-session-card">
@@ -949,11 +949,11 @@ export function DevSessionCard({
             type="button"
             className="vyb-primary-button"
             onClick={() => {
-              router.replace("/dashboard");
+              router.replace("/home");
               router.refresh();
             }}
           >
-            Open dashboard
+            Open home
           </button>
           <button type="button" className="vyb-secondary-button" onClick={handleSignOut} disabled={isBusy}>
             {isBusy ? "Signing out..." : "Sign out"}

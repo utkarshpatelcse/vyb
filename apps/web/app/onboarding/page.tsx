@@ -15,7 +15,7 @@ export default async function OnboardingPage() {
   const profile = await getViewerProfile(viewer).catch(() => null);
 
   if (profile?.profileCompleted) {
-    redirect("/dashboard");
+    redirect("/home");
   }
 
   return (

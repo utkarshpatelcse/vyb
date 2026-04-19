@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 const DEV_SESSION_COOKIE = "vyb-session";
 const PROFILE_COMPLETION_COOKIE = "vyb-profile-complete";
-const PROTECTED_PREFIXES = ["/dashboard", "/onboarding", "/complete-profile"];
+const PROTECTED_PREFIXES = ["/home", "/dashboard", "/onboarding", "/complete-profile"];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -32,7 +32,7 @@ export function proxy(request: NextRequest) {
   }
 
   if (pathname === "/login") {
-    return NextResponse.redirect(new URL(profileCompleted ? "/dashboard" : "/onboarding", request.url));
+    return NextResponse.redirect(new URL(profileCompleted ? "/home" : "/onboarding", request.url));
   }
 
   return NextResponse.next();

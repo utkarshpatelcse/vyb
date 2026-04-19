@@ -87,7 +87,7 @@ export interface SessionBootstrapRequest {
 export interface SessionBootstrapResponse {
   session: ViewerSessionPayload;
   profileCompleted: boolean;
-  nextPath: "/dashboard" | "/onboarding";
+  nextPath: "/home" | "/onboarding";
 }
 
 export interface ProfileRecord {

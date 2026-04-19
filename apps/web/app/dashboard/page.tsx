@@ -32,7 +32,7 @@ export default async function DashboardPage() {
             <span>V</span>
             <div>
               <strong>VYB</strong>
-              <p>Authenticated Dashboard</p>
+              <p>Profile</p>
             </div>
           </div>
 
@@ -44,11 +44,11 @@ export default async function DashboardPage() {
 
         <section className="vyb-dashboard-hero">
           <div>
-            <span className="vyb-page-badge">Signed In</span>
+            <span className="vyb-page-badge">Profile</span>
             <h1>{profile.profile?.fullName ?? viewer.displayName}</h1>
             <p>
-              Your authentication, domain access, and profile completion flow are working. This page is the
-              temporary dashboard checkpoint before the full feed experience is built.
+              This is your verified campus profile. Your main app landing now opens on the home feed so posts,
+              reels, and stories become the first experience after sign-in.
             </p>
           </div>
 
@@ -62,7 +62,7 @@ export default async function DashboardPage() {
         <section className="vyb-dashboard-grid">
           <article className="vyb-dashboard-card">
             <span className="vyb-page-badge">Profile</span>
-            <h2>Campus profile</h2>
+            <h2>Campus details</h2>
             <ul className="vyb-home-list">
               <li>Course: {profile.profile?.course}</li>
               <li>Stream: {profile.profile?.stream}</li>
@@ -73,8 +73,8 @@ export default async function DashboardPage() {
           </article>
 
           <article className="vyb-dashboard-card">
-            <span className="vyb-page-badge">Session</span>
-            <h2>Access status</h2>
+            <span className="vyb-page-badge">Access</span>
+            <h2>Verified session</h2>
             <ul className="vyb-home-list">
               <li>Authenticated through Firebase and backend session bootstrap</li>
               <li>College-scoped access restricted to {shell.launchCampus.domain}</li>
@@ -83,11 +83,11 @@ export default async function DashboardPage() {
           </article>
 
           <article className="vyb-dashboard-card">
-            <span className="vyb-page-badge">Next Milestone</span>
-            <h2>Ready for the main product surface</h2>
+            <span className="vyb-page-badge">Home Feed</span>
+            <h2>Main surface is now separate</h2>
             <p>
-              The next UI milestone can replace this checkpoint with the real feed and dashboard experience
-              without reworking the authentication flow.
+              Your main in-app landing is the home feed. This page can now evolve into a fuller profile surface
+              without affecting the authentication or onboarding flow.
             </p>
           </article>
         </section>

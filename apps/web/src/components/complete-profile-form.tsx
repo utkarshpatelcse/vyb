@@ -196,7 +196,7 @@ export function CompleteProfileForm({
         return;
       }
 
-      router.replace("/dashboard");
+      router.replace("/home");
       router.refresh();
     } catch (error) {
       console.warn("[onboarding] request-failed", {
