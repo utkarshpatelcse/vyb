@@ -42,6 +42,7 @@ type CampusMarketShellProps = {
 
 type ResizeSide = "left" | "right";
 type MarketTab = "sale" | "buying" | "lend";
+type MarketSort = "latest" | "value-low" | "value-high" | "az";
 
 const DEFAULT_LEFT_WIDTH = 260;
 const DEFAULT_RIGHT_WIDTH = 320;
@@ -235,6 +236,22 @@ function SearchIcon() {
   );
 }
 
+function FilterIcon() {
+  return (
+    <IconBase>
+      <path d="M4 6h16M7.5 12h9M10.5 18h3" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+    </IconBase>
+  );
+}
+
+function SortIcon() {
+  return (
+    <IconBase>
+      <path d="M8 5v14m0 0-2.6-2.8M8 19l2.6-2.8M16 19V5m0 0-2.6 2.8M16 5l2.6 2.8" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+    </IconBase>
+  );
+}
+
 function HeartIcon() {
   return (
     <IconBase>
@@ -326,16 +343,34 @@ function PackageIcon() {
   );
 }
 
-function getTabLabel(tab: MarketTab) {
-  if (tab === "sale") {
-    return "Items for sale";
+function parsePostedMinutes(posted: string) {
+  const normalized = posted.trim().toLowerCase();
+  const minuteMatch = normalized.match(/(\d+)\s*m/);
+
+  if (minuteMatch) {
+    return Number.parseInt(minuteMatch[1], 10);
   }
 
-  if (tab === "buying") {
-    return "Buying requests";
+  const hourMatch = normalized.match(/(\d+)\s*h/);
+
+  if (hourMatch) {
+    return Number.parseInt(hourMatch[1], 10) * 60;
   }
 
-  return "Lend / rent";
+  return Number.MAX_SAFE_INTEGER;
+}
+
+function parseAmount(value: string) {
+  const normalized = value.toLowerCase().replace(/,/g, "");
+  const match = normalized.match(/(?:rs\.?|₹)\s*([0-9]+(?:\.[0-9]+)?)(k)?/i);
+
+  if (!match) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const amount = Number.parseFloat(match[1]);
+
+  return match[2] ? amount * 1000 : amount;
 }
 
 export function CampusMarketShell({
@@ -352,6 +387,7 @@ export function CampusMarketShell({
   const [activeTab, setActiveTab] = useState<MarketTab>("sale");
   const [searchValue, setSearchValue] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
+  const [sortMode, setSortMode] = useState<MarketSort>("latest");
   const resizeState = useRef<{ side: ResizeSide; startX: number; startWidth: number } | null>(null);
 
   useEffect(() => {
@@ -430,8 +466,8 @@ export function CampusMarketShell({
   const navItems = [
     { label: "Home", href: "/home", icon: <HomeIcon /> },
     { label: "Events", href: "/events", icon: <EventsIcon /> },
-    { label: "Market", href: "/market", icon: <MarketIcon />, active: true },
     { label: "Vibes", href: "/vibes", icon: <ReelsIcon /> },
+    { label: "Market", href: "/market", icon: <MarketIcon />, active: true },
     { label: "Profile", href: "/dashboard", icon: <ProfileIcon /> }
   ];
 
@@ -468,7 +504,39 @@ export function CampusMarketShell({
     return matchesCategory && matchesSearch;
   });
 
-  const visibleCount = activeTab === "sale" ? filteredItems.length : filteredRequests.length;
+  const sortedItems = [...filteredItems].sort((left, right) => {
+    if (sortMode === "value-low") {
+      return parseAmount(left.price) - parseAmount(right.price);
+    }
+
+    if (sortMode === "value-high") {
+      return parseAmount(right.price) - parseAmount(left.price);
+    }
+
+    if (sortMode === "az") {
+      return left.title.localeCompare(right.title, undefined, { sensitivity: "base" });
+    }
+
+    return parsePostedMinutes(left.posted) - parsePostedMinutes(right.posted);
+  });
+
+  const sortedRequests = [...filteredRequests].sort((left, right) => {
+    if (sortMode === "value-low") {
+      return parseAmount(left.budget) - parseAmount(right.budget);
+    }
+
+    if (sortMode === "value-high") {
+      return parseAmount(right.budget) - parseAmount(left.budget);
+    }
+
+    if (sortMode === "az") {
+      return left.title.localeCompare(right.title, undefined, { sensitivity: "base" });
+    }
+
+    return parsePostedMinutes(left.posted) - parsePostedMinutes(right.posted);
+  });
+
+  const visibleCount = activeTab === "sale" ? sortedItems.length : sortedRequests.length;
   const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
   const tabCounts = {
     sale: MARKET_ITEMS.length,
@@ -514,91 +582,80 @@ export function CampusMarketShell({
       />
 
       <section className="vyb-campus-main vyb-market-main">
-        <header className="vyb-market-header">
-          <div className="vyb-market-brand-block">
-            <span className="vyb-market-kicker">Campus marketplace</span>
-            <strong className="vyb-market-brand">VYB Shop</strong>
-          </div>
-
-          <label className="vyb-market-search-box">
-            <SearchIcon />
-            <input
-              type="search"
-              value={searchValue}
-              onChange={(event) => setSearchValue(event.target.value)}
-              placeholder={activeTab === "sale" ? "Search items, sellers, or pickup spots" : "Search requests, budgets, or categories"}
-              aria-label="Search the campus marketplace"
-            />
-          </label>
-
-          <div className="vyb-market-header-actions">
-            <button type="button" className="vyb-market-header-icon" aria-label="Saved listings">
-              <HeartIcon />
-            </button>
-            <button type="button" className="vyb-market-create-button">
-              <PlusIcon />
-              <span>Post listing</span>
-            </button>
-          </div>
-        </header>
-
         <div className="vyb-market-shell">
           <section className="vyb-market-toolbar">
-            <div className="vyb-market-toolbar-copy">
-              <div>
-                <span className="vyb-market-section-label">{getTabLabel(activeTab)}</span>
-                <h2>Marketplace feed for verified campus deals</h2>
-              </div>
-              <p>
-                {visibleCount} result{visibleCount === 1 ? "" : "s"} showing in {collegeName}
-              </p>
-            </div>
-
-            <div className="vyb-market-tabs" role="tablist" aria-label="Marketplace sections">
-              <button
-                type="button"
-                className={`vyb-market-tab${activeTab === "sale" ? " is-active" : ""}`}
-                onClick={() => setActiveTab("sale")}
-              >
-                <span>Items for sale</span>
-                <strong>{tabCounts.sale}</strong>
-              </button>
-              <button
-                type="button"
-                className={`vyb-market-tab${activeTab === "buying" ? " is-active" : ""}`}
-                onClick={() => setActiveTab("buying")}
-              >
-                <span>Buying requests</span>
-                <strong>{tabCounts.buying}</strong>
-              </button>
-              <button
-                type="button"
-                className={`vyb-market-tab${activeTab === "lend" ? " is-active" : ""}`}
-                onClick={() => setActiveTab("lend")}
-              >
-                <span>Lend / rent</span>
-                <strong>{tabCounts.lend}</strong>
-              </button>
-            </div>
-
-            <div className="vyb-market-category-row" aria-label="Marketplace filters">
-              {categoryOptions.map((category) => (
+            <div className="vyb-market-toolbar-line">
+              <div className="vyb-market-tabs" role="tablist" aria-label="Marketplace sections">
                 <button
-                  key={category}
                   type="button"
-                  className={`vyb-market-category-chip${activeCategory === category ? " is-active" : ""}`}
-                  onClick={() => setActiveCategory(category)}
+                  className={`vyb-market-tab${activeTab === "sale" ? " is-active" : ""}`}
+                  onClick={() => setActiveTab("sale")}
                 >
-                  {category}
+                  <span>Items</span>
+                  <strong>{tabCounts.sale}</strong>
                 </button>
-              ))}
+                <button
+                  type="button"
+                  className={`vyb-market-tab${activeTab === "buying" ? " is-active" : ""}`}
+                  onClick={() => setActiveTab("buying")}
+                >
+                  <span>Requests</span>
+                  <strong>{tabCounts.buying}</strong>
+                </button>
+                <button
+                  type="button"
+                  className={`vyb-market-tab${activeTab === "lend" ? " is-active" : ""}`}
+                  onClick={() => setActiveTab("lend")}
+                >
+                  <span>Lend</span>
+                  <strong>{tabCounts.lend}</strong>
+                </button>
+              </div>
+
+              <label className="vyb-market-filter-select vyb-market-filter-select-filter">
+                <FilterIcon />
+                <span>Filter</span>
+                <select value={activeCategory} onChange={(event) => setActiveCategory(event.target.value)} aria-label="Filter market results by category">
+                  {categoryOptions.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="vyb-market-filter-select vyb-market-filter-select-sort">
+                <SortIcon />
+                <span>Sort</span>
+                <select value={sortMode} onChange={(event) => setSortMode(event.target.value as MarketSort)} aria-label="Sort market results">
+                  <option value="latest">Latest</option>
+                  <option value="value-low">{activeTab === "sale" ? "Price: low to high" : "Budget: low to high"}</option>
+                  <option value="value-high">{activeTab === "sale" ? "Price: high to low" : "Budget: high to low"}</option>
+                  <option value="az">A to Z</option>
+                </select>
+              </label>
+
+              <label className="vyb-market-search-box vyb-market-search-box-inline">
+                <SearchIcon />
+                <input
+                  type="search"
+                  value={searchValue}
+                  onChange={(event) => setSearchValue(event.target.value)}
+                  placeholder={activeTab === "sale" ? "Search items, sellers, or pickup spots" : "Search requests, budgets, or categories"}
+                  aria-label="Search the campus marketplace"
+                />
+              </label>
+
+              <span className="vyb-market-toolbar-count">
+                {visibleCount} result{visibleCount === 1 ? "" : "s"}
+              </span>
             </div>
           </section>
 
           {activeTab === "sale" ? (
-            filteredItems.length > 0 ? (
+            sortedItems.length > 0 ? (
               <div className="vyb-market-grid">
-                {filteredItems.map((item) => (
+                {sortedItems.map((item) => (
                   <article key={item.id} className="vyb-market-card">
                     <div className="vyb-market-card-media">
                       <img src={item.imageUrl} alt={item.title} className="vyb-market-img" />
@@ -653,9 +710,9 @@ export function CampusMarketShell({
                 <p>Try another category or clear the search to see more items from the campus marketplace.</p>
               </div>
             )
-          ) : filteredRequests.length > 0 ? (
+          ) : sortedRequests.length > 0 ? (
             <div className="vyb-market-request-list">
-              {filteredRequests.map((request) => (
+              {sortedRequests.map((request) => (
                 <article key={request.id} className="vyb-market-request-item">
                   <div className="vyb-market-request-copy">
                     <div className="vyb-market-request-topline">

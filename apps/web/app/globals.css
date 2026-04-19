@@ -2636,7 +2636,7 @@ a {
 
 /* --- MARKETPLACE PREMIUM UI --- */
 .vyb-market-main {
-  --vyb-market-header-offset: 5.35rem;
+  --vyb-market-header-offset: 0px;
 }
 
 .vyb-market-header {
@@ -2659,7 +2659,7 @@ a {
 .vyb-market-shell {
   width: min(100%, 1080px);
   margin: 0 auto;
-  padding: 1.35rem clamp(1rem, 3vw, 1.75rem) 7rem;
+  padding: 0.85rem clamp(1rem, 3vw, 1.75rem) 7rem;
   display: grid;
   gap: 1.35rem;
 }
@@ -2979,14 +2979,23 @@ a {
 
 .vyb-market-toolbar {
   position: sticky;
-  top: calc(var(--vyb-market-header-offset) - 0.2rem);
+  top: 0.6rem;
   z-index: 35;
+  display: block;
+  padding: 0.72rem 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  background: rgba(10, 10, 12, 0.9);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 16px 28px rgba(0, 0, 0, 0.16);
+  container-type: inline-size;
+}
+
+.vyb-market-toolbar-line {
   display: grid;
-  gap: 0.9rem;
-  padding: 1rem 1.05rem;
-  border-radius: 1.35rem;
-  background: rgba(10, 10, 12, 0.84);
-  backdrop-filter: blur(14px);
+  grid-template-columns: auto auto auto minmax(14rem, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
 }
 
 .vyb-market-toolbar-copy {
@@ -3006,57 +3015,170 @@ a {
 }
 
 .vyb-market-tabs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.2rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .vyb-market-tab {
-  display: grid;
-  gap: 0.35rem;
-  align-items: start;
-  padding: 0.9rem 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 1.1rem;
-  background: rgba(255, 255, 255, 0.03);
+  flex: 1 1 0;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.58rem 0.8rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
   color: rgba(255, 255, 255, 0.64);
-  text-align: left;
+  text-align: center;
   cursor: pointer;
   transition:
-    transform var(--cl-motion-fast),
     background-color var(--cl-motion-fast),
-    border-color var(--cl-motion-fast),
     color var(--cl-motion-fast);
 }
 
 .vyb-market-tab span {
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .vyb-market-tab strong {
-  font-size: 1.15rem;
+  min-width: 1.35rem;
+  padding: 0.14rem 0.38rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
   color: inherit;
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .vyb-market-tab:hover {
-  transform: translateY(-1px);
   background: rgba(255, 255, 255, 0.06);
   color: #ffffff;
 }
 
 .vyb-market-tab.is-active {
-  background:
-    linear-gradient(135deg, rgba(138, 43, 226, 0.32), rgba(255, 0, 255, 0.2)),
-    rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 0, 255, 0.34);
+  background: linear-gradient(135deg, rgba(138, 43, 226, 0.34), rgba(255, 0, 255, 0.22));
   color: #ffffff;
 }
 
-.vyb-market-category-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
+.vyb-market-filter-select {
+  min-height: 2.8rem;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.68);
+  position: relative;
+}
+
+.vyb-market-filter-select .vyb-campus-icon {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.vyb-market-filter-select span {
+  flex-shrink: 0;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.vyb-market-filter-select select {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #ffffff;
+  font: inherit;
+  outline: none;
+}
+
+.vyb-market-filter-select option {
+  color: #111111;
+}
+
+.vyb-market-search-box-inline {
+  min-height: 2.8rem;
+  width: 100%;
+}
+
+.vyb-market-toolbar-count {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+@container (max-width: 1100px) {
+  .vyb-market-toolbar-line {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "tabs tabs count"
+      "search filter sort";
+  }
+
+  .vyb-market-tabs {
+    grid-area: tabs;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .vyb-market-search-box-inline {
+    grid-area: search;
+    min-width: 0;
+  }
+
+  .vyb-market-filter-select {
+    width: 2.85rem;
+    min-width: 2.85rem;
+    height: 2.85rem;
+    min-height: 2.85rem;
+    justify-content: center;
+    padding: 0;
+    border-radius: 0.95rem;
+  }
+
+  .vyb-market-filter-select-filter {
+    grid-area: filter;
+  }
+
+  .vyb-market-filter-select-sort {
+    grid-area: sort;
+  }
+
+  .vyb-market-filter-select span {
+    display: none;
+  }
+
+  .vyb-market-filter-select select {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .vyb-market-toolbar-count {
+    grid-area: count;
+    justify-self: end;
+    align-self: center;
+  }
 }
 
 .vyb-market-category-chip {
@@ -3426,9 +3548,17 @@ a {
 }
 
 @media (max-width: 1199px) {
-  .vyb-market-toolbar-copy {
-    flex-direction: column;
-    align-items: stretch;
+  .vyb-market-toolbar-line {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .vyb-market-tabs,
+  .vyb-market-search-box-inline {
+    grid-column: 1 / -1;
+  }
+
+  .vyb-market-toolbar-count {
+    justify-self: end;
   }
 }
 
@@ -3466,8 +3596,34 @@ a {
     position: static;
   }
 
+  .vyb-market-toolbar-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 0.65rem;
+  }
+
   .vyb-market-tabs {
-    grid-template-columns: 1fr;
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 0.1rem;
+  }
+
+  .vyb-market-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .vyb-market-filter-select {
+    flex: 1 1 11rem;
+  }
+
+  .vyb-market-search-box-inline {
+    flex: 1 1 100%;
+    order: 4;
+  }
+
+  .vyb-market-toolbar-count {
+    order: 5;
   }
 
   .vyb-market-request-item {
@@ -3492,30 +3648,69 @@ a {
     grid-template-columns: 1fr;
   }
 
-  .vyb-market-category-row {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    padding-bottom: 0.1rem;
-  }
-
-  .vyb-market-category-row::-webkit-scrollbar {
-    display: none;
-  }
-
-  .vyb-market-header-actions {
-    justify-content: flex-start;
-  }
-
-  .vyb-market-create-button,
-  .vyb-market-primary-action {
-    display: none;
-  }
-
   .vyb-market-header-icon,
   .vyb-market-create-button,
   .vyb-market-primary-action,
   .vyb-market-secondary-action {
     min-height: 2.8rem;
+  }
+
+  .vyb-market-toolbar {
+    padding: 0.75rem;
+  }
+
+  .vyb-market-toolbar-line {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "tabs tabs tabs"
+      "search filter sort";
+    gap: 0.55rem;
+    align-items: center;
+  }
+
+  .vyb-market-tabs {
+    grid-area: tabs;
+    width: 100%;
+  }
+
+  .vyb-market-search-box-inline {
+    grid-area: search;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .vyb-market-filter-select {
+    min-width: 2.85rem;
+    width: 2.85rem;
+    height: 2.85rem;
+    min-height: 2.85rem;
+    justify-content: center;
+    padding: 0;
+    border-radius: 0.95rem;
+  }
+
+  .vyb-market-filter-select-filter {
+    grid-area: filter;
+  }
+
+  .vyb-market-filter-select-sort {
+    grid-area: sort;
+  }
+
+  .vyb-market-filter-select span {
+    display: none;
+  }
+
+  .vyb-market-filter-select select {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .vyb-market-toolbar-count {
+    display: none;
   }
 }
 
