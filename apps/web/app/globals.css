@@ -1815,6 +1815,7 @@ a {
   flex-direction: column;
   overflow-y: auto;
   overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
   position: relative;
 }
 
@@ -2192,6 +2193,7 @@ a {
   align-content: start;
   min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 1.5rem;
   border-left: var(--vyb-campus-border);
 }
@@ -4577,6 +4579,8 @@ a {
   overflow-y: auto;
   scroll-snap-type: y mandatory;
   overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .vyb-reels-feed::-webkit-scrollbar {
@@ -5764,6 +5768,8 @@ a {
   .vyb-campus-home {
     height: auto;
     min-height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   .vyb-campus-sidebar {
@@ -5790,7 +5796,13 @@ a {
   .vyb-campus-main {
     height: auto;
     min-height: 100dvh;
+    overflow-y: visible;
+    overscroll-behavior-y: auto;
     padding-bottom: 4.6rem;
+  }
+
+  .vyb-reels-feed {
+    overscroll-behavior-y: auto;
   }
 
   .vyb-campus-feed {
