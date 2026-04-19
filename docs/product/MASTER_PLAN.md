@@ -151,6 +151,7 @@ After implementation:
 - Data Connect connectors compile successfully and generated admin SDKs are available
 - shared server config helpers now load root env and initialize Firebase Admin/Data Connect clients
 - repo-level deployment assets are now prepared for hosting the backend monolith on Cloud Run
+- a repo-level Cloud Build configuration now exists for optional automatic backend deployment from the `main` branch
 - a Cloud Run deployment guide and hosting ADR now document the production web plus backend rollout path
 - Phase 1 API contracts and query reviews created
 - KIET tenant and `@kiet.edu` domain were seeded successfully

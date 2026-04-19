@@ -44,9 +44,10 @@ Change Summary: Accepted the Phase 1 hosting split of Vercel for the web client 
   - The system now spans two hosting platforms in production.
   - Cross-platform environment management becomes part of the deployment checklist.
 - operational impact
-  - Frontend deploys continue through Vercel.
-  - Backend deploys move through Cloud Run using the repo root container build.
-  - Shared secrets such as `VYB_INTERNAL_API_KEY` must stay aligned across both platforms.
+- Frontend deploys continue through Vercel.
+- Backend deploys move through Cloud Run using the repo root container build.
+- Continuous backend deployment can be layered on top through a Cloud Build trigger without changing the single-backend-service topology.
+- Shared secrets such as `VYB_INTERNAL_API_KEY` must stay aligned across both platforms.
 - cost impact
   - Cloud Run introduces backend hosting cost, but keeps ops overhead lower than a self-managed VM or Kubernetes path.
 

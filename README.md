@@ -35,6 +35,7 @@ Modular-monolith campus platform architecture with a responsive web client in Ph
 - `apps/web` is intended to ship on Vercel
 - `apps/backend` is intended to ship on Google Cloud Run
 - the repo root [Dockerfile](/e:/CAMPUS%20LOOP/Dockerfile:1) builds the backend monolith container for Cloud Run
+- [cloudbuild.backend.yaml](/e:/CAMPUS%20LOOP/cloudbuild.backend.yaml:1) can be used by a Cloud Build trigger so `main` branch pushes automatically redeploy the backend
 - deployment steps live in [docs/process/CLOUD_RUN_BACKEND_DEPLOYMENT.md](/e:/CAMPUS%20LOOP/docs/process/CLOUD_RUN_BACKEND_DEPLOYMENT.md:1)
 
 ## Core Directories

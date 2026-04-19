@@ -146,3 +146,56 @@ Verify these flows:
 - roll back Cloud Run to the previous revision if backend changes break auth or profile flows
 - roll back the previous Vercel deployment if frontend env changes break the web shell
 - restore the previous `VYB_INTERNAL_API_KEY` in both systems if a secret mismatch caused failures
+
+## 13. Optional Auto Deployment From GitHub
+
+If you want the backend to redeploy automatically whenever `main` changes, use the root [cloudbuild.backend.yaml](/e:/CAMPUS%20LOOP/cloudbuild.backend.yaml:1).
+
+One-time preparation:
+
+```bash
+gcloud artifacts repositories create vyb \
+  --repository-format=docker \
+  --location=asia-south1
+```
+
+If the repository already exists, Google Cloud will report that and you can continue.
+
+Get the project number:
+
+```bash
+PROJECT_NUMBER="$(gcloud projects describe vybnet-e2242 --format='value(projectNumber)')"
+echo "$PROJECT_NUMBER"
+```
+
+Grant the default Cloud Build service account the minimum launch roles:
+
+```bash
+gcloud projects add-iam-policy-binding vybnet-e2242 \
+  --member="serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com" \
+  --role="roles/run.admin"
+
+gcloud projects add-iam-policy-binding vybnet-e2242 \
+  --member="serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com" \
+  --role="roles/artifactregistry.writer"
+
+gcloud iam service-accounts add-iam-policy-binding vyb-backend@vybnet-e2242.iam.gserviceaccount.com \
+  --member="serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com" \
+  --role="roles/iam.serviceAccountUser"
+```
+
+Then create a GitHub trigger in Google Cloud:
+
+1. Open Google Cloud Console.
+2. Go to `Cloud Build -> Triggers`.
+3. Click `Create trigger`.
+4. Connect the GitHub repository `utkarshpatelcse/vyb` if asked.
+5. Name the trigger `vyb-backend-main`.
+6. Choose event `Push to a branch`.
+7. Set branch to `^main$`.
+8. Choose configuration type `Cloud Build configuration file`.
+9. Set location to `Repository`.
+10. Set config path to `cloudbuild.backend.yaml`.
+11. Create the trigger.
+
+After that, each push to `main` builds the backend image and deploys a new Cloud Run revision automatically.
