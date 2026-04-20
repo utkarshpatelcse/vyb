@@ -1,7 +1,8 @@
-query ListFeedByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+query ListFeedByTenant($tenantId: UUID!, $placement: String!, $limit: Int!) @auth(level: NO_ACCESS) {
   posts(
     where: {
       tenantId: { eq: $tenantId }
+      placement: { eq: $placement }
       status: { eq: "published" }
       deletedAt: { isNull: true }
     }
@@ -12,8 +13,95 @@ query ListFeedByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
     tenantId
     communityId
     membershipId
+    authorUserId
+    authorUsername
+    authorName
+    placement
     kind
     title
+    body
+    mediaUrl
+    storagePath
+    mediaMimeType
+    mediaSizeBytes
+    location
+    status
+    createdAt
+  }
+}
+
+query ListPostsByAuthor(
+  $tenantId: UUID!
+  $authorUserId: UUID!
+  $placement: String!
+  $limit: Int!
+) @auth(level: NO_ACCESS) {
+  posts(
+    where: {
+      tenantId: { eq: $tenantId }
+      authorUserId: { eq: $authorUserId }
+      placement: { eq: $placement }
+      status: { eq: "published" }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    communityId
+    membershipId
+    authorUserId
+    authorUsername
+    authorName
+    placement
+    kind
+    title
+    body
+    mediaUrl
+    storagePath
+    mediaMimeType
+    mediaSizeBytes
+    location
+    status
+    createdAt
+  }
+}
+
+query GetPostById($id: UUID!) @auth(level: NO_ACCESS) {
+  post(key: { id: $id }) {
+    id
+    tenantId
+    communityId
+    membershipId
+    authorUserId
+    authorUsername
+    authorName
+    placement
+    kind
+    title
+    body
+    mediaUrl
+    storagePath
+    mediaMimeType
+    mediaSizeBytes
+    location
+    status
+    createdAt
+  }
+}
+
+query ListCommentsByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  comments(
+    where: { tenantId: { eq: $tenantId }, deletedAt: { isNull: true } }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    postId
+    membershipId
+    authorUserId
+    parentCommentId
     body
     status
     createdAt
@@ -29,6 +117,7 @@ query ListCommentsByPost($postId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
     id
     postId
     membershipId
+    authorUserId
     parentCommentId
     body
     status
@@ -36,25 +125,273 @@ query ListCommentsByPost($postId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
   }
 }
 
+query ListReactionsByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  reactions(
+    where: { post: { tenantId: { eq: $tenantId } }, deletedAt: { isNull: true } }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    postId
+    membershipId
+    reactionType
+    createdAt
+    updatedAt
+  }
+}
+
+query ListReactionsByPost($postId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  reactions(
+    where: { postId: { eq: $postId }, deletedAt: { isNull: true } }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    postId
+    membershipId
+    reactionType
+    createdAt
+    updatedAt
+  }
+}
+
+query GetReactionByKey($reactionKey: String!) @auth(level: NO_ACCESS) {
+  reactions(where: { reactionKey: { eq: $reactionKey }, deletedAt: { isNull: true } }, limit: 1) {
+    id
+    postId
+    membershipId
+    reactionType
+    createdAt
+    updatedAt
+  }
+}
+
+query ListStoriesByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  stories(
+    where: { tenantId: { eq: $tenantId }, deletedAt: { isNull: true } }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    userId
+    username
+    displayName
+    mediaType
+    mediaUrl
+    storagePath
+    mediaMimeType
+    mediaSizeBytes
+    caption
+    createdAt
+    expiresAt
+  }
+}
+
+query ListFollowingByUser($tenantId: UUID!, $followerUserId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  follows(
+    where: {
+      tenantId: { eq: $tenantId }
+      followerUserId: { eq: $followerUserId }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    followerUserId
+    followingUserId
+    createdAt
+  }
+}
+
+query ListFollowersByUser($tenantId: UUID!, $followingUserId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  follows(
+    where: {
+      tenantId: { eq: $tenantId }
+      followingUserId: { eq: $followingUserId }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    followerUserId
+    followingUserId
+    createdAt
+  }
+}
+
+query GetFollowByKey($followKey: String!) @auth(level: NO_ACCESS) {
+  follows(where: { followKey: { eq: $followKey }, deletedAt: { isNull: true } }, limit: 1) {
+    id
+    tenantId
+    followerUserId
+    followingUserId
+    createdAt
+  }
+}
+
 mutation CreatePost(
+  $id: UUID!
   $tenantId: UUID!
   $communityId: UUID
   $membershipId: UUID!
+  $authorUserId: UUID!
+  $authorUsername: String!
+  $authorName: String!
+  $placement: String!
   $kind: String!
   $title: String
   $body: String!
+  $mediaUrl: String
+  $storagePath: String
+  $mediaMimeType: String
+  $mediaSizeBytes: Int64
+  $location: String
   $status: String!
 ) @auth(level: NO_ACCESS) @transaction {
   post_insert(
     data: {
+      id: $id
       tenantId: $tenantId
       communityId: $communityId
       membershipId: $membershipId
+      authorUserId: $authorUserId
+      authorUsername: $authorUsername
+      authorName: $authorName
+      placement: $placement
       kind: $kind
       title: $title
       body: $body
+      mediaUrl: $mediaUrl
+      storagePath: $storagePath
+      mediaMimeType: $mediaMimeType
+      mediaSizeBytes: $mediaSizeBytes
+      location: $location
       status: $status
+      visibility: "tenant"
+      publishedAt_expr: "request.time"
       createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation CreateComment(
+  $id: UUID!
+  $tenantId: UUID!
+  $postId: UUID!
+  $membershipId: UUID!
+  $authorUserId: UUID!
+  $body: String!
+) @auth(level: NO_ACCESS) @transaction {
+  comment_insert(
+    data: {
+      id: $id
+      tenantId: $tenantId
+      postId: $postId
+      membershipId: $membershipId
+      authorUserId: $authorUserId
+      body: $body
+      status: "published"
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation CreateReaction(
+  $id: UUID!
+  $reactionKey: String!
+  $postId: UUID!
+  $membershipId: UUID!
+  $reactionType: String!
+) @auth(level: NO_ACCESS) @transaction {
+  reaction_insert(
+    data: {
+      id: $id
+      reactionKey: $reactionKey
+      postId: $postId
+      membershipId: $membershipId
+      reactionType: $reactionType
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation UpdateReaction($id: UUID!, $reactionType: String!) @auth(level: NO_ACCESS) @transaction {
+  reaction_update(
+    key: { id: $id }
+    data: {
+      reactionType: $reactionType
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation CreateStory(
+  $id: UUID!
+  $tenantId: UUID!
+  $userId: UUID!
+  $username: String!
+  $displayName: String!
+  $mediaType: String!
+  $mediaUrl: String!
+  $storagePath: String
+  $mediaMimeType: String
+  $mediaSizeBytes: Int64
+  $caption: String
+  $expiresAt: Timestamp!
+) @auth(level: NO_ACCESS) @transaction {
+  story_insert(
+    data: {
+      id: $id
+      tenantId: $tenantId
+      userId: $userId
+      username: $username
+      displayName: $displayName
+      mediaType: $mediaType
+      mediaUrl: $mediaUrl
+      storagePath: $storagePath
+      mediaMimeType: $mediaMimeType
+      mediaSizeBytes: $mediaSizeBytes
+      caption: $caption
+      expiresAt: $expiresAt
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation CreateFollow(
+  $id: UUID!
+  $followKey: String!
+  $tenantId: UUID!
+  $followerUserId: UUID!
+  $followingUserId: UUID!
+) @auth(level: NO_ACCESS) @transaction {
+  follow_insert(
+    data: {
+      id: $id
+      followKey: $followKey
+      tenantId: $tenantId
+      followerUserId: $followerUserId
+      followingUserId: $followingUserId
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation SoftDeleteFollow($id: UUID!) @auth(level: NO_ACCESS) @transaction {
+  follow_update(
+    key: { id: $id }
+    data: {
+      deletedAt_expr: "request.time"
       updatedAt_expr: "request.time"
     }
   )

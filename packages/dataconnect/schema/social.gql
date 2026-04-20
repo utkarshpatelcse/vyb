@@ -3,11 +3,22 @@ type Post @table(name: "posts", singular: "post", plural: "posts", key: ["id"]) 
   tenant: Tenant!
   community: Community
   membership: TenantMembership!
+  authorUserId: UUID! @col(name: "author_user_id")
+  authorUsername: String! @col(name: "author_username")
+  authorName: String! @col(name: "author_name")
+  placement: String! @default(value: "feed")
   kind: String! @default(value: "text")
   title: String
   body: String!
+  mediaUrl: String @col(name: "media_url")
+  storagePath: String @col(name: "storage_path")
+  mediaMimeType: String @col(name: "media_mime_type")
+  mediaSizeBytes: Int64 @col(name: "media_size_bytes")
+  location: String
   visibility: String! @default(value: "tenant")
   status: String! @default(value: "pending")
+  reactionsCount: Int! @col(name: "reactions_count") @default(value: 0)
+  commentsCount: Int! @col(name: "comments_count") @default(value: 0)
   publishedAt: Timestamp @col(name: "published_at")
   createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
   updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
@@ -36,6 +47,7 @@ type Comment @table(name: "comments", singular: "comment", plural: "comments", k
   tenant: Tenant!
   post: Post!
   membership: TenantMembership!
+  authorUserId: UUID! @col(name: "author_user_id")
   parentComment: Comment
   body: String!
   status: String! @default(value: "published")
@@ -50,6 +62,35 @@ type Reaction @table(name: "reactions", singular: "reaction", plural: "reactions
   post: Post!
   membership: TenantMembership!
   reactionType: String! @col(name: "reaction_type")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type Story @table(name: "stories", singular: "story", plural: "stories", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  tenant: Tenant!
+  userId: UUID! @col(name: "user_id")
+  username: String!
+  displayName: String! @col(name: "display_name")
+  mediaType: String! @col(name: "media_type")
+  mediaUrl: String! @col(name: "media_url")
+  storagePath: String @col(name: "storage_path")
+  mediaMimeType: String @col(name: "media_mime_type")
+  mediaSizeBytes: Int64 @col(name: "media_size_bytes")
+  caption: String
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  expiresAt: Timestamp! @col(name: "expires_at")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type Follow @table(name: "follows", singular: "follow", plural: "follows", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  followKey: String! @col(name: "follow_key") @unique
+  tenant: Tenant!
+  followerUserId: UUID! @col(name: "follower_user_id")
+  followingUserId: UUID! @col(name: "following_user_id")
   createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
   updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
   deletedAt: Timestamp @col(name: "deleted_at")
@@ -76,5 +117,13 @@ extend type Comment {
 extend type Reaction {
   postId: UUID!
   membershipId: UUID!
+}
+
+extend type Story {
+  tenantId: UUID!
+}
+
+extend type Follow {
+  tenantId: UUID!
 }
 

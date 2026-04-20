@@ -1,152 +1,277 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
+import { getStorage } from "firebase-admin/storage";
+import { getFirebaseAdminApp, getFirebaseDataConnect } from "../../../../../packages/config/src/index.mjs";
+import {
+  connectorConfig as socialConnectorConfig,
+  createComment as createCommentMutation,
+  createFollow as createFollowMutation,
+  createPost as createPostMutation,
+  createReaction as createReactionMutation,
+  createStory as createStoryMutation,
+  getFollowByKey as getFollowByKeyQuery,
+  getPostById as getPostByIdQuery,
+  getReactionByKey as getReactionByKeyQuery,
+  listCommentsByPost as listCommentsByPostQuery,
+  listCommentsByTenant as listCommentsByTenantQuery,
+  listFeedByTenant as listFeedByTenantQuery,
+  listFollowersByUser as listFollowersByUserQuery,
+  listFollowingByUser as listFollowingByUserQuery,
+  listPostsByAuthor as listPostsByAuthorQuery,
+  listReactionsByPost as listReactionsByPostQuery,
+  listReactionsByTenant as listReactionsByTenantQuery,
+  listStoriesByTenant as listStoriesByTenantQuery,
+  softDeleteFollow as softDeleteFollowMutation,
+  updateReaction as updateReactionMutation
+} from "../../../../../packages/dataconnect/social-admin-sdk/esm/index.esm.js";
 
-const directoryName = path.dirname(fileURLToPath(import.meta.url));
-const storePath = path.resolve(directoryName, "../../data/social-store.json");
+const TENANT_SCAN_LIMIT = 5000;
+const FEED_SCAN_MULTIPLIER = 4;
 
-const defaultStore = {
-  posts: [
-    {
-      id: "post-1",
-      tenantId: "tenant-demo",
-      communityId: "community-general",
-      userId: "dev-akash-1",
-      membershipId: "membership-demo-1",
-      authorUsername: "akash_vyb",
-      authorName: "Akash Verma",
-      placement: "feed",
-      kind: "image",
-      mediaUrl:
-        "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80",
-      location: "Innovation Lab",
-      title: "Prototype Night",
-      body: "Club demo night is live. Bring your build, record a clip, and drop your wins before 9 PM.",
-      status: "published",
-      reactions: 124,
-      comments: 18,
-      createdAt: "2026-04-18T08:15:00.000Z"
-    },
-    {
-      id: "post-2",
-      tenantId: "tenant-demo",
-      communityId: "community-batch",
-      userId: "dev-priya-1",
-      membershipId: "membership-demo-2",
-      authorUsername: "priya.dev",
-      authorName: "Priya Sharma",
-      placement: "feed",
-      kind: "text",
-      mediaUrl: null,
-      location: "KIET Library",
-      title: "Placement Prep Sprint",
-      body: "Shared DSA revision sheet plus mock interview slots for tomorrow evening.",
-      status: "published",
-      reactions: 88,
-      comments: 26,
-      createdAt: "2026-04-18T06:45:00.000Z"
-    }
-  ],
-  comments: [
-    {
-      id: "comment-1",
-      postId: "post-1",
-      membershipId: "membership-demo-2",
-      body: "Bringing the hostel attendance bot prototype.",
-      createdAt: "2026-04-18T08:22:00.000Z"
-    }
-  ],
-  reactions: [],
-  stories: [],
-  follows: []
-};
-
-let storeCache = null;
-let writeQueue = Promise.resolve();
-
-function clone(value) {
-  return JSON.parse(JSON.stringify(value));
+function getSocialDc() {
+  return getFirebaseDataConnect(socialConnectorConfig);
 }
 
-async function ensureStore() {
-  if (storeCache) {
-    return storeCache;
-  }
-
-  await mkdir(path.dirname(storePath), { recursive: true });
-
-  try {
-    const raw = await readFile(storePath, "utf8");
-    storeCache = JSON.parse(raw);
-  } catch {
-    storeCache = clone(defaultStore);
-    await persistStore();
-  }
-
-  if (!Array.isArray(storeCache.posts)) {
-    storeCache.posts = [];
-  }
-  if (!Array.isArray(storeCache.comments)) {
-    storeCache.comments = [];
-  }
-  if (!Array.isArray(storeCache.reactions)) {
-    storeCache.reactions = [];
-  }
-  if (!Array.isArray(storeCache.stories)) {
-    storeCache.stories = [];
-  }
-  if (!Array.isArray(storeCache.follows)) {
-    storeCache.follows = [];
-  }
-
-  return storeCache;
+function getFirebaseSocialBucket() {
+  return getStorage(getFirebaseAdminApp()).bucket();
 }
 
-async function persistStore() {
-  if (!storeCache) {
-    return;
-  }
-
-  const snapshot = JSON.stringify(storeCache, null, 2);
-  writeQueue = writeQueue.then(() => writeFile(storePath, snapshot, "utf8"));
-  await writeQueue;
+function normalizePlacement(value) {
+  return value === "vibe" ? "vibe" : "feed";
 }
 
-function buildId(prefix) {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+function toDate(value) {
+  const parsed = new Date(value ?? Date.now());
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }
 
-function sortByCreatedAtDesc(items) {
-  return [...items].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+function toIsoString(value) {
+  return toDate(value).toISOString();
 }
 
 function isActiveStory(story) {
-  return new Date(story.expiresAt).getTime() > Date.now();
+  return toDate(story.expiresAt).getTime() > Date.now();
 }
 
-function mapPost(item) {
+function buildDownloadUrl(bucketName, storagePath, token) {
+  return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
+}
+
+function buildFollowKey(followerUserId, followingUserId) {
+  return `${followerUserId}:${followingUserId}`;
+}
+
+function buildReactionKey(postId, membershipId) {
+  return `${postId}:${membershipId}`;
+}
+
+function decodeDataUrl(value) {
+  if (typeof value !== "string" || !value.startsWith("data:")) {
+    return null;
+  }
+
+  const commaIndex = value.indexOf(",");
+  if (commaIndex === -1) {
+    throw new Error("Invalid data URL payload.");
+  }
+
+  const header = value.slice(5, commaIndex);
+  const base64Body = value.slice(commaIndex + 1);
+  const [mimeType, ...flags] = header.split(";");
+
+  if (!flags.includes("base64")) {
+    throw new Error("Only base64 data URLs are supported.");
+  }
+
+  return {
+    mimeType: mimeType || "application/octet-stream",
+    buffer: Buffer.from(base64Body, "base64")
+  };
+}
+
+function extensionFromMimeType(mimeType, fallback = "bin") {
+  const explicit = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    "image/heic": "heic",
+    "video/mp4": "mp4",
+    "video/webm": "webm",
+    "video/quicktime": "mov"
+  };
+
+  return explicit[mimeType] ?? mimeType.split("/")[1] ?? fallback;
+}
+
+async function persistMediaAsset({
+  tenantId,
+  userId,
+  assetId,
+  assetType,
+  mediaUrl,
+  mediaType,
+  placement = "feed"
+}) {
+  if (!mediaUrl) {
+    return {
+      mediaUrl: null,
+      storagePath: null,
+      mediaMimeType: null,
+      mediaSizeBytes: null
+    };
+  }
+
+  const decoded = decodeDataUrl(mediaUrl);
+  if (!decoded) {
+    return {
+      mediaUrl,
+      storagePath: null,
+      mediaMimeType: null,
+      mediaSizeBytes: null
+    };
+  }
+
+  const extension = extensionFromMimeType(decoded.mimeType, mediaType === "video" ? "mp4" : "bin");
+  const storagePath = `social/${tenantId}/${assetType}/${normalizePlacement(placement)}/${userId}/${assetId}.${extension}`;
+  const bucket = getFirebaseSocialBucket();
+  const file = bucket.file(storagePath);
+  const token = randomUUID();
+
+  await file.save(decoded.buffer, {
+    resumable: false,
+    metadata: {
+      contentType: decoded.mimeType,
+      cacheControl: "public, max-age=31536000, immutable",
+      metadata: {
+        firebaseStorageDownloadTokens: token
+      }
+    }
+  });
+
+  return {
+    mediaUrl: buildDownloadUrl(bucket.name, storagePath, token),
+    storagePath,
+    mediaMimeType: decoded.mimeType,
+    mediaSizeBytes: decoded.buffer.byteLength
+  };
+}
+
+async function buildPostCountMaps(tenantId, postIds) {
+  const [commentsResponse, reactionsResponse] = await Promise.all([
+    listCommentsByTenantQuery(getSocialDc(), {
+      tenantId,
+      limit: TENANT_SCAN_LIMIT
+    }),
+    listReactionsByTenantQuery(getSocialDc(), {
+      tenantId,
+      limit: TENANT_SCAN_LIMIT
+    })
+  ]);
+
+  const idSet = new Set(postIds);
+  const comments = new Map();
+  const reactions = new Map();
+
+  for (const item of commentsResponse.data.comments) {
+    if (!idSet.has(item.postId)) {
+      continue;
+    }
+    comments.set(item.postId, Number(comments.get(item.postId) ?? 0) + 1);
+  }
+
+  for (const item of reactionsResponse.data.reactions) {
+    if (!idSet.has(item.postId)) {
+      continue;
+    }
+    reactions.set(item.postId, Number(reactions.get(item.postId) ?? 0) + 1);
+  }
+
+  return {
+    comments,
+    reactions
+  };
+}
+
+async function countCommentsByPost(postId) {
+  const response = await listCommentsByPostQuery(getSocialDc(), {
+    postId,
+    limit: TENANT_SCAN_LIMIT
+  });
+
+  return response.data.comments.length;
+}
+
+async function countReactionsByPost(postId) {
+  const response = await listReactionsByPostQuery(getSocialDc(), {
+    postId,
+    limit: TENANT_SCAN_LIMIT
+  });
+
+  return response.data.reactions.length;
+}
+
+function mapPostRecord(item, counts = null) {
   return {
     id: item.id,
     tenantId: item.tenantId,
     communityId: item.communityId ?? null,
-    userId: item.userId,
+    userId: item.authorUserId,
     membershipId: item.membershipId,
-    placement: item.placement ?? "feed",
-    kind: item.kind,
+    placement: normalizePlacement(item.placement),
+    kind: item.kind ?? "text",
     mediaUrl: item.mediaUrl ?? null,
     location: item.location ?? null,
     title: item.title ?? "Campus update",
-    body: item.body,
+    body: item.body ?? "",
     status: item.status ?? "published",
-    reactions: Number(item.reactions ?? 0),
-    comments: Number(item.comments ?? 0),
-    createdAt: item.createdAt,
+    reactions: Number(counts?.reactions?.get(item.id) ?? 0),
+    comments: Number(counts?.comments?.get(item.id) ?? 0),
+    createdAt: toIsoString(item.createdAt),
     author: {
-      userId: item.userId,
+      userId: item.authorUserId,
       username: item.authorUsername ?? "vyb_user",
       displayName: item.authorName ?? "Vyb Student"
     }
   };
+}
+
+function mapCommentRecord(item) {
+  return {
+    id: item.id,
+    postId: item.postId,
+    membershipId: item.membershipId,
+    body: item.body,
+    createdAt: toIsoString(item.createdAt)
+  };
+}
+
+function mapStoryRecord(item, viewerUserId = null) {
+  return {
+    id: item.id,
+    tenantId: item.tenantId,
+    userId: item.userId,
+    username: item.username,
+    displayName: item.displayName,
+    mediaType: item.mediaType,
+    mediaUrl: item.mediaUrl,
+    caption: item.caption ?? "",
+    createdAt: toIsoString(item.createdAt),
+    expiresAt: toIsoString(item.expiresAt),
+    isOwn: item.userId === viewerUserId
+  };
+}
+
+async function mapPostList(records) {
+  if (records.length === 0) {
+    return [];
+  }
+
+  const counts = await buildPostCountMaps(
+    records[0].tenantId,
+    records.map((item) => item.id)
+  );
+
+  return records.map((item) => mapPostRecord(item, counts));
 }
 
 export async function listPosts({
@@ -156,16 +281,27 @@ export async function listPosts({
   placement = "feed",
   userId = null
 }) {
-  const store = await ensureStore();
-  return sortByCreatedAtDesc(store.posts)
-    .filter((item) => item.tenantId === tenantId)
-    .filter((item) => item.status !== "removed")
-    .filter((item) => item.status === "published")
-    .filter((item) => item.placement === placement)
+  const normalizedPlacement = normalizePlacement(placement);
+  const effectiveLimit = communityId ? Math.max(limit * FEED_SCAN_MULTIPLIER, limit) : limit;
+
+  const response = userId
+    ? await listPostsByAuthorQuery(getSocialDc(), {
+        tenantId,
+        authorUserId: userId,
+        placement: normalizedPlacement,
+        limit: effectiveLimit
+      })
+    : await listFeedByTenantQuery(getSocialDc(), {
+        tenantId,
+        placement: normalizedPlacement,
+        limit: effectiveLimit
+      });
+
+  const filtered = response.data.posts
     .filter((item) => (communityId ? item.communityId === communityId : true))
-    .filter((item) => (userId ? item.userId === userId : true))
-    .slice(0, limit)
-    .map(mapPost);
+    .slice(0, limit);
+
+  return mapPostList(filtered);
 }
 
 export async function listPostsByUser({ tenantId, userId, limit = 24, placement = "feed" }) {
@@ -173,116 +309,154 @@ export async function listPostsByUser({ tenantId, userId, limit = 24, placement 
 }
 
 export async function countPostsByUser({ tenantId, userId, placement = "feed" }) {
-  const store = await ensureStore();
-  return store.posts.filter(
-    (item) =>
-      item.tenantId === tenantId &&
-      item.userId === userId &&
-      item.placement === placement &&
-      item.status === "published"
-  ).length;
+  const response = await listPostsByAuthorQuery(getSocialDc(), {
+    tenantId,
+    authorUserId: userId,
+    placement: normalizePlacement(placement),
+    limit: TENANT_SCAN_LIMIT
+  });
+
+  return response.data.posts.length;
 }
 
 export async function findPostById(postId) {
-  const store = await ensureStore();
-  const item = store.posts.find((post) => post.id === postId) ?? null;
-  return item ? mapPost(item) : null;
+  const response = await getPostByIdQuery(getSocialDc(), { id: postId });
+  const item = response.data.post;
+  if (!item || item.status === "removed") {
+    return null;
+  }
+
+  const counts = {
+    comments: new Map([[item.id, await countCommentsByPost(item.id)]]),
+    reactions: new Map([[item.id, await countReactionsByPost(item.id)]])
+  };
+
+  return mapPostRecord(item, counts);
 }
 
 export async function createPost(payload) {
-  const store = await ensureStore();
-  const item = {
-    id: buildId("post"),
+  const id = randomUUID();
+  const placement = normalizePlacement(payload.placement);
+  const media = await persistMediaAsset({
+    tenantId: payload.tenantId,
+    userId: payload.userId,
+    assetId: id,
+    assetType: "posts",
+    mediaUrl: payload.mediaUrl ?? null,
+    mediaType: payload.kind,
+    placement
+  });
+
+  await createPostMutation(getSocialDc(), {
+    id,
+    tenantId: payload.tenantId,
+    communityId: payload.communityId ?? null,
+    membershipId: payload.membershipId,
+    authorUserId: payload.userId,
+    authorUsername: payload.authorUsername,
+    authorName: payload.authorName,
+    placement,
+    kind: payload.kind,
+    title: payload.title ?? "Campus update",
+    body: payload.body,
+    mediaUrl: media.mediaUrl,
+    storagePath: media.storagePath,
+    mediaMimeType: media.mediaMimeType,
+    mediaSizeBytes: media.mediaSizeBytes === null ? null : String(media.mediaSizeBytes),
+    location: payload.location ?? null,
+    status: "published"
+  });
+
+  return {
+    id,
     tenantId: payload.tenantId,
     communityId: payload.communityId ?? null,
     userId: payload.userId,
     membershipId: payload.membershipId,
-    authorUsername: payload.authorUsername,
-    authorName: payload.authorName,
-    placement: payload.placement ?? "feed",
+    placement,
     kind: payload.kind,
-    mediaUrl: payload.mediaUrl ?? null,
+    mediaUrl: media.mediaUrl,
     location: payload.location ?? null,
     title: payload.title ?? "Campus update",
     body: payload.body,
     status: "published",
     reactions: 0,
     comments: 0,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    author: {
+      userId: payload.userId,
+      username: payload.authorUsername,
+      displayName: payload.authorName
+    }
   };
-
-  store.posts.unshift(item);
-  await persistStore();
-  return mapPost(item);
 }
 
 export async function createComment(payload) {
-  const store = await ensureStore();
-  const post = store.posts.find((item) => item.id === payload.postId);
-  if (!post) {
-    return null;
-  }
+  const id = randomUUID();
+  await createCommentMutation(getSocialDc(), {
+    id,
+    tenantId: payload.tenantId,
+    postId: payload.postId,
+    membershipId: payload.membershipId,
+    authorUserId: payload.authorUserId,
+    body: payload.body
+  });
 
-  const item = {
-    id: buildId("comment"),
+  return {
+    id,
     postId: payload.postId,
     membershipId: payload.membershipId,
     body: payload.body,
     createdAt: new Date().toISOString()
   };
-
-  store.comments.push(item);
-  post.comments = Number(post.comments ?? 0) + 1;
-  await persistStore();
-  return item;
 }
 
 export async function upsertReaction(payload) {
-  const store = await ensureStore();
-  const post = store.posts.find((item) => item.id === payload.postId);
-  if (!post) {
-    return null;
-  }
+  const reactionKey = buildReactionKey(payload.postId, payload.membershipId);
+  const existing = await getReactionByKeyQuery(getSocialDc(), { reactionKey });
+  const current = existing.data.reactions[0] ?? null;
 
-  const existing = store.reactions.find(
-    (item) => item.postId === payload.postId && item.membershipId === payload.membershipId
-  );
-
-  if (existing) {
-    existing.reactionType = payload.reactionType;
+  if (current) {
+    await updateReactionMutation(getSocialDc(), {
+      id: current.id,
+      reactionType: payload.reactionType
+    });
   } else {
-    store.reactions.push({
-      id: buildId("reaction"),
+    await createReactionMutation(getSocialDc(), {
+      id: randomUUID(),
+      reactionKey,
       postId: payload.postId,
       membershipId: payload.membershipId,
-      reactionType: payload.reactionType,
-      createdAt: new Date().toISOString()
+      reactionType: payload.reactionType
     });
-    post.reactions = Number(post.reactions ?? 0) + 1;
   }
 
-  await persistStore();
-
   return {
-    postId: post.id,
+    postId: payload.postId,
     membershipId: payload.membershipId,
     reactionType: payload.reactionType,
-    aggregateCount: Number(post.reactions ?? 0)
+    aggregateCount: await countReactionsByPost(payload.postId)
   };
 }
 
 export async function listStories({ tenantId, viewerUserId }) {
-  const store = await ensureStore();
-  const followingIds = new Set(
-    store.follows
-      .filter((item) => item.tenantId === tenantId && item.followerUserId === viewerUserId)
-      .map((item) => item.followingUserId)
-  );
+  const [storyResponse, followingResponse] = await Promise.all([
+    listStoriesByTenantQuery(getSocialDc(), {
+      tenantId,
+      limit: 200
+    }),
+    listFollowingByUserQuery(getSocialDc(), {
+      tenantId,
+      followerUserId: viewerUserId,
+      limit: TENANT_SCAN_LIMIT
+    })
+  ]);
 
+  const followingIds = new Set(followingResponse.data.follows.map((item) => item.followingUserId));
   const latestByUser = new Map();
 
-  for (const item of sortByCreatedAtDesc(store.stories)) {
-    if (item.tenantId !== tenantId || !isActiveStory(item)) {
+  for (const item of storyResponse.data.stories) {
+    if (!isActiveStory(item)) {
       continue;
     }
 
@@ -291,19 +465,7 @@ export async function listStories({ tenantId, viewerUserId }) {
     }
 
     if (!latestByUser.has(item.userId)) {
-      latestByUser.set(item.userId, {
-        id: item.id,
-        tenantId: item.tenantId,
-        userId: item.userId,
-        username: item.username,
-        displayName: item.displayName,
-        mediaType: item.mediaType,
-        mediaUrl: item.mediaUrl,
-        caption: item.caption,
-        createdAt: item.createdAt,
-        expiresAt: item.expiresAt,
-        isOwn: item.userId === viewerUserId
-      });
+      latestByUser.set(item.userId, mapStoryRecord(item, viewerUserId));
     }
   }
 
@@ -311,28 +473,45 @@ export async function listStories({ tenantId, viewerUserId }) {
 }
 
 export async function createStory(payload) {
-  const store = await ensureStore();
+  const id = randomUUID();
   const createdAt = new Date();
   const expiresAt = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000);
+  const media = await persistMediaAsset({
+    tenantId: payload.tenantId,
+    userId: payload.userId,
+    assetId: id,
+    assetType: "stories",
+    mediaUrl: payload.mediaUrl,
+    mediaType: payload.mediaType,
+    placement: "feed"
+  });
 
-  const item = {
-    id: buildId("story"),
+  await createStoryMutation(getSocialDc(), {
+    id,
     tenantId: payload.tenantId,
     userId: payload.userId,
     username: payload.username,
     displayName: payload.displayName,
     mediaType: payload.mediaType,
-    mediaUrl: payload.mediaUrl,
+    mediaUrl: media.mediaUrl,
+    storagePath: media.storagePath,
+    mediaMimeType: media.mediaMimeType,
+    mediaSizeBytes: media.mediaSizeBytes === null ? null : String(media.mediaSizeBytes),
     caption: payload.caption ?? "",
-    createdAt: createdAt.toISOString(),
     expiresAt: expiresAt.toISOString()
-  };
-
-  store.stories.unshift(item);
-  await persistStore();
+  });
 
   return {
-    ...item,
+    id,
+    tenantId: payload.tenantId,
+    userId: payload.userId,
+    username: payload.username,
+    displayName: payload.displayName,
+    mediaType: payload.mediaType,
+    mediaUrl: media.mediaUrl,
+    caption: payload.caption ?? "",
+    createdAt: createdAt.toISOString(),
+    expiresAt: expiresAt.toISOString(),
     isOwn: true
   };
 }
@@ -342,66 +521,58 @@ export async function followUser({ tenantId, followerUserId, followingUserId }) 
     return false;
   }
 
-  const store = await ensureStore();
-  const existing = store.follows.find(
-    (item) =>
-      item.tenantId === tenantId &&
-      item.followerUserId === followerUserId &&
-      item.followingUserId === followingUserId
-  );
-
-  if (existing) {
+  const followKey = buildFollowKey(followerUserId, followingUserId);
+  const existing = await getFollowByKeyQuery(getSocialDc(), { followKey });
+  if (existing.data.follows[0]) {
     return true;
   }
 
-  store.follows.push({
-    id: buildId("follow"),
+  await createFollowMutation(getSocialDc(), {
+    id: randomUUID(),
+    followKey,
     tenantId,
     followerUserId,
-    followingUserId,
-    createdAt: new Date().toISOString()
+    followingUserId
   });
-  await persistStore();
+
   return true;
 }
 
 export async function unfollowUser({ tenantId, followerUserId, followingUserId }) {
-  const store = await ensureStore();
-  const next = store.follows.filter(
-    (item) =>
-      !(
-        item.tenantId === tenantId &&
-        item.followerUserId === followerUserId &&
-        item.followingUserId === followingUserId
-      )
-  );
+  const followKey = buildFollowKey(followerUserId, followingUserId);
+  const existing = await getFollowByKeyQuery(getSocialDc(), { followKey });
+  const current = existing.data.follows[0] ?? null;
 
-  if (next.length === store.follows.length) {
+  if (!current) {
     return false;
   }
 
-  store.follows = next;
-  await persistStore();
+  await softDeleteFollowMutation(getSocialDc(), { id: current.id });
   return true;
 }
 
-export async function isFollowing({ tenantId, followerUserId, followingUserId }) {
-  const store = await ensureStore();
-  return store.follows.some(
-    (item) =>
-      item.tenantId === tenantId &&
-      item.followerUserId === followerUserId &&
-      item.followingUserId === followingUserId
-  );
+export async function isFollowing({ tenantId: _tenantId, followerUserId, followingUserId }) {
+  const followKey = buildFollowKey(followerUserId, followingUserId);
+  const existing = await getFollowByKeyQuery(getSocialDc(), { followKey });
+  return Boolean(existing.data.follows[0]);
 }
 
 export async function getFollowStats({ tenantId, userId }) {
-  const store = await ensureStore();
-  const followers = store.follows.filter((item) => item.tenantId === tenantId && item.followingUserId === userId).length;
-  const following = store.follows.filter((item) => item.tenantId === tenantId && item.followerUserId === userId).length;
+  const [followersResponse, followingResponse] = await Promise.all([
+    listFollowersByUserQuery(getSocialDc(), {
+      tenantId,
+      followingUserId: userId,
+      limit: TENANT_SCAN_LIMIT
+    }),
+    listFollowingByUserQuery(getSocialDc(), {
+      tenantId,
+      followerUserId: userId,
+      limit: TENANT_SCAN_LIMIT
+    })
+  ]);
 
   return {
-    followers,
-    following
+    followers: followersResponse.data.follows.length,
+    following: followingResponse.data.follows.length
   };
 }

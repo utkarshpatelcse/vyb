@@ -40,7 +40,6 @@ export default async function PublicProfilePage({
     <CampusProfileShell
       viewerName={publicProfile.profile.displayName}
       username={publicProfile.profile.username}
-      viewerUsername={profile.profile.username}
       collegeName={publicProfile.profile.collegeName}
       viewerEmail={null}
       course={publicProfile.profile.course}

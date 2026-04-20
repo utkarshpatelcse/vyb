@@ -44,6 +44,17 @@ function buildFeedPayload(item) {
   };
 }
 
+function resolveTenantScope({ requestedTenantId, resolvedTenantId, routeLabel }) {
+  if (resolvedTenantId && requestedTenantId && requestedTenantId !== resolvedTenantId) {
+    console.warn(`[social] ${routeLabel}:tenant-mismatch`, {
+      requestedTenantId,
+      resolvedTenantId
+    });
+  }
+
+  return resolvedTenantId ?? requestedTenantId ?? null;
+}
+
 async function buildUserSearchItems({ tenantId, viewerUserId, query, limit }) {
   const profiles = await searchProfiles({
     tenantId,
@@ -139,9 +150,15 @@ export async function handleSocialRoute({ request, response, url, context }) {
   if (!resolved?.viewer) {
     return false;
   }
+  const resolvedTenantId = resolved.live?.tenant?.id ?? null;
+  const resolvedMembershipId = resolved.live?.membership?.id ?? null;
 
   if (request.method === "GET" && url.pathname === "/v1/feed") {
-    const tenantId = url.searchParams.get("tenantId");
+    const tenantId = resolveTenantScope({
+      requestedTenantId: url.searchParams.get("tenantId"),
+      resolvedTenantId,
+      routeLabel: "feed"
+    });
     const communityId = url.searchParams.get("communityId");
     const authorUserId = url.searchParams.get("authorUserId");
     const limit = parseLimit(url.searchParams.get("limit"));
@@ -174,7 +191,11 @@ export async function handleSocialRoute({ request, response, url, context }) {
   }
 
   if (request.method === "GET" && url.pathname === "/v1/vibes") {
-    const tenantId = url.searchParams.get("tenantId");
+    const tenantId = resolveTenantScope({
+      requestedTenantId: url.searchParams.get("tenantId"),
+      resolvedTenantId,
+      routeLabel: "vibes"
+    });
     const limit = parseLimit(url.searchParams.get("limit"), 24);
 
     if (!requireNonEmptyString(tenantId)) {
@@ -209,7 +230,13 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
-    if (!requireNonEmptyString(payload.tenantId)) {
+    const tenantId = resolveTenantScope({
+      requestedTenantId: payload.tenantId,
+      resolvedTenantId,
+      routeLabel: "create-post"
+    });
+
+    if (!requireNonEmptyString(tenantId)) {
       sendError(response, 400, "INVALID_TENANT", "tenantId is required.");
       return true;
     }
@@ -231,10 +258,10 @@ export async function handleSocialRoute({ request, response, url, context }) {
     }
 
     const item = await createPost({
-      tenantId: payload.tenantId,
+      tenantId,
       communityId: payload.communityId ?? null,
       userId: resolved.viewer.id,
-      membershipId: payload.membershipId ?? context.actor.id,
+      membershipId: resolvedMembershipId ?? payload.membershipId ?? context.actor.id,
       authorUsername: profile.username,
       authorName: profile.fullName,
       placement: payload.placement === "vibe" ? "vibe" : "feed",
@@ -258,7 +285,13 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
-    if (!requireNonEmptyString(payload.tenantId)) {
+    const tenantId = resolveTenantScope({
+      requestedTenantId: payload.tenantId,
+      resolvedTenantId,
+      routeLabel: "create-story"
+    });
+
+    if (!requireNonEmptyString(tenantId)) {
       sendError(response, 400, "INVALID_TENANT", "tenantId is required.");
       return true;
     }
@@ -280,7 +313,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
     }
 
     const item = await createStory({
-      tenantId: payload.tenantId,
+      tenantId,
       userId: resolved.viewer.id,
       username: profile.username,
       displayName: profile.fullName,
@@ -294,7 +327,11 @@ export async function handleSocialRoute({ request, response, url, context }) {
   }
 
   if (request.method === "GET" && url.pathname === "/v1/stories") {
-    const tenantId = url.searchParams.get("tenantId");
+    const tenantId = resolveTenantScope({
+      requestedTenantId: url.searchParams.get("tenantId"),
+      resolvedTenantId,
+      routeLabel: "stories"
+    });
     if (!requireNonEmptyString(tenantId)) {
       sendError(response, 400, "INVALID_TENANT", "tenantId is required.");
       return true;
@@ -310,7 +347,11 @@ export async function handleSocialRoute({ request, response, url, context }) {
   }
 
   if (request.method === "GET" && url.pathname === "/v1/users/search") {
-    const tenantId = url.searchParams.get("tenantId");
+    const tenantId = resolveTenantScope({
+      requestedTenantId: url.searchParams.get("tenantId"),
+      resolvedTenantId,
+      routeLabel: "search-users"
+    });
     const query = url.searchParams.get("q") ?? "";
     const trimmedQuery = query.trim();
     const suggested = url.searchParams.get("suggested") === "1";
@@ -350,7 +391,11 @@ export async function handleSocialRoute({ request, response, url, context }) {
 
   const publicProfileMatch = request.method === "GET" ? url.pathname.match(/^\/v1\/users\/([^/]+)$/) : null;
   if (publicProfileMatch) {
-    const tenantId = url.searchParams.get("tenantId");
+    const tenantId = resolveTenantScope({
+      requestedTenantId: url.searchParams.get("tenantId"),
+      resolvedTenantId,
+      routeLabel: "public-profile"
+    });
     if (!requireNonEmptyString(tenantId)) {
       sendError(response, 400, "INVALID_TENANT", "tenantId is required.");
       return true;
@@ -407,7 +452,11 @@ export async function handleSocialRoute({ request, response, url, context }) {
       ? url.pathname.match(/^\/v1\/users\/([^/]+)\/follow$/)
       : null;
   if (followMatch) {
-    const tenantId = url.searchParams.get("tenantId");
+    const tenantId = resolveTenantScope({
+      requestedTenantId: url.searchParams.get("tenantId"),
+      resolvedTenantId,
+      routeLabel: "follow"
+    });
     if (!requireNonEmptyString(tenantId)) {
       sendError(response, 400, "INVALID_TENANT", "tenantId is required.");
       return true;
@@ -461,13 +510,16 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
-    const post = await findPostById(commentMatch[1]);
+    const post = await findPostById(commentMatch[1], {
+      tenantId: resolvedTenantId ?? null
+    });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
       return true;
     }
 
-    if (!requireNonEmptyString(payload.membershipId)) {
+    const membershipId = resolvedMembershipId ?? payload.membershipId ?? null;
+    if (!requireNonEmptyString(membershipId)) {
       sendError(response, 400, "INVALID_MEMBERSHIP", "membershipId is required.");
       return true;
     }
@@ -478,8 +530,11 @@ export async function handleSocialRoute({ request, response, url, context }) {
     }
 
     const item = await createComment({
+      tenantId: post.tenantId,
+      placement: post.placement,
       postId: commentMatch[1],
-      membershipId: payload.membershipId,
+      membershipId,
+      authorUserId: resolved.viewer.id,
       body: payload.body.trim()
     });
 
@@ -495,7 +550,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
-    const post = await findPostById(reactionMatch[1]);
+    const post = await findPostById(reactionMatch[1], {
+      tenantId: resolvedTenantId ?? null
+    });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
       return true;
@@ -508,8 +565,10 @@ export async function handleSocialRoute({ request, response, url, context }) {
     }
 
     const item = await upsertReaction({
+      tenantId: post.tenantId,
+      placement: post.placement,
       postId: post.id,
-      membershipId: context.actor.id,
+      membershipId: resolvedMembershipId ?? context.actor.id,
       reactionType
     });
     sendJson(response, 200, item);

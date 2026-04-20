@@ -395,13 +395,6 @@ async function activateServerSession(user: User) {
     error.code = payload?.error?.code;
     error.details = payload?.error?.details ?? null;
     error.step = "session-bootstrap";
-    logAuthEvent("error", "session-bootstrap:failed", {
-      uid: user.uid,
-      email: normalizedEmail,
-      status: response.status,
-      code: error.code ?? "unknown",
-      details: error.details ?? null
-    });
     throw error;
   }
 

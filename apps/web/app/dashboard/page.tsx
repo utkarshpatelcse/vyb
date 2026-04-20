@@ -26,7 +26,6 @@ export default async function DashboardPage() {
     <CampusProfileShell
       viewerName={publicProfile?.profile.displayName ?? profile.profile.fullName ?? viewer.displayName}
       username={publicProfile?.profile.username ?? profile.profile.username}
-      viewerUsername={profile.profile.username}
       collegeName={profile.collegeName}
       viewerEmail={viewer.email}
       course={profile.profile.course}
