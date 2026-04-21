@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Vyb is the installable campus operating system for communities, notes, and social momentum.",
     start_url: "/",
     display: "standalone",
-    background_color: "#08101b",
-    theme_color: "#08101b",
+    background_color: "#0f172a",
+    theme_color: "#0f172a",
     orientation: "portrait",
     categories: ["education", "social", "productivity"],
     icons: [
