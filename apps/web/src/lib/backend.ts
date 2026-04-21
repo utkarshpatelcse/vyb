@@ -1,14 +1,22 @@
 import "server-only";
 import type {
+  ActivityListResponse,
   ClientShellResponse,
+  CommentListResponse,
+  CreateCommentResponse,
   CreateStoryResponse,
   FeedListResponse,
+  ListCoursesResponse,
+  ListResourcesResponse,
   MeResponse,
   PublicProfileResponse,
   ProfileResponse,
+  ReactionKind,
+  ReactionResponse,
   SessionBootstrapRequest,
   SessionBootstrapResponse,
   StoryListResponse,
+  StoryReactionResponse,
   UpdateUsernameRequest,
   UpdateUsernameResponse,
   UserSearchResponse
@@ -133,6 +141,26 @@ export async function postBackendJson<TResponse>(
   }
 
   throw lastError instanceof Error ? lastError : new Error(`Backend request failed for ${path}.`);
+}
+
+export async function mutateBackendJson<TResponse>(
+  path: string,
+  method: "POST" | "PUT" | "PATCH" | "DELETE",
+  payload: Record<string, unknown>,
+  viewer?: DevSession
+) {
+  const response = await requestBackendResponse(path, {
+    method,
+    payload,
+    viewer
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Backend request failed for ${path} with ${response.status}`);
+  }
+
+  return readResponseJson<TResponse>(response);
 }
 
 export async function proxyBackendMutation(
@@ -314,4 +342,72 @@ export async function createCampusStory(viewer: DevSession, payload: {
     },
     viewer
   );
+}
+
+export async function getPostComments(viewer: DevSession, postId: string, limit = 50) {
+  const params = new URLSearchParams({
+    limit: String(limit)
+  });
+
+  return fetchBackendJson<CommentListResponse>(`/v1/posts/${encodeURIComponent(postId)}/comments?${params.toString()}`, viewer);
+}
+
+export async function createPostComment(viewer: DevSession, postId: string, body: string) {
+  return postBackendJson<CreateCommentResponse>(
+    `/v1/posts/${encodeURIComponent(postId)}/comments`,
+    {
+      membershipId: viewer.membershipId,
+      body
+    },
+    viewer
+  );
+}
+
+export async function reactToPost(viewer: DevSession, postId: string, reactionType: ReactionKind = "like") {
+  return mutateBackendJson<ReactionResponse>(
+    `/v1/posts/${encodeURIComponent(postId)}/reactions`,
+    "PUT",
+    {
+      reactionType
+    },
+    viewer
+  );
+}
+
+export async function reactToStory(viewer: DevSession, storyId: string) {
+  return mutateBackendJson<StoryReactionResponse>(
+    `/v1/stories/${encodeURIComponent(storyId)}/reactions`,
+    "PUT",
+    {},
+    viewer
+  );
+}
+
+export async function getCampusCourses(viewer: DevSession, limit = 20) {
+  const params = new URLSearchParams({
+    limit: String(limit)
+  });
+
+  return fetchBackendJson<ListCoursesResponse>(`/v1/courses?${params.toString()}`, viewer);
+}
+
+export async function getCampusResources(viewer: DevSession, options?: { courseId?: string | null; limit?: number }) {
+  const params = new URLSearchParams({
+    tenantId: viewer.tenantId,
+    limit: String(options?.limit ?? 20)
+  });
+
+  if (options?.courseId) {
+    params.set("courseId", options.courseId);
+  }
+
+  return fetchBackendJson<ListResourcesResponse>(`/v1/resources?${params.toString()}`, viewer);
+}
+
+export async function getViewerActivity(viewer: DevSession, limit = 20) {
+  const params = new URLSearchParams({
+    limit: String(limit)
+  });
+
+  return fetchBackendJson<ActivityListResponse>(`/v1/activity?${params.toString()}`, viewer);
 }

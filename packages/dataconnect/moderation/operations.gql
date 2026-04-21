@@ -1,0 +1,180 @@
+query ListUserActivityByMembership(
+  $tenantId: UUID!
+  $membershipId: UUID!
+  $limit: Int!
+) @auth(level: NO_ACCESS) {
+  userActivities(
+    where: {
+      tenantId: { eq: $tenantId }
+      membershipId: { eq: $membershipId }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    membershipId
+    activityType
+    entityType
+    entityId
+    metadataJson
+    createdAt
+    updatedAt
+  }
+}
+
+query ListReportsByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  reports(
+    where: { tenantId: { eq: $tenantId }, deletedAt: { isNull: true } }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    membershipId
+    targetType
+    targetId
+    reason
+    status
+    createdAt
+    updatedAt
+  }
+}
+
+query ListModerationCasesByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  moderationCases(
+    where: { tenantId: { eq: $tenantId }, deletedAt: { isNull: true } }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    reportId
+    assignedUserId
+    decision
+    notes
+    resolvedAt
+    createdAt
+    updatedAt
+  }
+}
+
+query ListAuditLogsByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  auditLogs(
+    where: { tenantId: { eq: $tenantId }, deletedAt: { isNull: true } }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    membershipId
+    action
+    entityType
+    entityId
+    metadataJson
+    createdAt
+    updatedAt
+  }
+}
+
+mutation CreateUserActivity(
+  $tenantId: UUID!
+  $membershipId: UUID!
+  $activityType: String!
+  $entityType: String
+  $entityId: String
+  $metadataJson: Any
+) @auth(level: NO_ACCESS) @transaction {
+  userActivity_insert(
+    data: {
+      tenantId: $tenantId
+      membershipId: $membershipId
+      activityType: $activityType
+      entityType: $entityType
+      entityId: $entityId
+      metadataJson: $metadataJson
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation CreateAuditLog(
+  $tenantId: UUID
+  $membershipId: UUID
+  $action: String!
+  $entityType: String!
+  $entityId: String!
+  $metadataJson: Any
+) @auth(level: NO_ACCESS) @transaction {
+  auditLog_insert(
+    data: {
+      tenantId: $tenantId
+      membershipId: $membershipId
+      action: $action
+      entityType: $entityType
+      entityId: $entityId
+      metadataJson: $metadataJson
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation CreateReport(
+  $tenantId: UUID!
+  $membershipId: UUID!
+  $targetType: String!
+  $targetId: String!
+  $reason: String!
+) @auth(level: NO_ACCESS) @transaction {
+  report_insert(
+    data: {
+      tenantId: $tenantId
+      membershipId: $membershipId
+      targetType: $targetType
+      targetId: $targetId
+      reason: $reason
+      status: "open"
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation CreateModerationCase(
+  $tenantId: UUID!
+  $reportId: UUID!
+  $assignedUserId: UUID
+  $decision: String
+  $notes: String
+) @auth(level: NO_ACCESS) @transaction {
+  moderationCase_insert(
+    data: {
+      tenantId: $tenantId
+      reportId: $reportId
+      assignedUserId: $assignedUserId
+      decision: $decision
+      notes: $notes
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation ResolveModerationCase(
+  $id: UUID!
+  $decision: String!
+  $notes: String
+) @auth(level: NO_ACCESS) @transaction {
+  moderationCase_update(
+    key: { id: $id }
+    data: {
+      decision: $decision
+      notes: $notes
+      resolvedAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}

@@ -33,6 +33,18 @@ export interface Course_Key {
   __typename?: 'Course_Key';
 }
 
+export interface CreateCourseData {
+  course_insert: Course_Key;
+}
+
+export interface CreateCourseVariables {
+  tenantId: UUIDString;
+  code: string;
+  title: string;
+  semester?: number | null;
+  branch?: string | null;
+}
+
 export interface CreateResourceData {
   resource_insert: Resource_Key;
 }
@@ -90,6 +102,24 @@ export interface GetResourceDetailData {
 
 export interface GetResourceDetailVariables {
   resourceId: UUIDString;
+}
+
+export interface ListCoursesByTenantData {
+  courses: ({
+    id: UUIDString;
+    tenantId: UUIDString;
+    code: string;
+    title: string;
+    semester?: number | null;
+    branch?: string | null;
+    createdAt: TimestampString;
+    updatedAt: TimestampString;
+  } & Course_Key)[];
+}
+
+export interface ListCoursesByTenantVariables {
+  tenantId: UUIDString;
+  limit: number;
 }
 
 export interface ListResourcesByCourseData {
@@ -200,6 +230,11 @@ export interface Resource_Key {
   __typename?: 'Resource_Key';
 }
 
+export interface StoryReaction_Key {
+  id: UUIDString;
+  __typename?: 'StoryReaction_Key';
+}
+
 export interface Story_Key {
   id: UUIDString;
   __typename?: 'Story_Key';
@@ -230,6 +265,11 @@ export interface User_Key {
   __typename?: 'User_Key';
 }
 
+/** Generated Node Admin SDK operation action function for the 'ListCoursesByTenant' Query. Allow users to execute without passing in DataConnect. */
+export function listCoursesByTenant(dc: DataConnect, vars: ListCoursesByTenantVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListCoursesByTenantData>>;
+/** Generated Node Admin SDK operation action function for the 'ListCoursesByTenant' Query. Allow users to pass in custom DataConnect instances. */
+export function listCoursesByTenant(vars: ListCoursesByTenantVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListCoursesByTenantData>>;
+
 /** Generated Node Admin SDK operation action function for the 'ListResourcesByTenant' Query. Allow users to execute without passing in DataConnect. */
 export function listResourcesByTenant(dc: DataConnect, vars: ListResourcesByTenantVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListResourcesByTenantData>>;
 /** Generated Node Admin SDK operation action function for the 'ListResourcesByTenant' Query. Allow users to pass in custom DataConnect instances. */
@@ -244,6 +284,11 @@ export function listResourcesByCourse(vars: ListResourcesByCourseVariables, opti
 export function getResourceDetail(dc: DataConnect, vars: GetResourceDetailVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetResourceDetailData>>;
 /** Generated Node Admin SDK operation action function for the 'GetResourceDetail' Query. Allow users to pass in custom DataConnect instances. */
 export function getResourceDetail(vars: GetResourceDetailVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetResourceDetailData>>;
+
+/** Generated Node Admin SDK operation action function for the 'CreateCourse' Mutation. Allow users to execute without passing in DataConnect. */
+export function createCourse(dc: DataConnect, vars: CreateCourseVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateCourseData>>;
+/** Generated Node Admin SDK operation action function for the 'CreateCourse' Mutation. Allow users to pass in custom DataConnect instances. */
+export function createCourse(vars: CreateCourseVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateCourseData>>;
 
 /** Generated Node Admin SDK operation action function for the 'CreateResource' Mutation. Allow users to execute without passing in DataConnect. */
 export function createResource(dc: DataConnect, vars: CreateResourceVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateResourceData>>;

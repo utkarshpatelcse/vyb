@@ -188,6 +188,65 @@ query ListStoriesByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS
   }
 }
 
+query GetStoryById($id: UUID!) @auth(level: NO_ACCESS) {
+  story(key: { id: $id }) {
+    id
+    tenantId
+    userId
+    username
+    displayName
+    mediaType
+    mediaUrl
+    storagePath
+    mediaMimeType
+    mediaSizeBytes
+    caption
+    createdAt
+    expiresAt
+  }
+}
+
+query ListStoryReactionsByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  storyReactions(
+    where: { story: { tenantId: { eq: $tenantId } }, deletedAt: { isNull: true } }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    storyId
+    membershipId
+    reactionType
+    createdAt
+    updatedAt
+  }
+}
+
+query ListStoryReactionsByStory($storyId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  storyReactions(
+    where: { storyId: { eq: $storyId }, deletedAt: { isNull: true } }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    storyId
+    membershipId
+    reactionType
+    createdAt
+    updatedAt
+  }
+}
+
+query GetStoryReactionByKey($storyReactionKey: String!) @auth(level: NO_ACCESS) {
+  storyReactions(where: { storyReactionKey: { eq: $storyReactionKey }, deletedAt: { isNull: true } }, limit: 1) {
+    id
+    storyId
+    membershipId
+    reactionType
+    createdAt
+    updatedAt
+  }
+}
+
 query ListFollowingByUser($tenantId: UUID!, $followerUserId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
   follows(
     where: {
@@ -280,6 +339,35 @@ mutation CreatePost(
   )
 }
 
+mutation CreatePostMedia(
+  $tenantId: UUID!
+  $postId: UUID!
+  $storagePath: String!
+  $mediaType: String!
+  $mimeType: String!
+  $sizeBytes: Int64!
+  $width: Int
+  $height: Int
+  $durationMs: Int
+) @auth(level: NO_ACCESS) @transaction {
+  postMedia_insert(
+    data: {
+      tenantId: $tenantId
+      postId: $postId
+      storagePath: $storagePath
+      mediaType: $mediaType
+      mimeType: $mimeType
+      sizeBytes: $sizeBytes
+      width: $width
+      height: $height
+      durationMs: $durationMs
+      processingStatus: "ready"
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
 mutation CreateComment(
   $id: UUID!
   $tenantId: UUID!
@@ -362,6 +450,36 @@ mutation CreateStory(
       caption: $caption
       expiresAt: $expiresAt
       createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation CreateStoryReaction(
+  $id: UUID!
+  $storyReactionKey: String!
+  $storyId: UUID!
+  $membershipId: UUID!
+  $reactionType: String!
+) @auth(level: NO_ACCESS) @transaction {
+  storyReaction_insert(
+    data: {
+      id: $id
+      storyReactionKey: $storyReactionKey
+      storyId: $storyId
+      membershipId: $membershipId
+      reactionType: $reactionType
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation UpdateStoryReaction($id: UUID!, $reactionType: String!) @auth(level: NO_ACCESS) @transaction {
+  storyReaction_update(
+    key: { id: $id }
+    data: {
+      reactionType: $reactionType
       updatedAt_expr: "request.time"
     }
   )

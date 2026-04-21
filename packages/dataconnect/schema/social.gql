@@ -85,6 +85,18 @@ type Story @table(name: "stories", singular: "story", plural: "stories", key: ["
   deletedAt: Timestamp @col(name: "deleted_at")
 }
 
+type StoryReaction
+  @table(name: "story_reactions", singular: "storyReaction", plural: "storyReactions", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  storyReactionKey: String! @col(name: "story_reaction_key") @unique
+  story: Story!
+  membership: TenantMembership!
+  reactionType: String! @col(name: "reaction_type")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
 type Follow @table(name: "follows", singular: "follow", plural: "follows", key: ["id"]) {
   id: UUID! @default(expr: "uuidV4()")
   followKey: String! @col(name: "follow_key") @unique
@@ -121,6 +133,11 @@ extend type Reaction {
 
 extend type Story {
   tenantId: UUID!
+}
+
+extend type StoryReaction {
+  storyId: UUID!
+  membershipId: UUID!
 }
 
 extend type Follow {

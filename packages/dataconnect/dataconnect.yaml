@@ -14,4 +14,5 @@ connectorDirs:
   - ./campus
   - ./social
   - ./resources
+  - ./moderation
   - ./marketplace

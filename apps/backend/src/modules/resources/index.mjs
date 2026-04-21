@@ -2,14 +2,18 @@ import { getFirebaseDataConnect } from "../../../../../packages/config/src/index
 import {
   connectorConfig as resourcesConnectorConfig,
   createResource as createResourceMutation,
+  createResourceFile as createResourceFileMutation,
   getResourceDetail as getResourceDetailQuery,
+  listCoursesByTenant,
   listResourcesByCourse,
   listResourcesByTenant
 } from "../../../../../packages/dataconnect/resources-admin-sdk/esm/index.esm.js";
 import { readJson, sendError, sendJson } from "../../lib/http.mjs";
+import { trackActivity } from "../moderation/repository.mjs";
 import { resolveLiveContext } from "../shared/viewer-context.mjs";
 
 const allowedResourceTypes = new Set(["notes", "pyq", "guide"]);
+const maxResourceFilesPerCreate = 6;
 
 function requireNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
@@ -36,6 +40,48 @@ export async function handleResourcesRoute({ request, response, url, context }) 
   }
 
   const resolved = await resolveLiveContext(context.actor);
+
+  if (request.method === "GET" && url.pathname === "/v1/courses") {
+    const limit = parseLimit(url.searchParams.get("limit"));
+
+    if (!resolved?.live?.tenant) {
+      sendError(response, 401, "UNAUTHENTICATED", "An authenticated membership is required.");
+      return true;
+    }
+
+    if (limit === null) {
+      sendError(response, 400, "INVALID_LIMIT", "limit must be an integer between 1 and 50.");
+      return true;
+    }
+
+    try {
+      const data = await listCoursesByTenant(getFirebaseDataConnect(resourcesConnectorConfig), {
+        tenantId: resolved.live.tenant.id,
+        limit
+      });
+
+      sendJson(response, 200, {
+        tenantId: resolved.live.tenant.id,
+        items: data.data.courses.map((item) => ({
+          id: item.id,
+          tenantId: item.tenantId,
+          code: item.code,
+          title: item.title,
+          semester: typeof item.semester === "number" ? item.semester : null,
+          branch: item.branch ?? null,
+          createdAt: item.createdAt
+        }))
+      });
+      return true;
+    } catch (error) {
+      console.error("[resources] courses-failed", {
+        tenantId: resolved.live.tenant.id,
+        message: error instanceof Error ? error.message : "unknown"
+      });
+      sendError(response, 502, "COURSES_UNAVAILABLE", "Courses are unavailable right now.");
+      return true;
+    }
+  }
 
   if (request.method === "GET" && url.pathname === "/v1/resources") {
     const tenantId = url.searchParams.get("tenantId");
@@ -173,6 +219,25 @@ export async function handleResourcesRoute({ request, response, url, context }) 
       return true;
     }
 
+    const rawFiles = Array.isArray(payload.files) ? payload.files.slice(0, maxResourceFilesPerCreate) : [];
+    const files = rawFiles
+      .filter(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          requireNonEmptyString(item.storagePath) &&
+          requireNonEmptyString(item.fileName) &&
+          requireNonEmptyString(item.mimeType) &&
+          Number.isFinite(Number(item.sizeBytes)) &&
+          Number(item.sizeBytes) > 0
+      )
+      .map((item) => ({
+        storagePath: item.storagePath.trim(),
+        fileName: item.fileName.trim(),
+        mimeType: item.mimeType.trim(),
+        sizeBytes: Number(item.sizeBytes)
+      }));
+
     if (!resolved?.live?.tenant || !resolved.live.membership) {
       sendError(response, 401, "UNAUTHENTICATED", "An authenticated membership is required.");
       return true;
@@ -186,6 +251,34 @@ export async function handleResourcesRoute({ request, response, url, context }) 
         title: payload.title.trim(),
         description: requireNonEmptyString(payload.description) ? payload.description.trim() : null,
         type: payload.type ?? "notes"
+      });
+
+      await Promise.all(
+        files.map((file, index) =>
+          createResourceFileMutation(getFirebaseDataConnect(resourcesConnectorConfig), {
+            resourceFileKey: `${created.data.resource_insert.id}:${file.storagePath}:${index}`,
+            tenantId: resolved.live.tenant.id,
+            resourceId: created.data.resource_insert.id,
+            storagePath: file.storagePath,
+            fileName: file.fileName,
+            mimeType: file.mimeType,
+            sizeBytes: String(file.sizeBytes)
+          })
+        )
+      );
+
+      await trackActivity({
+        tenantId: resolved.live.tenant.id,
+        membershipId: resolved.live.membership.id,
+        activityType: "resource.created",
+        entityType: "resource",
+        entityId: created.data.resource_insert.id,
+        metadata: {
+          courseId: requireNonEmptyString(payload.courseId) ? payload.courseId : null,
+          type: payload.type ?? "notes",
+          fileCount: files.length
+        },
+        auditAction: "resource.created"
       });
 
       sendJson(response, 201, {

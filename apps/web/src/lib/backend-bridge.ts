@@ -21,6 +21,7 @@ type BackendModules = {
   handleCampusRoute: (args: BackendRouteArgs) => Promise<boolean>;
   handleSocialRoute: (args: BackendRouteArgs) => Promise<boolean>;
   handleResourcesRoute: (args: BackendRouteArgs) => Promise<boolean>;
+  handleModerationRoute: (args: BackendRouteArgs) => Promise<boolean>;
 };
 
 type BackendBridgeRequest = {
@@ -141,14 +142,17 @@ async function loadBackendModules() {
       // @ts-expect-error Server-only bridge imports backend runtime modules directly.
       import("../../../backend/src/modules/social/index.mjs"),
       // @ts-expect-error Server-only bridge imports backend runtime modules directly.
-      import("../../../backend/src/modules/resources/index.mjs")
-    ]).then(([requestContextModule, httpModule, identityModule, campusModule, socialModule, resourcesModule]) => ({
+      import("../../../backend/src/modules/resources/index.mjs"),
+      // @ts-expect-error Server-only bridge imports backend runtime modules directly.
+      import("../../../backend/src/modules/moderation/index.mjs")
+    ]).then(([requestContextModule, httpModule, identityModule, campusModule, socialModule, resourcesModule, moderationModule]) => ({
       createRequestContext: requestContextModule.createRequestContext,
       sendError: httpModule.sendError,
       handleIdentityRoute: identityModule.handleIdentityRoute,
       handleCampusRoute: campusModule.handleCampusRoute,
       handleSocialRoute: socialModule.handleSocialRoute,
-      handleResourcesRoute: resourcesModule.handleResourcesRoute
+      handleResourcesRoute: resourcesModule.handleResourcesRoute,
+      handleModerationRoute: moderationModule.handleModerationRoute
     }));
   }
 
@@ -169,7 +173,8 @@ export async function invokeBackendRoute(requestInit: BackendBridgeRequest) {
     modules.handleIdentityRoute,
     modules.handleCampusRoute,
     modules.handleSocialRoute,
-    modules.handleResourcesRoute
+    modules.handleResourcesRoute,
+    modules.handleModerationRoute
   ];
 
   try {

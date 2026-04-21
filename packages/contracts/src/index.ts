@@ -4,6 +4,8 @@ export type ResourceType = "notes" | "pyq" | "guide";
 export type PostKind = "text" | "image" | "video";
 export type PublishStatus = "draft" | "pending" | "published" | "removed";
 export type FeedPlacement = "feed" | "vibe";
+export type ReactionKind = "fire" | "support" | "like";
+export type StoryReactionKind = "like";
 
 export interface ServiceHealth {
   service: string;
@@ -181,6 +183,7 @@ export interface FeedCard {
   status: PublishStatus;
   reactions: number;
   comments: number;
+  viewerReactionType: ReactionKind | null;
   createdAt: string;
   author: {
     userId: string;
@@ -224,6 +227,8 @@ export interface StoryCard {
   createdAt: string;
   expiresAt: string;
   isOwn: boolean;
+  reactions: number;
+  viewerHasLiked: boolean;
 }
 
 export interface StoryListResponse {
@@ -286,8 +291,19 @@ export interface CommentItem {
   id: string;
   postId: string;
   membershipId: string;
+  authorUserId: string;
   body: string;
   createdAt: string;
+  author: {
+    userId: string;
+    username: string;
+    displayName: string;
+  } | null;
+}
+
+export interface CommentListResponse {
+  postId: string;
+  items: CommentItem[];
 }
 
 export interface CreateCommentResponse {
@@ -297,8 +313,33 @@ export interface CreateCommentResponse {
 export interface ReactionResponse {
   postId: string;
   membershipId: string;
-  reactionType: "fire" | "support" | "like";
+  reactionType: ReactionKind | null;
   aggregateCount: number;
+  active: boolean;
+  viewerReactionType: ReactionKind | null;
+}
+
+export interface StoryReactionResponse {
+  storyId: string;
+  membershipId: string;
+  reactionType: StoryReactionKind | null;
+  aggregateCount: number;
+  active: boolean;
+}
+
+export interface CourseItem {
+  id: string;
+  tenantId: string;
+  code: string;
+  title: string;
+  semester: number | null;
+  branch: string | null;
+  createdAt: string;
+}
+
+export interface ListCoursesResponse {
+  tenantId: string;
+  items: CourseItem[];
 }
 
 export interface ResourceItem {
@@ -343,6 +384,22 @@ export interface ResourceDetailResponse {
       sizeBytes: number;
     }>;
   };
+}
+
+export interface ActivityItem {
+  id: string;
+  tenantId: string;
+  membershipId: string;
+  activityType: string;
+  entityType: string | null;
+  entityId: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface ActivityListResponse {
+  tenantId: string;
+  items: ActivityItem[];
 }
 
 export type MarketTab = "sale" | "buying" | "lend";

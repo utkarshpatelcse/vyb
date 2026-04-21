@@ -5,6 +5,7 @@ import {
   listProfilesByTenant,
   searchProfiles
 } from "../identity/profile-repository.mjs";
+import { trackActivity } from "../moderation/repository.mjs";
 import { resolveLiveContext } from "../shared/viewer-context.mjs";
 import {
   countPostsByUser,
@@ -12,14 +13,17 @@ import {
   createPost,
   createStory,
   findPostById,
+  findStoryById,
   followUser,
   getFollowStats,
   isFollowing,
+  listCommentsByPost,
   listPosts,
   listPostsByUser,
   listStories,
   unfollowUser,
-  upsertReaction
+  upsertReaction,
+  upsertStoryReaction
 } from "./repository.mjs";
 
 const allowedPostKinds = new Set(["text", "image", "video"]);
@@ -42,6 +46,47 @@ function buildFeedPayload(item) {
   return {
     ...item
   };
+}
+
+function buildCommentAuthor(profile, authorUserId) {
+  if (profile) {
+    return {
+      userId: profile.userId,
+      username: profile.username,
+      displayName: profile.fullName
+    };
+  }
+
+  if (!authorUserId) {
+    return null;
+  }
+
+  return {
+    userId: authorUserId,
+    username: "vyb_user",
+    displayName: "Vyb Student"
+  };
+}
+
+async function enrichCommentItems(tenantId, items) {
+  const uniqueUserIds = Array.from(
+    new Set(items.map((item) => item.authorUserId).filter((value) => typeof value === "string" && value.trim().length > 0))
+  );
+  const profiles = await Promise.all(
+    uniqueUserIds.map(async (userId) => [
+      userId,
+      await getProfileByUserId({
+        tenantId,
+        userId
+      })
+    ])
+  );
+  const profileMap = new Map(profiles);
+
+  return items.map((item) => ({
+    ...item,
+    author: buildCommentAuthor(profileMap.get(item.authorUserId) ?? null, item.authorUserId)
+  }));
 }
 
 function resolveTenantScope({ requestedTenantId, resolvedTenantId, routeLabel }) {
@@ -134,6 +179,26 @@ async function buildSuggestedUserItems({ tenantId, viewerUserId, limit }) {
   );
 }
 
+async function logSocialActivity({
+  tenantId,
+  membershipId,
+  activityType,
+  entityType,
+  entityId,
+  metadata,
+  auditAction = activityType
+}) {
+  await trackActivity({
+    tenantId,
+    membershipId,
+    activityType,
+    entityType,
+    entityId,
+    metadata,
+    auditAction
+  });
+}
+
 export function getSocialModuleHealth() {
   return {
     module: "social",
@@ -179,7 +244,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
       communityId,
       limit,
       placement: "feed",
-      userId: authorUserId ?? null
+      userId: authorUserId ?? null,
+      viewerMembershipId: resolvedMembershipId
     });
 
     sendJson(response, 200, {
@@ -212,7 +278,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
     const items = await listPosts({
       tenantId,
       limit,
-      placement: "vibe"
+      placement: "vibe",
+      viewerMembershipId: resolvedMembershipId
     });
 
     sendJson(response, 200, {
@@ -279,6 +346,18 @@ export async function handleSocialRoute({ request, response, url, context }) {
       body: requireNonEmptyString(payload.body) ? payload.body.trim() : ""
     });
 
+    await logSocialActivity({
+      tenantId,
+      membershipId: resolvedMembershipId,
+      activityType: payload.placement === "vibe" ? "vibe.created" : "post.created",
+      entityType: "post",
+      entityId: item.id,
+      metadata: {
+        placement: item.placement,
+        kind: item.kind
+      }
+    });
+
     sendJson(response, 201, {
       item: buildFeedPayload(item)
     });
@@ -335,6 +414,17 @@ export async function handleSocialRoute({ request, response, url, context }) {
       caption: requireNonEmptyString(payload.caption) ? payload.caption.trim() : ""
     });
 
+    await logSocialActivity({
+      tenantId,
+      membershipId: resolvedMembershipId,
+      activityType: "story.created",
+      entityType: "story",
+      entityId: item.id,
+      metadata: {
+        mediaType: item.mediaType
+      }
+    });
+
     sendJson(response, 201, { item });
     return true;
   }
@@ -352,7 +442,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
 
     const items = await listStories({
       tenantId,
-      viewerUserId: resolvedUserId
+      viewerUserId: resolvedUserId,
+      viewerMembershipId: resolvedMembershipId
     });
 
     sendJson(response, 200, { items });
@@ -432,7 +523,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
       tenantId,
       userId: profile.userId,
       limit: 24,
-      placement: "feed"
+      placement: "feed",
+      viewerMembershipId: resolvedMembershipId
     });
 
     sendJson(response, 200, {
@@ -491,11 +583,33 @@ export async function handleSocialRoute({ request, response, url, context }) {
         followerUserId: resolvedUserId,
         followingUserId: target.userId
       });
+
+      await logSocialActivity({
+        tenantId,
+        membershipId: resolvedMembershipId,
+        activityType: "follow.created",
+        entityType: "user",
+        entityId: target.userId,
+        metadata: {
+          username: target.username
+        }
+      });
     } else {
       await unfollowUser({
         tenantId,
         followerUserId: resolvedUserId,
         followingUserId: target.userId
+      });
+
+      await logSocialActivity({
+        tenantId,
+        membershipId: resolvedMembershipId,
+        activityType: "follow.removed",
+        entityType: "user",
+        entityId: target.userId,
+        metadata: {
+          username: target.username
+        }
       });
     }
 
@@ -515,6 +629,38 @@ export async function handleSocialRoute({ request, response, url, context }) {
     return true;
   }
 
+  const listCommentMatch = request.method === "GET" ? url.pathname.match(/^\/v1\/posts\/([^/]+)\/comments$/) : null;
+  if (listCommentMatch) {
+    const post = await findPostById(listCommentMatch[1], {
+      tenantId: resolvedTenantId ?? null,
+      viewerMembershipId: resolvedMembershipId
+    });
+    if (!post) {
+      sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
+      return true;
+    }
+
+    const limit = parseLimit(url.searchParams.get("limit"), 50);
+    if (limit === null) {
+      sendError(response, 400, "INVALID_LIMIT", "limit must be an integer between 1 and 50.");
+      return true;
+    }
+
+    const items = await enrichCommentItems(
+      post.tenantId,
+      await listCommentsByPost({
+        postId: listCommentMatch[1],
+        limit
+      })
+    );
+
+    sendJson(response, 200, {
+      postId: listCommentMatch[1],
+      items
+    });
+    return true;
+  }
+
   const commentMatch = request.method === "POST" ? url.pathname.match(/^\/v1\/posts\/([^/]+)\/comments$/) : null;
   if (commentMatch) {
     const payload = await readJson(request);
@@ -524,7 +670,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
     }
 
     const post = await findPostById(commentMatch[1], {
-      tenantId: resolvedTenantId ?? null
+      tenantId: resolvedTenantId ?? null,
+      viewerMembershipId: resolvedMembershipId
     });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
@@ -551,7 +698,28 @@ export async function handleSocialRoute({ request, response, url, context }) {
       body: payload.body.trim()
     });
 
-    sendJson(response, 201, { item });
+    const authorProfile = await getProfileByUserId({
+      tenantId: post.tenantId,
+      userId: resolvedUserId
+    });
+    const enrichedItem = {
+      ...item,
+      author: buildCommentAuthor(authorProfile, resolvedUserId)
+    };
+
+    await logSocialActivity({
+      tenantId: post.tenantId,
+      membershipId,
+      activityType: "comment.created",
+      entityType: "comment",
+      entityId: item.id,
+      metadata: {
+        postId: post.id,
+        placement: post.placement
+      }
+    });
+
+    sendJson(response, 201, { item: enrichedItem });
     return true;
   }
 
@@ -564,7 +732,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
     }
 
     const post = await findPostById(reactionMatch[1], {
-      tenantId: resolvedTenantId ?? null
+      tenantId: resolvedTenantId ?? null,
+      viewerMembershipId: resolvedMembershipId
     });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
@@ -584,6 +753,51 @@ export async function handleSocialRoute({ request, response, url, context }) {
       membershipId: resolvedMembershipId ?? context.actor.id,
       reactionType
     });
+
+    await logSocialActivity({
+      tenantId: post.tenantId,
+      membershipId: resolvedMembershipId ?? context.actor.id,
+      activityType: "reaction.updated",
+      entityType: "post",
+      entityId: post.id,
+      metadata: {
+        placement: post.placement,
+        reactionType
+      }
+    });
+    sendJson(response, 200, item);
+    return true;
+  }
+
+  const storyReactionMatch = request.method === "PUT" ? url.pathname.match(/^\/v1\/stories\/([^/]+)\/reactions$/) : null;
+  if (storyReactionMatch) {
+    const story = await findStoryById(storyReactionMatch[1], {
+      tenantId: resolvedTenantId ?? null,
+      viewerUserId: resolvedUserId,
+      viewerMembershipId: resolvedMembershipId
+    });
+    if (!story) {
+      sendError(response, 404, "STORY_NOT_FOUND", "Story not found.");
+      return true;
+    }
+
+    const item = await upsertStoryReaction({
+      storyId: story.id,
+      membershipId: resolvedMembershipId ?? context.actor.id,
+      reactionType: "like"
+    });
+
+    await logSocialActivity({
+      tenantId: story.tenantId,
+      membershipId: resolvedMembershipId ?? context.actor.id,
+      activityType: "story.reaction.updated",
+      entityType: "story",
+      entityId: story.id,
+      metadata: {
+        reactionType: "like"
+      }
+    });
+
     sendJson(response, 200, item);
     return true;
   }

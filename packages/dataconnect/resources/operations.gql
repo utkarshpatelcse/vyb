@@ -1,3 +1,20 @@
+query ListCoursesByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  courses(
+    where: { tenantId: { eq: $tenantId }, deletedAt: { isNull: true } }
+    orderBy: [{ updatedAt: DESC }, { createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    code
+    title
+    semester
+    branch
+    createdAt
+    updatedAt
+  }
+}
+
 query ListResourcesByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
   resources(
     where: {
@@ -63,6 +80,26 @@ query GetResourceDetail($resourceId: UUID!) @auth(level: NO_ACCESS) {
     sizeBytes
     storagePath
   }
+}
+
+mutation CreateCourse(
+  $tenantId: UUID!
+  $code: String!
+  $title: String!
+  $semester: Int
+  $branch: String
+) @auth(level: NO_ACCESS) @transaction {
+  course_insert(
+    data: {
+      tenantId: $tenantId
+      code: $code
+      title: $title
+      semester: $semester
+      branch: $branch
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
 }
 
 mutation CreateResource(

@@ -393,6 +393,11 @@ export interface Resource_Key {
   __typename?: 'Resource_Key';
 }
 
+export interface StoryReaction_Key {
+  id: UUIDString;
+  __typename?: 'StoryReaction_Key';
+}
+
 export interface Story_Key {
   id: UUIDString;
   __typename?: 'Story_Key';

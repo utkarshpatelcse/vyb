@@ -2589,6 +2589,10 @@ a {
   color: var(--vyb-campus-magenta);
 }
 
+.vyb-campus-action-icon.is-active {
+  color: var(--vyb-campus-magenta);
+}
+
 .vyb-campus-icon {
   width: 1.35rem;
   height: 1.35rem;
@@ -2609,6 +2613,10 @@ a {
 
 .vyb-campus-card-likes {
   font-weight: 700;
+}
+
+.vyb-campus-card-meta {
+  color: var(--vyb-campus-dim);
 }
 
 .vyb-campus-right-panel {
@@ -8384,6 +8392,149 @@ a {
   line-height: 1.65;
 }
 
+.vyb-story-viewer-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.vyb-story-like-button.is-active {
+  background: linear-gradient(135deg, rgba(255, 0, 255, 0.92), rgba(168, 85, 247, 0.92));
+}
+
+.vyb-thread-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 62;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(7, 8, 14, 0.8);
+  backdrop-filter: blur(16px);
+}
+
+.vyb-thread-sheet {
+  width: min(100%, 520px);
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 1.4rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #11131b;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+}
+
+.vyb-thread-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.vyb-thread-head strong,
+.vyb-thread-head span {
+  display: block;
+}
+
+.vyb-thread-head span,
+.vyb-thread-state,
+.vyb-thread-comment span {
+  color: var(--vyb-campus-dim);
+}
+
+.vyb-thread-post-preview,
+.vyb-thread-field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.vyb-thread-post-preview {
+  padding: 0.95rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.vyb-thread-post-preview p,
+.vyb-thread-comment p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.vyb-thread-list {
+  display: grid;
+  gap: 0.75rem;
+  max-height: min(42dvh, 22rem);
+  overflow-y: auto;
+}
+
+.vyb-thread-comment {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 0.9rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.vyb-thread-comment-copy {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.vyb-thread-comment span {
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.vyb-thread-field span {
+  font-size: 0.84rem;
+  color: var(--vyb-campus-dim);
+}
+
+.vyb-thread-field textarea {
+  width: 100%;
+  min-height: 5rem;
+  padding: 0.95rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: #ffffff;
+  font: inherit;
+  resize: vertical;
+}
+
+.vyb-thread-field textarea:focus {
+  outline: 0;
+  border-color: rgba(255, 0, 255, 0.4);
+}
+
+.vyb-thread-message {
+  margin: 0;
+  color: #fda4af;
+}
+
+.vyb-thread-actions,
+.vyb-reels-live-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.vyb-reels-live-actions {
+  margin-top: 0.2rem;
+}
+
+.vyb-reels-live-actions .vyb-campus-action-icon {
+  gap: 0.45rem;
+  color: var(--vyb-campus-dim);
+}
+
+.vyb-reels-live-actions .vyb-campus-action-icon span {
+  font-size: 0.88rem;
+}
+
 .vyb-profile-surface {
   display: grid;
   gap: 1.25rem;
@@ -8768,6 +8919,73 @@ a {
   color: #dbeafe;
   font-size: 0.82rem;
   line-height: 1.5;
+}
+
+.vyb-profile-phone-utility-grid {
+  display: grid;
+  gap: 0.85rem;
+  margin: 1rem 1.2rem 0;
+}
+
+.vyb-profile-phone-utility-card {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 1.15rem;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.vyb-profile-phone-utility-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.vyb-profile-phone-utility-head span,
+.vyb-profile-phone-utility-empty,
+.vyb-profile-phone-utility-item span {
+  color: var(--vyb-campus-dim);
+}
+
+.vyb-profile-phone-utility-empty {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.vyb-profile-phone-utility-item {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.vyb-profile-phone-utility-item strong {
+  font-size: 0.92rem;
+}
+
+.vyb-profile-phone-utility-item span {
+  font-size: 0.8rem;
+}
+
+.vyb-profile-phone-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.vyb-profile-phone-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2rem;
+  padding: 0 0.85rem;
+  border-radius: 999px;
+  background: rgba(255, 0, 255, 0.1);
+  border: 1px solid rgba(255, 0, 255, 0.18);
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 .vyb-profile-phone-tabs {

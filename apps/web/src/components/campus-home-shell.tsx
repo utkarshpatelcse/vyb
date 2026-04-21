@@ -4,7 +4,9 @@ import type { FeedCard, StoryCard, UserSearchItem } from "@vyb/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { SocialThreadSheet } from "./social-thread-sheet";
 import { SignOutButton } from "./sign-out-button";
+import { useSocialPostEngagement } from "./use-social-post-engagement";
 
 type CampusHomeShellProps = {
   viewerName: string;
@@ -221,8 +223,9 @@ export function CampusHomeShell({
   suggestedUsers
 }: CampusHomeShellProps) {
   const router = useRouter();
-  const [feedPosts, setFeedPosts] = useState(initialPosts);
+  const engagement = useSocialPostEngagement(initialPosts);
   const [recommendedUsers, setRecommendedUsers] = useState(suggestedUsers);
+  const [storyFeed, setStoryFeed] = useState(stories);
   const [selectedStory, setSelectedStory] = useState<StoryCard | null>(null);
   const [draftBody, setDraftBody] = useState("");
   const [composerMessage, setComposerMessage] = useState<string | null>(null);
@@ -230,10 +233,11 @@ export function CampusHomeShell({
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [followBusyUsername, setFollowBusyUsername] = useState<string | null>(null);
+  const [storyBusyId, setStoryBusyId] = useState<string | null>(null);
 
   useEffect(() => {
-    setFeedPosts(initialPosts);
-  }, [initialPosts]);
+    setStoryFeed(stories);
+  }, [stories]);
 
   useEffect(() => {
     setRecommendedUsers(suggestedUsers);
@@ -305,7 +309,7 @@ export function CampusHomeShell({
         return;
       }
 
-      setFeedPosts((current) => [payload.item!, ...current]);
+      engagement.prependPost(payload.item);
       setDraftBody("");
       setIsComposerOpen(false);
       setFlashMessage("Your post is now live across campus.");
@@ -348,6 +352,55 @@ export function CampusHomeShell({
       router.refresh();
     } finally {
       setFollowBusyUsername(null);
+    }
+  }
+
+  async function handleStoryLike(storyId: string) {
+    setStoryBusyId(storyId);
+
+    try {
+      const response = await fetch(`/api/stories/${encodeURIComponent(storyId)}/reactions`, {
+        method: "PUT"
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            aggregateCount?: number;
+            error?: {
+              message?: string;
+            };
+          }
+        | null;
+
+      if (!response.ok || typeof payload?.aggregateCount !== "number") {
+        setFlashMessage(payload?.error?.message ?? "We could not like that story right now.");
+        return;
+      }
+
+      setStoryFeed((current) =>
+        current.map((story) =>
+          story.id === storyId
+            ? {
+                ...story,
+                reactions: payload.aggregateCount!,
+                viewerHasLiked: true
+              }
+            : story
+        )
+      );
+      setSelectedStory((current) =>
+        current?.id === storyId
+          ? {
+              ...current,
+              reactions: payload.aggregateCount!,
+              viewerHasLiked: true
+            }
+          : current
+      );
+      setFlashMessage("Story reaction updated.");
+    } catch {
+      setFlashMessage("We could not like that story right now.");
+    } finally {
+      setStoryBusyId(null);
     }
   }
 
@@ -426,7 +479,7 @@ export function CampusHomeShell({
               <span>Your story</span>
             </button>
 
-            {stories.map((story) => (
+            {storyFeed.map((story) => (
               <button key={story.id} type="button" className="vyb-campus-story" onClick={() => setSelectedStory(story)}>
                 <span className="vyb-campus-story-ring">
                   {story.mediaType === "video" ? (
@@ -441,14 +494,14 @@ export function CampusHomeShell({
           </div>
 
           <div className="vyb-campus-feed">
-            {feedPosts.length === 0 ? (
+            {engagement.posts.length === 0 ? (
               <div className="vyb-campus-empty-state">
                 <strong>No campus posts yet</strong>
                 <span>Be the first one to publish something everyone on your campus can see.</span>
               </div>
             ) : null}
 
-            {feedPosts.map((post) => (
+            {engagement.posts.map((post) => (
               <article key={post.id} className="vyb-campus-feed-card">
                 <div className="vyb-campus-card-top">
                   <div className="vyb-campus-card-author">
@@ -478,10 +531,21 @@ export function CampusHomeShell({
 
                 <div className="vyb-campus-card-actions">
                   <div className="vyb-campus-card-actions-left">
-                    <button type="button" className="vyb-campus-action-icon" aria-label="Like post">
+                    <button
+                      type="button"
+                      className={`vyb-campus-action-icon${post.viewerReactionType === "like" ? " is-active" : ""}`}
+                      aria-label="Like post"
+                      disabled={engagement.loadingPostId === post.id}
+                      onClick={() => void engagement.react(post.id)}
+                    >
                       <HeartIcon />
                     </button>
-                    <button type="button" className="vyb-campus-action-icon" aria-label="Comment on post">
+                    <button
+                      type="button"
+                      className="vyb-campus-action-icon"
+                      aria-label="Comment on post"
+                      onClick={() => void engagement.openThread(post.id)}
+                    >
                       <CommentIcon />
                     </button>
                     <button type="button" className="vyb-campus-action-icon" aria-label="Share post">
@@ -495,6 +559,7 @@ export function CampusHomeShell({
 
                 <div className="vyb-campus-card-copy">
                   <p className="vyb-campus-card-likes">{formatMetric(post.reactions)} likes</p>
+                  <p className="vyb-campus-card-meta">{formatMetric(post.comments)} comments</p>
                   <p>
                     <strong>{post.author.username}</strong> {post.body}
                   </p>
@@ -713,9 +778,36 @@ export function CampusHomeShell({
             </div>
 
             {selectedStory.caption ? <p className="vyb-story-viewer-caption">{selectedStory.caption}</p> : null}
+
+            <div className="vyb-story-viewer-actions">
+              <button
+                type="button"
+                className={`vyb-campus-compose-primary vyb-story-like-button${selectedStory.viewerHasLiked ? " is-active" : ""}`}
+                disabled={storyBusyId === selectedStory.id}
+                onClick={() => void handleStoryLike(selectedStory.id)}
+              >
+                {storyBusyId === selectedStory.id
+                  ? "Liking..."
+                  : selectedStory.viewerHasLiked
+                    ? `Liked • ${formatMetric(selectedStory.reactions)}`
+                    : `Like story • ${formatMetric(selectedStory.reactions)}`}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
+
+      <SocialThreadSheet
+        post={engagement.selectedPost}
+        comments={engagement.selectedComments}
+        draft={engagement.threadDraft}
+        message={engagement.threadMessage}
+        isLoading={engagement.threadLoading}
+        isSubmitting={engagement.threadSubmitting}
+        onClose={engagement.closeThread}
+        onDraftChange={engagement.setThreadDraft}
+        onSubmit={() => void engagement.submitComment()}
+      />
     </main>
   );
 }

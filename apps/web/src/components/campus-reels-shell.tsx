@@ -2,8 +2,10 @@
 
 import type { FeedCard } from "@vyb/contracts";
 import Link from "next/link";
-import { useMemo, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { SocialThreadSheet } from "./social-thread-sheet";
 import { SignOutButton } from "./sign-out-button";
+import { useSocialPostEngagement } from "./use-social-post-engagement";
 
 type CampusReelsShellProps = {
   viewerName: string;
@@ -64,6 +66,22 @@ function ProfileIcon() {
   );
 }
 
+function HeartIcon() {
+  return (
+    <IconBase>
+      <path d="M12 20.4s-6.6-4.3-8.6-8A4.8 4.8 0 0 1 11 6.9L12 8l1-1.1a4.8 4.8 0 0 1 7.6 5.5c-2 3.7-8.6 8-8.6 8Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </IconBase>
+  );
+}
+
+function CommentIcon() {
+  return (
+    <IconBase>
+      <path d="M5.8 17.8a7.7 7.7 0 1 1 3 1.1L4 20l1.8-4.2Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </IconBase>
+  );
+}
+
 function formatMetric(value: number) {
   return new Intl.NumberFormat("en-IN", {
     notation: value > 999 ? "compact" : "standard",
@@ -81,6 +99,8 @@ export function CampusReelsShell({
   role,
   initialVibes
 }: CampusReelsShellProps) {
+  const engagement = useSocialPostEngagement(initialVibes);
+  const [flashMessage, setFlashMessage] = useState<string | null>(null);
   const navItems = useMemo(
     () => [
       { label: "Home", href: "/home", icon: <HomeIcon /> },
@@ -98,6 +118,20 @@ export function CampusReelsShell({
   } as CSSProperties;
 
   const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
+
+  useEffect(() => {
+    if (!flashMessage) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setFlashMessage(null);
+    }, 2600);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [flashMessage]);
 
   return (
     <main className="vyb-campus-home" style={layoutStyle}>
@@ -136,15 +170,17 @@ export function CampusReelsShell({
           </Link>
         </div>
 
+        {flashMessage ? <div className="vyb-campus-flash-message">{flashMessage}</div> : null}
+
         <div className="vyb-reels-live-grid">
-          {initialVibes.length === 0 ? (
+          {engagement.posts.length === 0 ? (
             <div className="vyb-campus-empty-state">
               <strong>No vibes yet</strong>
               <span>Upload the first campus reel and make this lane feel alive.</span>
             </div>
           ) : null}
 
-          {initialVibes.map((item) => (
+          {engagement.posts.map((item) => (
             <article key={item.id} className="vyb-reels-live-card">
               <div className="vyb-reels-live-media">
                 {item.mediaUrl ? (
@@ -168,6 +204,32 @@ export function CampusReelsShell({
                 <div className="vyb-reels-live-meta">
                   <span>{formatMetric(item.reactions)} likes</span>
                   <span>{formatMetric(item.comments)} comments</span>
+                </div>
+                <div className="vyb-reels-live-actions">
+                  <button
+                    type="button"
+                    className={`vyb-campus-action-icon${item.viewerReactionType === "like" ? " is-active" : ""}`}
+                    disabled={engagement.loadingPostId === item.id}
+                    onClick={async () => {
+                      const updated = await engagement.react(item.id);
+                      if (updated) {
+                        setFlashMessage("Vibe reaction updated.");
+                      }
+                    }}
+                  >
+                    <HeartIcon />
+                    <span>{item.viewerReactionType === "like" ? "Liked" : "Like"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="vyb-campus-action-icon"
+                    onClick={async () => {
+                      await engagement.openThread(item.id);
+                    }}
+                  >
+                    <CommentIcon />
+                    <span>Comments</span>
+                  </button>
                 </div>
               </div>
             </article>
@@ -208,6 +270,18 @@ export function CampusReelsShell({
           </Link>
         ))}
       </nav>
+
+      <SocialThreadSheet
+        post={engagement.selectedPost}
+        comments={engagement.selectedComments}
+        draft={engagement.threadDraft}
+        message={engagement.threadMessage}
+        isLoading={engagement.threadLoading}
+        isSubmitting={engagement.threadSubmitting}
+        onClose={engagement.closeThread}
+        onDraftChange={engagement.setThreadDraft}
+        onSubmit={() => void engagement.submitComment()}
+      />
     </main>
   );
 }

@@ -62,6 +62,22 @@ export interface CreatePostData {
   post_insert: Post_Key;
 }
 
+export interface CreatePostMediaData {
+  postMedia_insert: PostMedia_Key;
+}
+
+export interface CreatePostMediaVariables {
+  tenantId: UUIDString;
+  postId: UUIDString;
+  storagePath: string;
+  mediaType: string;
+  mimeType: string;
+  sizeBytes: Int64String;
+  width?: number | null;
+  height?: number | null;
+  durationMs?: number | null;
+}
+
 export interface CreatePostVariables {
   id?: UUIDString | null;
   tenantId: UUIDString;
@@ -96,6 +112,18 @@ export interface CreateReactionVariables {
 
 export interface CreateStoryData {
   story_insert: Story_Key;
+}
+
+export interface CreateStoryReactionData {
+  storyReaction_insert: StoryReaction_Key;
+}
+
+export interface CreateStoryReactionVariables {
+  id: UUIDString;
+  storyReactionKey: string;
+  storyId: UUIDString;
+  membershipId: UUIDString;
+  reactionType: string;
 }
 
 export interface CreateStoryVariables {
@@ -172,6 +200,43 @@ export interface GetReactionByKeyData {
 
 export interface GetReactionByKeyVariables {
   reactionKey: string;
+}
+
+export interface GetStoryByIdData {
+  story?: {
+    id: UUIDString;
+    tenantId: UUIDString;
+    userId: UUIDString;
+    username: string;
+    displayName: string;
+    mediaType: string;
+    mediaUrl: string;
+    storagePath?: string | null;
+    mediaMimeType?: string | null;
+    mediaSizeBytes?: Int64String | null;
+    caption?: string | null;
+    createdAt: TimestampString;
+    expiresAt: TimestampString;
+  } & Story_Key;
+}
+
+export interface GetStoryByIdVariables {
+  id: UUIDString;
+}
+
+export interface GetStoryReactionByKeyData {
+  storyReactions: ({
+    id: UUIDString;
+    storyId: UUIDString;
+    membershipId: UUIDString;
+    reactionType: string;
+    createdAt: TimestampString;
+    updatedAt: TimestampString;
+  } & StoryReaction_Key)[];
+}
+
+export interface GetStoryReactionByKeyVariables {
+  storyReactionKey: string;
 }
 
 export interface ListCommentsByPostData {
@@ -356,6 +421,38 @@ export interface ListStoriesByTenantVariables {
   limit: number;
 }
 
+export interface ListStoryReactionsByStoryData {
+  storyReactions: ({
+    id: UUIDString;
+    storyId: UUIDString;
+    membershipId: UUIDString;
+    reactionType: string;
+    createdAt: TimestampString;
+    updatedAt: TimestampString;
+  } & StoryReaction_Key)[];
+}
+
+export interface ListStoryReactionsByStoryVariables {
+  storyId: UUIDString;
+  limit: number;
+}
+
+export interface ListStoryReactionsByTenantData {
+  storyReactions: ({
+    id: UUIDString;
+    storyId: UUIDString;
+    membershipId: UUIDString;
+    reactionType: string;
+    createdAt: TimestampString;
+    updatedAt: TimestampString;
+  } & StoryReaction_Key)[];
+}
+
+export interface ListStoryReactionsByTenantVariables {
+  tenantId: UUIDString;
+  limit: number;
+}
+
 export interface MarketListingContact_Key {
   id: string;
   __typename?: 'MarketListingContact_Key';
@@ -442,6 +539,11 @@ export interface SoftDeletePostVariables {
   id: UUIDString;
 }
 
+export interface StoryReaction_Key {
+  id: UUIDString;
+  __typename?: 'StoryReaction_Key';
+}
+
 export interface Story_Key {
   id: UUIDString;
   __typename?: 'Story_Key';
@@ -467,6 +569,15 @@ export interface UpdateReactionData {
 }
 
 export interface UpdateReactionVariables {
+  id: UUIDString;
+  reactionType: string;
+}
+
+export interface UpdateStoryReactionData {
+  storyReaction_update?: StoryReaction_Key | null;
+}
+
+export interface UpdateStoryReactionVariables {
   id: UUIDString;
   reactionType: string;
 }
@@ -526,6 +637,26 @@ export function listStoriesByTenant(dc: DataConnect, vars: ListStoriesByTenantVa
 /** Generated Node Admin SDK operation action function for the 'ListStoriesByTenant' Query. Allow users to pass in custom DataConnect instances. */
 export function listStoriesByTenant(vars: ListStoriesByTenantVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListStoriesByTenantData>>;
 
+/** Generated Node Admin SDK operation action function for the 'GetStoryById' Query. Allow users to execute without passing in DataConnect. */
+export function getStoryById(dc: DataConnect, vars: GetStoryByIdVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetStoryByIdData>>;
+/** Generated Node Admin SDK operation action function for the 'GetStoryById' Query. Allow users to pass in custom DataConnect instances. */
+export function getStoryById(vars: GetStoryByIdVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetStoryByIdData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListStoryReactionsByTenant' Query. Allow users to execute without passing in DataConnect. */
+export function listStoryReactionsByTenant(dc: DataConnect, vars: ListStoryReactionsByTenantVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListStoryReactionsByTenantData>>;
+/** Generated Node Admin SDK operation action function for the 'ListStoryReactionsByTenant' Query. Allow users to pass in custom DataConnect instances. */
+export function listStoryReactionsByTenant(vars: ListStoryReactionsByTenantVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListStoryReactionsByTenantData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListStoryReactionsByStory' Query. Allow users to execute without passing in DataConnect. */
+export function listStoryReactionsByStory(dc: DataConnect, vars: ListStoryReactionsByStoryVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListStoryReactionsByStoryData>>;
+/** Generated Node Admin SDK operation action function for the 'ListStoryReactionsByStory' Query. Allow users to pass in custom DataConnect instances. */
+export function listStoryReactionsByStory(vars: ListStoryReactionsByStoryVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListStoryReactionsByStoryData>>;
+
+/** Generated Node Admin SDK operation action function for the 'GetStoryReactionByKey' Query. Allow users to execute without passing in DataConnect. */
+export function getStoryReactionByKey(dc: DataConnect, vars: GetStoryReactionByKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetStoryReactionByKeyData>>;
+/** Generated Node Admin SDK operation action function for the 'GetStoryReactionByKey' Query. Allow users to pass in custom DataConnect instances. */
+export function getStoryReactionByKey(vars: GetStoryReactionByKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetStoryReactionByKeyData>>;
+
 /** Generated Node Admin SDK operation action function for the 'ListFollowingByUser' Query. Allow users to execute without passing in DataConnect. */
 export function listFollowingByUser(dc: DataConnect, vars: ListFollowingByUserVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListFollowingByUserData>>;
 /** Generated Node Admin SDK operation action function for the 'ListFollowingByUser' Query. Allow users to pass in custom DataConnect instances. */
@@ -546,6 +677,11 @@ export function createPost(dc: DataConnect, vars: CreatePostVariables, options?:
 /** Generated Node Admin SDK operation action function for the 'CreatePost' Mutation. Allow users to pass in custom DataConnect instances. */
 export function createPost(vars: CreatePostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreatePostData>>;
 
+/** Generated Node Admin SDK operation action function for the 'CreatePostMedia' Mutation. Allow users to execute without passing in DataConnect. */
+export function createPostMedia(dc: DataConnect, vars: CreatePostMediaVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreatePostMediaData>>;
+/** Generated Node Admin SDK operation action function for the 'CreatePostMedia' Mutation. Allow users to pass in custom DataConnect instances. */
+export function createPostMedia(vars: CreatePostMediaVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreatePostMediaData>>;
+
 /** Generated Node Admin SDK operation action function for the 'CreateComment' Mutation. Allow users to execute without passing in DataConnect. */
 export function createComment(dc: DataConnect, vars: CreateCommentVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateCommentData>>;
 /** Generated Node Admin SDK operation action function for the 'CreateComment' Mutation. Allow users to pass in custom DataConnect instances. */
@@ -565,6 +701,16 @@ export function updateReaction(vars: UpdateReactionVariables, options?: Operatio
 export function createStory(dc: DataConnect, vars: CreateStoryVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateStoryData>>;
 /** Generated Node Admin SDK operation action function for the 'CreateStory' Mutation. Allow users to pass in custom DataConnect instances. */
 export function createStory(vars: CreateStoryVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateStoryData>>;
+
+/** Generated Node Admin SDK operation action function for the 'CreateStoryReaction' Mutation. Allow users to execute without passing in DataConnect. */
+export function createStoryReaction(dc: DataConnect, vars: CreateStoryReactionVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateStoryReactionData>>;
+/** Generated Node Admin SDK operation action function for the 'CreateStoryReaction' Mutation. Allow users to pass in custom DataConnect instances. */
+export function createStoryReaction(vars: CreateStoryReactionVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateStoryReactionData>>;
+
+/** Generated Node Admin SDK operation action function for the 'UpdateStoryReaction' Mutation. Allow users to execute without passing in DataConnect. */
+export function updateStoryReaction(dc: DataConnect, vars: UpdateStoryReactionVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateStoryReactionData>>;
+/** Generated Node Admin SDK operation action function for the 'UpdateStoryReaction' Mutation. Allow users to pass in custom DataConnect instances. */
+export function updateStoryReaction(vars: UpdateStoryReactionVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateStoryReactionData>>;
 
 /** Generated Node Admin SDK operation action function for the 'CreateFollow' Mutation. Allow users to execute without passing in DataConnect. */
 export function createFollow(dc: DataConnect, vars: CreateFollowVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateFollowData>>;

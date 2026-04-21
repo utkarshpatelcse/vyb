@@ -1,0 +1,6 @@
+connectorId: moderation
+generate:
+  adminNodeSdk:
+    outputDir: ../moderation-admin-sdk
+    package: "@vyb/dataconnect-moderation-admin"
+    packageJsonDir: ../moderation-admin-sdk

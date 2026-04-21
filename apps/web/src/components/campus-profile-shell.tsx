@@ -1,6 +1,6 @@
 "use client";
 
-import type { FeedCard } from "@vyb/contracts";
+import type { ActivityItem, CourseItem, FeedCard, ResourceItem } from "@vyb/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type CSSProperties, type ReactNode } from "react";
@@ -22,6 +22,9 @@ type CampusProfileShellProps = {
   posts: FeedCard[];
   isOwnProfile: boolean;
   isFollowing: boolean;
+  recentResources?: ResourceItem[];
+  recentCourses?: CourseItem[];
+  recentActivity?: ActivityItem[];
 };
 
 type ProfileTab = "posts" | "reels" | "saved";
@@ -249,6 +252,13 @@ function buildEmptyMessage(tab: ProfileTab, isOwnProfile: boolean) {
     : "This profile has not posted anything yet.";
 }
 
+function formatActivityLabel(value: string) {
+  return value
+    .split(".")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 export function CampusProfileShell({
   viewerName,
   username,
@@ -260,7 +270,10 @@ export function CampusProfileShell({
   stats,
   posts,
   isOwnProfile,
-  isFollowing
+  isFollowing,
+  recentResources = [],
+  recentCourses = [],
+  recentActivity = []
 }: CampusProfileShellProps) {
   const router = useRouter();
   const [editableUsername, setEditableUsername] = useState(username);
@@ -497,6 +510,60 @@ export function CampusProfileShell({
           )}
 
           {message ? <p className="vyb-profile-phone-inline-message">{message}</p> : null}
+
+          <section className="vyb-profile-phone-utility-grid">
+            <article className="vyb-profile-phone-utility-card">
+              <div className="vyb-profile-phone-utility-head">
+                <strong>Campus resources</strong>
+                <span>{recentResources.length} live</span>
+              </div>
+              {recentResources.length === 0 ? (
+                <p className="vyb-profile-phone-utility-empty">Resource vault will appear here as soon as published notes and guides go live.</p>
+              ) : (
+                recentResources.map((resource) => (
+                  <div key={resource.id} className="vyb-profile-phone-utility-item">
+                    <strong>{resource.title}</strong>
+                    <span>{resource.type.toUpperCase()} {resource.courseId ? "• Linked course" : "• General"}</span>
+                  </div>
+                ))
+              )}
+            </article>
+
+            <article className="vyb-profile-phone-utility-card">
+              <div className="vyb-profile-phone-utility-head">
+                <strong>Courses</strong>
+                <span>{recentCourses.length} mapped</span>
+              </div>
+              {recentCourses.length === 0 ? (
+                <p className="vyb-profile-phone-utility-empty">Course mappings are ready for this tenant and will show here once course rows are available.</p>
+              ) : (
+                <div className="vyb-profile-phone-chip-list">
+                  {recentCourses.map((courseItem) => (
+                    <span key={courseItem.id} className="vyb-profile-phone-chip">
+                      {courseItem.code}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </article>
+
+            <article className="vyb-profile-phone-utility-card">
+              <div className="vyb-profile-phone-utility-head">
+                <strong>Recent activity</strong>
+                <span>{recentActivity.length} events</span>
+              </div>
+              {recentActivity.length === 0 ? (
+                <p className="vyb-profile-phone-utility-empty">Your social, resource, and moderation-safe actions will start showing up here.</p>
+              ) : (
+                recentActivity.map((activityItem) => (
+                  <div key={activityItem.id} className="vyb-profile-phone-utility-item">
+                    <strong>{formatActivityLabel(activityItem.activityType)}</strong>
+                    <span>{new Date(activityItem.createdAt).toLocaleString("en-IN", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
+                  </div>
+                ))
+              )}
+            </article>
+          </section>
 
           <div className="vyb-profile-phone-tabs" role="tablist" aria-label="Profile content tabs">
             {tabs.map((tab) => (

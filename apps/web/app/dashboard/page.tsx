@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { CampusProfileShell } from "../../src/components/campus-profile-shell";
-import { getCampusUserProfile, getViewerMe, getViewerProfile } from "../../src/lib/backend";
+import { getCampusCourses, getCampusResources, getCampusUserProfile, getViewerActivity, getViewerMe, getViewerProfile } from "../../src/lib/backend";
 import { getDisplayCollegeName } from "../../src/lib/college-access";
 import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
 
@@ -12,9 +12,12 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  const [profile, me] = await Promise.all([
+  const [profile, me, resources, courses, activity] = await Promise.all([
     getViewerProfile(viewer).catch(() => null),
-    getViewerMe(viewer).catch(() => null)
+    getViewerMe(viewer).catch(() => null),
+    getCampusResources(viewer, { limit: 4 }).catch(() => ({ tenantId: viewer.tenantId, courseId: null, items: [], nextCursor: null })),
+    getCampusCourses(viewer, 8).catch(() => ({ tenantId: viewer.tenantId, items: [] })),
+    getViewerActivity(viewer, 8).catch(() => ({ tenantId: viewer.tenantId, items: [] }))
   ]);
 
   if (!profile?.profileCompleted || !profile.profile?.username) {
@@ -41,6 +44,9 @@ export default async function DashboardPage() {
       posts={publicProfile?.posts ?? []}
       isOwnProfile={true}
       isFollowing={false}
+      recentResources={resources.items}
+      recentCourses={courses.items}
+      recentActivity={activity.items}
     />
   );
 }
