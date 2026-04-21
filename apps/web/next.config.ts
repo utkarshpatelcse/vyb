@@ -51,6 +51,9 @@ const nextConfig: NextConfig = {
     "@vyb/validation",
     "@vyb/ui-web"
   ],
+  experimental: {
+    proxyClientMaxBodySize: 80 * 1024 * 1024
+  },
   async headers() {
     return [
       {

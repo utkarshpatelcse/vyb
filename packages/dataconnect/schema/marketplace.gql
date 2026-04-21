@@ -1,0 +1,145 @@
+type MarketListing
+  @table(name: "market_listings", singular: "marketListing", plural: "marketListings", key: ["id"]) {
+  id: String!
+  tenant: Tenant!
+  sellerUserId: String! @col(name: "seller_user_id")
+  sellerUsername: String! @col(name: "seller_username")
+  sellerName: String! @col(name: "seller_name")
+  sellerRole: String! @col(name: "seller_role") @default(value: "student")
+  title: String!
+  description: String!
+  category: String!
+  condition: String!
+  priceAmount: Int! @col(name: "price_amount")
+  location: String!
+  campusSpot: String! @col(name: "campus_spot")
+  status: String! @default(value: "active")
+  createdAt: Timestamp! @col(name: "created_at")
+  updatedAt: Timestamp! @col(name: "updated_at")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type MarketListingMedia
+  @table(name: "market_listing_media", singular: "marketListingMedia", plural: "marketListingMediaRecords", key: ["id"]) {
+  id: String!
+  tenant: Tenant!
+  listing: MarketListing!
+  kind: String!
+  url: String!
+  fileName: String! @col(name: "file_name")
+  mimeType: String! @col(name: "mime_type")
+  sizeBytes: Int64! @col(name: "size_bytes")
+  storagePath: String @col(name: "storage_path")
+  createdAt: Timestamp! @col(name: "created_at")
+  updatedAt: Timestamp! @col(name: "updated_at")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type MarketRequest
+  @table(name: "market_requests", singular: "marketRequest", plural: "marketRequests", key: ["id"]) {
+  id: String!
+  tenant: Tenant!
+  requesterUserId: String! @col(name: "requester_user_id")
+  requesterUsername: String! @col(name: "requester_username")
+  requesterName: String! @col(name: "requester_name")
+  requesterRole: String! @col(name: "requester_role") @default(value: "student")
+  tab: String!
+  tag: String!
+  title: String!
+  detail: String!
+  category: String!
+  campusSpot: String! @col(name: "campus_spot")
+  budgetLabel: String! @col(name: "budget_label")
+  budgetAmount: Int @col(name: "budget_amount")
+  tone: String! @default(value: "violet")
+  status: String! @default(value: "active")
+  createdAt: Timestamp! @col(name: "created_at")
+  updatedAt: Timestamp! @col(name: "updated_at")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type MarketRequestMedia
+  @table(name: "market_request_media", singular: "marketRequestMedia", plural: "marketRequestMediaRecords", key: ["id"]) {
+  id: String!
+  tenant: Tenant!
+  request: MarketRequest!
+  kind: String!
+  url: String!
+  fileName: String! @col(name: "file_name")
+  mimeType: String! @col(name: "mime_type")
+  sizeBytes: Int64! @col(name: "size_bytes")
+  storagePath: String @col(name: "storage_path")
+  createdAt: Timestamp! @col(name: "created_at")
+  updatedAt: Timestamp! @col(name: "updated_at")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type MarketListingSave
+  @table(name: "market_listing_saves", singular: "marketListingSave", plural: "marketListingSaves", key: ["id"]) {
+  id: String!
+  tenant: Tenant!
+  listing: MarketListing!
+  userId: String! @col(name: "user_id")
+  createdAt: Timestamp! @col(name: "created_at")
+  updatedAt: Timestamp! @col(name: "updated_at")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type MarketListingContact
+  @table(name: "market_listing_contacts", singular: "marketListingContact", plural: "marketListingContacts", key: ["id"]) {
+  id: String!
+  tenant: Tenant!
+  listing: MarketListing!
+  fromUserId: String! @col(name: "from_user_id")
+  toUserId: String! @col(name: "to_user_id")
+  message: String!
+  createdAt: Timestamp! @col(name: "created_at")
+  updatedAt: Timestamp! @col(name: "updated_at")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type MarketRequestContact
+  @table(name: "market_request_contacts", singular: "marketRequestContact", plural: "marketRequestContacts", key: ["id"]) {
+  id: String!
+  tenant: Tenant!
+  request: MarketRequest!
+  fromUserId: String! @col(name: "from_user_id")
+  toUserId: String! @col(name: "to_user_id")
+  message: String!
+  createdAt: Timestamp! @col(name: "created_at")
+  updatedAt: Timestamp! @col(name: "updated_at")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+extend type MarketListing {
+  tenantId: UUID!
+}
+
+extend type MarketListingMedia {
+  tenantId: UUID!
+  listingId: String!
+}
+
+extend type MarketRequest {
+  tenantId: UUID!
+}
+
+extend type MarketRequestMedia {
+  tenantId: UUID!
+  requestId: String!
+}
+
+extend type MarketListingSave {
+  tenantId: UUID!
+  listingId: String!
+}
+
+extend type MarketListingContact {
+  tenantId: UUID!
+  listingId: String!
+}
+
+extend type MarketRequestContact {
+  tenantId: UUID!
+  requestId: String!
+}

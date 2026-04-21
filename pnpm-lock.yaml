@@ -44,9 +44,15 @@ importers:
       '@vyb/app-core':
         specifier: workspace:*
         version: link:../../packages/app-core
+      '@vyb/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@vyb/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@vyb/dataconnect-marketplace-admin':
+        specifier: workspace:*
+        version: link:../../packages/dataconnect/marketplace-admin-sdk
       '@vyb/design-tokens':
         specifier: workspace:*
         version: link:../../packages/design-tokens
@@ -71,6 +77,9 @@ importers:
       react-dom:
         specifier: latest
         version: 19.2.5(react@19.2.5)
+      sharp:
+        specifier: ^0.34.4
+        version: 0.34.5
 
   packages/app-core:
     dependencies:
@@ -84,16 +93,19 @@ importers:
 
   packages/dataconnect/campus-admin-sdk:
     dependencies:
-      '@vyb/dataconnect-campus-admin':
-        specifier: 'file:'
-        version: 'link:'
       firebase-admin:
         specifier: ^13.4.0
         version: 13.8.0
 
   packages/dataconnect/identity-admin-sdk:
     dependencies:
-      '@vyb/dataconnect-identity-admin':
+      firebase-admin:
+        specifier: ^13.4.0
+        version: 13.8.0
+
+  packages/dataconnect/marketplace-admin-sdk:
+    dependencies:
+      '@vyb/dataconnect-marketplace-admin':
         specifier: 'file:'
         version: 'link:'
       firebase-admin:
@@ -102,9 +114,6 @@ importers:
 
   packages/dataconnect/resources-admin-sdk:
     dependencies:
-      '@vyb/dataconnect-resources-admin':
-        specifier: 'file:'
-        version: 'link:'
       firebase-admin:
         specifier: ^13.4.0
         version: 13.8.0
@@ -3932,8 +3941,7 @@ snapshots:
     dependencies:
       hono: 4.12.14
 
-  '@img/colour@1.1.0':
-    optional: true
+  '@img/colour@1.1.0': {}
 
   '@img/sharp-darwin-arm64@0.34.5':
     optionalDependencies:
@@ -4923,8 +4931,7 @@ snapshots:
 
   destroy@1.2.0: {}
 
-  detect-libc@2.1.2:
-    optional: true
+  detect-libc@2.1.2: {}
 
   diff@4.0.4: {}
 
@@ -6687,7 +6694,6 @@ snapshots:
       '@img/sharp-win32-arm64': 0.34.5
       '@img/sharp-win32-ia32': 0.34.5
       '@img/sharp-win32-x64': 0.34.5
-    optional: true
 
   shebang-command@2.0.0:
     dependencies:

@@ -1,0 +1,492 @@
+query ListMarketListingsByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  marketListings(
+    where: {
+      tenantId: { eq: $tenantId }
+      status: { eq: "active" }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    sellerUserId
+    sellerUsername
+    sellerName
+    sellerRole
+    title
+    description
+    category
+    condition
+    priceAmount
+    location
+    campusSpot
+    status
+    createdAt
+  }
+}
+
+query GetMarketListingById($listingId: String!) @auth(level: NO_ACCESS) {
+  marketListing(key: { id: $listingId }) {
+    id
+    tenantId
+    sellerUserId
+    sellerUsername
+    sellerName
+    sellerRole
+    title
+    description
+    category
+    condition
+    priceAmount
+    location
+    campusSpot
+    status
+    createdAt
+    deletedAt
+  }
+}
+
+query ListMarketListingMediaByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  marketListingMediaRecords(
+    where: {
+      tenantId: { eq: $tenantId }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: ASC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    listingId
+    kind
+    url
+    fileName
+    mimeType
+    sizeBytes
+    storagePath
+    createdAt
+  }
+}
+
+query ListMarketRequestsByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  marketRequests(
+    where: {
+      tenantId: { eq: $tenantId }
+      status: { eq: "active" }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    requesterUserId
+    requesterUsername
+    requesterName
+    requesterRole
+    tab
+    tag
+    title
+    detail
+    category
+    campusSpot
+    budgetLabel
+    budgetAmount
+    tone
+    status
+    createdAt
+  }
+}
+
+query GetMarketRequestById($requestId: String!) @auth(level: NO_ACCESS) {
+  marketRequest(key: { id: $requestId }) {
+    id
+    tenantId
+    requesterUserId
+    requesterUsername
+    requesterName
+    requesterRole
+    tab
+    tag
+    title
+    detail
+    category
+    campusSpot
+    budgetLabel
+    budgetAmount
+    tone
+    status
+    createdAt
+    deletedAt
+  }
+}
+
+query ListMarketRequestMediaByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  marketRequestMediaRecords(
+    where: {
+      tenantId: { eq: $tenantId }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: ASC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    requestId
+    kind
+    url
+    fileName
+    mimeType
+    sizeBytes
+    storagePath
+    createdAt
+  }
+}
+
+query ListActiveMarketListingSavesByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  marketListingSaves(
+    where: {
+      tenantId: { eq: $tenantId }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    listingId
+    userId
+    createdAt
+  }
+}
+
+query ListActiveMarketListingSavesByUserAndListing(
+  $tenantId: UUID!
+  $listingId: String!
+  $userId: String!
+  $limit: Int!
+) @auth(level: NO_ACCESS) {
+  marketListingSaves(
+    where: {
+      tenantId: { eq: $tenantId }
+      listingId: { eq: $listingId }
+      userId: { eq: $userId }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    listingId
+    userId
+    createdAt
+  }
+}
+
+query ListActiveMarketListingContactsByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  marketListingContacts(
+    where: {
+      tenantId: { eq: $tenantId }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    listingId
+    fromUserId
+    toUserId
+    message
+    createdAt
+  }
+}
+
+query ListActiveMarketRequestContactsByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  marketRequestContacts(
+    where: {
+      tenantId: { eq: $tenantId }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    requestId
+    fromUserId
+    toUserId
+    message
+    createdAt
+  }
+}
+
+mutation CreateMarketListing(
+  $id: String!
+  $tenantId: UUID!
+  $sellerUserId: String!
+  $sellerUsername: String!
+  $sellerName: String!
+  $sellerRole: String!
+  $title: String!
+  $description: String!
+  $category: String!
+  $condition: String!
+  $priceAmount: Int!
+  $location: String!
+  $campusSpot: String!
+  $createdAt: Timestamp!
+) @auth(level: NO_ACCESS) @transaction {
+  marketListing_insert(
+    data: {
+      id: $id
+      tenantId: $tenantId
+      sellerUserId: $sellerUserId
+      sellerUsername: $sellerUsername
+      sellerName: $sellerName
+      sellerRole: $sellerRole
+      title: $title
+      description: $description
+      category: $category
+      condition: $condition
+      priceAmount: $priceAmount
+      location: $location
+      campusSpot: $campusSpot
+      status: "active"
+      createdAt: $createdAt
+      updatedAt: $createdAt
+    }
+  )
+}
+
+mutation CreateMarketListingMedia(
+  $id: String!
+  $tenantId: UUID!
+  $listingId: String!
+  $kind: String!
+  $url: String!
+  $fileName: String!
+  $mimeType: String!
+  $sizeBytes: Int64!
+  $storagePath: String
+  $createdAt: Timestamp!
+) @auth(level: NO_ACCESS) @transaction {
+  marketListingMedia_insert(
+    data: {
+      id: $id
+      tenantId: $tenantId
+      listingId: $listingId
+      kind: $kind
+      url: $url
+      fileName: $fileName
+      mimeType: $mimeType
+      sizeBytes: $sizeBytes
+      storagePath: $storagePath
+      createdAt: $createdAt
+      updatedAt: $createdAt
+    }
+  )
+}
+
+mutation CreateMarketRequest(
+  $id: String!
+  $tenantId: UUID!
+  $requesterUserId: String!
+  $requesterUsername: String!
+  $requesterName: String!
+  $requesterRole: String!
+  $tab: String!
+  $tag: String!
+  $title: String!
+  $detail: String!
+  $category: String!
+  $campusSpot: String!
+  $budgetLabel: String!
+  $budgetAmount: Int
+  $tone: String!
+  $createdAt: Timestamp!
+) @auth(level: NO_ACCESS) @transaction {
+  marketRequest_insert(
+    data: {
+      id: $id
+      tenantId: $tenantId
+      requesterUserId: $requesterUserId
+      requesterUsername: $requesterUsername
+      requesterName: $requesterName
+      requesterRole: $requesterRole
+      tab: $tab
+      tag: $tag
+      title: $title
+      detail: $detail
+      category: $category
+      campusSpot: $campusSpot
+      budgetLabel: $budgetLabel
+      budgetAmount: $budgetAmount
+      tone: $tone
+      status: "active"
+      createdAt: $createdAt
+      updatedAt: $createdAt
+    }
+  )
+}
+
+mutation CreateMarketRequestMedia(
+  $id: String!
+  $tenantId: UUID!
+  $requestId: String!
+  $kind: String!
+  $url: String!
+  $fileName: String!
+  $mimeType: String!
+  $sizeBytes: Int64!
+  $storagePath: String
+  $createdAt: Timestamp!
+) @auth(level: NO_ACCESS) @transaction {
+  marketRequestMedia_insert(
+    data: {
+      id: $id
+      tenantId: $tenantId
+      requestId: $requestId
+      kind: $kind
+      url: $url
+      fileName: $fileName
+      mimeType: $mimeType
+      sizeBytes: $sizeBytes
+      storagePath: $storagePath
+      createdAt: $createdAt
+      updatedAt: $createdAt
+    }
+  )
+}
+
+mutation UpdateMarketListingDetails(
+  $id: String!
+  $title: String!
+  $description: String!
+  $category: String!
+  $condition: String!
+  $priceAmount: Int!
+  $location: String!
+  $campusSpot: String!
+) @auth(level: NO_ACCESS) @transaction {
+  marketListing_update(
+    key: { id: $id }
+    data: {
+      title: $title
+      description: $description
+      category: $category
+      condition: $condition
+      priceAmount: $priceAmount
+      location: $location
+      campusSpot: $campusSpot
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation MarkMarketListingSold($id: String!) @auth(level: NO_ACCESS) @transaction {
+  marketListing_update(
+    key: { id: $id }
+    data: {
+      status: "sold"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation SoftDeleteMarketListing($id: String!) @auth(level: NO_ACCESS) @transaction {
+  marketListing_update(
+    key: { id: $id }
+    data: {
+      status: "deleted"
+      deletedAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation SoftDeleteMarketListingMedia($id: String!) @auth(level: NO_ACCESS) @transaction {
+  marketListingMedia_update(
+    key: { id: $id }
+    data: {
+      deletedAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation CreateMarketListingSave(
+  $id: String!
+  $tenantId: UUID!
+  $listingId: String!
+  $userId: String!
+  $createdAt: Timestamp!
+) @auth(level: NO_ACCESS) @transaction {
+  marketListingSave_insert(
+    data: {
+      id: $id
+      tenantId: $tenantId
+      listingId: $listingId
+      userId: $userId
+      createdAt: $createdAt
+      updatedAt: $createdAt
+    }
+  )
+}
+
+mutation SoftDeleteMarketListingSave($id: String!) @auth(level: NO_ACCESS) @transaction {
+  marketListingSave_update(
+    key: { id: $id }
+    data: {
+      deletedAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation CreateMarketListingContact(
+  $id: String!
+  $tenantId: UUID!
+  $listingId: String!
+  $fromUserId: String!
+  $toUserId: String!
+  $message: String!
+  $createdAt: Timestamp!
+) @auth(level: NO_ACCESS) @transaction {
+  marketListingContact_insert(
+    data: {
+      id: $id
+      tenantId: $tenantId
+      listingId: $listingId
+      fromUserId: $fromUserId
+      toUserId: $toUserId
+      message: $message
+      createdAt: $createdAt
+      updatedAt: $createdAt
+    }
+  )
+}
+
+mutation CreateMarketRequestContact(
+  $id: String!
+  $tenantId: UUID!
+  $requestId: String!
+  $fromUserId: String!
+  $toUserId: String!
+  $message: String!
+  $createdAt: Timestamp!
+) @auth(level: NO_ACCESS) @transaction {
+  marketRequestContact_insert(
+    data: {
+      id: $id
+      tenantId: $tenantId
+      requestId: $requestId
+      fromUserId: $fromUserId
+      toUserId: $toUserId
+      message: $message
+      createdAt: $createdAt
+      updatedAt: $createdAt
+    }
+  )
+}

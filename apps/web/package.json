@@ -11,7 +11,9 @@
   },
   "dependencies": {
     "@vyb/app-core": "workspace:*",
+    "@vyb/config": "workspace:*",
     "@vyb/contracts": "workspace:*",
+    "@vyb/dataconnect-marketplace-admin": "workspace:*",
     "@vyb/design-tokens": "workspace:*",
     "@vyb/validation": "workspace:*",
     "@vyb/ui-web": "workspace:*",
@@ -19,6 +21,7 @@
     "firebase-admin": "^13.8.0",
     "next": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "sharp": "^0.34.4"
   }
 }

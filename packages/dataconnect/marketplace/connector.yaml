@@ -1,0 +1,6 @@
+connectorId: marketplace
+generate:
+  adminNodeSdk:
+    outputDir: ../marketplace-admin-sdk
+    package: "@vyb/dataconnect-marketplace-admin"
+    packageJsonDir: ../marketplace-admin-sdk

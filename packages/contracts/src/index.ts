@@ -344,3 +344,142 @@ export interface ResourceDetailResponse {
     }>;
   };
 }
+
+export type MarketTab = "sale" | "buying" | "lend";
+export type MarketRequestTab = Exclude<MarketTab, "sale">;
+export type MarketTone = "violet" | "magenta" | "cyan";
+export type MarketMediaKind = "image" | "video";
+
+export interface MarketActorSummary {
+  userId: string;
+  username: string;
+  displayName: string;
+  role: MembershipSummary["role"];
+}
+
+export interface MarketMediaAsset {
+  id: string;
+  kind: MarketMediaKind;
+  url: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  storagePath: string | null;
+}
+
+export interface MarketListing {
+  id: string;
+  tenantId: string;
+  seller: MarketActorSummary;
+  title: string;
+  description: string;
+  category: string;
+  condition: string;
+  priceAmount: number;
+  location: string;
+  campusSpot: string;
+  media: MarketMediaAsset[];
+  createdAt: string;
+  savedCount: number;
+  inquiryCount: number;
+  isSaved: boolean;
+}
+
+export interface MarketRequest {
+  id: string;
+  tenantId: string;
+  tab: MarketRequestTab;
+  requester: MarketActorSummary;
+  tag: string;
+  title: string;
+  detail: string;
+  category: string;
+  campusSpot: string;
+  media: MarketMediaAsset[];
+  budgetLabel: string;
+  budgetAmount: number | null;
+  tone: MarketTone;
+  createdAt: string;
+  responseCount: number;
+}
+
+export interface MarketViewerSummary {
+  userId: string;
+  username: string;
+  savedCount: number;
+}
+
+export interface MarketDashboardResponse {
+  tenantId: string;
+  viewer: MarketViewerSummary;
+  listings: MarketListing[];
+  requests: MarketRequest[];
+  viewerActiveListings: MarketListing[];
+  viewerActiveRequests: MarketRequest[];
+}
+
+export interface CreateMarketPostRequest {
+  tab: MarketTab;
+  title: string;
+  category: string;
+  description: string;
+  location?: string | null;
+  campusSpot?: string | null;
+  imageUrl?: string | null;
+  media?: MarketMediaAsset[];
+  condition?: string | null;
+  priceAmount?: number | null;
+  budgetAmount?: number | null;
+  budgetLabel?: string | null;
+  tag?: string | null;
+}
+
+export interface CreateMarketPostResponse {
+  dashboard: MarketDashboardResponse;
+  itemId: string;
+  itemType: "listing" | "request";
+}
+
+export interface UpdateMarketListingRequest {
+  listingId: string;
+  title: string;
+  category: string;
+  description: string;
+  condition?: string | null;
+  priceAmount: number;
+  keepMediaIds?: string[];
+  media?: MarketMediaAsset[];
+}
+
+export interface UpdateMarketListingResponse {
+  dashboard: MarketDashboardResponse;
+  listingId: string;
+}
+
+export interface ManageMarketListingResponse {
+  dashboard: MarketDashboardResponse;
+  listingId: string;
+  action: "sold" | "deleted";
+}
+
+export interface ToggleMarketSaveRequest {
+  listingId: string;
+}
+
+export interface ToggleMarketSaveResponse {
+  dashboard: MarketDashboardResponse;
+  listingId: string;
+  isSaved: boolean;
+}
+
+export interface ContactMarketPostRequest {
+  targetId: string;
+  targetType: "listing" | "request";
+  message: string;
+}
+
+export interface ContactMarketPostResponse {
+  dashboard: MarketDashboardResponse;
+  targetId: string;
+  targetType: "listing" | "request";
+}
