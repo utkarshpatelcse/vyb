@@ -24,9 +24,9 @@ export default async function OnboardingPage() {
   return (
     <main className="vyb-auth-page">
       <div className="vyb-auth-glow" aria-hidden="true" />
-      <div className="vyb-auth-shell">
-        <div className="vyb-profile-page">
-          <div className="vyb-profile-topbar">
+      <div className="vyb-auth-shell vyb-onboarding-shell">
+        <div className="vyb-onboarding-page">
+          <div className="vyb-onboarding-topbar">
             <div className="vyb-home-brand">
               <span>V</span>
               <div>

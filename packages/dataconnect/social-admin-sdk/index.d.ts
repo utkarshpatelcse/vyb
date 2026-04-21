@@ -356,6 +356,41 @@ export interface ListStoriesByTenantVariables {
   limit: number;
 }
 
+export interface MarketListingContact_Key {
+  id: string;
+  __typename?: 'MarketListingContact_Key';
+}
+
+export interface MarketListingMedia_Key {
+  id: string;
+  __typename?: 'MarketListingMedia_Key';
+}
+
+export interface MarketListingSave_Key {
+  id: string;
+  __typename?: 'MarketListingSave_Key';
+}
+
+export interface MarketListing_Key {
+  id: string;
+  __typename?: 'MarketListing_Key';
+}
+
+export interface MarketRequestContact_Key {
+  id: string;
+  __typename?: 'MarketRequestContact_Key';
+}
+
+export interface MarketRequestMedia_Key {
+  id: string;
+  __typename?: 'MarketRequestMedia_Key';
+}
+
+export interface MarketRequest_Key {
+  id: string;
+  __typename?: 'MarketRequest_Key';
+}
+
 export interface ModerationCase_Key {
   id: UUIDString;
   __typename?: 'ModerationCase_Key';

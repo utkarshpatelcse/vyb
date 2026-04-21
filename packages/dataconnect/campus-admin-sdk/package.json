@@ -21,8 +21,5 @@
   },
   "peerDependencies": {
     "firebase-admin": "^13.4.0"
-  },
-  "dependencies": {
-    "@vyb/dataconnect-campus-admin": "file:"
   }
 }

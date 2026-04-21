@@ -93,6 +93,11 @@ export interface CreateTenantVariables {
   status: string;
 }
 
+export interface Follow_Key {
+  id: UUIDString;
+  __typename?: 'Follow_Key';
+}
+
 export interface GetCommunityBySlugData {
   communities: ({
     id: UUIDString;
@@ -201,6 +206,41 @@ export interface ListCommunitiesForMembershipVariables {
   membershipId: UUIDString;
 }
 
+export interface MarketListingContact_Key {
+  id: string;
+  __typename?: 'MarketListingContact_Key';
+}
+
+export interface MarketListingMedia_Key {
+  id: string;
+  __typename?: 'MarketListingMedia_Key';
+}
+
+export interface MarketListingSave_Key {
+  id: string;
+  __typename?: 'MarketListingSave_Key';
+}
+
+export interface MarketListing_Key {
+  id: string;
+  __typename?: 'MarketListing_Key';
+}
+
+export interface MarketRequestContact_Key {
+  id: string;
+  __typename?: 'MarketRequestContact_Key';
+}
+
+export interface MarketRequestMedia_Key {
+  id: string;
+  __typename?: 'MarketRequestMedia_Key';
+}
+
+export interface MarketRequest_Key {
+  id: string;
+  __typename?: 'MarketRequest_Key';
+}
+
 export interface ModerationCase_Key {
   id: UUIDString;
   __typename?: 'ModerationCase_Key';
@@ -234,6 +274,11 @@ export interface ResourceFile_Key {
 export interface Resource_Key {
   id: UUIDString;
   __typename?: 'Resource_Key';
+}
+
+export interface Story_Key {
+  id: UUIDString;
+  __typename?: 'Story_Key';
 }
 
 export interface TenantDomain_Key {
