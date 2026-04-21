@@ -13,7 +13,7 @@ This guide explains how to deploy the current `apps/backend` modular-monolith ru
 - Firebase project: `vybnet-e2242`
 - Data Connect service: `vyb`
 - Data Connect location: `asia-south1`
-- launch campus domain: `kiet.edu`
+- current first-onboarded college domain: `kiet.edu`
 - frontend hosting: Vercel
 - backend hosting: Cloud Run
 
@@ -73,12 +73,13 @@ Copy the example file and fill the real values:
 cp deploy/cloudrun/backend.env.example deploy/cloudrun/backend.env
 ```
 
-Recommended launch values:
+Recommended current rollout values:
 
 - `FIREBASE_PROJECT_ID=vybnet-e2242`
 - `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=vybnet-e2242.firebasestorage.app`
 - `FIREBASE_DATACONNECT_SERVICE_ID=vyb`
 - `FIREBASE_DATACONNECT_LOCATION=asia-south1`
+- `VYB_DEFAULT_TENANT_SLUG` and `VYB_DEFAULT_TENANT_DOMAIN` should point to the first onboarded college for the environment you are deploying
 - `VYB_DEFAULT_TENANT_SLUG=kiet`
 - `VYB_DEFAULT_TENANT_DOMAIN=kiet.edu`
 - `VYB_INTERNAL_API_KEY=<long-random-secret>`
@@ -106,11 +107,11 @@ pnpm --filter @vyb/backend start
 After deploy, open the generated `run.app` URL and verify:
 
 - `GET /health` returns `status: ok`
-- `GET /v1/client-shell` returns the launch campus payload
+- `GET /v1/client-shell` returns the current tenant shell payload
 
 ## 9. Data Connect And Tenant Bootstrap
 
-If the live tenant scaffold is not already prepared, run:
+If the live tenant scaffold for the current first-college rollout is not already prepared, run:
 
 ```bash
 pnpm dc:deploy
@@ -136,7 +137,7 @@ Verify these flows:
 
 1. `/` renders
 2. `/login` renders
-3. Google login with a `@kiet.edu` account succeeds
+3. Google login with an account from the currently approved college domain succeeds
 4. new user reaches `/onboarding`
 5. onboarding submit succeeds
 6. user lands on `/home`

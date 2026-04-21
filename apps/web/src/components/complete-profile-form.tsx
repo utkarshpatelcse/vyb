@@ -218,7 +218,7 @@ export function CompleteProfileForm({
         <span className="vyb-page-badge">Profile Setup</span>
         <h1>Complete your campus profile</h1>
         <p>
-          Finish your verified KIET profile so we can place you inside the correct community and dashboard
+          Finish your verified campus profile so we can place you inside the correct community and dashboard
           scope from day one.
         </p>
       </div>

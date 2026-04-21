@@ -18,7 +18,13 @@ import {
   type User
 } from "firebase/auth";
 import { createGoogleProvider, getFirebaseClientAuth, isFirebaseClientConfigured } from "../lib/firebase-client";
-import { getCollegeEmailMessage, isAllowedCollegeEmail, launchCollege, normalizeEmail } from "../lib/college-access";
+import {
+  getCollegeEmailMessage,
+  getCollegeEmailPlaceholder,
+  isAllowedCollegeEmail,
+  launchCollege,
+  normalizeEmail
+} from "../lib/college-access";
 
 type Mode = "sign-in" | "sign-up";
 type FeedbackTone = "neutral" | "success" | "error";
@@ -677,7 +683,7 @@ export function DevSessionCard({
           buildFeedback({
             tone: "success",
             title: "Verification link sent",
-            message: `Your account has been created. Verify your ${launchCollege.domain} email from your inbox to continue.`
+            message: "Your account has been created. Verify your approved college email from your inbox to continue."
           })
         );
         logAuthEvent("info", "email-signup:verification-sent", {
@@ -975,7 +981,7 @@ export function DevSessionCard({
           <span>V</span>
           <div>
             <strong>VYB</strong>
-            <p>{launchCollege.domain} only</p>
+            <p>Verified college access</p>
           </div>
         </div>
 
@@ -1006,7 +1012,7 @@ export function DevSessionCard({
             <input
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              placeholder={`you@${launchCollege.domain}`}
+              placeholder={getCollegeEmailPlaceholder()}
               type="email"
               autoComplete="email"
             />

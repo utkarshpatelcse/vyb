@@ -106,7 +106,7 @@ const MARKET_ITEMS: MarketItem[] = [
     id: "5",
     price: "Rs 5,400",
     title: "Scientific Calculator Kit",
-    location: "Kiet Arcade",
+    location: "Campus Arcade",
     imageUrl: "https://images.unsplash.com/photo-1545239351-1141bd82e8a6?w=900&q=80&auto=format&fit=crop",
     seller: "ece.core",
     condition: "Exam ready",

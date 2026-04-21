@@ -46,7 +46,7 @@ const EVENTS: EventItem[] = [
     id: "1",
     title: "Neon Night Showcase",
     club: "Cultural Council",
-    host: "culture.kiet",
+    host: "culture.live",
     description: "Student performances, live visuals, crowd moments, and late-evening campus energy in one outdoor setup.",
     location: "Central lawn",
     time: "Fri, 7:30 PM",
@@ -61,7 +61,7 @@ const EVENTS: EventItem[] = [
     id: "2",
     title: "Hack Sprint Zero",
     club: "CodeCell",
-    host: "codecell.kiet",
+    host: "codecell.live",
     description: "A quick pre-hackathon mixer with demo tables, team matching, and a fast mentor round.",
     location: "Innovation lab",
     time: "Sat, 10:00 AM",
@@ -643,11 +643,11 @@ export function CampusEventsShell({
           <span className="vyb-campus-side-label">Hot clubs</span>
           <div className="vyb-events-side-list">
             <div className="vyb-events-side-list-item">
-              <strong>culture.kiet</strong>
+              <strong>culture.live</strong>
               <span>Carrying the biggest social turnout this week across music and performance nights.</span>
             </div>
             <div className="vyb-events-side-list-item">
-              <strong>codecell.kiet</strong>
+              <strong>codecell.live</strong>
               <span>Driving the strongest builder attendance with sprint rooms and fast RSVP conversion.</span>
             </div>
           </div>

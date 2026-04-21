@@ -71,8 +71,7 @@ const server = createServer(async (request, response) => {
         hero: {
           eyebrow: "Verified Campus Network",
           title: "One trusted home for college identity, community, and utility.",
-          summary:
-            "Vyb is building the digital operating system for verified campus life, starting with KIET Group of Institutions Delhi-NCR."
+          summary: "Vyb is a multi-tenant platform for verified campus life, built to onboard one trusted campus at a time."
         },
         pillars: [
           {

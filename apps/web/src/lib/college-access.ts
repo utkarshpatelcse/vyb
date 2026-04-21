@@ -4,6 +4,8 @@ export const launchCollege = {
   domain: "kiet.edu"
 } as const;
 
+const displayCollegeFallback = "Your campus";
+
 export const yearOptions = [1, 2, 3, 4, 5, 6] as const;
 export const courseCatalog = {
   "B.Tech": {
@@ -84,7 +86,20 @@ export function isAllowedCollegeEmail(email: string) {
 }
 
 export function getCollegeEmailMessage() {
-  return `Use your @${launchCollege.domain} email address to continue.`;
+  return "Use your approved college email address to continue.";
+}
+
+export function getCollegeEmailPlaceholder() {
+  return "you@college.edu";
+}
+
+export function getDisplayCollegeName(value?: string | null) {
+  const normalized = value?.trim();
+  if (!normalized) {
+    return displayCollegeFallback;
+  }
+
+  return normalized.toLowerCase() === launchCollege.name.toLowerCase() ? displayCollegeFallback : normalized;
 }
 
 export function getStreamOptions(course: string) {

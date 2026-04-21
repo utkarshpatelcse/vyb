@@ -2,7 +2,7 @@
 
 Owner: Architecture Team
 Last Updated: 2026-04-19
-Change Summary: Added the backend session-bootstrap contract for verified KIET-first web authentication with authenticated home-feed routing.
+Change Summary: Added the backend session-bootstrap contract for verified first-college web authentication with authenticated home-feed routing.
 
 ## 1. Metadata
 
@@ -19,7 +19,7 @@ Change Summary: Added the backend session-bootstrap contract for verified KIET-f
 - Method: `POST`
 - Path: `/v1/auth/session/bootstrap`
 - Public or internal: public through backend
-- Purpose: verify a Firebase ID token, enforce launch-domain access, and return the authenticated session payload plus the next route decision for `/home` or `/onboarding`
+- Purpose: verify a Firebase ID token, enforce approved-college-domain access for the current rollout, and return the authenticated session payload plus the next route decision for `/home` or `/onboarding`
 
 ## 3. Authentication and Authorization
 
@@ -46,7 +46,7 @@ Change Summary: Added the backend session-bootstrap contract for verified KIET-f
 - Validation errors: missing token or malformed JSON
 - Auth errors: invalid token or unverified email
 - Authorization errors: invalid college domain or unresolved campus access
-- Domain errors: disallowed launch campus email
+- Domain errors: disallowed or not-yet-approved college email domain
 - Retryable errors: backend membership resolution failure
 
 ## 7. Side Effects

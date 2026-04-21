@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { CampusProfileShell } from "../../src/components/campus-profile-shell";
 import { getCampusUserProfile, getViewerMe, getViewerProfile } from "../../src/lib/backend";
+import { getDisplayCollegeName } from "../../src/lib/college-access";
 import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
 
 export default async function DashboardPage() {
@@ -21,12 +22,13 @@ export default async function DashboardPage() {
   }
 
   const publicProfile = await getCampusUserProfile(viewer, profile.profile.username).catch(() => null);
+  const displayCollegeName = getDisplayCollegeName(profile.collegeName);
 
   return (
     <CampusProfileShell
       viewerName={publicProfile?.profile.displayName ?? profile.profile.fullName ?? viewer.displayName}
       username={publicProfile?.profile.username ?? profile.profile.username}
-      collegeName={profile.collegeName}
+      collegeName={displayCollegeName}
       viewerEmail={viewer.email}
       course={profile.profile.course}
       stream={profile.profile.stream}

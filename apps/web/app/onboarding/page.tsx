@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { CompleteProfileForm } from "../../src/components/complete-profile-form";
 import { SignOutButton } from "../../src/components/sign-out-button";
 import { getViewerProfile } from "../../src/lib/backend";
+import { getDisplayCollegeName } from "../../src/lib/college-access";
 import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
 
 export default async function OnboardingPage() {
@@ -17,6 +18,8 @@ export default async function OnboardingPage() {
   if (profile?.profileCompleted) {
     redirect("/home");
   }
+
+  const displayCollegeName = getDisplayCollegeName(profile?.collegeName);
 
   return (
     <main className="vyb-auth-page">
@@ -40,7 +43,7 @@ export default async function OnboardingPage() {
               email: viewer.email
             }}
             initialProfile={profile?.profile ?? null}
-            collegeName={profile?.collegeName ?? "KIET Group of Institutions Delhi-NCR"}
+            collegeName={displayCollegeName}
           />
         </div>
       </div>

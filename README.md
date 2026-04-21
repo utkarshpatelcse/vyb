@@ -1,6 +1,6 @@
 # Vyb
 
-Modular-monolith campus platform architecture with a responsive web client in Phase 1 and a future native mobile client.
+Multi-tenant campus platform architecture with a responsive web client in Phase 1 and a future native mobile client.
 
 ## Current State
 
@@ -18,7 +18,8 @@ Modular-monolith campus platform architecture with a responsive web client in Ph
 - Identity, campus, social, and resources modules now attempt live Data Connect reads/writes with local fallback
 - The `vyb` Data Connect service is deployed in `asia-south1` on project `vybnet-e2242`
 - Firebase Admin now isolates Data Connect connectors per app instance to avoid cross-connector operation cache collisions
-- Local dev can fall back to a configured tenant slug/domain while the stricter domain lookup path is still being hardened
+- Vyb remains the product brand; any college-specific config in this repo is only rollout reference data for the first onboarded tenant
+- Local dev can fall back to a configured tenant slug/domain for the current first onboarded college while the stricter domain lookup path is still being hardened
 - Unknown college domains are intended to flow into an admin-reviewed college join-request workflow instead of creating tenants automatically
 - The repo now includes Cloud Run deployment assets for the backend monolith and a deployment guide for the current `vybnet-e2242` project
 

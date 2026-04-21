@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { CampusReelsShell } from "../../src/components/campus-reels-shell";
 import { getCampusVibes, getViewerMe, getViewerProfile } from "../../src/lib/backend";
+import { getDisplayCollegeName } from "../../src/lib/college-access";
 import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
 
 export default async function VibesPage() {
@@ -22,12 +23,13 @@ export default async function VibesPage() {
   }
 
   const viewerName = profile.profile?.fullName ?? viewer.displayName;
+  const displayCollegeName = getDisplayCollegeName(profile.collegeName);
 
   return (
     <CampusReelsShell
       viewerName={viewerName}
       viewerUsername={profile.profile?.username ?? viewer.email.split("@")[0]}
-      collegeName={profile.collegeName}
+      collegeName={displayCollegeName}
       viewerEmail={viewer.email}
       course={profile.profile?.course}
       stream={profile.profile?.stream}

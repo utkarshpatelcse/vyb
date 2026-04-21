@@ -70,7 +70,7 @@ function buildFallbackUsername(value: string) {
 }
 
 function buildCollegeName(existing?: string | null) {
-  return existing?.trim() || launchCollege.name;
+  return existing?.trim() || "Your campus";
 }
 
 export async function readFallbackProfile(userId: string) {

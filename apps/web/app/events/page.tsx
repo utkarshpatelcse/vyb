@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getViewerMe, getViewerProfile } from "../../src/lib/backend";
 import { CampusEventsShell } from "../../src/components/campus-events-shell";
+import { getDisplayCollegeName } from "../../src/lib/college-access";
 import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
 
 export default async function EventsPage() {
@@ -18,11 +19,12 @@ export default async function EventsPage() {
   }
 
   const viewerName = profile.profile?.fullName ?? viewer.displayName;
+  const displayCollegeName = getDisplayCollegeName(profile.collegeName);
 
   return (
     <CampusEventsShell
       viewerName={viewerName}
-      collegeName={profile.collegeName}
+      collegeName={displayCollegeName}
       viewerEmail={viewer.email}
       course={profile.profile?.course}
       stream={profile.profile?.stream}

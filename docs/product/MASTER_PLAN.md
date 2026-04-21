@@ -2,7 +2,7 @@
 
 Owner: Product and Engineering
 Last Updated: 2026-04-19
-Change Summary: Added the KIET-first professional web entry flow, backend-verified session bootstrap, mandatory profile completion gating, the authenticated `/home` feed landing surface, the Phase 1 Cloud Run plus Vercel hosting preparation, and the first live campus-social flow for posts, stories, vibes, search, follows, and user IDs.
+Change Summary: Added the first-college professional web entry flow, backend-verified session bootstrap, mandatory profile completion gating, the authenticated `/home` feed landing surface, the Phase 1 Cloud Run plus Vercel hosting preparation, and the first live campus-social flow for posts, stories, vibes, search, follows, and user IDs.
 
 ## 1. Why We Are Building This
 
@@ -24,7 +24,7 @@ What is decided:
 - PostgreSQL via Firebase Data Connect is the system of record
 - Firebase Storage will hold uploaded media and files
 - Firebase Auth is the identity provider
-- the launch campus is KIET Group of Institutions Delhi-NCR with `@kiet.edu` as the only approved auth domain for now
+- the platform is multi-tenant, with KIET Group of Institutions Delhi-NCR currently serving only as the first onboarded college and `@kiet.edu` as the only live approved auth domain for now
 - the Phase 1 client is responsive web, but the backend and shared packages must stay native-ready
 - unknown college domains must go through an admin-reviewed join-request flow
 - wallet, competitions, and anonymous features are deferred until the base is stable
@@ -140,7 +140,7 @@ After implementation:
 - Phase 1 LLDs created for identity, campus, social, and resources
 - workspace tooling scaffolded with pnpm workspaces and Turbo
 - responsive PWA-first web shell scaffolded
-- professional SSR home page and responsive auth shell are now implemented for the current KIET-first launch flow
+- professional SSR home page and responsive auth shell are now implemented for the current first-college rollout flow
 - web shell connected to backend reads with graceful fallback
 - Firebase Auth login plus secure cookie-backed web session is scaffolded
 - backend session bootstrap now verifies Firebase tokens before issuing the web session cookie
@@ -161,7 +161,7 @@ After implementation:
 - a repo-level Cloud Build configuration now exists for optional automatic backend deployment from the `main` branch
 - a Cloud Run deployment guide and hosting ADR now document the production web plus backend rollout path
 - Phase 1 API contracts and query reviews created
-- KIET tenant and `@kiet.edu` domain were seeded successfully
+- the initial KIET tenant and `@kiet.edu` domain were seeded successfully for the current rollout
 - live identity, campus, social-create, and resources-create flows were verified against remote Data Connect
 - Phase 1 backend runtime has now been collapsed into one modular monolith app with internal domain modules
 - local development is now intended to run as `pnpm dev` or `web + backend`, not six separate terminals

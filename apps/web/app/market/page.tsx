@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getViewerMe, getViewerProfile } from "../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
 import { CampusMarketShell } from "../../src/components/campus-market-shell";
+import { getDisplayCollegeName } from "../../src/lib/college-access";
 
 export default async function MarketPage() {
   const viewer = readDevSessionFromCookieStore(await cookies());
@@ -20,10 +21,12 @@ export default async function MarketPage() {
     redirect("/onboarding");
   }
 
+  const displayCollegeName = getDisplayCollegeName(profile.collegeName);
+
   return (
     <CampusMarketShell
       viewerName={profile.profile?.fullName ?? viewer.displayName}
-      collegeName={profile.collegeName}
+      collegeName={displayCollegeName}
       viewerEmail={viewer.email}
       course={profile.profile?.course}
       stream={profile.profile?.stream}

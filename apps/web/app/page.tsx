@@ -2,6 +2,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getClientShellData } from "../src/lib/backend";
+import { getDisplayCollegeName } from "../src/lib/college-access";
 import { PROFILE_COMPLETION_COOKIE, readDevSessionFromCookieStore } from "../src/lib/dev-session";
 
 export default async function HomePage() {
@@ -14,6 +15,7 @@ export default async function HomePage() {
   }
 
   const shell = await getClientShellData();
+  const displayCollegeName = getDisplayCollegeName(shell.launchCampus.name);
 
   return (
     <main className="vyb-home">
@@ -109,10 +111,8 @@ export default async function HomePage() {
         <section id="launch" className="vyb-home-section vyb-launch-panel">
           <div className="vyb-section-head">
             <span className="vyb-page-badge">Launch Campus</span>
-            <h2>{shell.launchCampus.name}</h2>
-            <p>
-              Access is currently limited to verified <strong>{shell.launchCampus.domain}</strong> accounts.
-            </p>
+            <h2>{displayCollegeName}</h2>
+            <p>Access is currently limited to verified college accounts for the current rollout.</p>
           </div>
         </section>
       </div>

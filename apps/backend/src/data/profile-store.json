@@ -4,7 +4,7 @@
       "userId": "H7R1veGKRIfPHjOLLSIJTAndoQ32",
       "tenantId": "0a115f7c6bd94d58868eb16b1fc87fbb",
       "primaryEmail": "ashwani.2226cse1211@kiet.edu",
-      "collegeName": "Kiet College",
+      "collegeName": "Your campus",
       "firstName": "Ashwani",
       "lastName": null,
       "fullName": "Ashwani",
@@ -24,7 +24,7 @@
       "userId": "nk3IU15zsZSLl0VRhuog5KZPDvn1",
       "tenantId": "0a115f7c6bd94d58868eb16b1fc87fbb",
       "primaryEmail": "utkarsh.2226cse1210@kiet.edu",
-      "collegeName": "Kiet College",
+      "collegeName": "Your campus",
       "firstName": "Vyb",
       "lastName": "Student",
       "fullName": "Vyb Student",
@@ -38,7 +38,7 @@
       "phoneNumber": null,
       "profileCompleted": true,
       "createdAt": "2026-04-19T09:34:17.502Z",
-      "updatedAt": "2026-04-19T09:34:17.502Z"
+      "updatedAt": "2026-04-19T13:09:19.383Z"
     }
   ]
 }

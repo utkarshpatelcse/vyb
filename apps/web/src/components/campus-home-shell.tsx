@@ -444,7 +444,7 @@ export function CampusHomeShell({
             {feedPosts.length === 0 ? (
               <div className="vyb-campus-empty-state">
                 <strong>No campus posts yet</strong>
-                <span>Be the first one to publish something everyone at KIET can see.</span>
+                <span>Be the first one to publish something everyone on your campus can see.</span>
               </div>
             ) : null}
 
