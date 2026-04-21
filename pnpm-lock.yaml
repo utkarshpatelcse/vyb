@@ -111,9 +111,6 @@ importers:
 
   packages/dataconnect/social-admin-sdk:
     dependencies:
-      '@vyb/dataconnect-social-admin':
-        specifier: 'file:'
-        version: 'link:'
       firebase-admin:
         specifier: ^13.4.0
         version: 13.8.0
