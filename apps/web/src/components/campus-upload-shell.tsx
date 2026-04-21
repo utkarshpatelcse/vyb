@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import type { CampusUploadKind, CampusUploadMediaKind } from "../lib/campus-upload-store";
+import { formatBytes, prepareSocialUploadFile, uploadSocialMediaAsset } from "../lib/social-media-client";
 
 type CampusUploadShellProps = {
   collegeName: string;
@@ -136,15 +137,7 @@ function parseKind(value: string | null): CampusUploadKind {
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 10 * 1024 * 1024;
-
-function fileToDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.onerror = () => reject(new Error("We could not read this file."));
-    reader.readAsDataURL(file);
-  });
-}
+const TARGET_VIDEO_BYTES = 8 * 1024 * 1024;
 
 function getSummary(kind: CampusUploadKind) {
   if (kind === "story") {
@@ -247,6 +240,7 @@ export function CampusUploadShell({
   const [durationSeconds, setDurationSeconds] = useState<number | null>(null);
   const [isPortraitVideo, setIsPortraitVideo] = useState<boolean | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [isPreparingMedia, setIsPreparingMedia] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -290,30 +284,46 @@ export function CampusUploadShell({
       return;
     }
 
-    if (mediaUrl?.startsWith("blob:")) {
-      URL.revokeObjectURL(mediaUrl);
-    }
-
-    const objectUrl = URL.createObjectURL(file);
-    setMediaUrl(objectUrl);
-    setSelectedFile(file);
-    setMediaKind(nextMediaKind);
+    setIsPreparingMedia(true);
     setDurationSeconds(null);
     setIsPortraitVideo(null);
-    setMessage(null);
+    setMessage(nextMediaKind === "video" ? "Optimizing your video for upload..." : null);
 
-    if (nextMediaKind === "video") {
-      try {
-        const metadata = await loadVideoMetadata(file);
+    try {
+      const prepared =
+        nextMediaKind === "video"
+          ? await prepareSocialUploadFile(file, {
+              maxVideoBytes: MAX_VIDEO_BYTES,
+              targetVideoBytes: TARGET_VIDEO_BYTES
+            })
+          : {
+              file,
+              optimizationSummary: null
+            };
+      const preparedFile = prepared.file;
+      const objectUrl = URL.createObjectURL(preparedFile);
+
+      if (mediaUrl?.startsWith("blob:")) {
+        URL.revokeObjectURL(mediaUrl);
+      }
+
+      setMediaUrl(objectUrl);
+      setSelectedFile(preparedFile);
+      setMediaKind(nextMediaKind);
+      setMessage(prepared.optimizationSummary);
+
+      if (nextMediaKind === "video") {
+        const metadata = await loadVideoMetadata(preparedFile);
         setDurationSeconds(metadata.duration);
         setIsPortraitVideo(metadata.height > metadata.width);
-      } catch {
-        setMessage("We could not read that video. Try a different file.");
+      } else {
+        setIsPortraitVideo(null);
       }
-      return;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "We could not prepare this media right now.");
+    } finally {
+      setIsPreparingMedia(false);
     }
-
-    setIsPortraitVideo(null);
   }
 
   function handleClose() {
@@ -322,6 +332,11 @@ export function CampusUploadShell({
 
   async function handlePublish() {
     const trimmedCaption = caption.trim();
+
+    if (isPreparingMedia) {
+      setMessage("Please wait until the media is ready.");
+      return;
+    }
 
     if (selectedKind !== "post" && !mediaUrl) {
       setMessage("Story and Vibes uploads need media before publishing.");
@@ -362,28 +377,37 @@ export function CampusUploadShell({
     setMessage(null);
 
     try {
-      const uploadedMediaUrl = selectedFile ? await fileToDataUrl(selectedFile) : null;
-        const route = selectedKind === "story" ? "/api/stories" : selectedKind === "vibe" ? "/api/vibes" : "/api/posts";
+      const uploadedMedia = selectedFile ? await uploadSocialMediaAsset(selectedFile, selectedKind) : null;
+      const route = selectedKind === "story" ? "/api/stories" : selectedKind === "vibe" ? "/api/vibes" : "/api/posts";
       const inferredTitle = trimmedCaption ? trimmedCaption.slice(0, 72) : "";
       const payload =
         selectedKind === "story"
           ? {
               mediaType: mediaKind,
-              mediaUrl: uploadedMediaUrl,
+              mediaUrl: uploadedMedia?.url ?? null,
+              mediaStoragePath: uploadedMedia?.storagePath ?? null,
+              mediaMimeType: uploadedMedia?.mimeType ?? null,
+              mediaSizeBytes: uploadedMedia?.sizeBytes ?? null,
               caption: trimmedCaption || null
             }
           : selectedKind === "vibe"
             ? {
                 title: inferredTitle || null,
                 body: trimmedCaption || "Fresh campus vibe.",
-                mediaUrl: uploadedMediaUrl,
+                mediaUrl: uploadedMedia?.url ?? null,
+                mediaStoragePath: uploadedMedia?.storagePath ?? null,
+                mediaMimeType: uploadedMedia?.mimeType ?? null,
+                mediaSizeBytes: uploadedMedia?.sizeBytes ?? null,
                 location: collegeName
               }
             : {
                 title: inferredTitle,
                 body: trimmedCaption || "",
                 kind: mediaKind ?? "text",
-                mediaUrl: uploadedMediaUrl,
+                mediaUrl: uploadedMedia?.url ?? null,
+                mediaStoragePath: uploadedMedia?.storagePath ?? null,
+                mediaMimeType: uploadedMedia?.mimeType ?? null,
+                mediaSizeBytes: uploadedMedia?.sizeBytes ?? null,
                 location: collegeName
               };
 
@@ -404,14 +428,23 @@ export function CampusUploadShell({
         | null;
 
       if (!response.ok) {
+        console.error("[upload-composer] publish-failed", {
+          route,
+          status: response.status,
+          error: responsePayload?.error?.message ?? null
+        });
         setMessage(responsePayload?.error?.message ?? "We could not publish this right now.");
         return;
       }
 
       router.push(returnTo);
       router.refresh();
-    } catch {
-      setMessage("We could not publish this right now.");
+    } catch (error) {
+      console.error("[upload-composer] publish-request-failed", {
+        kind: selectedKind,
+        message: error instanceof Error ? error.message : "unknown"
+      });
+      setMessage(error instanceof Error ? error.message : "We could not publish this right now.");
     } finally {
       setIsPublishing(false);
     }
@@ -434,9 +467,9 @@ export function CampusUploadShell({
               type="button"
               className={`vyb-upload-submit-top${canPublish ? " is-active" : ""}`}
               onClick={handlePublish}
-              disabled={!canPublish || isPublishing}
+              disabled={!canPublish || isPublishing || isPreparingMedia}
             >
-              {isPublishing ? "Posting..." : summary.button}
+              {isPreparingMedia ? "Preparing..." : isPublishing ? "Posting..." : summary.button}
             </button>
             <button type="button" className="vyb-upload-close" onClick={handleClose} aria-label="Close composer">
               <CloseIcon />
@@ -481,7 +514,7 @@ export function CampusUploadShell({
                 onChange={(event) => setCaption(event.target.value)}
                 placeholder={summary.captionPlaceholder}
                 rows={selectedKind === "story" ? 6 : 7}
-                disabled={isPublishing}
+                disabled={isPublishing || isPreparingMedia}
               />
             </label>
 
@@ -561,6 +594,7 @@ export function CampusUploadShell({
 
               <div className="vyb-upload-preview-meta">
                 <span>{mediaKind === "video" ? "Video selected" : mediaKind === "image" ? "Image selected" : "No media selected"}</span>
+                {selectedFile ? <span>Size: {formatBytes(selectedFile.size)}</span> : null}
                 {durationSeconds ? <span>Duration: {formatDuration(durationSeconds)}</span> : null}
                 {selectedKind === "vibe" ? (
                   <span>{isPortraitVideo === false ? "Landscape video selected" : "Portrait-ready clip"}</span>
@@ -574,6 +608,7 @@ export function CampusUploadShell({
               type="file"
               accept={selectedKind === "vibe" ? "video/*" : "image/*,video/*"}
               className="vyb-reels-file-input"
+              disabled={isPreparingMedia || isPublishing}
               onChange={handleMediaChange}
             />
           </aside>
@@ -588,11 +623,11 @@ export function CampusUploadShell({
           </div>
 
           <div className="vyb-upload-footer-actions">
-            <button type="button" className="vyb-upload-secondary-button" onClick={handleClose} disabled={isPublishing}>
+            <button type="button" className="vyb-upload-secondary-button" onClick={handleClose} disabled={isPublishing || isPreparingMedia}>
               Cancel
             </button>
-            <button type="button" className="vyb-upload-primary-button" onClick={handlePublish} disabled={!canPublish || isPublishing}>
-              {isPublishing ? "Publishing..." : summary.button}
+            <button type="button" className="vyb-upload-primary-button" onClick={handlePublish} disabled={!canPublish || isPublishing || isPreparingMedia}>
+              {isPreparingMedia ? "Preparing..." : isPublishing ? "Publishing..." : summary.button}
             </button>
           </div>
         </footer>

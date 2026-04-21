@@ -11,16 +11,6 @@ import type {
   ToggleMarketSaveResponse
 } from "@vyb/contracts";
 import {
-  createFallbackMarketContact,
-  createFallbackMarketPost,
-  deleteFallbackMarketListing,
-  getFallbackMarketDashboard,
-  markFallbackMarketListingSold,
-  toggleFallbackMarketSave,
-  updateFallbackMarketListing,
-  type MarketViewerIdentity
-} from "./market-fallback";
-import {
   createLiveMarketContact,
   createLiveMarketPost,
   deleteLiveMarketListing,
@@ -29,19 +19,24 @@ import {
   toggleLiveMarketSave,
   updateLiveMarketListing
 } from "./market-live";
+import type { MarketViewerIdentity } from "./market-types";
 
-function logFallback(scope: string, error: unknown) {
-  console.warn(`[market] ${scope}:fallback`, {
+function logMarketFailure(scope: string, error: unknown) {
+  console.error(`[market] ${scope}:failed`, {
     message: error instanceof Error ? error.message : "unknown"
   });
+}
+
+function createMarketFailure(scope: string, error: unknown) {
+  logMarketFailure(scope, error);
+  return error instanceof Error ? error : new Error("Market service is unavailable right now.");
 }
 
 export async function getMarketDashboard(viewer: MarketViewerIdentity): Promise<MarketDashboardResponse> {
   try {
     return await getLiveMarketDashboard(viewer);
   } catch (error) {
-    logFallback("dashboard", error);
-    return getFallbackMarketDashboard(viewer);
+    throw createMarketFailure("dashboard", error);
   }
 }
 
@@ -52,8 +47,7 @@ export async function createMarketPost(
   try {
     return await createLiveMarketPost(viewer, payload);
   } catch (error) {
-    logFallback("create", error);
-    return createFallbackMarketPost(viewer, payload);
+    throw createMarketFailure("create", error);
   }
 }
 
@@ -64,8 +58,7 @@ export async function updateMarketListing(
   try {
     return await updateLiveMarketListing(viewer, payload);
   } catch (error) {
-    logFallback("update", error);
-    return updateFallbackMarketListing(viewer, payload);
+    throw createMarketFailure("update", error);
   }
 }
 
@@ -76,8 +69,7 @@ export async function markMarketListingSold(
   try {
     return await markLiveMarketListingSold(viewer, listingId);
   } catch (error) {
-    logFallback("sold", error);
-    return markFallbackMarketListingSold(viewer, listingId);
+    throw createMarketFailure("sold", error);
   }
 }
 
@@ -88,8 +80,7 @@ export async function deleteMarketListing(
   try {
     return await deleteLiveMarketListing(viewer, listingId);
   } catch (error) {
-    logFallback("delete", error);
-    return deleteFallbackMarketListing(viewer, listingId);
+    throw createMarketFailure("delete", error);
   }
 }
 
@@ -100,8 +91,7 @@ export async function toggleMarketSave(
   try {
     return await toggleLiveMarketSave(viewer, listingId);
   } catch (error) {
-    logFallback("save", error);
-    return toggleFallbackMarketSave(viewer, listingId);
+    throw createMarketFailure("save", error);
   }
 }
 
@@ -116,7 +106,6 @@ export async function createMarketContact(
   try {
     return await createLiveMarketContact(viewer, input);
   } catch (error) {
-    logFallback("contact", error);
-    return createFallbackMarketContact(viewer, input);
+    throw createMarketFailure("contact", error);
   }
 }

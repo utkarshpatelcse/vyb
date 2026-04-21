@@ -1,51 +1,142 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { getFirebaseDataConnect } from "../../../../../packages/config/src/index.mjs";
+import { connectorConfig as campusConnectorConfig } from "../../../../../packages/dataconnect/campus-admin-sdk/esm/index.esm.js";
 
-const directoryName = path.dirname(fileURLToPath(import.meta.url));
-const storePath = path.resolve(directoryName, "../../data/profile-store.json");
+const TENANT_PROFILE_LIMIT = 5000;
 
-const defaultStore = {
-  profiles: []
-};
-
-let storeCache = null;
-let writeQueue = Promise.resolve();
-
-function clone(value) {
-  return JSON.parse(JSON.stringify(value));
-}
-
-async function ensureStore() {
-  if (storeCache) {
-    return storeCache;
+const PROFILE_FIELDS = `
+  id
+  tenantId
+  userId
+  role
+  verificationStatus
+  username
+  usernameKey
+  firstName
+  lastName
+  fullName
+  course
+  branch
+  batchYear
+  hostel
+  section
+  phoneNumber
+  profileCompleted
+  createdAt
+  updatedAt
+  tenant {
+    id
+    name
+    slug
   }
-
-  await mkdir(path.dirname(storePath), { recursive: true });
-
-  try {
-    const raw = await readFile(storePath, "utf8");
-    storeCache = JSON.parse(raw);
-  } catch {
-    storeCache = clone(defaultStore);
-    await persistStore();
+  user {
+    id
+    primaryEmail
+    displayName
   }
+`;
 
-  if (!Array.isArray(storeCache.profiles)) {
-    storeCache.profiles = [];
+const GET_PROFILE_BY_USER_AND_TENANT_QUERY = `
+  query GetTenantMembershipProfileByUserAndTenant($tenantId: UUID!, $userId: UUID!) {
+    tenantMemberships(
+      where: {
+        tenantId: { eq: $tenantId }
+        userId: { eq: $userId }
+        deletedAt: { isNull: true }
+      }
+      limit: 1
+    ) {
+      ${PROFILE_FIELDS}
+    }
   }
+`;
 
-  return storeCache;
-}
-
-async function persistStore() {
-  if (!storeCache) {
-    return;
+const GET_PROFILE_BY_USERNAME_QUERY = `
+  query GetTenantMembershipProfileByUsername($tenantId: UUID!, $usernameKey: String!) {
+    tenantMemberships(
+      where: {
+        tenantId: { eq: $tenantId }
+        usernameKey: { eq: $usernameKey }
+        profileCompleted: { eq: true }
+        deletedAt: { isNull: true }
+      }
+      limit: 1
+    ) {
+      ${PROFILE_FIELDS}
+    }
   }
+`;
 
-  const snapshot = JSON.stringify(storeCache, null, 2);
-  writeQueue = writeQueue.then(() => writeFile(storePath, snapshot, "utf8"));
-  await writeQueue;
+const LIST_PROFILES_BY_TENANT_QUERY = `
+  query ListTenantMembershipProfilesByTenant($tenantId: UUID!, $limit: Int!) {
+    tenantMemberships(
+      where: {
+        tenantId: { eq: $tenantId }
+        profileCompleted: { eq: true }
+        deletedAt: { isNull: true }
+      }
+      orderBy: [{ updatedAt: DESC }]
+      limit: $limit
+    ) {
+      ${PROFILE_FIELDS}
+    }
+  }
+`;
+
+const UPDATE_PROFILE_MUTATION = `
+  mutation UpdateTenantMembershipProfile(
+    $id: UUID!
+    $username: String!
+    $usernameKey: String!
+    $firstName: String!
+    $lastName: String
+    $fullName: String!
+    $course: String!
+    $branch: String!
+    $batchYear: Int!
+    $hostel: String
+    $section: String!
+    $phoneNumber: String
+  ) {
+    tenantMembership_update(
+      key: { id: $id }
+      data: {
+        username: $username
+        usernameKey: $usernameKey
+        firstName: $firstName
+        lastName: $lastName
+        fullName: $fullName
+        course: $course
+        branch: $branch
+        batchYear: $batchYear
+        hostel: $hostel
+        section: $section
+        phoneNumber: $phoneNumber
+        profileCompleted: true
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
+
+const UPDATE_USERNAME_MUTATION = `
+  mutation UpdateTenantMembershipUsername($id: UUID!, $username: String!, $usernameKey: String!) {
+    tenantMembership_update(
+      key: { id: $id }
+      data: {
+        username: $username
+        usernameKey: $usernameKey
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
+
+function getCampusDc() {
+  return getFirebaseDataConnect(campusConnectorConfig);
 }
 
 function toNonEmptyString(value) {
@@ -77,138 +168,8 @@ function sanitizeUsername(value) {
   return normalized;
 }
 
-function buildUsernameSeed(existing) {
-  const explicit = sanitizeUsername(existing?.username);
-  if (explicit) {
-    return explicit;
-  }
-
-  const emailSeed = sanitizeUsername(String(existing?.primaryEmail ?? "").split("@")[0] ?? "");
-  if (emailSeed) {
-    return emailSeed;
-  }
-
-  const nameSeed = sanitizeUsername(existing?.fullName ?? existing?.firstName ?? "");
-  if (nameSeed) {
-    return nameSeed;
-  }
-
-  const userIdSeed = sanitizeUsername(String(existing?.userId ?? "").slice(0, 24));
-  return userIdSeed ?? `user_${String(existing?.userId ?? "vyb").slice(-6).toLowerCase()}`;
-}
-
-function usernamesMatch(left, right) {
-  return sanitizeUsername(left) === sanitizeUsername(right);
-}
-
-function ensureUniqueUsername(store, seed, excludedUserId) {
-  let candidate = sanitizeUsername(seed);
-  if (!candidate) {
-    candidate = "vyb_user";
-  }
-
-  let suffix = 1;
-  while (
-    store.profiles.some(
-      (item) => item.userId !== excludedUserId && usernamesMatch(item.username ?? buildUsernameSeed(item), candidate)
-    )
-  ) {
-    const trimmed = candidate.slice(0, Math.max(3, 24 - String(suffix).length - 1)).replace(/[._]+$/u, "");
-    candidate = `${trimmed}_${suffix}`;
-    suffix += 1;
-  }
-
-  return candidate;
-}
-
-function inferCourseAndStream(existing) {
-  const course = toNonEmptyString(existing.course);
-  const stream = toNonEmptyString(existing.stream ?? existing.branch);
-
-  if (course && stream) {
-    return {
-      course,
-      stream
-    };
-  }
-
-  const legacyBranch = toNonEmptyString(existing.branch);
-  if (!legacyBranch) {
-    return {
-      course: "B.Tech",
-      stream: "Computer Science and Engineering"
-    };
-  }
-
-  if (
-    [
-      "Computer Science and Engineering",
-      "Computer Science and Engineering - AI",
-      "Computer Science and Engineering - AI & ML",
-      "Computer Science and Engineering - Data Science",
-      "Information Technology",
-      "Electronics and Communication Engineering",
-      "Electrical and Electronics Engineering",
-      "Electrical Engineering",
-      "Mechanical Engineering",
-      "Civil Engineering"
-    ].includes(legacyBranch)
-  ) {
-    return {
-      course: "B.Tech",
-      stream: legacyBranch
-    };
-  }
-
-  if (legacyBranch === "MBA") {
-    return {
-      course: "MBA",
-      stream: "Finance"
-    };
-  }
-
-  if (legacyBranch === "MCA") {
-    return {
-      course: "MCA",
-      stream: "General"
-    };
-  }
-
-  if (legacyBranch === "Pharmacy") {
-    return {
-      course: "B.Pharm",
-      stream: "General"
-    };
-  }
-
-  if (legacyBranch === "Applied Sciences") {
-    return {
-      course: "Applied Sciences",
-      stream: "Physics"
-    };
-  }
-
-  return {
-    course: "Other",
-    stream: "General"
-  };
-}
-
-function normalizeProfileRecord(existing, store) {
-  if (!existing) {
-    return null;
-  }
-
-  const inferred = inferCourseAndStream(existing);
-  const username = ensureUniqueUsername(store, buildUsernameSeed(existing), existing.userId);
-
-  return {
-    ...existing,
-    username,
-    course: inferred.course,
-    stream: inferred.stream,
-    branch: inferred.stream
-  };
+function buildUsernameKey(tenantId, username) {
+  return `${tenantId}:${username}`;
 }
 
 function matchQuery(profile, query) {
@@ -218,48 +179,124 @@ function matchQuery(profile, query) {
   }
 
   const lowered = normalizedQuery.toLowerCase();
-  return [
-    profile.username,
-    profile.fullName,
-    profile.firstName,
-    profile.lastName
-  ]
+  return [profile.username, profile.fullName, profile.firstName, profile.lastName]
     .filter(Boolean)
     .some((value) => String(value).toLowerCase().includes(lowered));
+}
+
+function mapMembershipProfile(item) {
+  if (
+    !item ||
+    item.profileCompleted !== true ||
+    !toNonEmptyString(item.username) ||
+    !toNonEmptyString(item.firstName) ||
+    !toNonEmptyString(item.fullName) ||
+    !toNonEmptyString(item.course) ||
+    !toNonEmptyString(item.branch) ||
+    !Number.isInteger(item.batchYear) ||
+    !toNonEmptyString(item.section) ||
+    !item.tenant?.name ||
+    !item.user?.primaryEmail
+  ) {
+    return null;
+  }
+
+  return {
+    userId: item.userId,
+    tenantId: item.tenantId,
+    primaryEmail: item.user.primaryEmail,
+    collegeName: item.tenant.name,
+    username: item.username,
+    firstName: item.firstName,
+    lastName: toNonEmptyString(item.lastName),
+    fullName: item.fullName,
+    course: item.course,
+    stream: item.branch,
+    branch: item.branch,
+    year: item.batchYear,
+    section: item.section,
+    isHosteller: Boolean(toNonEmptyString(item.hostel)),
+    hostelName: toNonEmptyString(item.hostel),
+    phoneNumber: toNonEmptyString(item.phoneNumber),
+    profileCompleted: true,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt
+  };
+}
+
+async function queryMembershipProfile(query, variables, operationName) {
+  const response = await getCampusDc().executeGraphqlRead(query, {
+    operationName,
+    variables
+  });
+
+  return response.data.tenantMemberships?.[0] ?? null;
+}
+
+async function getRawProfileByUserAndTenant({ tenantId, userId }) {
+  if (!tenantId || !userId) {
+    return null;
+  }
+
+  return queryMembershipProfile(
+    GET_PROFILE_BY_USER_AND_TENANT_QUERY,
+    {
+      tenantId,
+      userId
+    },
+    "GetTenantMembershipProfileByUserAndTenant"
+  );
+}
+
+async function getRawProfileByUsername({ tenantId, username }) {
+  const normalizedUsername = sanitizeUsername(username);
+  if (!tenantId || !normalizedUsername) {
+    return null;
+  }
+
+  return queryMembershipProfile(
+    GET_PROFILE_BY_USERNAME_QUERY,
+    {
+      tenantId,
+      usernameKey: buildUsernameKey(tenantId, normalizedUsername)
+    },
+    "GetTenantMembershipProfileByUsername"
+  );
 }
 
 export function normalizeUsername(value) {
   return sanitizeUsername(value);
 }
 
-export async function getProfileByUserId(userId) {
-  const store = await ensureStore();
-  const existing = store.profiles.find((item) => item.userId === userId) ?? null;
-  return normalizeProfileRecord(existing, store);
+export async function getProfileByUserId({ tenantId, userId }) {
+  return mapMembershipProfile(
+    await getRawProfileByUserAndTenant({
+      tenantId,
+      userId
+    })
+  );
 }
 
 export async function getProfileByUsername({ tenantId, username }) {
-  const store = await ensureStore();
-  const normalizedUsername = sanitizeUsername(username);
-  if (!normalizedUsername) {
-    return null;
-  }
-
-  const existing =
-    store.profiles.find(
-      (item) =>
-        item.tenantId === tenantId &&
-        usernamesMatch(item.username ?? buildUsernameSeed(item), normalizedUsername)
-    ) ?? null;
-
-  return normalizeProfileRecord(existing, store);
+  return mapMembershipProfile(
+    await getRawProfileByUsername({
+      tenantId,
+      username
+    })
+  );
 }
 
 export async function listProfilesByTenant(tenantId) {
-  const store = await ensureStore();
-  return store.profiles
-    .filter((item) => item.tenantId === tenantId)
-    .map((item) => normalizeProfileRecord(item, store))
+  const response = await getCampusDc().executeGraphqlRead(LIST_PROFILES_BY_TENANT_QUERY, {
+    operationName: "ListTenantMembershipProfilesByTenant",
+    variables: {
+      tenantId,
+      limit: TENANT_PROFILE_LIMIT
+    }
+  });
+
+  return (Array.isArray(response.data.tenantMemberships) ? response.data.tenantMemberships : [])
+    .map((item) => mapMembershipProfile(item))
     .filter(Boolean)
     .sort((left, right) => left.fullName.localeCompare(right.fullName));
 }
@@ -272,10 +309,10 @@ export async function searchProfiles({ tenantId, query, limit = 12, excludedUser
     .slice(0, limit);
 }
 
-export async function updateUsername({ userId, username }) {
-  const store = await ensureStore();
-  const existing = store.profiles.find((item) => item.userId === userId);
-  if (!existing) {
+export async function updateUsername({ tenantId, userId, username }) {
+  const existing = await getRawProfileByUserAndTenant({ tenantId, userId });
+  const currentProfile = mapMembershipProfile(existing);
+  if (!existing || !currentProfile) {
     return null;
   }
 
@@ -286,71 +323,74 @@ export async function updateUsername({ userId, username }) {
     throw error;
   }
 
-  const takenBySomeoneElse = store.profiles.some(
-    (item) => item.userId !== userId && usernamesMatch(item.username ?? buildUsernameSeed(item), normalizedUsername)
-  );
-  if (takenBySomeoneElse) {
+  const takenBy = await getRawProfileByUsername({
+    tenantId,
+    username: normalizedUsername
+  });
+  if (takenBy && takenBy.userId !== userId) {
     const error = new Error("That user ID is already taken.");
     error.code = "USERNAME_TAKEN";
     throw error;
   }
 
-  existing.username = normalizedUsername;
-  existing.updatedAt = new Date().toISOString();
-  await persistStore();
-  return normalizeProfileRecord(existing, store);
+  await getCampusDc().executeGraphql(UPDATE_USERNAME_MUTATION, {
+    operationName: "UpdateTenantMembershipUsername",
+    variables: {
+      id: existing.id,
+      username: normalizedUsername,
+      usernameKey: buildUsernameKey(tenantId, normalizedUsername)
+    }
+  });
+
+  return getProfileByUserId({ tenantId, userId });
 }
 
 export async function upsertProfile(input) {
-  const store = await ensureStore();
-  const existing = store.profiles.find((item) => item.userId === input.userId);
-  const timestamp = new Date().toISOString();
-  const normalizedUsername = sanitizeUsername(input.username);
+  const existing = await getRawProfileByUserAndTenant({
+    tenantId: input.tenantId,
+    userId: input.userId
+  });
+  if (!existing) {
+    throw new Error("Membership profile could not be resolved.");
+  }
 
+  const normalizedUsername = sanitizeUsername(input.username);
   if (!normalizedUsername) {
     const error = new Error("User ID format is invalid.");
     error.code = "INVALID_USERNAME";
     throw error;
   }
 
-  const takenBySomeoneElse = store.profiles.some(
-    (item) => item.userId !== input.userId && usernamesMatch(item.username ?? buildUsernameSeed(item), normalizedUsername)
-  );
-
-  if (takenBySomeoneElse) {
+  const takenBy = await getRawProfileByUsername({
+    tenantId: input.tenantId,
+    username: normalizedUsername
+  });
+  if (takenBy && takenBy.userId !== input.userId) {
     const error = new Error("That user ID is already taken.");
     error.code = "USERNAME_TAKEN";
     throw error;
   }
 
-  const normalized = {
-    userId: input.userId,
+  await getCampusDc().executeGraphql(UPDATE_PROFILE_MUTATION, {
+    operationName: "UpdateTenantMembershipProfile",
+    variables: {
+      id: existing.id,
+      username: normalizedUsername,
+      usernameKey: buildUsernameKey(input.tenantId, normalizedUsername),
+      firstName: input.firstName,
+      lastName: toNonEmptyString(input.lastName),
+      fullName: input.fullName,
+      course: input.course,
+      branch: input.stream,
+      batchYear: input.year,
+      hostel: input.isHosteller ? toNonEmptyString(input.hostelName) : null,
+      section: input.section,
+      phoneNumber: toNonEmptyString(input.phoneNumber)
+    }
+  });
+
+  return getProfileByUserId({
     tenantId: input.tenantId,
-    primaryEmail: input.primaryEmail,
-    collegeName: input.collegeName,
-    username: normalizedUsername,
-    firstName: input.firstName,
-    lastName: toNonEmptyString(input.lastName),
-    fullName: input.fullName,
-    course: input.course,
-    stream: input.stream,
-    branch: input.stream,
-    year: input.year,
-    section: input.section,
-    isHosteller: Boolean(input.isHosteller),
-    hostelName: input.isHosteller ? toNonEmptyString(input.hostelName) : null,
-    phoneNumber: toNonEmptyString(input.phoneNumber),
-    profileCompleted: true,
-    createdAt: existing?.createdAt ?? timestamp,
-    updatedAt: timestamp
-  };
-
-  if (existing) {
-    Object.assign(existing, normalized);
-  } else {
-    store.profiles.push(normalized);
-  }
-
-  await persistStore();
-  return normalizeProfileRecord(existing ?? normalized, store);
+    userId: input.userId
+  });
 }

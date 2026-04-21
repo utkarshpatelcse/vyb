@@ -164,7 +164,10 @@ export async function handleIdentityRoute({ request, response, url, context }) {
         return true;
       }
 
-      const storedProfile = await getProfileByUserId(decoded.uid);
+      const storedProfile = await getProfileByUserId({
+        tenantId: resolved.live.tenant.id,
+        userId: resolved.live.user.id
+      });
       const session = buildSessionPayload({
         userId: decoded.uid,
         email,
@@ -277,7 +280,10 @@ export async function handleIdentityRoute({ request, response, url, context }) {
       return true;
     }
 
-    const profile = await getProfileByUserId(resolved.viewer.id);
+    const profile = await getProfileByUserId({
+      tenantId: resolved.live?.tenant?.id ?? null,
+      userId: resolved.live?.user?.id ?? null
+    });
     sendJson(
       response,
       200,
@@ -329,7 +335,7 @@ export async function handleIdentityRoute({ request, response, url, context }) {
     let profile;
     try {
       profile = await upsertProfile({
-        userId: resolved.viewer.id,
+        userId: resolved.live.user.id,
         tenantId: resolved.live.tenant.id,
         primaryEmail: resolved.viewer.primaryEmail,
         collegeName: resolved.live.tenant.name,
@@ -391,7 +397,8 @@ export async function handleIdentityRoute({ request, response, url, context }) {
 
     try {
       const profile = await updateUsername({
-        userId: resolved.viewer.id,
+        tenantId: resolved.live.tenant.id,
+        userId: resolved.live.user.id,
         username: parsed.data.username
       });
 

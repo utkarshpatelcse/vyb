@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import type { CreateMarketPostRequest, MarketTab } from "@vyb/contracts";
+import type { CreateMarketPostRequest, MarketMediaAsset, MarketTab } from "@vyb/contracts";
+import { getViewerProfile } from "../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../src/lib/dev-session";
 import { createMarketPost, getMarketDashboard } from "../../../src/lib/market-data";
-import { persistMarketMediaAssets } from "../../../src/lib/market-media-server";
+import { deleteMarketMediaAssets, persistMarketMediaAssets } from "../../../src/lib/market-media-server";
 import { resolveMarketViewerIdentity } from "../../../src/lib/market-server";
 
 type ParsedMarketCreatePayload = Omit<Partial<CreateMarketPostRequest>, "priceAmount" | "budgetAmount"> & {
@@ -156,9 +157,28 @@ export async function POST(request: Request) {
     return buildError(400, "INVALID_BUDGET", "Budget must be a positive amount.");
   }
 
+  const profile = await getViewerProfile(viewer).catch((error) => {
+    console.error("[web/market] profile-check-failed", {
+      userId: viewer.userId,
+      tenantId: viewer.tenantId,
+      message: error instanceof Error ? error.message : "unknown"
+    });
+    return null;
+  });
+
+  if (!profile) {
+    return buildError(503, "PROFILE_CHECK_FAILED", "We could not verify your campus profile right now.");
+  }
+
+  if (!profile.profileCompleted) {
+    return buildError(403, "PROFILE_INCOMPLETE", "Complete your profile before publishing in the campus market.");
+  }
+
+  const identity = await resolveMarketViewerIdentity(viewer, profile);
+  let uploadedMedia: MarketMediaAsset[] = [];
+
   try {
-    const identity = await resolveMarketViewerIdentity(viewer);
-    const media = await persistMarketMediaAssets({
+    uploadedMedia = await persistMarketMediaAssets({
       tenantId: viewer.tenantId,
       userId: viewer.userId,
       postId: randomUUID(),
@@ -166,24 +186,55 @@ export async function POST(request: Request) {
       files
     });
 
-    return NextResponse.json(
-      await createMarketPost(identity, {
-        tab,
-        title,
-        category,
-        description,
-        location: location || null,
-        campusSpot,
-        imageUrl: payload.imageUrl?.trim() || null,
-        media,
-        condition: payload.condition?.trim() || null,
-        priceAmount,
-        budgetAmount,
-        budgetLabel: payload.budgetLabel?.trim() || null,
-        tag: payload.tag?.trim() || null
-      })
-    );
+    const response = await createMarketPost(identity, {
+      tab,
+      title,
+      category,
+      description,
+      location: location || null,
+      campusSpot,
+      imageUrl: payload.imageUrl?.trim() || null,
+      media: uploadedMedia,
+      condition: payload.condition?.trim() || null,
+      priceAmount,
+      budgetAmount,
+      budgetLabel: payload.budgetLabel?.trim() || null,
+      tag: payload.tag?.trim() || null
+    });
+
+    console.info("[web/market] create-succeeded", {
+      userId: viewer.userId,
+      tenantId: viewer.tenantId,
+      tab,
+      itemId: response.itemId,
+      itemType: response.itemType,
+      mediaCount: uploadedMedia.length
+    });
+
+    return NextResponse.json(response);
   } catch (error) {
+    if (uploadedMedia.length > 0) {
+      await deleteMarketMediaAssets(uploadedMedia).catch((cleanupError) => {
+        console.error("[web/market] cleanup-failed", {
+          userId: viewer.userId,
+          tenantId: viewer.tenantId,
+          uploadedMediaCount: uploadedMedia.length,
+          message: cleanupError instanceof Error ? cleanupError.message : "unknown"
+        });
+      });
+    }
+
+    console.error("[web/market] create-failed", {
+      userId: viewer.userId,
+      tenantId: viewer.tenantId,
+      tab,
+      title,
+      category,
+      fileCount: files.length,
+      uploadedMediaCount: uploadedMedia.length,
+      message: error instanceof Error ? error.message : "unknown"
+    });
+
     return buildError(500, "MARKET_CREATE_FAILED", error instanceof Error ? error.message : "We could not publish the market post.");
   }
 }

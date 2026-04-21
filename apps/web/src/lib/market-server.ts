@@ -3,7 +3,7 @@ import "server-only";
 import type { ProfileResponse } from "@vyb/contracts";
 import { getViewerProfile } from "./backend";
 import type { DevSession } from "./dev-session";
-import type { MarketViewerIdentity } from "./market-fallback";
+import type { MarketViewerIdentity } from "./market-types";
 
 function fallbackUsername(viewer: DevSession) {
   return viewer.email.split("@")[0]?.trim() || viewer.userId;

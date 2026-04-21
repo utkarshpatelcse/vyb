@@ -105,6 +105,9 @@ importers:
 
   packages/dataconnect/marketplace-admin-sdk:
     dependencies:
+      '@vyb/dataconnect-marketplace-admin':
+        specifier: 'file:'
+        version: 'link:'
       firebase-admin:
         specifier: ^13.4.0
         version: 13.8.0

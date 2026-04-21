@@ -152,6 +152,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
   }
   const resolvedTenantId = resolved.live?.tenant?.id ?? null;
   const resolvedMembershipId = resolved.live?.membership?.id ?? null;
+  const resolvedUserId = resolved.live?.user?.id ?? null;
 
   if (request.method === "GET" && url.pathname === "/v1/feed") {
     const tenantId = resolveTenantScope({
@@ -251,7 +252,10 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
-    const profile = await getProfileByUserId(resolved.viewer.id);
+    const profile = await getProfileByUserId({
+      tenantId,
+      userId: resolvedUserId
+    });
     if (!profile?.profileCompleted) {
       sendError(response, 403, "PROFILE_INCOMPLETE", "Complete your profile before publishing.");
       return true;
@@ -260,13 +264,16 @@ export async function handleSocialRoute({ request, response, url, context }) {
     const item = await createPost({
       tenantId,
       communityId: payload.communityId ?? null,
-      userId: resolved.viewer.id,
+      userId: resolvedUserId,
       membershipId: resolvedMembershipId ?? payload.membershipId ?? context.actor.id,
       authorUsername: profile.username,
       authorName: profile.fullName,
       placement: payload.placement === "vibe" ? "vibe" : "feed",
       kind: payload.kind ?? "text",
       mediaUrl: requireNonEmptyString(payload.mediaUrl) ? payload.mediaUrl.trim() : null,
+      mediaStoragePath: requireNonEmptyString(payload.mediaStoragePath) ? payload.mediaStoragePath.trim() : null,
+      mediaMimeType: requireNonEmptyString(payload.mediaMimeType) ? payload.mediaMimeType.trim() : null,
+      mediaSizeBytes: Number.isFinite(Number(payload.mediaSizeBytes)) ? Number(payload.mediaSizeBytes) : null,
       location: requireNonEmptyString(payload.location) ? payload.location.trim() : profile.collegeName,
       title: requireNonEmptyString(payload.title) ? payload.title.trim() : "Campus update",
       body: requireNonEmptyString(payload.body) ? payload.body.trim() : ""
@@ -306,7 +313,10 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
-    const profile = await getProfileByUserId(resolved.viewer.id);
+    const profile = await getProfileByUserId({
+      tenantId,
+      userId: resolvedUserId
+    });
     if (!profile?.profileCompleted) {
       sendError(response, 403, "PROFILE_INCOMPLETE", "Complete your profile before publishing stories.");
       return true;
@@ -314,11 +324,14 @@ export async function handleSocialRoute({ request, response, url, context }) {
 
     const item = await createStory({
       tenantId,
-      userId: resolved.viewer.id,
+      userId: resolvedUserId,
       username: profile.username,
       displayName: profile.fullName,
       mediaType: payload.mediaType,
       mediaUrl: payload.mediaUrl.trim(),
+      mediaStoragePath: requireNonEmptyString(payload.mediaStoragePath) ? payload.mediaStoragePath.trim() : null,
+      mediaMimeType: requireNonEmptyString(payload.mediaMimeType) ? payload.mediaMimeType.trim() : null,
+      mediaSizeBytes: Number.isFinite(Number(payload.mediaSizeBytes)) ? Number(payload.mediaSizeBytes) : null,
       caption: requireNonEmptyString(payload.caption) ? payload.caption.trim() : ""
     });
 
@@ -339,7 +352,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
 
     const items = await listStories({
       tenantId,
-      viewerUserId: resolved.viewer.id
+      viewerUserId: resolvedUserId
     });
 
     sendJson(response, 200, { items });
@@ -370,13 +383,13 @@ export async function handleSocialRoute({ request, response, url, context }) {
     const items = suggested
       ? await buildSuggestedUserItems({
           tenantId,
-          viewerUserId: resolved.viewer.id,
+          viewerUserId: resolvedUserId,
           limit
         })
       : trimmedQuery
         ? await buildUserSearchItems({
             tenantId,
-            viewerUserId: resolved.viewer.id,
+            viewerUserId: resolvedUserId,
             query: trimmedQuery,
             limit
           })
@@ -438,10 +451,10 @@ export async function handleSocialRoute({ request, response, url, context }) {
       },
       isFollowing: await isFollowing({
         tenantId,
-        followerUserId: resolved.viewer.id,
+        followerUserId: resolvedUserId,
         followingUserId: profile.userId
       }),
-      isViewerProfile: profile.userId === resolved.viewer.id,
+      isViewerProfile: profile.userId === resolvedUserId,
       posts
     });
     return true;
@@ -475,13 +488,13 @@ export async function handleSocialRoute({ request, response, url, context }) {
     if (request.method === "PUT") {
       await followUser({
         tenantId,
-        followerUserId: resolved.viewer.id,
+        followerUserId: resolvedUserId,
         followingUserId: target.userId
       });
     } else {
       await unfollowUser({
         tenantId,
-        followerUserId: resolved.viewer.id,
+        followerUserId: resolvedUserId,
         followingUserId: target.userId
       });
     }
@@ -534,7 +547,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       placement: post.placement,
       postId: commentMatch[1],
       membershipId,
-      authorUserId: resolved.viewer.id,
+      authorUserId: resolvedUserId,
       body: payload.body.trim()
     });
 

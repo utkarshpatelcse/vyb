@@ -1,8 +1,8 @@
 # Vyb Master Plan
 
 Owner: Product and Engineering
-Last Updated: 2026-04-19
-Change Summary: Added the first-college professional web entry flow, backend-verified session bootstrap, mandatory profile completion gating, the authenticated `/home` feed landing surface, the Phase 1 Cloud Run plus Vercel hosting preparation, and the first live campus-social flow for posts, stories, vibes, search, follows, and user IDs.
+Last Updated: 2026-04-22
+Change Summary: Added the first-college professional web entry flow, backend-verified session bootstrap, mandatory profile completion gating, the authenticated `/home` feed landing surface, the Phase 1 Cloud Run plus Vercel hosting preparation, the first live campus-social flow for posts, stories, vibes, search, follows, and user IDs, and the market dashboard move to live-only Data Connect reads.
 
 ## 1. Why We Are Building This
 
@@ -32,8 +32,7 @@ What is decided:
 What is not started yet:
 
 - production-ready business flows for college join requests
-- durable production storage for the current starter social graph and profile persistence
-- media upload registration and file pipelines
+- fully managed moderation and transcoding pipelines for uploaded media
 
 ## 3. Core Product Thesis
 
@@ -153,7 +152,7 @@ After implementation:
 - onboarding now requires a user-chosen campus user ID and the profile/dashboard route now allows changing that user ID later
 - the `/dashboard` and public `/u/[username]` profile routes now render real posts and follow counts instead of mock profile data
 - the `/vibes` route now reads real backend-backed short-form uploads instead of a fully dummy starter catalog
-- profile reads and onboarding saves now have local fallback behavior for development when the backend is temporarily unavailable
+- profile reads and onboarding saves now persist through Data Connect-backed tenant membership profiles
 - Data Connect service config, schema, and domain-owned connectors are scaffolded
 - Data Connect connectors compile successfully and generated admin SDKs are available
 - shared server config helpers now load root env and initialize Firebase Admin/Data Connect clients
@@ -165,17 +164,19 @@ After implementation:
 - live identity, campus, social-create, and resources-create flows were verified against remote Data Connect
 - Phase 1 backend runtime has now been collapsed into one modular monolith app with internal domain modules
 - local development is now intended to run as `pnpm dev` or `web + backend`, not six separate terminals
+- the campus composer now uploads post/story/vibe media into Firebase Storage before publish, with client-side video optimization before the final upload size gate
+- JSON-backed mutation fallbacks have been removed from the active identity, resources, social, and market write paths
+- the market dashboard now reads directly from Data Connect without seeding or rendering JSON-backed preview inventory
 
 ## 7. Current Next Actions
 
-1. move the current starter social graph and profile persistence into durable production storage
-2. extend backend token verification beyond session bootstrap to the rest of the authenticated API edge
-3. implement the college join-request submission and admin decision workflow
-4. add backend-edge rate limiting and richer structured error metadata
-5. start real upload registration and resource file flows through the media module
-6. add moderation publish and review flows for posts, stories, vibes, and resources
-7. introduce a simple admin surface for onboarding and moderation operations
-8. refine ranking, comments, and richer story-viewer behavior on top of the live feed baseline
+1. extend backend token verification beyond session bootstrap to the rest of the authenticated API edge
+2. implement the college join-request submission and admin decision workflow
+3. add backend-edge rate limiting and richer structured error metadata
+4. start real upload registration and resource file flows through the media module
+5. add moderation publish and review flows for posts, stories, vibes, and resources
+6. introduce a simple admin surface for onboarding and moderation operations
+7. refine ranking, comments, and richer story-viewer behavior on top of the live feed baseline
 
 ## 8. Decision Log Snapshot
 
@@ -194,4 +195,3 @@ After implementation:
 - weak content moderation policy
 - empty feed problem if utility content is not seeded
 - operational complexity if documentation discipline slips
-- the current real social flow still depends on a starter persistence layer, so data durability across redeploys remains a production risk until it moves to durable storage

@@ -406,6 +406,17 @@ mutation SoftDeleteMarketListing($id: String!) @auth(level: NO_ACCESS) @transact
   )
 }
 
+mutation SoftDeleteMarketRequest($id: String!) @auth(level: NO_ACCESS) @transaction {
+  marketRequest_update(
+    key: { id: $id }
+    data: {
+      status: "deleted"
+      deletedAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
 mutation SoftDeleteMarketListingMedia($id: String!) @auth(level: NO_ACCESS) @transaction {
   marketListingMedia_update(
     key: { id: $id }

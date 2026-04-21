@@ -171,6 +171,84 @@ export interface GetTenantBySlugVariables {
   slug: string;
 }
 
+export interface GetTenantMembershipProfileByUserAndTenantData {
+  tenantMemberships: ({
+    id: UUIDString;
+    tenantId: UUIDString;
+    userId: UUIDString;
+    role: string;
+    verificationStatus: string;
+    username?: string | null;
+    usernameKey?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+    fullName?: string | null;
+    course?: string | null;
+    branch?: string | null;
+    batchYear?: number | null;
+    hostel?: string | null;
+    section?: string | null;
+    phoneNumber?: string | null;
+    profileCompleted: boolean;
+    createdAt: TimestampString;
+    updatedAt: TimestampString;
+    tenant: {
+      id: UUIDString;
+      name: string;
+      slug: string;
+    } & Tenant_Key;
+      user: {
+        id: UUIDString;
+        primaryEmail: string;
+        displayName?: string | null;
+      } & User_Key;
+  } & TenantMembership_Key)[];
+}
+
+export interface GetTenantMembershipProfileByUserAndTenantVariables {
+  tenantId: UUIDString;
+  userId: UUIDString;
+}
+
+export interface GetTenantMembershipProfileByUsernameData {
+  tenantMemberships: ({
+    id: UUIDString;
+    tenantId: UUIDString;
+    userId: UUIDString;
+    role: string;
+    verificationStatus: string;
+    username?: string | null;
+    usernameKey?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+    fullName?: string | null;
+    course?: string | null;
+    branch?: string | null;
+    batchYear?: number | null;
+    hostel?: string | null;
+    section?: string | null;
+    phoneNumber?: string | null;
+    profileCompleted: boolean;
+    createdAt: TimestampString;
+    updatedAt: TimestampString;
+    tenant: {
+      id: UUIDString;
+      name: string;
+      slug: string;
+    } & Tenant_Key;
+      user: {
+        id: UUIDString;
+        primaryEmail: string;
+        displayName?: string | null;
+      } & User_Key;
+  } & TenantMembership_Key)[];
+}
+
+export interface GetTenantMembershipProfileByUsernameVariables {
+  tenantId: UUIDString;
+  usernameKey: string;
+}
+
 export interface ListCommunitiesByTenantData {
   communities: ({
     id: UUIDString;
@@ -204,6 +282,45 @@ export interface ListCommunitiesForMembershipData {
 
 export interface ListCommunitiesForMembershipVariables {
   membershipId: UUIDString;
+}
+
+export interface ListTenantMembershipProfilesByTenantData {
+  tenantMemberships: ({
+    id: UUIDString;
+    tenantId: UUIDString;
+    userId: UUIDString;
+    role: string;
+    verificationStatus: string;
+    username?: string | null;
+    usernameKey?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+    fullName?: string | null;
+    course?: string | null;
+    branch?: string | null;
+    batchYear?: number | null;
+    hostel?: string | null;
+    section?: string | null;
+    phoneNumber?: string | null;
+    profileCompleted: boolean;
+    createdAt: TimestampString;
+    updatedAt: TimestampString;
+    tenant: {
+      id: UUIDString;
+      name: string;
+      slug: string;
+    } & Tenant_Key;
+      user: {
+        id: UUIDString;
+        primaryEmail: string;
+        displayName?: string | null;
+      } & User_Key;
+  } & TenantMembership_Key)[];
+}
+
+export interface ListTenantMembershipProfilesByTenantVariables {
+  tenantId: UUIDString;
+  limit: number;
 }
 
 export interface MarketListingContact_Key {
@@ -296,6 +413,35 @@ export interface Tenant_Key {
   __typename?: 'Tenant_Key';
 }
 
+export interface UpdateTenantMembershipProfileData {
+  tenantMembership_update?: TenantMembership_Key | null;
+}
+
+export interface UpdateTenantMembershipProfileVariables {
+  id: UUIDString;
+  username: string;
+  usernameKey: string;
+  firstName: string;
+  lastName?: string | null;
+  fullName: string;
+  course: string;
+  branch: string;
+  batchYear: number;
+  hostel?: string | null;
+  section: string;
+  phoneNumber?: string | null;
+}
+
+export interface UpdateTenantMembershipUsernameData {
+  tenantMembership_update?: TenantMembership_Key | null;
+}
+
+export interface UpdateTenantMembershipUsernameVariables {
+  id: UUIDString;
+  username: string;
+  usernameKey: string;
+}
+
 export interface UserActivity_Key {
   id: UUIDString;
   __typename?: 'UserActivity_Key';
@@ -336,6 +482,21 @@ export function listCommunitiesForMembership(dc: DataConnect, vars: ListCommunit
 /** Generated Node Admin SDK operation action function for the 'ListCommunitiesForMembership' Query. Allow users to pass in custom DataConnect instances. */
 export function listCommunitiesForMembership(vars: ListCommunitiesForMembershipVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListCommunitiesForMembershipData>>;
 
+/** Generated Node Admin SDK operation action function for the 'GetTenantMembershipProfileByUserAndTenant' Query. Allow users to execute without passing in DataConnect. */
+export function getTenantMembershipProfileByUserAndTenant(dc: DataConnect, vars: GetTenantMembershipProfileByUserAndTenantVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetTenantMembershipProfileByUserAndTenantData>>;
+/** Generated Node Admin SDK operation action function for the 'GetTenantMembershipProfileByUserAndTenant' Query. Allow users to pass in custom DataConnect instances. */
+export function getTenantMembershipProfileByUserAndTenant(vars: GetTenantMembershipProfileByUserAndTenantVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetTenantMembershipProfileByUserAndTenantData>>;
+
+/** Generated Node Admin SDK operation action function for the 'GetTenantMembershipProfileByUsername' Query. Allow users to execute without passing in DataConnect. */
+export function getTenantMembershipProfileByUsername(dc: DataConnect, vars: GetTenantMembershipProfileByUsernameVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetTenantMembershipProfileByUsernameData>>;
+/** Generated Node Admin SDK operation action function for the 'GetTenantMembershipProfileByUsername' Query. Allow users to pass in custom DataConnect instances. */
+export function getTenantMembershipProfileByUsername(vars: GetTenantMembershipProfileByUsernameVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetTenantMembershipProfileByUsernameData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListTenantMembershipProfilesByTenant' Query. Allow users to execute without passing in DataConnect. */
+export function listTenantMembershipProfilesByTenant(dc: DataConnect, vars: ListTenantMembershipProfilesByTenantVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListTenantMembershipProfilesByTenantData>>;
+/** Generated Node Admin SDK operation action function for the 'ListTenantMembershipProfilesByTenant' Query. Allow users to pass in custom DataConnect instances. */
+export function listTenantMembershipProfilesByTenant(vars: ListTenantMembershipProfilesByTenantVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListTenantMembershipProfilesByTenantData>>;
+
 /** Generated Node Admin SDK operation action function for the 'CreateTenant' Mutation. Allow users to execute without passing in DataConnect. */
 export function createTenant(dc: DataConnect, vars: CreateTenantVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateTenantData>>;
 /** Generated Node Admin SDK operation action function for the 'CreateTenant' Mutation. Allow users to pass in custom DataConnect instances. */
@@ -360,4 +521,14 @@ export function createCommunity(vars: CreateCommunityVariables, options?: Operat
 export function createCommunityMembership(dc: DataConnect, vars: CreateCommunityMembershipVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateCommunityMembershipData>>;
 /** Generated Node Admin SDK operation action function for the 'CreateCommunityMembership' Mutation. Allow users to pass in custom DataConnect instances. */
 export function createCommunityMembership(vars: CreateCommunityMembershipVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateCommunityMembershipData>>;
+
+/** Generated Node Admin SDK operation action function for the 'UpdateTenantMembershipProfile' Mutation. Allow users to execute without passing in DataConnect. */
+export function updateTenantMembershipProfile(dc: DataConnect, vars: UpdateTenantMembershipProfileVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateTenantMembershipProfileData>>;
+/** Generated Node Admin SDK operation action function for the 'UpdateTenantMembershipProfile' Mutation. Allow users to pass in custom DataConnect instances. */
+export function updateTenantMembershipProfile(vars: UpdateTenantMembershipProfileVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateTenantMembershipProfileData>>;
+
+/** Generated Node Admin SDK operation action function for the 'UpdateTenantMembershipUsername' Mutation. Allow users to execute without passing in DataConnect. */
+export function updateTenantMembershipUsername(dc: DataConnect, vars: UpdateTenantMembershipUsernameVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateTenantMembershipUsernameData>>;
+/** Generated Node Admin SDK operation action function for the 'UpdateTenantMembershipUsername' Mutation. Allow users to pass in custom DataConnect instances. */
+export function updateTenantMembershipUsername(vars: UpdateTenantMembershipUsernameVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateTenantMembershipUsernameData>>;
 

@@ -49,6 +49,27 @@ function listCommunitiesForMembership(dcOrVarsOrOptions, varsOrOptions, options)
 }
 exports.listCommunitiesForMembership = listCommunitiesForMembership;
 
+function getTenantMembershipProfileByUserAndTenant(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('GetTenantMembershipProfileByUserAndTenant', inputVars, inputOpts);
+}
+exports.getTenantMembershipProfileByUserAndTenant = getTenantMembershipProfileByUserAndTenant;
+
+function getTenantMembershipProfileByUsername(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('GetTenantMembershipProfileByUsername', inputVars, inputOpts);
+}
+exports.getTenantMembershipProfileByUsername = getTenantMembershipProfileByUsername;
+
+function listTenantMembershipProfilesByTenant(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListTenantMembershipProfilesByTenant', inputVars, inputOpts);
+}
+exports.listTenantMembershipProfilesByTenant = listTenantMembershipProfilesByTenant;
+
 function createTenant(dcOrVarsOrOptions, varsOrOptions, options) {
   const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
   dcInstance.useGen(true);
@@ -83,4 +104,18 @@ function createCommunityMembership(dcOrVarsOrOptions, varsOrOptions, options) {
   return dcInstance.executeMutation('CreateCommunityMembership', inputVars, inputOpts);
 }
 exports.createCommunityMembership = createCommunityMembership;
+
+function updateTenantMembershipProfile(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('UpdateTenantMembershipProfile', inputVars, inputOpts);
+}
+exports.updateTenantMembershipProfile = updateTenantMembershipProfile;
+
+function updateTenantMembershipUsername(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('UpdateTenantMembershipUsername', inputVars, inputOpts);
+}
+exports.updateTenantMembershipUsername = updateTenantMembershipUsername;
 

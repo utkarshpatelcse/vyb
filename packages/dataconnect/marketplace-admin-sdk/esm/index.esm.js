@@ -108,6 +108,12 @@ export function softDeleteMarketListing(dcOrVarsOrOptions, varsOrOptions, option
   return dcInstance.executeMutation('SoftDeleteMarketListing', inputVars, inputOpts);
 }
 
+export function softDeleteMarketRequest(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('SoftDeleteMarketRequest', inputVars, inputOpts);
+}
+
 export function softDeleteMarketListingMedia(dcOrVarsOrOptions, varsOrOptions, options) {
   const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
   dcInstance.useGen(true);

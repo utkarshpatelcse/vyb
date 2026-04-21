@@ -14,7 +14,7 @@ import type {
   UserSearchResponse
 } from "@vyb/contracts";
 import type { DevSession } from "./dev-session";
-import { buildFallbackProfileResponse } from "./profile-fallback";
+import { invokeBackendRoute, isBackendConnectionError } from "./backend-bridge";
 
 const API_BASE_URL =
   process.env.VYB_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
@@ -24,7 +24,7 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function buildBackendHeaders(viewer?: DevSession): HeadersInit {
+function buildBackendHeaders(viewer?: DevSession): Record<string, string> {
   if (!viewer) {
     return {
       "content-type": "application/json",
@@ -45,10 +45,52 @@ async function readResponseJson<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function requestBackendResponse(
+  path: string,
+  {
+    method = "GET",
+    payload,
+    viewer
+  }: {
+    method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+    payload?: SessionBootstrapRequest | Record<string, unknown> | unknown;
+    viewer?: DevSession;
+  } = {}
+) {
+  const headers = buildBackendHeaders(viewer);
+  const body = payload === undefined ? undefined : JSON.stringify(payload);
+
+  try {
+    return await fetch(`${API_BASE_URL}${path}`, {
+      method,
+      headers,
+      body,
+      cache: "no-store"
+    });
+  } catch (error) {
+    if (!isBackendConnectionError(error)) {
+      throw error;
+    }
+
+    console.warn("[web/backend] upstream unavailable, falling back to in-process bridge", {
+      method,
+      path,
+      apiBaseUrl: API_BASE_URL,
+      message: error.message
+    });
+
+    return invokeBackendRoute({
+      path,
+      method,
+      headers,
+      body
+    });
+  }
+}
+
 export async function fetchBackendJson<T>(path: string, viewer?: DevSession): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: buildBackendHeaders(viewer),
-    cache: "no-store"
+  const response = await requestBackendResponse(path, {
+    viewer
   });
 
   if (!response.ok) {
@@ -68,11 +110,10 @@ export async function postBackendJson<TResponse>(
 
   while (attempt < 2) {
     try {
-      const response = await fetch(`${API_BASE_URL}${path}`, {
+      const response = await requestBackendResponse(path, {
         method: "POST",
-        headers: buildBackendHeaders(viewer),
-        body: JSON.stringify(payload),
-        cache: "no-store"
+        payload,
+        viewer
       });
 
       if (!response.ok) {
@@ -100,11 +141,10 @@ export async function proxyBackendMutation(
   payload: unknown,
   viewer: DevSession
 ) {
-  const upstream = await fetch(`${API_BASE_URL}${path}`, {
+  const upstream = await requestBackendResponse(path, {
     method,
-    headers: buildBackendHeaders(viewer),
-    body: JSON.stringify(payload),
-    cache: "no-store"
+    payload,
+    viewer
   });
 
   const responseText = await upstream.text();
@@ -174,11 +214,7 @@ export async function getClientShellData() {
 }
 
 export async function getViewerProfile(viewer: DevSession) {
-  try {
-    return await fetchBackendJson<ProfileResponse>("/v1/profile", viewer);
-  } catch {
-    return buildFallbackProfileResponse(viewer);
-  }
+  return fetchBackendJson<ProfileResponse>("/v1/profile", viewer);
 }
 
 export async function getViewerMe(viewer: DevSession) {
@@ -248,11 +284,10 @@ export async function getCampusUserProfile(viewer: DevSession, username: string)
 }
 
 export async function updateViewerUsername(viewer: DevSession, payload: UpdateUsernameRequest) {
-  const response = await fetch(`${API_BASE_URL}/v1/profile/username`, {
+  const response = await requestBackendResponse("/v1/profile/username", {
     method: "PATCH",
-    headers: buildBackendHeaders(viewer),
-    body: JSON.stringify(payload),
-    cache: "no-store"
+    payload,
+    viewer
   });
 
   if (!response.ok) {
@@ -267,6 +302,9 @@ export async function createCampusStory(viewer: DevSession, payload: {
   mediaType: "image" | "video";
   mediaUrl: string;
   caption?: string | null;
+  mediaStoragePath?: string | null;
+  mediaMimeType?: string | null;
+  mediaSizeBytes?: number | null;
 }) {
   return postBackendJson<CreateStoryResponse>(
     "/v1/stories",

@@ -41,14 +41,13 @@ import {
   softDeleteMarketListingSave,
   updateMarketListingDetails
 } from "@vyb/dataconnect-marketplace-admin";
-import type { MarketViewerIdentity } from "./market-fallback";
-import { getFallbackMarketStoreSnapshot } from "./market-fallback";
 import { normalizeMarketCampusSpot, normalizeMarketLocation } from "./market-defaults";
 import { deleteMarketMediaAssets } from "./market-media-server";
+import type { MarketViewerIdentity } from "./market-types";
 
 const TENANT_SCAN_LIMIT = 5000;
 const SAVE_LOOKUP_LIMIT = 8;
-const liveSeededTenants = new Set<string>();
+const LEGACY_MARKET_SEED_USER_ID_PREFIX = "seed-";
 
 function getMarketplaceDc() {
   return getFirebaseDataConnect(marketplaceConnectorConfig);
@@ -103,6 +102,10 @@ function buildTone(category: string, tab: "buying" | "lend"): MarketTone {
 
 function normalizeRole(value: string): MarketViewerIdentity["role"] {
   return value === "faculty" || value === "alumni" || value === "moderator" || value === "admin" ? value : "student";
+}
+
+function isLegacySeedMarketActorId(value: string | null | undefined) {
+  return typeof value === "string" && value.startsWith(LEGACY_MARKET_SEED_USER_ID_PREFIX);
 }
 
 function sortNewest<T extends { createdAt: string }>(items: T[]) {
@@ -170,145 +173,17 @@ async function readLiveMarketSnapshot(tenantId: string) {
   };
 }
 
-async function seedLiveMarketFromFallback(viewer: MarketViewerIdentity) {
-  if (liveSeededTenants.has(viewer.tenantId)) {
-    return;
-  }
-
-  const snapshot = await readLiveMarketSnapshot(viewer.tenantId);
-  if (snapshot.listings.length > 0 || snapshot.requests.length > 0) {
-    liveSeededTenants.add(viewer.tenantId);
-    return;
-  }
-
-  const fallback = await getFallbackMarketStoreSnapshot(viewer.tenantId);
-  if (fallback.listings.length === 0 && fallback.requests.length === 0) {
-    liveSeededTenants.add(viewer.tenantId);
-    return;
-  }
-
-  const dc = getMarketplaceDc();
-  const listingIds = new Set(fallback.listings.map((listing) => listing.id));
-  const requestIds = new Set(fallback.requests.map((request) => request.id));
-
-  for (const listing of fallback.listings) {
-    await createMarketListing(dc, {
-      id: listing.id,
-      tenantId: listing.tenantId,
-      sellerUserId: listing.seller.userId,
-      sellerUsername: listing.seller.username,
-      sellerName: listing.seller.displayName,
-      sellerRole: listing.seller.role,
-      title: listing.title,
-      description: listing.description,
-      category: listing.category,
-      condition: listing.condition,
-      priceAmount: listing.priceAmount,
-      location: listing.location,
-      campusSpot: listing.campusSpot,
-      createdAt: listing.createdAt
-    });
-
-    for (const asset of listing.media) {
-      const media = buildPersistedMedia(asset, listing.createdAt);
-      await createMarketListingMedia(dc, {
-        id: media.id,
-        tenantId: listing.tenantId,
-        listingId: listing.id,
-        kind: media.kind,
-        url: media.url,
-        fileName: media.fileName,
-        mimeType: media.mimeType,
-        sizeBytes: media.sizeBytes,
-        storagePath: media.storagePath,
-        createdAt: media.createdAt
-      });
-    }
-
-    for (const savedUserId of listing.savedByUserIds) {
-      await createMarketListingSave(dc, {
-        id: `save-${listing.id}-${savedUserId}`,
-        tenantId: listing.tenantId,
-        listingId: listing.id,
-        userId: savedUserId,
-        createdAt: listing.createdAt
-      });
-    }
-  }
-
-  for (const request of fallback.requests) {
-    await createMarketRequest(dc, {
-      id: request.id,
-      tenantId: request.tenantId,
-      requesterUserId: request.requester.userId,
-      requesterUsername: request.requester.username,
-      requesterName: request.requester.displayName,
-      requesterRole: request.requester.role,
-      tab: request.tab,
-      tag: request.tag,
-      title: request.title,
-      detail: request.detail,
-      category: request.category,
-      campusSpot: request.campusSpot,
-      budgetLabel: request.budgetLabel,
-      budgetAmount: request.budgetAmount,
-      tone: request.tone,
-      createdAt: request.createdAt
-    });
-
-    for (const asset of request.media) {
-      const media = buildPersistedMedia(asset, request.createdAt);
-      await createMarketRequestMedia(dc, {
-        id: media.id,
-        tenantId: request.tenantId,
-        requestId: request.id,
-        kind: media.kind,
-        url: media.url,
-        fileName: media.fileName,
-        mimeType: media.mimeType,
-        sizeBytes: media.sizeBytes,
-        storagePath: media.storagePath,
-        createdAt: media.createdAt
-      });
-    }
-  }
-
-  for (const contact of fallback.contacts) {
-    if (contact.targetType === "listing" && listingIds.has(contact.targetId)) {
-      await createMarketListingContact(dc, {
-        id: contact.id,
-        tenantId: contact.tenantId,
-        listingId: contact.targetId,
-        fromUserId: contact.fromUserId,
-        toUserId: contact.toUserId,
-        message: contact.message,
-        createdAt: contact.createdAt
-      });
-      continue;
-    }
-
-    if (contact.targetType === "request" && requestIds.has(contact.targetId)) {
-      await createMarketRequestContact(dc, {
-        id: contact.id,
-        tenantId: contact.tenantId,
-        requestId: contact.targetId,
-        fromUserId: contact.fromUserId,
-        toUserId: contact.toUserId,
-        message: contact.message,
-        createdAt: contact.createdAt
-      });
-    }
-  }
-
-  liveSeededTenants.add(viewer.tenantId);
-}
-
 function buildDashboard(
   snapshot: Awaited<ReturnType<typeof readLiveMarketSnapshot>>,
   viewer: MarketViewerIdentity
 ): MarketDashboardResponse {
+  const activeListings = snapshot.listings.filter((item) => !isLegacySeedMarketActorId(item.sellerUserId));
+  const activeRequests = snapshot.requests.filter((item) => !isLegacySeedMarketActorId(item.requesterUserId));
+  const activeListingIds = new Set(activeListings.map((item) => item.id));
+  const activeRequestIds = new Set(activeRequests.map((item) => item.id));
+
   const listingMediaMap = new Map<string, MarketMediaAsset[]>();
-  for (const item of snapshot.listingMedia) {
+  for (const item of snapshot.listingMedia.filter((entry) => activeListingIds.has(entry.listingId))) {
     const current = listingMediaMap.get(item.listingId) ?? [];
     current.push({
       id: item.id,
@@ -323,7 +198,7 @@ function buildDashboard(
   }
 
   const requestMediaMap = new Map<string, MarketMediaAsset[]>();
-  for (const item of snapshot.requestMedia) {
+  for (const item of snapshot.requestMedia.filter((entry) => activeRequestIds.has(entry.requestId))) {
     const current = requestMediaMap.get(item.requestId) ?? [];
     current.push({
       id: item.id,
@@ -339,7 +214,7 @@ function buildDashboard(
 
   const saveCounts = new Map<string, number>();
   const savedListingIds = new Set<string>();
-  for (const item of snapshot.saves) {
+  for (const item of snapshot.saves.filter((entry) => activeListingIds.has(entry.listingId))) {
     saveCounts.set(item.listingId, Number(saveCounts.get(item.listingId) ?? 0) + 1);
     if (item.userId === viewer.userId) {
       savedListingIds.add(item.listingId);
@@ -347,17 +222,17 @@ function buildDashboard(
   }
 
   const listingInquiryCounts = new Map<string, number>();
-  for (const item of snapshot.listingContacts) {
+  for (const item of snapshot.listingContacts.filter((entry) => activeListingIds.has(entry.listingId))) {
     listingInquiryCounts.set(item.listingId, Number(listingInquiryCounts.get(item.listingId) ?? 0) + 1);
   }
 
   const requestResponseCounts = new Map<string, number>();
-  for (const item of snapshot.requestContacts) {
+  for (const item of snapshot.requestContacts.filter((entry) => activeRequestIds.has(entry.requestId))) {
     requestResponseCounts.set(item.requestId, Number(requestResponseCounts.get(item.requestId) ?? 0) + 1);
   }
 
   const listings = sortNewest(
-    snapshot.listings.map((item) => ({
+    activeListings.map((item) => ({
       id: item.id,
       tenantId: item.tenantId,
       seller: {
@@ -382,7 +257,7 @@ function buildDashboard(
   );
 
   const requests = sortNewest(
-    snapshot.requests.map((item) => {
+    activeRequests.map((item) => {
       const tab = item.tab === "lend" ? "lend" : "buying";
       return {
         id: item.id,
@@ -424,7 +299,6 @@ function buildDashboard(
 }
 
 export async function getLiveMarketDashboard(viewer: MarketViewerIdentity) {
-  await seedLiveMarketFromFallback(viewer);
   return buildDashboard(await readLiveMarketSnapshot(viewer.tenantId), viewer);
 }
 

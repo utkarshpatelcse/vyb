@@ -19,12 +19,15 @@ export async function POST(request: Request) {
   }
 
   const payload = (await request.json().catch(() => null)) as
-    | {
+      | {
         title?: string;
         body?: string;
         communityId?: string | null;
         kind?: "text" | "image" | "video";
         mediaUrl?: string | null;
+        mediaStoragePath?: string | null;
+        mediaMimeType?: string | null;
+        mediaSizeBytes?: number | null;
         location?: string | null;
         placement?: "feed" | "vibe";
       }
@@ -55,11 +58,19 @@ export async function POST(request: Request) {
         title: payload.title ?? "",
         body: payload.body ?? "",
         mediaUrl: payload.mediaUrl ?? null,
+        mediaStoragePath: payload.mediaStoragePath ?? null,
+        mediaMimeType: payload.mediaMimeType ?? null,
+        mediaSizeBytes: payload.mediaSizeBytes ?? null,
         location: payload.location ?? null
       },
       viewer
     );
-  } catch {
+  } catch (error) {
+    console.error("[web/posts] create-failed", {
+      tenantId: viewer.tenantId,
+      membershipId: viewer.membershipId,
+      message: error instanceof Error ? error.message : "unknown"
+    });
     return NextResponse.json(
       {
         error: {

@@ -19,14 +19,9 @@ import type {
 } from "@vyb/contracts";
 import { deleteMarketMediaAssets } from "./market-media-server";
 import { normalizeMarketCampusSpot, normalizeMarketLocation } from "./market-defaults";
+import type { MarketViewerIdentity } from "./market-types";
 
-export type MarketViewerIdentity = {
-  userId: string;
-  tenantId: string;
-  username: string;
-  displayName: string;
-  role: MembershipSummary["role"];
-};
+export type { MarketViewerIdentity } from "./market-types";
 
 type StoredListing = Omit<MarketListing, "isSaved" | "savedCount" | "inquiryCount"> & {
   savedByUserIds: string[];
@@ -452,17 +447,8 @@ async function persistStore() {
 }
 
 async function ensureTenantSeed(store: MarketStore, tenantId: string) {
-  const hasTenantContent =
-    store.listings.some((listing) => listing.tenantId === tenantId) ||
-    store.requests.some((request) => request.tenantId === tenantId);
-
-  if (hasTenantContent) {
-    return;
-  }
-
-  store.listings.push(...buildSeedListings(tenantId));
-  store.requests.push(...buildSeedRequests(tenantId));
-  await persistStore();
+  void store;
+  void tenantId;
 }
 
 function sortNewest<T extends { createdAt: string }>(items: T[]) {

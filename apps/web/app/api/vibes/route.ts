@@ -45,6 +45,9 @@ export async function POST(request: Request) {
         title?: string | null;
         body?: string;
         mediaUrl?: string | null;
+        mediaStoragePath?: string | null;
+        mediaMimeType?: string | null;
+        mediaSizeBytes?: number | null;
         location?: string | null;
       }
     | null;
@@ -74,11 +77,19 @@ export async function POST(request: Request) {
         title: payload.title ?? "",
         body: payload.body ?? "",
         mediaUrl: payload.mediaUrl,
+        mediaStoragePath: payload.mediaStoragePath ?? null,
+        mediaMimeType: payload.mediaMimeType ?? null,
+        mediaSizeBytes: payload.mediaSizeBytes ?? null,
         location: payload.location ?? null
       },
       viewer
     );
-  } catch {
+  } catch (error) {
+    console.error("[web/vibes] create-failed", {
+      tenantId: viewer.tenantId,
+      membershipId: viewer.membershipId,
+      message: error instanceof Error ? error.message : "unknown"
+    });
     return NextResponse.json(
       {
         error: {

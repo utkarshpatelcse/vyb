@@ -110,7 +110,10 @@ async function persistMediaAsset({
   assetType,
   mediaUrl,
   mediaType,
-  placement = "feed"
+  placement = "feed",
+  storagePathOverride = null,
+  mediaMimeTypeOverride = null,
+  mediaSizeBytesOverride = null
 }) {
   if (!mediaUrl) {
     return {
@@ -125,9 +128,9 @@ async function persistMediaAsset({
   if (!decoded) {
     return {
       mediaUrl,
-      storagePath: null,
-      mediaMimeType: null,
-      mediaSizeBytes: null
+      storagePath: storagePathOverride,
+      mediaMimeType: mediaMimeTypeOverride,
+      mediaSizeBytes: mediaSizeBytesOverride
     };
   }
 
@@ -344,7 +347,10 @@ export async function createPost(payload) {
     assetType: "posts",
     mediaUrl: payload.mediaUrl ?? null,
     mediaType: payload.kind,
-    placement
+    placement,
+    storagePathOverride: payload.mediaStoragePath ?? null,
+    mediaMimeTypeOverride: payload.mediaMimeType ?? null,
+    mediaSizeBytesOverride: payload.mediaSizeBytes ?? null
   });
 
   await createPostMutation(getSocialDc(), {
@@ -483,7 +489,10 @@ export async function createStory(payload) {
     assetType: "stories",
     mediaUrl: payload.mediaUrl,
     mediaType: payload.mediaType,
-    placement: "feed"
+    placement: "feed",
+    storagePathOverride: payload.mediaStoragePath ?? null,
+    mediaMimeTypeOverride: payload.mediaMimeType ?? null,
+    mediaSizeBytesOverride: payload.mediaSizeBytes ?? null
   });
 
   await createStoryMutation(getSocialDc(), {

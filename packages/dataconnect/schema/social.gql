@@ -3,9 +3,9 @@ type Post @table(name: "posts", singular: "post", plural: "posts", key: ["id"]) 
   tenant: Tenant!
   community: Community
   membership: TenantMembership!
-  authorUserId: UUID! @col(name: "author_user_id")
-  authorUsername: String! @col(name: "author_username")
-  authorName: String! @col(name: "author_name")
+  authorUserId: UUID @col(name: "author_user_id")
+  authorUsername: String @col(name: "author_username")
+  authorName: String @col(name: "author_name")
   placement: String! @default(value: "feed")
   kind: String! @default(value: "text")
   title: String
@@ -47,7 +47,7 @@ type Comment @table(name: "comments", singular: "comment", plural: "comments", k
   tenant: Tenant!
   post: Post!
   membership: TenantMembership!
-  authorUserId: UUID! @col(name: "author_user_id")
+  authorUserId: UUID @col(name: "author_user_id")
   parentComment: Comment
   body: String!
   status: String! @default(value: "published")

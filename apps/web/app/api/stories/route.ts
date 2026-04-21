@@ -44,6 +44,9 @@ export async function POST(request: Request) {
     | {
         mediaType?: "image" | "video";
         mediaUrl?: string;
+        mediaStoragePath?: string | null;
+        mediaMimeType?: string | null;
+        mediaSizeBytes?: number | null;
         caption?: string | null;
       }
     | null;
@@ -65,11 +68,19 @@ export async function POST(request: Request) {
       await createCampusStory(viewer, {
         mediaType: payload.mediaType,
         mediaUrl: payload.mediaUrl,
+        mediaStoragePath: payload.mediaStoragePath ?? null,
+        mediaMimeType: payload.mediaMimeType ?? null,
+        mediaSizeBytes: payload.mediaSizeBytes ?? null,
         caption: payload.caption ?? null
       }),
       { status: 201 }
     );
-  } catch {
+  } catch (error) {
+    console.error("[web/stories] create-failed", {
+      tenantId: viewer.tenantId,
+      membershipId: viewer.membershipId,
+      message: error instanceof Error ? error.message : "unknown"
+    });
     return NextResponse.json(
       {
         error: {

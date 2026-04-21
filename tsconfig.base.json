@@ -16,6 +16,8 @@
     "paths": {
       "@vyb/contracts": ["packages/contracts/src/index.ts"],
       "@vyb/app-core": ["packages/app-core/src/index.ts"],
+      "@vyb/config": ["packages/config"],
+      "@vyb/dataconnect-marketplace-admin": ["packages/dataconnect/marketplace-admin-sdk"],
       "@vyb/design-tokens": ["packages/design-tokens/src/index.ts"],
       "@vyb/ui-web": ["packages/ui-web/src/index.tsx"],
       "@vyb/validation": ["packages/validation/src/index.ts"]

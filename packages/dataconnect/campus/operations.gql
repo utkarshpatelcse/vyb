@@ -92,6 +92,131 @@ query ListCommunitiesForMembership($membershipId: UUID!) @auth(level: NO_ACCESS)
   }
 }
 
+query GetTenantMembershipProfileByUserAndTenant($tenantId: UUID!, $userId: UUID!) @auth(level: NO_ACCESS) {
+  tenantMemberships(
+    where: {
+      tenantId: { eq: $tenantId }
+      userId: { eq: $userId }
+      deletedAt: { isNull: true }
+    }
+    limit: 1
+  ) {
+    id
+    tenantId
+    userId
+    role
+    verificationStatus
+    username
+    usernameKey
+    firstName
+    lastName
+    fullName
+    course
+    branch
+    batchYear
+    hostel
+    section
+    phoneNumber
+    profileCompleted
+    createdAt
+    updatedAt
+    tenant {
+      id
+      name
+      slug
+    }
+    user {
+      id
+      primaryEmail
+      displayName
+    }
+  }
+}
+
+query GetTenantMembershipProfileByUsername($tenantId: UUID!, $usernameKey: String!) @auth(level: NO_ACCESS) {
+  tenantMemberships(
+    where: {
+      tenantId: { eq: $tenantId }
+      usernameKey: { eq: $usernameKey }
+      profileCompleted: { eq: true }
+      deletedAt: { isNull: true }
+    }
+    limit: 1
+  ) {
+    id
+    tenantId
+    userId
+    role
+    verificationStatus
+    username
+    usernameKey
+    firstName
+    lastName
+    fullName
+    course
+    branch
+    batchYear
+    hostel
+    section
+    phoneNumber
+    profileCompleted
+    createdAt
+    updatedAt
+    tenant {
+      id
+      name
+      slug
+    }
+    user {
+      id
+      primaryEmail
+      displayName
+    }
+  }
+}
+
+query ListTenantMembershipProfilesByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  tenantMemberships(
+    where: {
+      tenantId: { eq: $tenantId }
+      profileCompleted: { eq: true }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ updatedAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    userId
+    role
+    verificationStatus
+    username
+    usernameKey
+    firstName
+    lastName
+    fullName
+    course
+    branch
+    batchYear
+    hostel
+    section
+    phoneNumber
+    profileCompleted
+    createdAt
+    updatedAt
+    tenant {
+      id
+      name
+      slug
+    }
+    user {
+      id
+      primaryEmail
+      displayName
+    }
+  }
+}
+
 mutation CreateTenant($name: String!, $slug: String!, $status: String!) @auth(level: NO_ACCESS) @transaction {
   tenant_insert(
     data: {
@@ -185,6 +310,55 @@ mutation CreateCommunityMembership(
       role: $role
       joinedAt_expr: "request.time"
       createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation UpdateTenantMembershipProfile(
+  $id: UUID!
+  $username: String!
+  $usernameKey: String!
+  $firstName: String!
+  $lastName: String
+  $fullName: String!
+  $course: String!
+  $branch: String!
+  $batchYear: Int!
+  $hostel: String
+  $section: String!
+  $phoneNumber: String
+) @auth(level: NO_ACCESS) @transaction {
+  tenantMembership_update(
+    key: { id: $id }
+    data: {
+      username: $username
+      usernameKey: $usernameKey
+      firstName: $firstName
+      lastName: $lastName
+      fullName: $fullName
+      course: $course
+      branch: $branch
+      batchYear: $batchYear
+      hostel: $hostel
+      section: $section
+      phoneNumber: $phoneNumber
+      profileCompleted: true
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation UpdateTenantMembershipUsername(
+  $id: UUID!
+  $username: String!
+  $usernameKey: String!
+) @auth(level: NO_ACCESS) @transaction {
+  tenantMembership_update(
+    key: { id: $id }
+    data: {
+      username: $username
+      usernameKey: $usernameKey
       updatedAt_expr: "request.time"
     }
   )

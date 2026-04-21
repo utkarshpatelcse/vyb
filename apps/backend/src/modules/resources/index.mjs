@@ -8,7 +8,6 @@ import {
 } from "../../../../../packages/dataconnect/resources-admin-sdk/esm/index.esm.js";
 import { readJson, sendError, sendJson } from "../../lib/http.mjs";
 import { resolveLiveContext } from "../shared/viewer-context.mjs";
-import { createResource, getResourceDetail, listResources } from "./repository.mjs";
 
 const allowedResourceTypes = new Set(["notes", "pyq", "guide"]);
 
@@ -36,6 +35,8 @@ export async function handleResourcesRoute({ request, response, url, context }) 
     return false;
   }
 
+  const resolved = await resolveLiveContext(context.actor);
+
   if (request.method === "GET" && url.pathname === "/v1/resources") {
     const tenantId = url.searchParams.get("tenantId");
     const courseId = url.searchParams.get("courseId");
@@ -51,98 +52,98 @@ export async function handleResourcesRoute({ request, response, url, context }) 
       return true;
     }
 
-    const resolved = await resolveLiveContext(context.actor);
-    if (resolved?.live?.tenant) {
-      try {
-        const data = courseId
-          ? await listResourcesByCourse(getFirebaseDataConnect(resourcesConnectorConfig), {
-              courseId,
-              limit
-            })
-          : await listResourcesByTenant(getFirebaseDataConnect(resourcesConnectorConfig), {
-              tenantId: resolved.live.tenant.id,
-              limit
-            });
-
-        sendJson(response, 200, {
-          tenantId: resolved.live.tenant.id,
-          courseId,
-          items: data.data.resources.map((item) => ({
-            id: item.id,
-            tenantId: item.tenantId,
-            membershipId: item.membershipId,
-            courseId: item.courseId ?? null,
-            title: item.title,
-            description: item.description ?? "",
-            type: item.type,
-            downloads: 0,
-            status: item.status,
-            createdAt: item.createdAt
-          })),
-          nextCursor: null
-        });
-        return true;
-      } catch {
-        // fall through to local starter data
-      }
+    if (!resolved?.live?.tenant) {
+      sendError(response, 401, "UNAUTHENTICATED", "An authenticated membership is required.");
+      return true;
     }
 
-    const items = await listResources({ tenantId, courseId, limit });
-    sendJson(response, 200, {
-      tenantId,
-      courseId,
-      items,
-      nextCursor: null
-    });
-    return true;
+    try {
+      const data = courseId
+        ? await listResourcesByCourse(getFirebaseDataConnect(resourcesConnectorConfig), {
+            courseId,
+            limit
+          })
+        : await listResourcesByTenant(getFirebaseDataConnect(resourcesConnectorConfig), {
+            tenantId: resolved.live.tenant.id,
+            limit
+          });
+
+      sendJson(response, 200, {
+        tenantId: resolved.live.tenant.id,
+        courseId,
+        items: data.data.resources.map((item) => ({
+          id: item.id,
+          tenantId: item.tenantId,
+          membershipId: item.membershipId,
+          courseId: item.courseId ?? null,
+          title: item.title,
+          description: item.description ?? "",
+          type: item.type,
+          downloads: 0,
+          status: item.status,
+          createdAt: item.createdAt
+        })),
+        nextCursor: null
+      });
+      return true;
+    } catch (error) {
+      console.error("[resources] list-failed", {
+        tenantId: resolved.live.tenant.id,
+        courseId,
+        message: error instanceof Error ? error.message : "unknown"
+      });
+      sendError(response, 502, "RESOURCES_UNAVAILABLE", "Resources are unavailable right now.");
+      return true;
+    }
   }
 
   const detailMatch = request.method === "GET" ? url.pathname.match(/^\/v1\/resources\/([^/]+)$/) : null;
   if (detailMatch) {
-    const resolved = await resolveLiveContext(context.actor);
-    if (resolved?.live?.tenant) {
-      try {
-        const data = await getResourceDetailQuery(getFirebaseDataConnect(resourcesConnectorConfig), {
-          resourceId: detailMatch[1]
-        });
-
-        if (data.data.resource) {
-          sendJson(response, 200, {
-            item: {
-              id: data.data.resource.id,
-              tenantId: data.data.resource.tenantId,
-              membershipId: data.data.resource.membershipId,
-              courseId: data.data.resource.courseId ?? null,
-              title: data.data.resource.title,
-              description: data.data.resource.description ?? "",
-              type: data.data.resource.type,
-              downloads: 0,
-              status: data.data.resource.status,
-              createdAt: data.data.resource.createdAt,
-              files: data.data.resourceFiles.map((file) => ({
-                id: file.id,
-                resourceId: file.resourceId,
-                fileName: file.fileName,
-                mimeType: file.mimeType,
-                sizeBytes: Number(file.sizeBytes)
-              }))
-            }
-          });
-          return true;
-        }
-      } catch {
-        // fall through to local starter data
-      }
-    }
-
-    const item = await getResourceDetail(detailMatch[1]);
-    if (!item) {
-      sendError(response, 404, "RESOURCE_NOT_FOUND", "Resource not found.");
+    if (!resolved?.live?.tenant) {
+      sendError(response, 401, "UNAUTHENTICATED", "An authenticated membership is required.");
       return true;
     }
 
-    sendJson(response, 200, { item });
-    return true;
+    try {
+      const data = await getResourceDetailQuery(getFirebaseDataConnect(resourcesConnectorConfig), {
+        resourceId: detailMatch[1]
+      });
+
+      if (!data.data.resource) {
+        sendError(response, 404, "RESOURCE_NOT_FOUND", "Resource not found.");
+        return true;
+      }
+
+      sendJson(response, 200, {
+        item: {
+          id: data.data.resource.id,
+          tenantId: data.data.resource.tenantId,
+          membershipId: data.data.resource.membershipId,
+          courseId: data.data.resource.courseId ?? null,
+          title: data.data.resource.title,
+          description: data.data.resource.description ?? "",
+          type: data.data.resource.type,
+          downloads: 0,
+          status: data.data.resource.status,
+          createdAt: data.data.resource.createdAt,
+          files: data.data.resourceFiles.map((file) => ({
+            id: file.id,
+            resourceId: file.resourceId,
+            fileName: file.fileName,
+            mimeType: file.mimeType,
+            sizeBytes: Number(file.sizeBytes)
+          }))
+        }
+      });
+      return true;
+    } catch (error) {
+      console.error("[resources] detail-failed", {
+        resourceId: detailMatch[1],
+        message: error instanceof Error ? error.message : "unknown"
+      });
+      sendError(response, 502, "RESOURCES_UNAVAILABLE", "Resource details are unavailable right now.");
+      return true;
+    }
   }
 
   if (request.method === "POST" && url.pathname === "/v1/resources") {
@@ -172,48 +173,45 @@ export async function handleResourcesRoute({ request, response, url, context }) 
       return true;
     }
 
-    const resolved = await resolveLiveContext(context.actor);
-    if (resolved?.live?.tenant && resolved.live.membership) {
-      try {
-        const created = await createResourceMutation(getFirebaseDataConnect(resourcesConnectorConfig), {
+    if (!resolved?.live?.tenant || !resolved.live.membership) {
+      sendError(response, 401, "UNAUTHENTICATED", "An authenticated membership is required.");
+      return true;
+    }
+
+    try {
+      const created = await createResourceMutation(getFirebaseDataConnect(resourcesConnectorConfig), {
+        tenantId: resolved.live.tenant.id,
+        membershipId: resolved.live.membership.id,
+        courseId: requireNonEmptyString(payload.courseId) ? payload.courseId : null,
+        title: payload.title.trim(),
+        description: requireNonEmptyString(payload.description) ? payload.description.trim() : null,
+        type: payload.type ?? "notes"
+      });
+
+      sendJson(response, 201, {
+        item: {
+          id: created.data.resource_insert.id,
           tenantId: resolved.live.tenant.id,
           membershipId: resolved.live.membership.id,
           courseId: requireNonEmptyString(payload.courseId) ? payload.courseId : null,
           title: payload.title.trim(),
-          description: requireNonEmptyString(payload.description) ? payload.description.trim() : null,
-          type: payload.type ?? "notes"
-        });
-
-        sendJson(response, 201, {
-          item: {
-            id: created.data.resource_insert.id,
-            tenantId: resolved.live.tenant.id,
-            membershipId: resolved.live.membership.id,
-            courseId: requireNonEmptyString(payload.courseId) ? payload.courseId : null,
-            title: payload.title.trim(),
-            description: requireNonEmptyString(payload.description) ? payload.description.trim() : "",
-            type: payload.type ?? "notes",
-            downloads: 0,
-            status: "pending",
-            createdAt: new Date().toISOString()
-          }
-        });
-        return true;
-      } catch {
-        // fall through to local starter data
-      }
+          description: requireNonEmptyString(payload.description) ? payload.description.trim() : "",
+          type: payload.type ?? "notes",
+          downloads: 0,
+          status: "pending",
+          createdAt: new Date().toISOString()
+        }
+      });
+      return true;
+    } catch (error) {
+      console.error("[resources] create-failed", {
+        tenantId: resolved.live.tenant.id,
+        membershipId: resolved.live.membership.id,
+        message: error instanceof Error ? error.message : "unknown"
+      });
+      sendError(response, 502, "RESOURCE_CREATE_FAILED", "We could not create the resource right now.");
+      return true;
     }
-
-    const item = await createResource({
-      tenantId: payload.tenantId,
-      membershipId: payload.membershipId,
-      courseId: payload.courseId ?? null,
-      title: payload.title.trim(),
-      description: requireNonEmptyString(payload.description) ? payload.description.trim() : "",
-      type: payload.type ?? "notes"
-    });
-    sendJson(response, 201, { item });
-    return true;
   }
 
   return false;

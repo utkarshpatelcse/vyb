@@ -63,14 +63,14 @@ export interface CreatePostData {
 }
 
 export interface CreatePostVariables {
-  id: UUIDString;
+  id?: UUIDString | null;
   tenantId: UUIDString;
   communityId?: UUIDString | null;
   membershipId: UUIDString;
-  authorUserId: UUIDString;
-  authorUsername: string;
-  authorName: string;
-  placement: string;
+  authorUserId?: UUIDString | null;
+  authorUsername?: string;
+  authorName?: string;
+  placement?: string;
   kind: string;
   title?: string | null;
   body: string;
@@ -138,9 +138,9 @@ export interface GetPostByIdData {
     tenantId: UUIDString;
     communityId?: UUIDString | null;
     membershipId: UUIDString;
-    authorUserId: UUIDString;
-    authorUsername: string;
-    authorName: string;
+    authorUserId?: UUIDString | null;
+    authorUsername?: string | null;
+    authorName?: string | null;
     placement: string;
     kind: string;
     title?: string | null;
@@ -179,7 +179,7 @@ export interface ListCommentsByPostData {
     id: UUIDString;
     postId: UUIDString;
     membershipId: UUIDString;
-    authorUserId: UUIDString;
+    authorUserId?: UUIDString | null;
     parentCommentId?: UUIDString | null;
     body: string;
     status: string;
@@ -197,7 +197,7 @@ export interface ListCommentsByTenantData {
     id: UUIDString;
     postId: UUIDString;
     membershipId: UUIDString;
-    authorUserId: UUIDString;
+    authorUserId?: UUIDString | null;
     parentCommentId?: UUIDString | null;
     body: string;
     status: string;
@@ -216,9 +216,9 @@ export interface ListFeedByTenantData {
     tenantId: UUIDString;
     communityId?: UUIDString | null;
     membershipId: UUIDString;
-    authorUserId: UUIDString;
-    authorUsername: string;
-    authorName: string;
+    authorUserId?: UUIDString | null;
+    authorUsername?: string | null;
+    authorName?: string | null;
     placement: string;
     kind: string;
     title?: string | null;
@@ -235,7 +235,7 @@ export interface ListFeedByTenantData {
 
 export interface ListFeedByTenantVariables {
   tenantId: UUIDString;
-  placement: string;
+  placement?: string;
   limit: number;
 }
 
@@ -277,9 +277,9 @@ export interface ListPostsByAuthorData {
     tenantId: UUIDString;
     communityId?: UUIDString | null;
     membershipId: UUIDString;
-    authorUserId: UUIDString;
-    authorUsername: string;
-    authorName: string;
+    authorUserId?: UUIDString | null;
+    authorUsername?: string | null;
+    authorName?: string | null;
     placement: string;
     kind: string;
     title?: string | null;

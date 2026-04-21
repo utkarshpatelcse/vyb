@@ -1,4 +1,4 @@
-query ListFeedByTenant($tenantId: UUID!, $placement: String!, $limit: Int!) @auth(level: NO_ACCESS) {
+query ListFeedByTenant($tenantId: UUID!, $placement: String! = "feed", $limit: Int!) @auth(level: NO_ACCESS) {
   posts(
     where: {
       tenantId: { eq: $tenantId }
@@ -235,14 +235,14 @@ query GetFollowByKey($followKey: String!) @auth(level: NO_ACCESS) {
 }
 
 mutation CreatePost(
-  $id: UUID!
+  $id: UUID
   $tenantId: UUID!
   $communityId: UUID
   $membershipId: UUID!
-  $authorUserId: UUID!
-  $authorUsername: String!
-  $authorName: String!
-  $placement: String!
+  $authorUserId: UUID
+  $authorUsername: String! = "vyb_user"
+  $authorName: String! = "Vyb Student"
+  $placement: String! = "feed"
   $kind: String!
   $title: String
   $body: String!

@@ -13,9 +13,10 @@ Multi-tenant campus platform architecture with a responsive web client in Phase 
 - Authenticated users now land on a responsive `/home` feed surface after onboarding, while `/dashboard` is reserved for profile-style account details
 - A single backend runtime now hosts identity, campus, social, and resources modules for Phase 1
 - Data Connect schema and domain-owned connectors are scaffolded under `packages/dataconnect`
-- Backend social and resources modules now persist local dev data to JSON-backed stores
+- Active identity, social, and resources mutations now use Firebase Data Connect as the authoritative persistence path
 - Firebase Data Connect admin SDKs are generated and the schema/connectors compile successfully
-- Identity, campus, social, and resources modules now attempt live Data Connect reads/writes with local fallback
+- Identity, campus, social, and resources modules now fail closed when Data Connect writes are unavailable instead of mutating local JSON stores
+- Campus post, story, and vibe media now upload to Firebase Storage before publish requests, and large videos are optimized before the final size gate runs
 - The `vyb` Data Connect service is deployed in `asia-south1` on project `vybnet-e2242`
 - Firebase Admin now isolates Data Connect connectors per app instance to avoid cross-connector operation cache collisions
 - Vyb remains the product brand; any college-specific config in this repo is only rollout reference data for the first onboarded tenant

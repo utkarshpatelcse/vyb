@@ -9,7 +9,6 @@ import {
   PROFILE_COMPLETION_COOKIE,
   readDevSessionFromCookieStore
 } from "../../../src/lib/dev-session";
-import { buildFallbackProfileResponse, upsertFallbackProfile } from "../../../src/lib/profile-fallback";
 
 export async function GET() {
   const viewer = readDevSessionFromCookieStore(await cookies());
@@ -30,10 +29,18 @@ export async function GET() {
     const profile = await fetchBackendJson("/v1/profile", viewer);
     return NextResponse.json(profile);
   } catch (error) {
-    console.warn("[web/profile] get-fallback", {
+    console.error("[web/profile] get-failed", {
       reason: error instanceof Error ? error.message : "unknown"
     });
-    return NextResponse.json(await buildFallbackProfileResponse(viewer));
+    return NextResponse.json(
+      {
+        error: {
+          code: "PROFILE_SERVICE_UNAVAILABLE",
+          message: "The profile service is unavailable right now."
+        }
+      },
+      { status: 502 }
+    );
   }
 }
 
@@ -152,32 +159,17 @@ export async function PUT(request: Request) {
 
     return NextResponse.json(parsed, { status: upstream.status });
   } catch (error) {
-    console.warn("[web/profile] save-fallback", {
+    console.error("[web/profile] save-failed", {
       reason: error instanceof Error ? error.message : "unknown"
     });
-    const fallbackProfile = await upsertFallbackProfile(viewer, parsedPayload.data);
-    cookieStore.set(
-      DEV_SESSION_COOKIE,
-      encodeDevSession({
-        ...viewer,
-        displayName: fallbackProfile.profile?.fullName ?? viewer.displayName
-      }),
+    return NextResponse.json(
       {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-        path: "/",
-        maxAge: 60 * 60 * 8
-      }
+        error: {
+          code: "PROFILE_SAVE_FAILED",
+          message: "We could not save your profile right now."
+        }
+      },
+      { status: 502 }
     );
-    cookieStore.set(PROFILE_COMPLETION_COOKIE, "1", {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 60 * 60 * 8
-    });
-
-    return NextResponse.json(fallbackProfile);
   }
 }

@@ -29,10 +29,18 @@ type TenantMembership
   user: User!
   role: String! @default(value: "student")
   verificationStatus: String! @col(name: "verification_status") @default(value: "pending")
+  username: String
+  usernameKey: String @col(name: "username_key") @unique
+  firstName: String @col(name: "first_name")
+  lastName: String @col(name: "last_name")
+  fullName: String @col(name: "full_name")
   course: String
   branch: String
   batchYear: Int @col(name: "batch_year")
   hostel: String
+  section: String
+  phoneNumber: String @col(name: "phone_number")
+  profileCompleted: Boolean! @col(name: "profile_completed") @default(value: false)
   joinedAt: Timestamp! @col(name: "joined_at") @default(expr: "request.time")
   createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
   updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
@@ -83,4 +91,3 @@ extend type CommunityMembership {
   communityId: UUID!
   membershipId: UUID!
 }
-

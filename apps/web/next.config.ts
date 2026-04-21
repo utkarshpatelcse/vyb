@@ -46,7 +46,9 @@ loadWorkspaceRootEnv();
 const nextConfig: NextConfig = {
   transpilePackages: [
     "@vyb/app-core",
+    "@vyb/config",
     "@vyb/contracts",
+    "@vyb/dataconnect-marketplace-admin",
     "@vyb/design-tokens",
     "@vyb/validation",
     "@vyb/ui-web"
