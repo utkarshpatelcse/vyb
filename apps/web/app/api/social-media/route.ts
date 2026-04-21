@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { uploadSocialMediaAsset } from "../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../src/lib/dev-session";
-import { persistSocialMediaAsset } from "../../../src/lib/social-media-server";
 
 export const runtime = "nodejs";
 
@@ -49,11 +49,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    const asset = await persistSocialMediaAsset({
-      tenantId: viewer.tenantId,
-      userId: viewer.userId,
+    const asset = await uploadSocialMediaAsset(viewer, {
       intent,
-      file
+      fileName: file.name,
+      mimeType: file.type,
+      base64Data: Buffer.from(await file.arrayBuffer()).toString("base64")
     });
 
     return NextResponse.json({ asset }, { status: 201 });

@@ -128,6 +128,7 @@ In Vercel, set:
 - `VYB_API_BASE_URL=https://<cloud-run-url>`
 - `VYB_INTERNAL_API_KEY=<same-secret-used-on-cloud-run>`
 - the same public Firebase web config values already used locally
+- for market and social media uploads that still pass through the Next.js server runtime, set `FIREBASE_ADMIN_CREDENTIALS_JSON` or `FIREBASE_ADMIN_CREDENTIALS_BASE64` with a Firebase service account because Vercel does not provide Cloud Run-style service identity
 
 Redeploy Vercel after changing the environment variables.
 

@@ -11,15 +11,15 @@ import type {
   ToggleMarketSaveResponse
 } from "@vyb/contracts";
 import {
-  createLiveMarketContact,
-  createLiveMarketPost,
-  deleteLiveMarketListing,
-  getLiveMarketDashboard,
-  markLiveMarketListingSold,
-  toggleLiveMarketSave,
-  updateLiveMarketListing
-} from "./market-live";
-import type { MarketViewerIdentity } from "./market-types";
+  createMarketContact as createMarketContactRequest,
+  createMarketPost as createMarketPostRequest,
+  deleteMarketListing as deleteMarketListingRequest,
+  getMarketDashboard as getMarketDashboardRequest,
+  markMarketListingSold as markMarketListingSoldRequest,
+  toggleMarketSave as toggleMarketSaveRequest,
+  updateMarketListing as updateMarketListingRequest
+} from "./backend";
+import type { DevSession } from "./dev-session";
 
 function logMarketFailure(scope: string, error: unknown) {
   console.error(`[market] ${scope}:failed`, {
@@ -32,71 +32,71 @@ function createMarketFailure(scope: string, error: unknown) {
   return error instanceof Error ? error : new Error("Market service is unavailable right now.");
 }
 
-export async function getMarketDashboard(viewer: MarketViewerIdentity): Promise<MarketDashboardResponse> {
+export async function getMarketDashboard(viewer: DevSession): Promise<MarketDashboardResponse> {
   try {
-    return await getLiveMarketDashboard(viewer);
+    return await getMarketDashboardRequest(viewer);
   } catch (error) {
     throw createMarketFailure("dashboard", error);
   }
 }
 
 export async function createMarketPost(
-  viewer: MarketViewerIdentity,
+  viewer: DevSession,
   payload: CreateMarketPostRequest
 ): Promise<CreateMarketPostResponse> {
   try {
-    return await createLiveMarketPost(viewer, payload);
+    return await createMarketPostRequest(viewer, payload);
   } catch (error) {
     throw createMarketFailure("create", error);
   }
 }
 
 export async function updateMarketListing(
-  viewer: MarketViewerIdentity,
+  viewer: DevSession,
   payload: UpdateMarketListingRequest
 ): Promise<UpdateMarketListingResponse> {
   try {
-    return await updateLiveMarketListing(viewer, payload);
+    return await updateMarketListingRequest(viewer, payload);
   } catch (error) {
     throw createMarketFailure("update", error);
   }
 }
 
 export async function markMarketListingSold(
-  viewer: MarketViewerIdentity,
+  viewer: DevSession,
   listingId: string
 ): Promise<ManageMarketListingResponse> {
   try {
-    return await markLiveMarketListingSold(viewer, listingId);
+    return await markMarketListingSoldRequest(viewer, listingId);
   } catch (error) {
     throw createMarketFailure("sold", error);
   }
 }
 
 export async function deleteMarketListing(
-  viewer: MarketViewerIdentity,
+  viewer: DevSession,
   listingId: string
 ): Promise<ManageMarketListingResponse> {
   try {
-    return await deleteLiveMarketListing(viewer, listingId);
+    return await deleteMarketListingRequest(viewer, listingId);
   } catch (error) {
     throw createMarketFailure("delete", error);
   }
 }
 
 export async function toggleMarketSave(
-  viewer: MarketViewerIdentity,
+  viewer: DevSession,
   listingId: string
 ): Promise<ToggleMarketSaveResponse> {
   try {
-    return await toggleLiveMarketSave(viewer, listingId);
+    return await toggleMarketSaveRequest(viewer, { listingId });
   } catch (error) {
     throw createMarketFailure("save", error);
   }
 }
 
 export async function createMarketContact(
-  viewer: MarketViewerIdentity,
+  viewer: DevSession,
   input: {
     targetId: string;
     targetType: "listing" | "request";
@@ -104,7 +104,7 @@ export async function createMarketContact(
   }
 ): Promise<ContactMarketPostResponse> {
   try {
-    return await createLiveMarketContact(viewer, input);
+    return await createMarketContactRequest(viewer, input);
   } catch (error) {
     throw createMarketFailure("contact", error);
   }

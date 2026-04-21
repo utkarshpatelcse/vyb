@@ -1,12 +1,89 @@
-import { applicationDefault, getApps, initializeApp } from "firebase-admin/app";
+import { applicationDefault, cert, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getDataConnect } from "firebase-admin/data-connect";
 import { loadRootEnv } from "./root-env.mjs";
 
+function toNonEmptyString(value) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function normalizePrivateKey(value) {
+  const normalized = toNonEmptyString(value);
+  return normalized ? normalized.replace(/\\n/g, "\n") : null;
+}
+
+function readServiceAccountFromEnv() {
+  loadRootEnv();
+
+  const inlineJson =
+    toNonEmptyString(process.env.FIREBASE_ADMIN_CREDENTIALS_JSON) ??
+    toNonEmptyString(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+
+  if (inlineJson) {
+    try {
+      return JSON.parse(inlineJson);
+    } catch (error) {
+      throw new Error(
+        `Invalid Firebase admin credentials JSON in environment: ${error instanceof Error ? error.message : "unknown"}`
+      );
+    }
+  }
+
+  const base64Json =
+    toNonEmptyString(process.env.FIREBASE_ADMIN_CREDENTIALS_BASE64) ??
+    toNonEmptyString(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64);
+
+  if (base64Json) {
+    try {
+      return JSON.parse(Buffer.from(base64Json, "base64").toString("utf8"));
+    } catch (error) {
+      throw new Error(
+        `Invalid base64 Firebase admin credentials in environment: ${error instanceof Error ? error.message : "unknown"}`
+      );
+    }
+  }
+
+  const projectId =
+    toNonEmptyString(process.env.FIREBASE_PROJECT_ID) ??
+    toNonEmptyString(process.env.GOOGLE_CLOUD_PROJECT) ??
+    toNonEmptyString(process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID);
+  const clientEmail =
+    toNonEmptyString(process.env.FIREBASE_ADMIN_CLIENT_EMAIL) ??
+    toNonEmptyString(process.env.FIREBASE_SERVICE_ACCOUNT_CLIENT_EMAIL) ??
+    toNonEmptyString(process.env.FIREBASE_CLIENT_EMAIL);
+  const privateKey =
+    normalizePrivateKey(process.env.FIREBASE_ADMIN_PRIVATE_KEY) ??
+    normalizePrivateKey(process.env.FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY) ??
+    normalizePrivateKey(process.env.FIREBASE_PRIVATE_KEY);
+
+  if (projectId && clientEmail && privateKey) {
+    return {
+      projectId,
+      clientEmail,
+      privateKey,
+      privateKeyId:
+        toNonEmptyString(process.env.FIREBASE_ADMIN_PRIVATE_KEY_ID) ??
+        toNonEmptyString(process.env.FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY_ID) ??
+        undefined,
+      clientId:
+        toNonEmptyString(process.env.FIREBASE_ADMIN_CLIENT_ID) ??
+        toNonEmptyString(process.env.FIREBASE_SERVICE_ACCOUNT_CLIENT_ID) ??
+        undefined
+    };
+  }
+
+  return null;
+}
+
+function resolveFirebaseCredential() {
+  const serviceAccount = readServiceAccountFromEnv();
+  return serviceAccount ? cert(serviceAccount) : applicationDefault();
+}
+
 function buildFirebaseAdminOptions() {
   loadRootEnv();
   return {
-    credential: applicationDefault(),
+    credential: resolveFirebaseCredential(),
     projectId: process.env.FIREBASE_PROJECT_ID,
     storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
   };

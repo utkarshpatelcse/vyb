@@ -5,7 +5,6 @@ import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
 import { CampusMarketShell } from "../../src/components/campus-market-shell";
 import { getDisplayCollegeName } from "../../src/lib/college-access";
 import { getMarketDashboard } from "../../src/lib/market-data";
-import { resolveMarketViewerIdentity } from "../../src/lib/market-server";
 
 export default async function MarketPage() {
   const viewer = readDevSessionFromCookieStore(await cookies());
@@ -26,8 +25,7 @@ export default async function MarketPage() {
   const displayCollegeName = getDisplayCollegeName(profile.collegeName);
   const viewerName = profile.profile?.fullName ?? viewer.displayName;
   const viewerUsername = profile.profile?.username ?? viewer.email.split("@")[0] ?? viewer.userId;
-  const marketViewer = await resolveMarketViewerIdentity(viewer, profile);
-  const initialDashboard = await getMarketDashboard(marketViewer);
+  const initialDashboard = await getMarketDashboard(viewer);
 
   return (
     <CampusMarketShell

@@ -7,6 +7,7 @@ import {
 } from "../identity/profile-repository.mjs";
 import { trackActivity } from "../moderation/repository.mjs";
 import { resolveLiveContext } from "../shared/viewer-context.mjs";
+import { persistSocialMediaAsset } from "./media-storage.mjs";
 import {
   countPostsByUser,
   createComment,
@@ -288,6 +289,54 @@ export async function handleSocialRoute({ request, response, url, context }) {
       items: items.map(buildFeedPayload),
       nextCursor: null
     });
+    return true;
+  }
+
+  if (request.method === "POST" && url.pathname === "/v1/social-media/upload") {
+    const payload = await readJson(request);
+    if (!payload || typeof payload !== "object") {
+      sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+      return true;
+    }
+
+    const intent = payload.intent === "post" || payload.intent === "story" || payload.intent === "vibe" ? payload.intent : null;
+    if (!intent) {
+      sendError(response, 400, "INVALID_INTENT", "Upload intent is missing or invalid.");
+      return true;
+    }
+
+    if (!requireNonEmptyString(payload.mimeType) || !requireNonEmptyString(payload.fileName) || !requireNonEmptyString(payload.base64Data)) {
+      sendError(response, 400, "INVALID_FILE", "Choose an image or video before uploading.");
+      return true;
+    }
+
+    try {
+      const asset = await persistSocialMediaAsset({
+        tenantId: resolved.live.tenant.id,
+        userId: resolved.live.user.id,
+        intent,
+        fileName: payload.fileName.trim(),
+        mimeType: payload.mimeType.trim(),
+        base64Data: payload.base64Data
+      });
+
+      sendJson(response, 201, { asset });
+    } catch (error) {
+      console.error("[social] media-upload-failed", {
+        tenantId: resolved.live.tenant.id,
+        userId: resolved.live.user.id,
+        intent,
+        fileName: payload.fileName ?? null,
+        mimeType: payload.mimeType ?? null,
+        message: error instanceof Error ? error.message : "unknown"
+      });
+      sendError(
+        response,
+        502,
+        "SOCIAL_MEDIA_UPLOAD_FAILED",
+        error instanceof Error ? error.message : "We could not upload this media right now."
+      );
+    }
     return true;
   }
 

@@ -4,7 +4,6 @@ import type { UpdateMarketListingRequest } from "@vyb/contracts";
 import { readDevSessionFromCookieStore } from "../../../../../src/lib/dev-session";
 import { deleteMarketListing, updateMarketListing } from "../../../../../src/lib/market-data";
 import { persistMarketMediaAssets } from "../../../../../src/lib/market-media-server";
-import { resolveMarketViewerIdentity } from "../../../../../src/lib/market-server";
 
 function buildError(status: number, code: string, message: string) {
   return NextResponse.json(
@@ -120,7 +119,6 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   try {
-    const identity = await resolveMarketViewerIdentity(viewer);
     const media = await persistMarketMediaAssets({
       tenantId: viewer.tenantId,
       userId: viewer.userId,
@@ -130,7 +128,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     });
 
     return NextResponse.json(
-      await updateMarketListing(identity, {
+      await updateMarketListing(viewer, {
         listingId,
         title,
         category,
@@ -161,8 +159,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
   }
 
   try {
-    const identity = await resolveMarketViewerIdentity(viewer);
-    return NextResponse.json(await deleteMarketListing(identity, listingId));
+    return NextResponse.json(await deleteMarketListing(viewer, listingId));
   } catch (error) {
     return buildError(400, "MARKET_LISTING_DELETE_FAILED", error instanceof Error ? error.message : "We could not delete the listing.");
   }

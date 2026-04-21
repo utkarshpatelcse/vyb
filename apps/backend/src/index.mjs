@@ -5,6 +5,7 @@ import { createRequestContext } from "./lib/request-context.mjs";
 import { launchCollege } from "./modules/identity/college-access.mjs";
 import { getCampusModuleHealth, handleCampusRoute } from "./modules/campus/index.mjs";
 import { getIdentityModuleHealth, handleIdentityRoute } from "./modules/identity/index.mjs";
+import { getMarketModuleHealth, handleMarketRoute } from "./modules/market/index.mjs";
 import { getModerationModuleHealth, handleModerationRoute } from "./modules/moderation/index.mjs";
 import { getResourcesModuleHealth, handleResourcesRoute } from "./modules/resources/index.mjs";
 import { getSocialModuleHealth, handleSocialRoute } from "./modules/social/index.mjs";
@@ -12,7 +13,7 @@ import { getSocialModuleHealth, handleSocialRoute } from "./modules/social/index
 loadRootEnv();
 
 const port = Number(process.env.PORT ?? 4000);
-const routeHandlers = [handleIdentityRoute, handleCampusRoute, handleSocialRoute, handleResourcesRoute, handleModerationRoute];
+const routeHandlers = [handleIdentityRoute, handleCampusRoute, handleSocialRoute, handleResourcesRoute, handleMarketRoute, handleModerationRoute];
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
@@ -50,6 +51,7 @@ const server = createServer(async (request, response) => {
             getCampusModuleHealth(),
             getSocialModuleHealth(),
             getResourcesModuleHealth(),
+            getMarketModuleHealth(),
             getModerationModuleHealth()
           ]
         },

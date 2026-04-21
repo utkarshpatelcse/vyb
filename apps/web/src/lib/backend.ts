@@ -3,11 +3,17 @@ import type {
   ActivityListResponse,
   ClientShellResponse,
   CommentListResponse,
+  ContactMarketPostRequest,
+  ContactMarketPostResponse,
   CreateCommentResponse,
+  CreateMarketPostRequest,
+  CreateMarketPostResponse,
   CreateStoryResponse,
   FeedListResponse,
   ListCoursesResponse,
   ListResourcesResponse,
+  ManageMarketListingResponse,
+  MarketDashboardResponse,
   MeResponse,
   PublicProfileResponse,
   ProfileResponse,
@@ -17,12 +23,24 @@ import type {
   SessionBootstrapResponse,
   StoryListResponse,
   StoryReactionResponse,
+  ToggleMarketSaveRequest,
+  ToggleMarketSaveResponse,
+  UpdateMarketListingRequest,
+  UpdateMarketListingResponse,
   UpdateUsernameRequest,
   UpdateUsernameResponse,
   UserSearchResponse
 } from "@vyb/contracts";
 import type { DevSession } from "./dev-session";
 import { invokeBackendRoute, isBackendConnectionError } from "./backend-bridge";
+
+export type UploadedSocialMediaAsset = {
+  mediaType: "image" | "video";
+  mimeType: string;
+  sizeBytes: number;
+  storagePath: string;
+  url: string;
+};
 
 const API_BASE_URL =
   process.env.VYB_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
@@ -61,7 +79,7 @@ async function requestBackendResponse(
     viewer
   }: {
     method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-    payload?: SessionBootstrapRequest | Record<string, unknown> | unknown;
+    payload?: unknown;
     viewer?: DevSession;
   } = {}
 ) {
@@ -110,7 +128,7 @@ export async function fetchBackendJson<T>(path: string, viewer?: DevSession): Pr
 
 export async function postBackendJson<TResponse>(
   path: string,
-  payload: SessionBootstrapRequest | Record<string, unknown>,
+  payload: unknown,
   viewer?: DevSession
 ): Promise<TResponse> {
   let attempt = 0;
@@ -146,7 +164,7 @@ export async function postBackendJson<TResponse>(
 export async function mutateBackendJson<TResponse>(
   path: string,
   method: "POST" | "PUT" | "PATCH" | "DELETE",
-  payload: Record<string, unknown>,
+  payload: unknown,
   viewer?: DevSession
 ) {
   const response = await requestBackendResponse(path, {
@@ -410,4 +428,60 @@ export async function getViewerActivity(viewer: DevSession, limit = 20) {
   });
 
   return fetchBackendJson<ActivityListResponse>(`/v1/activity?${params.toString()}`, viewer);
+}
+
+export async function getMarketDashboard(viewer: DevSession) {
+  return fetchBackendJson<MarketDashboardResponse>("/v1/market", viewer);
+}
+
+export async function createMarketPost(viewer: DevSession, payload: CreateMarketPostRequest) {
+  return postBackendJson<CreateMarketPostResponse>("/v1/market", payload, viewer);
+}
+
+export async function updateMarketListing(viewer: DevSession, payload: UpdateMarketListingRequest) {
+  return mutateBackendJson<UpdateMarketListingResponse>(
+    `/v1/market/listings/${encodeURIComponent(payload.listingId)}`,
+    "PATCH",
+    payload,
+    viewer
+  );
+}
+
+export async function deleteMarketListing(viewer: DevSession, listingId: string) {
+  return mutateBackendJson<ManageMarketListingResponse>(
+    `/v1/market/listings/${encodeURIComponent(listingId)}`,
+    "DELETE",
+    {},
+    viewer
+  );
+}
+
+export async function markMarketListingSold(viewer: DevSession, listingId: string) {
+  return mutateBackendJson<ManageMarketListingResponse>(
+    `/v1/market/listings/${encodeURIComponent(listingId)}/sold`,
+    "POST",
+    {},
+    viewer
+  );
+}
+
+export async function toggleMarketSave(viewer: DevSession, payload: ToggleMarketSaveRequest) {
+  return postBackendJson<ToggleMarketSaveResponse>("/v1/market/save", payload, viewer);
+}
+
+export async function createMarketContact(viewer: DevSession, payload: ContactMarketPostRequest) {
+  return postBackendJson<ContactMarketPostResponse>("/v1/market/contact", payload, viewer);
+}
+
+export async function uploadSocialMediaAsset(
+  viewer: DevSession,
+  payload: {
+    intent: "post" | "story" | "vibe";
+    fileName: string;
+    mimeType: string;
+    base64Data: string;
+  }
+) {
+  const response = await postBackendJson<{ asset: UploadedSocialMediaAsset }>("/v1/social-media/upload", payload, viewer);
+  return response.asset;
 }

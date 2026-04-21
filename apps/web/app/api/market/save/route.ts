@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import type { ToggleMarketSaveRequest } from "@vyb/contracts";
 import { readDevSessionFromCookieStore } from "../../../../src/lib/dev-session";
-import { resolveMarketViewerIdentity } from "../../../../src/lib/market-server";
 import { toggleMarketSave } from "../../../../src/lib/market-data";
 
 function buildError(status: number, code: string, message: string) {
@@ -32,8 +31,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const identity = await resolveMarketViewerIdentity(viewer);
-    return NextResponse.json(await toggleMarketSave(identity, listingId));
+    return NextResponse.json(await toggleMarketSave(viewer, listingId));
   } catch (error) {
     return buildError(400, "MARKET_SAVE_FAILED", error instanceof Error ? error.message : "We could not update your saved listings.");
   }

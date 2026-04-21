@@ -3,7 +3,6 @@ import { cookies } from "next/headers";
 import type { ContactMarketPostRequest } from "@vyb/contracts";
 import { readDevSessionFromCookieStore } from "../../../../src/lib/dev-session";
 import { createMarketContact } from "../../../../src/lib/market-data";
-import { resolveMarketViewerIdentity } from "../../../../src/lib/market-server";
 
 function buildError(status: number, code: string, message: string) {
   return NextResponse.json(
@@ -37,9 +36,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const identity = await resolveMarketViewerIdentity(viewer);
     return NextResponse.json(
-      await createMarketContact(identity, {
+      await createMarketContact(viewer, {
         targetId,
         targetType: payload.targetType,
         message

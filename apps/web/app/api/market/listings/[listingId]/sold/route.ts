@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { readDevSessionFromCookieStore } from "../../../../../../src/lib/dev-session";
 import { markMarketListingSold } from "../../../../../../src/lib/market-data";
-import { resolveMarketViewerIdentity } from "../../../../../../src/lib/market-server";
 
 function buildError(status: number, code: string, message: string) {
   return NextResponse.json(
@@ -37,8 +36,7 @@ export async function POST(_request: Request, context: RouteContext) {
   }
 
   try {
-    const identity = await resolveMarketViewerIdentity(viewer);
-    return NextResponse.json(await markMarketListingSold(identity, listingId));
+    return NextResponse.json(await markMarketListingSold(viewer, listingId));
   } catch (error) {
     return buildError(400, "MARKET_LISTING_SOLD_FAILED", error instanceof Error ? error.message : "We could not mark the listing as sold.");
   }

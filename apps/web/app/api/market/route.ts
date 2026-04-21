@@ -6,7 +6,6 @@ import { getViewerProfile } from "../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../src/lib/dev-session";
 import { createMarketPost, getMarketDashboard } from "../../../src/lib/market-data";
 import { deleteMarketMediaAssets, persistMarketMediaAssets } from "../../../src/lib/market-media-server";
-import { resolveMarketViewerIdentity } from "../../../src/lib/market-server";
 
 type ParsedMarketCreatePayload = Omit<Partial<CreateMarketPostRequest>, "priceAmount" | "budgetAmount"> & {
   priceAmount?: string | number | null;
@@ -104,8 +103,7 @@ export async function GET() {
     return buildError(401, "UNAUTHENTICATED", "You must sign in before opening the market.");
   }
 
-  const identity = await resolveMarketViewerIdentity(viewer);
-  return NextResponse.json(await getMarketDashboard(identity));
+  return NextResponse.json(await getMarketDashboard(viewer));
 }
 
 export async function POST(request: Request) {
@@ -174,7 +172,6 @@ export async function POST(request: Request) {
     return buildError(403, "PROFILE_INCOMPLETE", "Complete your profile before publishing in the campus market.");
   }
 
-  const identity = await resolveMarketViewerIdentity(viewer, profile);
   let uploadedMedia: MarketMediaAsset[] = [];
 
   try {
@@ -186,7 +183,7 @@ export async function POST(request: Request) {
       files
     });
 
-    const response = await createMarketPost(identity, {
+    const response = await createMarketPost(viewer, {
       tab,
       title,
       category,
