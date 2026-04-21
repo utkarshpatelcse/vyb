@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { VybLogoLockup } from "../src/components/vyb-logo";
 import { getClientShellData } from "../src/lib/backend";
 import { getDisplayCollegeName } from "../src/lib/college-access";
 import { PROFILE_COMPLETION_COOKIE, readDevSessionFromCookieStore } from "../src/lib/dev-session";
@@ -25,11 +26,7 @@ export default async function HomePage() {
       <div className="vyb-home-shell">
         <header className="vyb-home-header">
           <Link href="/" className="vyb-home-brand">
-            <span>V</span>
-            <div>
-              <strong>VYB</strong>
-              <p>Verified Campus Platform</p>
-            </div>
+            <VybLogoLockup subtitle="Verified Campus Platform" priority compactOnSmallScreens />
           </Link>
 
           <nav className="vyb-home-nav">

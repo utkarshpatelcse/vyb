@@ -25,6 +25,7 @@ import {
   launchCollege,
   normalizeEmail
 } from "../lib/college-access";
+import { VybLogoLockup } from "./vyb-logo";
 
 type Mode = "sign-in" | "sign-up";
 type FeedbackTone = "neutral" | "success" | "error";
@@ -978,11 +979,7 @@ export function DevSessionCard({
     <div className="vyb-auth-layout-grid vyb-auth-layout-grid-clean">
       <section className="vyb-auth-panel vyb-auth-panel-clean">
         <div className="vyb-auth-brand">
-          <span>V</span>
-          <div>
-            <strong>VYB</strong>
-            <p>Verified college access</p>
-          </div>
+          <VybLogoLockup subtitle="Verified college access" priority compactOnSmallScreens />
         </div>
 
         <div className="vyb-auth-panel-head">

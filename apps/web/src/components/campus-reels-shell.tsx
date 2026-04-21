@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 import { SocialThreadSheet } from "./social-thread-sheet";
 import { SignOutButton } from "./sign-out-button";
 import { useSocialPostEngagement } from "./use-social-post-engagement";
+import { VybLogoLockup } from "./vyb-logo";
 
 type CampusReelsShellProps = {
   viewerName: string;
@@ -137,7 +138,7 @@ export function CampusReelsShell({
     <main className="vyb-campus-home" style={layoutStyle}>
       <aside className="vyb-campus-sidebar vyb-campus-rail">
         <Link href="/home" className="vyb-campus-branding">
-          VYB
+          <VybLogoLockup priority />
         </Link>
 
         <nav className="vyb-campus-nav">

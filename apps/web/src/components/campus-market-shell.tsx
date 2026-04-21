@@ -20,6 +20,7 @@ import {
   hasExplicitMarketLocation
 } from "../lib/market-defaults";
 import { SignOutButton } from "./sign-out-button";
+import { VybLogoLockup } from "./vyb-logo";
 
 type CampusMarketShellProps = {
   viewerName: string;
@@ -1310,7 +1311,7 @@ export function CampusMarketShell({
     <main className="vyb-campus-home" style={layoutStyle}>
       <aside className="vyb-campus-sidebar vyb-campus-rail">
         <Link href="/home" className="vyb-campus-branding">
-          VYB
+          <VybLogoLockup priority />
         </Link>
 
         <nav className="vyb-campus-nav">

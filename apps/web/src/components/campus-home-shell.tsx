@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 import { SocialThreadSheet } from "./social-thread-sheet";
 import { SignOutButton } from "./sign-out-button";
 import { useSocialPostEngagement } from "./use-social-post-engagement";
+import { VybLogoLockup, VybLogoMark } from "./vyb-logo";
 
 type CampusHomeShellProps = {
   viewerName: string;
@@ -406,10 +407,10 @@ export function CampusHomeShell({
 
   return (
     <main className="vyb-campus-home" style={layoutStyle()}>
-      <aside className="vyb-campus-sidebar vyb-campus-rail">
-        <Link href="/home" className="vyb-campus-branding">
-          VYB
-        </Link>
+        <aside className="vyb-campus-sidebar vyb-campus-rail">
+          <Link href="/home" className="vyb-campus-branding">
+            <VybLogoLockup priority />
+          </Link>
 
         <nav className="vyb-campus-nav">
           {navItems.map((item) => (
@@ -455,7 +456,7 @@ export function CampusHomeShell({
 
         <header className="vyb-campus-mobile-header">
           <Link href="/home" className="vyb-campus-branding vyb-campus-branding-mobile">
-            VYB
+            <VybLogoMark />
           </Link>
           <div className="vyb-campus-mobile-actions">
             <Link href="/search" className="vyb-campus-top-icon vyb-campus-top-link" aria-label="Search campus users">

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import { SignOutButton } from "./sign-out-button";
+import { VybLogoLockup } from "./vyb-logo";
 
 type EventScope = "for-you" | "week" | "saved";
 type EventItem = {
@@ -412,7 +413,7 @@ export function CampusEventsShell({
     <main className="vyb-campus-home" style={layoutStyle}>
       <aside className="vyb-campus-sidebar vyb-campus-rail">
         <Link href="/home" className="vyb-campus-branding">
-          VYB
+          <VybLogoLockup priority />
         </Link>
 
         <nav className="vyb-campus-nav">
