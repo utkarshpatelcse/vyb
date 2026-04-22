@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { CompleteProfileForm } from "../../src/components/complete-profile-form";
 import { SignOutButton } from "../../src/components/sign-out-button";
+import { VybLogoLockup } from "../../src/components/vyb-logo";
 import { getViewerProfile } from "../../src/lib/backend";
 import { getDisplayCollegeName } from "../../src/lib/college-access";
 import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
@@ -28,11 +29,7 @@ export default async function OnboardingPage() {
         <div className="vyb-onboarding-page">
           <div className="vyb-onboarding-topbar">
             <div className="vyb-home-brand">
-              <span>V</span>
-              <div>
-                <strong>VYB</strong>
-                <p>Verified Campus Platform</p>
-              </div>
+              <VybLogoLockup subtitle="Verified Campus Platform" priority compactOnSmallScreens />
             </div>
             <SignOutButton className="vyb-secondary-button" />
           </div>

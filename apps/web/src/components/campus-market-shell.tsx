@@ -20,6 +20,7 @@ import {
   hasExplicitMarketLocation
 } from "../lib/market-defaults";
 import { SignOutButton } from "./sign-out-button";
+import { VybLogoLockup } from "./vyb-logo";
 
 type CampusMarketShellProps = {
   viewerName: string;
@@ -219,7 +220,8 @@ function IconBase({ children, className = "" }: { children: ReactNode; className
 function HomeIcon() {
   return (
     <IconBase>
-      <path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4.8a.7.7 0 0 1-.7-.7v-4.1a1.5 1.5 0 0 0-3 0v4.1a.7.7 0 0 1-.7.7H5a1 1 0 0 1-1-1z" fill="currentColor" />
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9 22V12h6v10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </IconBase>
   );
 }
@@ -227,15 +229,16 @@ function HomeIcon() {
 function EventsIcon() {
   return (
     <IconBase>
-      <path d="M7 3v3M17 3v3M5 8h14M6 5h12a1 1 0 0 1 1 1v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <rect width="18" height="18" x="3" y="4" rx="2" ry="2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </IconBase>
   );
 }
 
-function ReelsIcon() {
+function VibesIcon() {
   return (
     <IconBase>
-      <path d="M6.5 3h11A3.5 3.5 0 0 1 21 6.5v11a3.5 3.5 0 0 1-3.5 3.5h-11A3.5 3.5 0 0 1 3 17.5v-11A3.5 3.5 0 0 1 6.5 3Zm0 0 3 4M11.5 3l3 4M16.5 3l3 4M10 10.5l5 2.9L10 16.3z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </IconBase>
   );
 }
@@ -243,7 +246,9 @@ function ReelsIcon() {
 function ProfileIcon() {
   return (
     <IconBase>
-      <path d="M12 12a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm-6 7.2C6 16.9 8.7 15 12 15s6 1.9 6 4.2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="12" cy="10" r="3" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </IconBase>
   );
 }
@@ -284,7 +289,8 @@ function HeartIcon() {
 function MarketIcon() {
   return (
     <IconBase>
-      <path d="M4 8.5 5.6 4h12.8L20 8.5M5 10v7.2A1.8 1.8 0 0 0 6.8 19h10.4A1.8 1.8 0 0 0 19 17.2V10M9 13h6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3 6h18M16 10a4 4 0 0 1-8 0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </IconBase>
   );
 }
@@ -727,7 +733,7 @@ export function CampusMarketShell({
   const navItems = [
     { label: "Home", href: "/home", icon: <HomeIcon /> },
     { label: "Events", href: "/events", icon: <EventsIcon /> },
-    { label: "Vibes", href: "/vibes", icon: <ReelsIcon /> },
+    { label: "Vibes", href: "/vibes", icon: <VibesIcon /> },
     { label: "Market", href: "/market", icon: <MarketIcon />, active: true },
     { label: "Profile", href: "/dashboard", icon: <ProfileIcon /> }
   ];
@@ -1310,7 +1316,7 @@ export function CampusMarketShell({
     <main className="vyb-campus-home" style={layoutStyle}>
       <aside className="vyb-campus-sidebar vyb-campus-rail">
         <Link href="/home" className="vyb-campus-branding">
-          VYB
+          <VybLogoLockup priority />
         </Link>
 
         <nav className="vyb-campus-nav">

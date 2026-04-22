@@ -13,14 +13,14 @@ export default function manifest(): MetadataRoute.Manifest {
     categories: ["education", "social", "productivity"],
     icons: [
       {
-        src: "/icons/icon.svg",
-        sizes: "any",
-        type: "image/svg+xml"
+        src: "/icons/icon.png",
+        sizes: "1254x1254",
+        type: "image/png"
       },
       {
-        src: "/icons/maskable-icon.svg",
-        sizes: "any",
-        type: "image/svg+xml",
+        src: "/icons/maskable-icon.png",
+        sizes: "1254x1254",
+        type: "image/png",
         purpose: "maskable"
       }
     ]

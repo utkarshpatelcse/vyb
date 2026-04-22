@@ -47,6 +47,7 @@ export default async function DashboardPage() {
       recentResources={resources.items}
       recentCourses={courses.items}
       recentActivity={activity.items}
+      initialProfile={profile.profile}
     />
   );
 }

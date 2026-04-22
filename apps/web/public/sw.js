@@ -1,9 +1,10 @@
-const CACHE_NAME = "vyb-shell-v2";
+const CACHE_NAME = "vyb-shell-v3";
 const STATIC_PATHS = [
   "/",
   "/manifest.webmanifest",
-  "/icons/icon.svg",
-  "/icons/maskable-icon.svg"
+  "/icons/icon.png",
+  "/icons/maskable-icon.png",
+  "/icons/apple-touch-icon.png"
 ];
 
 function isCacheableAsset(request) {
