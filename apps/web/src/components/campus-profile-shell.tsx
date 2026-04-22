@@ -115,6 +115,14 @@ function ProfileIcon() {
   );
 }
 
+function EditIcon() {
+  return (
+    <IconBase>
+      <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </IconBase>
+  );
+}
+
 function GridIcon() {
   return (
     <IconBase>
@@ -991,49 +999,48 @@ export function CampusProfileShell({
 
         <div className="vyb-insta-profile-shell" style={{ display: (settingsOpen || editProfileOpen) ? "none" : "block" }}>
           <section className="vyb-insta-header">
-            <div className="vyb-insta-avatar-container">
-              <input
-                ref={avatarInputRef}
-                type="file"
-                accept="image/*"
-                className="vyb-insta-avatar-input"
-                onChange={handleAvatarFileChange}
-              />
-              <div className="vyb-insta-avatar">
-                <img src={resolvedAvatarUrl} alt={viewerName} />
-                <span className="vyb-insta-avatar-fallback" aria-hidden="true">
-                  {getInitials(viewerName)}
-                </span>
-              </div>
-            </div>
-
-            <div className="vyb-insta-header-info">
-              <div className="vyb-insta-top-row">
-                <h1>{viewerName}</h1>
-                <div className="vyb-insta-actions">
-                  {isOwnProfile ? (
-                    <>
-                      <button type="button" className="vyb-insta-action-icon" onClick={() => setEditProfileOpen(true)} title="Edit Profile">
-                        <ProfileIcon />
-                      </button>
-                      <button type="button" className="vyb-insta-action-icon" onClick={() => setSettingsOpen(true)} title="Settings">
-                        <SettingsIcon />
-                      </button>
-                    </>
-                  ) : null}
+            <div className="vyb-insta-header-main">
+              <div className="vyb-insta-avatar-container">
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="vyb-insta-avatar-input"
+                  onChange={handleAvatarFileChange}
+                />
+                <div className="vyb-insta-avatar">
+                  <img src={resolvedAvatarUrl} alt={viewerName} />
+                  <span className="vyb-insta-avatar-fallback" aria-hidden="true">
+                    {getInitials(viewerName)}
+                  </span>
                 </div>
               </div>
 
-              <div className="vyb-insta-stats">
-                <span><strong>{formatMetric(stats.posts)}</strong> posts</span>
-                <span><strong>{formatMetric(followerCount)}</strong> followers</span>
-                <span><strong>{formatMetric(stats.following)}</strong> following</span>
-              </div>
+              <div className="vyb-insta-header-info">
+                <div className="vyb-insta-top-row">
+                  <h1>{viewerName}</h1>
+                  <div className="vyb-insta-actions">
+                    {isOwnProfile ? (
+                      <>
+                        <button type="button" className="vyb-insta-action-icon" onClick={() => setEditProfileOpen(true)} title="Edit Profile">
+                          <EditIcon />
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
 
-              <div className="vyb-insta-bio">
-                <strong>@{username}</strong>
-                <p>{identityLine} • {collegeName}</p>
+                <div className="vyb-insta-stats">
+                  <span><strong>{formatMetric(stats.posts)}</strong> posts</span>
+                  <span><strong>{formatMetric(followerCount)}</strong> followers</span>
+                  <span><strong>{formatMetric(stats.following)}</strong> following</span>
+                </div>
               </div>
+            </div>
+
+            <div className="vyb-insta-bio">
+              <strong>@{username}</strong>
+              <p>{identityLine} • {collegeName}</p>
             </div>
           </section>
 
@@ -1109,7 +1116,7 @@ export function CampusProfileShell({
         </div>
       
 {isOwnProfile && editProfileOpen ? (
-        <div className="vyb-insta-profile-shell" style={{ padding: "0 1.5rem 2rem" }}>
+        <div style={{ padding: "0 1rem 2rem", width: "100%", maxWidth: "600px", margin: "0 auto", boxSizing: "border-box", animation: "vyb-slide-up 0.3s ease" }}>
           <div className="vyb-insta-settings-inline">
             <div className="vyb-insta-settings-header" style={{borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "1rem", marginBottom: "2rem", display: "flex", alignItems: "center", justifyContent: "space-between"}}>
               <button type="button" className="vyb-insta-outline-btn" style={{border: "none", padding: "0.2rem 0", background: "transparent", color: "#94a3b8"}} onClick={() => setEditProfileOpen(false)}>← Back</button>
@@ -1117,7 +1124,7 @@ export function CampusProfileShell({
               <div style={{width: 50}}></div>
             </div>
 
-            <div className="vyb-insta-settings-body">
+            <div className="vyb-insta-settings-body" style={{ background: "transparent", padding: 0 }}>
               {/* EDIT PROFILE */}
               <section className="vyb-insta-settings-section borderless">
                 <div className="vyb-insta-form">
@@ -1204,7 +1211,7 @@ export function CampusProfileShell({
       ) : null}
 
       {isOwnProfile && settingsOpen ? (
-        <div className="vyb-insta-profile-shell" style={{ padding: "0 1.5rem 2rem" }}>
+        <div style={{ padding: "0 1rem 2rem", width: "100%", maxWidth: "600px", margin: "0 auto", boxSizing: "border-box", animation: "vyb-slide-up 0.3s ease" }}>
           <div className="vyb-insta-settings-inline">
             <div className="vyb-insta-settings-header" style={{borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "1rem", marginBottom: "2rem", display: "flex", alignItems: "center", justifyContent: "space-between"}}>
               <button type="button" className="vyb-insta-outline-btn" style={{border: "none", padding: "0.2rem 0", background: "transparent", color: "#94a3b8"}} onClick={() => setSettingsOpen(false)}>← Back</button>
@@ -1212,7 +1219,7 @@ export function CampusProfileShell({
               <div style={{width: 50}}></div>
             </div>
 
-            <div className="vyb-insta-settings-body">
+            <div className="vyb-insta-settings-body" style={{ background: "transparent", padding: 0 }}>
               {/* NOTIFICATIONS & PRIVACY */}
               <section className="vyb-insta-settings-section">
                 <h3>Notifications</h3>

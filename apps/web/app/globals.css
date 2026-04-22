@@ -12898,9 +12898,16 @@ a {
 /* --- HEADER --- */
 .vyb-insta-header {
   display: flex;
-  gap: 3rem;
+  flex-direction: column;
+  gap: 1rem;
   margin-bottom: 2.5rem;
   padding: 1rem 2rem;
+}
+
+.vyb-insta-header-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 3rem;
 }
 
 .vyb-insta-avatar-container {
@@ -13541,10 +13548,9 @@ a {
 }
 
 @media (max-width: 768px) {
-  .vyb-insta-header {
+  .vyb-insta-header-main {
     align-items: flex-start;
     gap: 1.5rem;
-    padding: 1rem 0;
   }
   .vyb-insta-avatar {
     width: 100px;
@@ -13744,9 +13750,13 @@ html {
 }
 
 .vyb-insta-header {
-  gap: 1.5rem !important;
+  gap: 0.75rem !important;
   margin-bottom: 1rem !important;
   padding: 0.75rem 1rem !important;
+}
+
+.vyb-insta-header-main {
+  gap: 1.5rem !important;
 }
 
 .vyb-insta-avatar {
@@ -13794,11 +13804,16 @@ html {
 /* Mobile overrides for compact header */
 @media (max-width: 768px) {
   .vyb-insta-header {
+    gap: 0.55rem !important;
+    padding: 0.5rem 0 !important;
+    margin-bottom: 0.75rem !important;
+  }
+
+  .vyb-insta-header-main {
+    display: flex !important;
     flex-direction: row !important;
     align-items: flex-start !important;
     gap: 1rem !important;
-    padding: 0.5rem 0 !important;
-    margin-bottom: 0.75rem !important;
   }
 
   .vyb-insta-avatar-container {
@@ -13819,6 +13834,10 @@ html {
   .vyb-insta-header-info {
     min-width: 0 !important;
     flex: 1 1 auto !important;
+  }
+
+  .vyb-insta-bio {
+    width: 100%;
   }
 
   .vyb-insta-stats {
