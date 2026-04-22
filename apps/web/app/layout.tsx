@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
+import "./feed-enhancements.css";
 import { ServiceWorkerRegister } from "../src/components/service-worker-register";
+
 
 export const metadata: Metadata = {
   title: "Vyb",

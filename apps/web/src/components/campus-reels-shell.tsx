@@ -1034,6 +1034,8 @@ export function CampusReelsShell({
         message={engagement.threadMessage}
         isLoading={engagement.threadLoading}
         isSubmitting={engagement.threadSubmitting}
+        viewerName={viewerName}
+        viewerUsername={viewerUsername}
         onClose={engagement.closeThread}
         onDraftChange={engagement.setThreadDraft}
         onMediaUrlChange={engagement.setThreadMediaUrl}

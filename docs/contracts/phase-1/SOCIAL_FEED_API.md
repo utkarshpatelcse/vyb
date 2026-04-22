@@ -1,8 +1,8 @@
 # API Contract
 
 Owner: Architecture Team
-Last Updated: 2026-04-19
-Change Summary: Updated the feed contract for the live campus-social flow with author identity, media payloads, and real published-feed reads.
+Last Updated: 2026-04-22
+Change Summary: Updated the feed contract for the live campus-social flow with engagement metadata, likers access, repost readiness, and full-screen media consumers.
 
 ## 1. Metadata
 
@@ -11,7 +11,7 @@ Change Summary: Updated the feed contract for the live campus-social flow with a
 - Runtime: `apps/backend`
 - Consumers: `web`, future `mobile`
 - Version: `v1`
-- Status: Draft
+- Status: Active
 - Linked LLD: `docs/lld/phase-1/SOCIAL_SERVICE_LLD.md`
 
 ## 2. Endpoint Definition
@@ -38,7 +38,8 @@ Change Summary: Updated the feed contract for the live campus-social flow with a
 ## 5. Response Schema
 
 - Success response: `tenantId`, `communityId`, `items[]`, `nextCursor`
-- Feed items include author summary, post placement, media URL, and location
+- Feed items include `id`, `placement`, `kind`, `mediaUrl`, `location`, `title`, `body`, `reactions`, `comments`, `viewerReactionType`, `createdAt`, and `author { userId, username, displayName }`
+- The response is sufficient for feed cards, profile grids, lightbox views, likers sheets, and the vibes teaser row without a second list-read call
 - Pagination model: simple limit-based read in the current implementation
 - Metadata: no total count on hot feed path
 
@@ -73,4 +74,12 @@ Change Summary: Updated the feed contract for the live campus-social flow with a
 
 - Feature flags: tenant-level feed rollout flag is acceptable
 - Backward compatibility: additive fields only
-- Migration steps: keep contract stable while feed reads move from the current starter store onto durable production storage
+- Migration steps: keep contract stable while feed reads remain Data Connect-backed and while richer ranking stays deferred
+
+## 11. Companion Interaction Endpoints
+
+- `GET /v1/posts/{postId}/likes` returns the ordered liker list for the selected feed item
+- `POST /v1/posts/{postId}/comments` creates top-level comments or replies
+- `PUT /v1/comments/{commentId}/reactions` toggles comment likes
+- `PUT /v1/posts/{postId}/reactions` toggles the viewer reaction on a post or vibe
+- `POST /v1/posts/{postId}/repost` creates a direct repost or quote repost

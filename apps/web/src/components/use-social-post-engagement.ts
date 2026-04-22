@@ -189,11 +189,6 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
       return;
     }
 
-    if (body && body.length < 2) {
-      setThreadMessage("Write at least two characters before commenting.");
-      return;
-    }
-
     setThreadSubmitting(true);
     setThreadMessage(null);
 

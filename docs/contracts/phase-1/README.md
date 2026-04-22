@@ -1,8 +1,8 @@
 # Phase 1 API Contracts
 
 Owner: Architecture Team
-Last Updated: 2026-04-19
-Change Summary: Added the backend session-bootstrap, profile, and client-shell contracts for the current Phase 1 web entry flow, authenticated home-feed landing, and the live social flow for stories, vibes, search, follows, and public profiles.
+Last Updated: 2026-04-22
+Change Summary: Added the backend session-bootstrap, profile, and client-shell contracts for the current Phase 1 web entry flow, authenticated home-feed landing, and the live social flow for stories, vibes, search, follows, public profiles, reposts, likers, and responsive comment interactions.
 
 ## Contracts
 

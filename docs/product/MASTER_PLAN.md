@@ -2,7 +2,7 @@
 
 Owner: Product and Engineering
 Last Updated: 2026-04-22
-Change Summary: Added the first-college professional web entry flow, backend-verified session bootstrap, mandatory profile completion gating, the authenticated `/home` feed landing surface, the Phase 1 Cloud Run plus Vercel hosting preparation, the first live campus-social flow for posts, stories, vibes, search, follows, and user IDs, and the market dashboard move to live-only Data Connect reads.
+Change Summary: Added the first-college professional web entry flow, backend-verified session bootstrap, mandatory profile completion gating, the authenticated `/home` feed landing surface, the Phase 1 Cloud Run plus Vercel hosting preparation, the first live campus-social flow for posts, stories, vibes, search, follows, and user IDs, the market dashboard move to live-only Data Connect reads, and the richer social engagement layer for likers, reposts, story viewing, immersive vibes, and responsive comment threads.
 
 ## 1. Why We Are Building This
 
@@ -57,7 +57,7 @@ Scope:
 - tenant onboarding
 - college join-request review queue
 - memberships and communities
-- Campus Square feed with text and image posts
+- Campus Square feed with posts, stories, vibes, threaded comments, and baseline repost/report flows
 - Resource Vault
 - moderation
 - admin operations
@@ -68,11 +68,13 @@ Exit criteria:
 - an unknown-domain student can submit a college join request
 - an admin can approve, reject, or send back a college join request
 - a user can post to the correct community
+- a user can comment, reply, and react inside the live campus feed
+- a user can publish a story, open the story viewer, and browse the dedicated vibes lane
 - a user can upload and browse notes
 - moderation can review and remove reported content
 - the system runs as `web + backend`, not a fleet of early services
 
-### Phase 2: Engagement
+### Phase 2: Engagement Refinement
 
 Goal:
 
@@ -80,8 +82,8 @@ Goal:
 
 Scope:
 
-- reels
-- richer comments
+- ranking refinement
+- creator tooling refinement for vibes and reposts
 - reactions refinement
 - polls
 - anonymous Nook after policy approval
@@ -165,6 +167,10 @@ After implementation:
 - Phase 1 backend runtime has now been collapsed into one modular monolith app with internal domain modules
 - local development is now intended to run as `pnpm dev` or `web + backend`, not six separate terminals
 - the campus composer now uploads post/story/vibe media into Firebase Storage before publish, with client-side video optimization before the final upload size gate
+- feed and vibes cards now support full-screen media viewing, likers sheets, repost and quote-repost flows, report actions, author edit/delete actions, and optimistic like feedback
+- story lanes now render unified rings with seen-state tracking, while the story viewer supports progress bars, tap navigation, and story likes
+- the `/vibes` route now uses an immersive theater-style mobile and desktop layout, and the home feed now surfaces a dedicated vibes teaser row
+- comment threads now support replies, comment likes, GIF/sticker attachments, a desktop side-panel treatment, and a mobile bottom-sheet composer
 - JSON-backed mutation fallbacks have been removed from the active identity, resources, social, and market write paths
 - the market dashboard now reads directly from Data Connect without seeding or rendering JSON-backed preview inventory
 
@@ -176,11 +182,11 @@ After implementation:
 4. start real upload registration and resource file flows through the media module
 5. add moderation publish and review flows for posts, stories, vibes, and resources
 6. introduce a simple admin surface for onboarding and moderation operations
-7. refine ranking, comments, and richer story-viewer behavior on top of the live feed baseline
+7. refine ranking, moderation review ergonomics, and creator-quality media/transcoding behavior on top of the live engagement baseline
 
 ## 8. Decision Log Snapshot
 
-- Reels are not part of Phase 1
+- A dedicated vibes lane ships in Phase 1, while ranking-heavy reels expansion stays deferred
 - Wallet is not part of Phase 1
 - Phase 1 backend is a modular monolith, not a multi-deployable service fleet
 - `deleted_at`, index strategy, unique constraints, and `user_activity` are mandatory baseline design concerns

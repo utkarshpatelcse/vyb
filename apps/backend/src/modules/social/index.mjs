@@ -424,7 +424,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
-    if (!requireNonEmptyString(payload.body) && !requireNonEmptyString(payload.mediaUrl)) {
+    const hasMedia = requireNonEmptyString(payload.mediaUrl) || (Array.isArray(payload.mediaAssets) && payload.mediaAssets.length > 0);
+    if (!requireNonEmptyString(payload.body) && !hasMedia) {
       sendError(response, 400, "INVALID_BODY", "Add a caption, message, or media before publishing.");
       return true;
     }
@@ -447,6 +448,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       authorName: profile.fullName,
       placement: payload.placement === "vibe" ? "vibe" : "feed",
       kind: payload.kind ?? "text",
+      mediaAssets: Array.isArray(payload.mediaAssets) ? payload.mediaAssets : null,
       mediaUrl: requireNonEmptyString(payload.mediaUrl) ? payload.mediaUrl.trim() : null,
       mediaStoragePath: requireNonEmptyString(payload.mediaStoragePath) ? payload.mediaStoragePath.trim() : null,
       mediaMimeType: requireNonEmptyString(payload.mediaMimeType) ? payload.mediaMimeType.trim() : null,

@@ -6,15 +6,15 @@
 - Owner: Social Platform
 - Runtime: `apps/backend`
 - Phase: Phase 1
-- Date: 2026-04-19
-- Status: Draft
+- Date: 2026-04-22
+- Status: Active
 - Linked SRS section: 2.4 Campus Square Feed and 2.6 Moderation
 - Linked HLD section: Phase 1 Module Map, Media Architecture, Observability
 - Linked ADRs: None yet
 
 ## 2. Problem Statement
 
-We need a trustworthy campus social layer where verified members can create posts, short-form vibes, and time-limited stories, search other users by campus user ID, follow profiles, and later report unsafe content. The module must remain tenant-safe, community-aware, and ready for future ranking without forcing that complexity into Phase 1.
+We need a trustworthy campus social layer where verified members can create posts, short-form vibes, and time-limited stories, search other users by campus user ID, follow profiles, repost campus content, inspect likers, participate in threaded comments, and report unsafe content. The module must remain tenant-safe, community-aware, and ready for future ranking without forcing that complexity into Phase 1.
 
 ## 3. Scope
 
@@ -28,6 +28,12 @@ In scope:
 - feed reads by tenant and community
 - comments
 - reactions
+- threaded replies and comment likes
+- post likers list
+- repost and quote repost
+- story reactions and seen state
+- author edit and soft delete for posts and vibes
+- responsive desktop and mobile social interaction surfaces
 - extraction-ready domain boundaries
 
 Out of scope:
@@ -36,6 +42,8 @@ Out of scope:
 - anonymous posting
 - ranking personalization
 - direct messaging
+- third-party GIF search provider integration
+- dedicated transcoding fleet for social video
 
 ## 4. Owning Module
 
@@ -46,11 +54,14 @@ Out of scope:
 ## 5. User Flows
 
 - Flow 1: verified member creates a text, image, or vibe post in a tenant or community scope.
-- Flow 2: user opens the feed and sees the latest published posts from allowed scopes.
+- Flow 2: user opens the feed, sees the latest published posts from allowed scopes, and opens media in a full-screen viewer.
 - Flow 3: user searches another member by campus user ID and follows them.
 - Flow 4: user publishes a story and followed profiles see it in their story lane while it is active.
-- Flow 5: user comments or reacts on a post.
-- Flow 6: user later reports a post or comment when moderation support is enabled.
+- Flow 5: user comments, replies, reacts, or attaches a supported GIF or sticker in a comment thread.
+- Flow 6: user inspects likers, direct reposts, or quote reposts an existing post or vibe.
+- Flow 7: an author edits or soft-deletes their own post or vibe.
+- Flow 8: a viewer opens the story viewer, progresses through stories, marks them seen, and optionally likes a story.
+- Flow 9: user reports unsafe social content when moderation support is enabled.
 
 ## 6. API Design
 
@@ -62,6 +73,24 @@ Out of scope:
 - response schema: live published post payload
 - error schema: unauthorized scope, invalid media, validation failure
 - rate limit policy: moderate per user, tighter burst protection
+
+### `PATCH /v1/posts/{postId}`
+
+- caller: web or future native client
+- auth requirement: verified membership required and author-only
+- request schema: optional `title`, `body`, `location`
+- response schema: updated published post payload
+- error schema: post not found, unauthorized author, validation failure
+- rate limit policy: moderate per user
+
+### `DELETE /v1/posts/{postId}`
+
+- caller: web or future native client
+- auth requirement: verified membership required and author-only
+- request schema: none
+- response schema: `postId`, `deleted`
+- error schema: post not found, unauthorized author
+- rate limit policy: moderate per user
 
 ### `GET /v1/feed`
 
@@ -79,6 +108,15 @@ Out of scope:
 - request schema: tenant id, cursor, limit
 - response schema: paginated vibe posts
 - error schema: invalid tenant, bad cursor
+- rate limit policy: moderate per user
+
+### `GET /v1/posts/{postId}/likes`
+
+- caller: web or future native client
+- auth requirement: verified membership required
+- request schema: optional `limit`
+- response schema: member list for the active post reactions
+- error schema: post not found, invalid limit
 - rate limit policy: moderate per user
 
 ### `POST /v1/stories`
@@ -130,9 +168,18 @@ Out of scope:
 
 - caller: web or future native client
 - auth requirement: verified membership required
-- request schema: body, optional parent comment id
+- request schema: body, optional parent comment id, optional `mediaUrl`, optional `mediaType`
 - response schema: created comment
 - error schema: post not found, unauthorized scope, validation failure
+- rate limit policy: moderate per user
+
+### `PUT /v1/comments/{commentId}/reactions`
+
+- caller: web or future native client
+- auth requirement: verified membership required
+- request schema: comment reaction type
+- response schema: current comment-like state and aggregate count snapshot
+- error schema: comment not found, unauthorized scope
 - rate limit policy: moderate per user
 
 ### `PUT /v1/posts/{postId}/reactions`
@@ -142,6 +189,42 @@ Out of scope:
 - request schema: reaction type
 - response schema: current reaction state and aggregate count snapshot
 - error schema: post not found, unauthorized scope
+- rate limit policy: moderate per user
+
+### `POST /v1/posts/{postId}/repost`
+
+- caller: web or future native client
+- auth requirement: verified membership required and completed profile
+- request schema: optional `quote`, optional `placement`
+- response schema: created repost item in feed or vibe placement
+- error schema: post not found, incomplete profile, unauthorized scope
+- rate limit policy: moderate per user
+
+### `PUT /v1/stories/{storyId}/reactions`
+
+- caller: web or future native client
+- auth requirement: verified membership required
+- request schema: story reaction type
+- response schema: current story-like state and aggregate count snapshot
+- error schema: story not found, unauthorized scope
+- rate limit policy: moderate per user
+
+### `PUT /v1/stories/{storyId}/seen`
+
+- caller: web or future native client
+- auth requirement: verified membership required
+- request schema: none
+- response schema: story seen-state acknowledgement
+- error schema: story not found, unauthorized scope
+- rate limit policy: moderate per user
+
+### `POST /v1/reports`
+
+- caller: web or future native client
+- auth requirement: verified membership required
+- request schema: `targetType`, `targetId`, `reason`
+- response schema: created report summary
+- error schema: invalid payload, unauthorized scope
 - rate limit policy: moderate per user
 
 ## 7. Module Interactions
@@ -164,9 +247,15 @@ Out of scope:
 - interaction type: direct in-process repository call
 - failure handling: fail closed for writes and return safe empty states for discovery reads when profile data is unavailable
 
+- calling layer: backend edge
+- target module: `moderation`
+- reason: social surfaces submit content reports through the shared moderation module
+- interaction type: direct in-process invocation
+- failure handling: return visible report errors without mutating social content state
+
 ## 8. Data Model Changes
 
-- tables touched: `posts`, `post_media`, `stories`, `follows`, `comments`, `reactions`, `audit_logs`, `user_activity`
+- tables touched: `posts`, `post_media`, `stories`, `story_reactions`, `story_views`, `follows`, `comments`, `comment_reactions`, `reactions`, `user_activity`
 - columns added: none beyond HLD baseline
 - indexes added: `posts (tenant_id, created_at desc)`, `posts (community_id, created_at desc)`, `comments (post_id, created_at asc)`, `reactions (post_id)`
 - unique constraints: `reactions (post_id, membership_id)` for one active reaction per member per post
@@ -198,17 +287,17 @@ Out of scope:
 
 ## 10. Validation and Security
 
-- auth checks: membership must be verified for posting, story creation, following, commenting, and reacting
+- auth checks: membership must be verified for posting, story creation, following, commenting, reacting, reposting, and reporting
 - tenant checks: reads and writes validated through campus-owned context
-- input validation: body length, media count, allowed MIME types, campus user-ID resolution, reaction enum
-- abuse prevention: post and comment rate limits, content status workflow
-- audit logging: moderator removals and privileged edits when moderation lands
+- input validation: body length, media count, allowed MIME types, campus user-ID resolution, reaction enums, repost quote length, and author-only edit/delete gates
+- abuse prevention: post, comment, reaction, and report rate limits plus content status workflow
+- audit logging: report creation, moderator removals, and privileged edits
 
 ## 11. Observability
 
-- logs: post create, vibe create, story create, feed read, user search, follow state change, comment create, reaction upsert
-- metrics: feed latency, post creation success rate, story publish rate, vibe publish rate, follow conversion, comment volume
-- alerts: error spikes on post publish or feed retrieval
+- logs: post create, vibe create, story create, feed read, user search, follow state change, comment create, comment reaction upsert, repost create, story seen, story reaction, report create, and post soft delete
+- metrics: feed latency, post creation success rate, story publish rate, vibe publish rate, follow conversion, comment volume, repost volume, and story-view completion
+- alerts: error spikes on post publish, feed retrieval, or social interaction writes
 - trace IDs: required at the backend boundary and through module calls
 
 ## 12. Failure Modes
@@ -227,10 +316,10 @@ Out of scope:
 
 ## 14. Test Plan
 
-- unit tests: post validation, story visibility, follow graph, reaction upsert, feed filtering
-- integration tests: post create with campus access, story create, user search, follow update, feed pagination
-- contract tests: post create, feed read, vibe read, story create and read, user search, public profile, follow update, comment create, reaction update
-- manual QA: create post, browse feed, publish story, follow a user, search by user ID, open public profile, react, comment
+- unit tests: post validation, story visibility, follow graph, reaction upsert, comment-thread building, repost validation, and soft-delete guards
+- integration tests: post create with campus access, post update/delete, story create, story seen, user search, follow update, feed pagination, and report create
+- contract tests: post create, feed read, vibe read, story create/read/react/seen, user search, public profile, follow update, comment create, comment reaction update, post likes, repost create, and post update/delete
+- manual QA: create post, browse feed, publish story, follow a user, search by user ID, open public profile, react, inspect likers, comment, reply, repost, report, and browse the immersive vibes route
 
 ## 15. Documentation Updates Required
 
@@ -242,5 +331,5 @@ Out of scope:
 
 ## 16. Open Questions
 
-- when durable storage replaces the current starter store, which social entities move first: posts, stories, or follows
+- when should the curated GIF and sticker tray move to provider-backed search without slowing comment compose time
 - do we need a denormalized feed read model before broader campus launch

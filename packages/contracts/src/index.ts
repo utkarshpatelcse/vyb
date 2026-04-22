@@ -177,6 +177,10 @@ export interface FeedCard {
   placement: FeedPlacement;
   kind: PostKind;
   mediaUrl: string | null;
+  media: {
+    url: string;
+    kind: "image" | "video";
+  }[];
   location: string | null;
   title: string;
   body: string;
@@ -208,6 +212,13 @@ export interface CreatePostRequest {
   title?: string | null;
   body: string;
   mediaUrl?: string | null;
+  mediaAssets?: {
+    url: string;
+    kind: "image" | "video";
+    mimeType?: string;
+    sizeBytes?: number;
+    storagePath?: string;
+  }[];
   location?: string | null;
 }
 

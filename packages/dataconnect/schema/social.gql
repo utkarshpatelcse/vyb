@@ -29,6 +29,7 @@ type PostMedia @table(name: "post_media", singular: "postMedia", plural: "postMe
   id: UUID! @default(expr: "uuidV4()")
   tenant: Tenant!
   post: Post!
+  mediaUrl: String @col(name: "media_url")
   storagePath: String! @col(name: "storage_path")
   mediaType: String! @col(name: "media_type")
   mimeType: String! @col(name: "mime_type")

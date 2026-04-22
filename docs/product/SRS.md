@@ -1,8 +1,8 @@
 # Vyb Software Requirements Specification
 
 Owner: Product Team
-Last Updated: 2026-04-19
-Change Summary: Added the first-college verified auth rollout, profile completion requirements, the authenticated home-feed landing flow for the current Phase 1 web surface, the Phase 1 hosting topology requirement, and the first live social requirements for user IDs, search, follows, stories, and vibes.
+Last Updated: 2026-04-22
+Change Summary: Added the first-college verified auth rollout, profile completion requirements, the authenticated home-feed landing flow for the current Phase 1 web surface, the Phase 1 hosting topology requirement, and the live social requirements for stories, vibes, reposts, likers, story-viewer state, and responsive threaded comments.
 
 ## 1. Introduction
 
@@ -64,13 +64,21 @@ Phase 1 ships through the web client and one backend runtime. The architecture m
 
 - Verified users shall create text and image posts.
 - Verified users shall create short-form video vibes for the dedicated discovery surface.
+- The home feed shall show the live campus feed, story lane, and a vibes teaser surface that links into dedicated vibe discovery.
 - Posts shall belong to a tenant and optionally to a community.
 - Users shall browse posts in reverse chronological order initially.
+- Users shall open post or vibe media in a full-screen viewer, with zoom support for compatible images.
 - Users shall comment on posts.
+- Users shall reply to comments and like comments.
+- Comment threads shall support approved GIF or sticker attachments.
 - Users shall react to posts.
+- Users shall see which verified campus members liked a post or vibe.
+- Users shall direct repost or quote repost eligible posts and vibes inside the same tenant.
+- Post and vibe authors shall edit published copy or location metadata and shall soft-delete their own published content.
 - Users shall search other campus profiles by user ID or name.
 - Users shall follow or unfollow other campus profiles inside the same tenant.
 - Users shall publish time-limited stories and those stories shall be visible to the author plus followed users.
+- Story lanes and the story viewer shall expose seen-state, progress indicators, tap navigation, and story-like interactions.
 - Reported or unsafe content shall be reviewable by moderators.
 
 ### 2.5 Resource Vault
@@ -82,7 +90,7 @@ Phase 1 ships through the web client and one backend runtime. The architecture m
 
 ### 2.6 Moderation
 
-- Users shall report posts, comments, and resources.
+- Users shall report posts, vibes, comments, stories, and resources.
 - Moderators shall review reports.
 - Moderators shall change content status to removed where policy requires.
 - Admin actions shall be auditable.
@@ -138,6 +146,8 @@ The following are intentionally deferred out of Phase 1:
 - The web client shall support both mobile and desktop experiences at production quality.
 - The Phase 1 web client shall support PWA installability for compatible mobile browsers.
 - New UI features shall define mobile and desktop behavior before implementation.
+- The vibes surface shall support immersive full-height mobile playback and centered desktop theater playback.
+- Comment threads shall support a desktop side-panel treatment and a mobile bottom-sheet treatment with keyboard-safe composer behavior.
 - Backend APIs shall remain portable across web and future native apps.
 - Shared code shall prioritize contracts, validation, and domain logic over forced component sharing.
 
@@ -178,7 +188,7 @@ The following are intentionally deferred out of Phase 1:
 
 - Phase 1 avoids high-legal-risk money flows
 - Phase 1 avoids anonymous posting
-- Phase 1 avoids short-form video complexity
+- Phase 1 ships bounded short-form video and story engagement without advanced ranking or transcoding fleets
 - Documentation is mandatory and not optional
 - Phase 1 backend hosting must not require multiple deployables for core identity, campus, social, and resources flows
 
@@ -191,8 +201,10 @@ The following are intentionally deferred out of Phase 1:
 - The student can enter relevant communities
 - The student lands on the main home feed after successful onboarding instead of being dropped into the profile page first
 - The student can create a post and see it in the live feed
+- The student can open a post or vibe in a full-screen viewer, like it, inspect likers, and interact through comments or replies
+- The student can repost or quote repost another campus post or vibe
 - The student can set a campus user ID, search other verified users by that ID, and follow them
-- The student can publish a story and followed users can see it in their story lane
+- The student can publish a story and followed users can see it in their story lane with seen-state and viewer progress
 - The student can upload a vibe and see it on the dedicated short-form discovery route
 - The student can upload and browse academic resources
 - A moderator can review a reported item and take action

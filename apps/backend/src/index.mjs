@@ -123,6 +123,13 @@ const server = createServer(async (request, response) => {
       "x-request-id": context.requestId
     });
   } catch (error) {
+    try {
+      require("fs").appendFileSync(
+        "backend_crash.log",
+        "ERROR:\n" + (error instanceof Error ? error.stack : String(error)) + "\n"
+      );
+    } catch (e) {}
+
     console.error(`[backend] ${context.requestId} unhandled-request-error`, {
       method: request.method,
       path: url.pathname,

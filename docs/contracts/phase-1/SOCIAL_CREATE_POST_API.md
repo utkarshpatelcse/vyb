@@ -1,8 +1,8 @@
 # API Contract
 
 Owner: Architecture Team
-Last Updated: 2026-04-19
-Change Summary: Updated the create-post contract for the live campus-social flow with direct publish behavior, media payloads, and vibe placement support.
+Last Updated: 2026-04-22
+Change Summary: Updated the create-post contract for the live campus-social flow with direct publish behavior, media payloads, vibe placement support, and companion edit/delete/repost writes.
 
 ## 1. Metadata
 
@@ -11,7 +11,7 @@ Change Summary: Updated the create-post contract for the live campus-social flow
 - Runtime: `apps/backend`
 - Consumers: `web`, future `mobile`
 - Version: `v1`
-- Status: Draft
+- Status: Active
 - Linked LLD: `docs/lld/phase-1/SOCIAL_SERVICE_LLD.md`
 
 ## 2. Endpoint Definition
@@ -34,6 +34,7 @@ Change Summary: Updated the create-post contract for the live campus-social flow
 - Path params: none
 - Query params: none
 - Body: `tenantId`, optional `communityId`, `membershipId`, `kind`, optional `placement`, optional `title`, `body`, optional `mediaUrl`, optional `location`
+- Upload note: media is expected to be uploaded to Firebase Storage before this publish request is issued
 
 ## 5. Response Schema
 
@@ -51,7 +52,7 @@ Change Summary: Updated the create-post contract for the live campus-social flow
 
 ## 7. Side Effects
 
-- Tables written: `posts`, later `audit_logs` and `user_activity`
+- Tables written: `posts`, `post_media`, and later `user_activity`
 - Events emitted: future moderation and notification events
 - Async jobs triggered: optional moderation review
 - Audit log entries: moderator actions only, not normal create
@@ -72,4 +73,10 @@ Change Summary: Updated the create-post contract for the live campus-social flow
 
 - Feature flags: post creation may be gated per tenant
 - Backward compatibility: additive fields only
-- Migration steps: replace the current starter persistence with durable production storage while keeping the public contract stable
+- Migration steps: keep the public contract stable while post writes remain Data Connect-backed and market/social fallbacks stay disabled
+
+## 11. Companion Write Endpoints
+
+- `PATCH /v1/posts/{postId}` updates author-owned `title`, `body`, or `location`
+- `DELETE /v1/posts/{postId}` soft-deletes an author-owned post or vibe
+- `POST /v1/posts/{postId}/repost` creates a direct repost or quote repost in `feed` or `vibe` placement

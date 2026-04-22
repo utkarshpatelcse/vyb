@@ -11,6 +11,47 @@ import { SocialThreadSheet } from "./social-thread-sheet";
 import { SignOutButton } from "./sign-out-button";
 import { useSocialPostEngagement } from "./use-social-post-engagement";
 import { VybLogoLockup, VybLogoMark } from "./vyb-logo";
+import { MediaCarousel } from "./media-carousel";
+
+function timeAgo(dateString: string) {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (diffInSeconds < 60) return "Just now";
+  const diffInMinutes = Math.floor(diffInSeconds / 60);
+  if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+  const diffInHours = Math.floor(diffInMinutes / 60);
+  if (diffInHours < 24) return `${diffInHours}h ago`;
+  const diffInDays = Math.floor(diffInHours / 24);
+  if (diffInDays < 7) return `${diffInDays}d ago`;
+  const diffInWeeks = Math.floor(diffInDays / 7);
+  if (diffInWeeks < 52) return `${diffInWeeks}w ago`;
+  return date.toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function FeedCaption({ title, body }: { title?: string | null; body: string }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const MAX_LENGTH = 150;
+  // Deduplicate title and body if they are identical
+  const displayTitle = title && title.trim() !== body.trim() ? title : null;
+  const shouldTruncate = body.length > MAX_LENGTH;
+  const displayBody = shouldTruncate && !isExpanded ? body.slice(0, MAX_LENGTH) + "..." : body;
+
+  return (
+    <div className="fc-caption">
+      {displayTitle ? <strong>{displayTitle}</strong> : null}
+      <p>
+        {displayBody}
+        {shouldTruncate && (
+          <button type="button" className="fc-read-more" onClick={() => setIsExpanded(!isExpanded)}>
+            {isExpanded ? " Show less" : " See more"}
+          </button>
+        )}
+      </p>
+    </div>
+  );
+}
 
 type CampusHomeShellProps = {
   viewerName: string;
@@ -908,115 +949,103 @@ export function CampusHomeShell({
               </div>
             ) : null}
 
-            {engagement.posts.map((post, index) => (
+            {engagement.posts.map((post, index) => {
+              // Use the new native multi-media array if it has items, else fallback to backward-compatible mediaUrl
+              const mediaItems = post.media && post.media.length > 0
+                ? post.media
+                : post.mediaUrl
+                ? [{ url: post.mediaUrl, kind: post.kind === "video" ? "video" as const : "image" as const }]
+                : [];
+
+              return (
               <div key={post.id}>
-                <article id={`post-${post.id}`} className="vyb-campus-feed-card">
-                  <div className="vyb-campus-card-top">
-                    <div className="vyb-campus-card-author">
-                      <span className="vyb-campus-card-avatar">{post.author.displayName.slice(0, 1).toUpperCase()}</span>
-                      <div>
-                        <Link href={getProfileHref(post.author.username, viewerUsername)}>
-                          <strong>{post.author.username}</strong>
+                <article id={`post-${post.id}`} className="fc-card">
+                  {/* ── Header ── */}
+                  <div className="fc-header">
+                    <Link href={getProfileHref(post.author.username, viewerUsername)} className="fc-avatar" aria-label={post.author.username}>
+                      {post.author.displayName.slice(0, 1).toUpperCase()}
+                    </Link>
+                    <div className="fc-header-info">
+                      <div className="fc-header-top">
+                        <Link href={getProfileHref(post.author.username, viewerUsername)} className="fc-author-name">
+                          {post.author.displayName || post.author.username}
                         </Link>
-                        <span>{post.location ?? collegeName}</span>
+                        {post.location ? (
+                          <span className="fc-community-chip">#{post.location}</span>
+                        ) : null}
+                      </div>
+                      <div className="fc-header-bottom">
+                        <span className="fc-username">@{post.author.username}</span>
+                        <span className="fc-sep" aria-hidden="true">·</span>
+                        <time className="fc-timestamp" dateTime={post.createdAt} suppressHydrationWarning>{timeAgo(post.createdAt)}</time>
                       </div>
                     </div>
                     <button
                       type="button"
-                      className="vyb-campus-icon-button"
+                      className="vyb-campus-icon-button fc-options-btn"
                       aria-label="Post options"
-                      onClick={() => {
-                        setActionMessage(null);
-                        setActionPost(post);
-                      }}
+                      onClick={() => { setActionMessage(null); setActionPost(post); }}
                     >
                       <MenuIcon />
                     </button>
                   </div>
 
-                  <div
-                    className="vyb-campus-post-media-shell"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => void openPostLightbox(post)}
-                    onDoubleClick={() => void handlePostLike(post, true)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        void openPostLightbox(post);
-                      }
-                    }}
-                  >
-                    {post.mediaUrl && post.kind === "video" ? (
-                      <video src={post.mediaUrl} className="vyb-campus-post-image" autoPlay muted playsInline loop preload="metadata" />
-                    ) : post.mediaUrl ? (
-                      <img src={post.mediaUrl} alt={post.body || post.title} className="vyb-campus-post-image" />
-                    ) : (
-                      <div className="vyb-campus-post-copy-panel">
-                        {post.title ? <strong>{post.title}</strong> : null}
-                        <p>{post.body}</p>
-                      </div>
-                    )}
+                  {/* ── Caption ── */}
+                  {(post.title || post.body) && (
+                    <FeedCaption title={post.title} body={post.body} />
+                  )}
 
-                    {heartBurstPostId === post.id ? (
-                      <span className="vyb-campus-heart-burst" aria-hidden="true">
-                        <HeartIcon />
-                      </span>
-                    ) : null}
-                  </div>
+                  {/* ── Media ── */}
+                  {mediaItems.length > 0 && (
+                    <div
+                      className="fc-media"
+                      onDoubleClick={() => void handlePostLike(post, true)}
+                    >
+                      <MediaCarousel
+                        items={mediaItems}
+                        alt={post.body || post.title || "Post media"}
+                        onClick={() => void openPostLightbox(post)}
+                        onDoubleTap={() => void handlePostLike(post, true)}
+                        showHeartBurst={heartBurstPostId === post.id}
+                        heartBurstNode={
+                          <span className="vyb-heart-pulse" aria-hidden="true">
+                            <HeartIcon />
+                          </span>
+                        }
+                      />
+                    </div>
+                  )}
 
-                  <div className="vyb-campus-card-actions">
-                    <div className="vyb-campus-card-actions-left">
+                  {/* ── Actions ── */}
+                  <div className="fc-actions">
+                    <div className="fc-actions-left">
                       <button
                         type="button"
-                        className={`vyb-campus-action-icon${post.viewerReactionType === "like" ? " is-active" : ""}`}
-                        aria-label="Like post"
+                        className={`fc-action-btn ${post.viewerReactionType === "like" ? "is-active" : ""}`}
                         disabled={engagement.loadingPostId === post.id}
                         onClick={() => void handlePostLike(post)}
                       >
                         <HeartIcon />
+                        <span>{formatMetric(post.reactions)}</span>
                       </button>
                       <button
                         type="button"
-                        className="vyb-campus-action-icon"
-                        aria-label="Comment on post"
+                        className="fc-action-btn"
                         onClick={() => void engagement.openThread(post.id)}
                       >
                         <CommentIcon />
+                        <span>{formatMetric(post.comments)}</span>
                       </button>
                       <button
                         type="button"
-                        className="vyb-campus-action-icon"
-                        aria-label="Repost post"
-                        onClick={() => {
-                          setActionMessage(null);
-                          setActionPost(post);
-                        }}
+                        className="fc-action-btn"
+                        onClick={() => { setActionMessage(null); setActionPost(post); }}
                       >
                         <ShareIcon />
                       </button>
                     </div>
-                    <button
-                      type="button"
-                      className="vyb-campus-action-icon"
-                      aria-label="Open full screen post"
-                      onClick={() => void openPostLightbox(post)}
-                    >
-                      <BookmarkIcon />
-                    </button>
                   </div>
 
-                  <div className="vyb-campus-card-copy">
-                    <button type="button" className="vyb-campus-card-likes vyb-campus-inline-stat" onClick={() => void openPostLikes(post)}>
-                      {formatMetric(post.reactions)} likes
-                    </button>
-                    <button type="button" className="vyb-campus-card-meta vyb-campus-inline-stat" onClick={() => void engagement.openThread(post.id)}>
-                      {formatMetric(post.comments)} comments
-                    </button>
-                    <p>
-                      <strong>{post.author.username}</strong> {post.body}
-                    </p>
-                  </div>
                 </article>
 
                 {(index + 1) % 4 === 0 && vibeStrip.length > 0 ? (
@@ -1056,7 +1085,8 @@ export function CampusHomeShell({
                   </section>
                 ) : null}
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
@@ -1312,6 +1342,8 @@ export function CampusHomeShell({
       ) : null}
 
       <SocialThreadSheet
+        viewerName={viewerName}
+        viewerUsername={viewerUsername}
         post={engagement.selectedPost}
         comments={engagement.selectedComments}
         draft={engagement.threadDraft}

@@ -91,6 +91,7 @@ export interface CreatePostMediaData {
 export interface CreatePostMediaVariables {
   tenantId: UUIDString;
   postId: UUIDString;
+  mediaUrl?: string | null;
   storagePath: string;
   mediaType: string;
   mimeType: string;
@@ -228,6 +229,13 @@ export interface GetPostByIdData {
     location?: string | null;
     status: string;
     createdAt: TimestampString;
+    postMediaRecords_on_post: ({
+      id: UUIDString;
+      mediaUrl?: string | null;
+      mediaType: string;
+      mimeType: string;
+      sizeBytes: Int64String;
+    } & PostMedia_Key)[];
   } & Post_Key;
 }
 
@@ -398,6 +406,13 @@ export interface ListFeedByTenantData {
     location?: string | null;
     status: string;
     createdAt: TimestampString;
+    postMediaRecords_on_post: ({
+      id: UUIDString;
+      mediaUrl?: string | null;
+      mediaType: string;
+      mimeType: string;
+      sizeBytes: Int64String;
+    } & PostMedia_Key)[];
   } & Post_Key)[];
 }
 
@@ -459,6 +474,13 @@ export interface ListPostsByAuthorData {
     location?: string | null;
     status: string;
     createdAt: TimestampString;
+    postMediaRecords_on_post: ({
+      id: UUIDString;
+      mediaUrl?: string | null;
+      mediaType: string;
+      mimeType: string;
+      sizeBytes: Int64String;
+    } & PostMedia_Key)[];
   } & Post_Key)[];
 }
 

@@ -1,10 +1,25 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
-import type { CampusUploadKind, CampusUploadMediaKind } from "../lib/campus-upload-store";
-import { formatBytes, prepareSocialUploadFile, uploadSocialMediaAsset } from "../lib/social-media-client";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ReactNode,
+} from "react";
+import type {
+  CampusUploadKind,
+  CampusUploadMediaKind,
+} from "../lib/campus-upload-store";
+import {
+  formatBytes,
+  prepareSocialUploadFile,
+  uploadSocialMediaAsset,
+} from "../lib/social-media-client";
 
+/* ─── Types ─────────────────────────────────────────────────────────────── */
 type CampusUploadShellProps = {
   collegeName: string;
   viewerEmail: string;
@@ -12,17 +27,73 @@ type CampusUploadShellProps = {
   viewerUsername: string;
 };
 
-function IconBase({ children }: { children: ReactNode }) {
+type CreationMode = "choice" | "vibe" | "moment";
+
+/* ─── Constants ─────────────────────────────────────────────────────────── */
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 10 * 1024 * 1024;
+const TARGET_VIDEO_BYTES = 8 * 1024 * 1024;
+
+const COMMUNITY_TAGS = [
+  "Campus-wide",
+  "CSE-A",
+  "CSE-B",
+  "CSE-C",
+  "ECE",
+  "MECH",
+  "Civil",
+  "MBA",
+  "Music Club",
+  "Drama Club",
+  "Sports Club",
+  "Photography Club",
+  "Coding Club",
+  "E-Cell",
+  "NSS",
+];
+
+/* ─── Icon components ────────────────────────────────────────────────────── */
+function Ico({ children }: { children: ReactNode }) {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className="vyb-campus-icon">
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="cs-icon">
       {children}
     </svg>
   );
 }
 
-function ImageIcon() {
+function IcoClose() {
   return (
-    <IconBase>
+    <Ico>
+      <path
+        d="m7 7 10 10M17 7 7 17"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Ico>
+  );
+}
+
+function IcoVideo() {
+  return (
+    <Ico>
+      <path
+        d="M5 6.5A2.5 2.5 0 0 1 7.5 4H14a2.5 2.5 0 0 1 2.5 2.5v1.2l3.5-2.1v12.8l-3.5-2.1v1.2A2.5 2.5 0 0 1 14 20H7.5A2.5 2.5 0 0 1 5 17.5z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Ico>
+  );
+}
+
+function IcoImage() {
+  return (
+    <Ico>
       <path
         d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5zm0 9 4.5-4.5 3 3 4.5-5.5 4 5"
         fill="none"
@@ -32,37 +103,13 @@ function ImageIcon() {
         strokeLinejoin="round"
       />
       <circle cx="9" cy="9" r="1.6" fill="currentColor" />
-    </IconBase>
+    </Ico>
   );
 }
 
-function VideoIcon() {
+function IcoSpark() {
   return (
-    <IconBase>
-      <path
-        d="M5 6.5A2.5 2.5 0 0 1 7.5 4H14a2.5 2.5 0 0 1 2.5 2.5v1.2l3.5-2.1v12.8l-3.5-2.1v1.2A2.5 2.5 0 0 1 14 20H7.5A2.5 2.5 0 0 1 5 17.5z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </IconBase>
-  );
-}
-
-function StoryIcon() {
-  return (
-    <IconBase>
-      <circle cx="12" cy="12" r="8.2" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" strokeWidth="1.8" />
-    </IconBase>
-  );
-}
-
-function SparkIcon() {
-  return (
-    <IconBase>
+    <Ico>
       <path
         d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"
         fill="none"
@@ -71,567 +118,713 @@ function SparkIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-    </IconBase>
+    </Ico>
   );
 }
 
-function FeedIcon() {
+function IcoUpload() {
   return (
-    <IconBase>
+    <Ico>
       <path
-        d="M5 7.5A2.5 2.5 0 0 1 7.5 5h9A2.5 2.5 0 0 1 19 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 5 16.5zM9 10h6M9 14h4"
+        d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"
         fill="none"
         stroke="currentColor"
         strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-    </IconBase>
+    </Ico>
   );
 }
 
-function GlobeIcon() {
+function IcoPlus() {
   return (
-    <IconBase>
+    <Ico>
       <path
-        d="M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm-6.5 8h13M12 4a12.5 12.5 0 0 1 0 16M12 4a12.5 12.5 0 0 0 0 16"
+        d="M12 5v14M5 12h14"
         fill="none"
         stroke="currentColor"
-        strokeWidth="1.7"
+        strokeWidth="2.1"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-    </IconBase>
+    </Ico>
   );
 }
 
-function CloseIcon() {
+function IcoChevronDown() {
   return (
-    <IconBase>
+    <Ico>
       <path
-        d="m7 7 10 10M17 7 7 17"
+        d="m6 9 6 6 6-6"
         fill="none"
         stroke="currentColor"
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-    </IconBase>
+    </Ico>
   );
 }
 
-function formatDuration(seconds: number) {
-  const totalSeconds = Math.max(1, Math.round(seconds));
-  const minutes = Math.floor(totalSeconds / 60);
-  const remainingSeconds = totalSeconds % 60;
-  return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+function IcoTrash() {
+  return (
+    <Ico>
+      <path
+        d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Ico>
+  );
 }
 
-function parseKind(value: string | null): CampusUploadKind {
-  if (value === "story" || value === "vibe") {
-    return value;
-  }
-
-  return "post";
-}
-
-const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
-const MAX_VIDEO_BYTES = 10 * 1024 * 1024;
-const TARGET_VIDEO_BYTES = 8 * 1024 * 1024;
-
-function getSummary(kind: CampusUploadKind) {
-  if (kind === "story") {
-    return {
-      kicker: "Campus Story",
-      title: "Create story",
-      subtitle: "Share a quick moment with followers and let it disappear after the day.",
-      button: "Share story",
-      accentLabel: "Followers only",
-      captionLabel: "Caption",
-      captionPlaceholder: "Add a short line before you post this story...",
-      mediaHint: "Stories need one image or video.",
-      footerHint: "Stories show up in the top rail for people who follow you."
-    };
-  }
-
-  if (kind === "vibe") {
-    return {
-      kicker: "Vibes Clip",
-      title: "Create vibe",
-      subtitle: "Drop a portrait video and push it into the live campus vibes stream.",
-      button: "Publish vibe",
-      accentLabel: "Public vibe",
-      captionLabel: "Caption",
-      captionPlaceholder: "Tell everyone what this vibe is about...",
-      mediaHint: "Vibes work best with a 9:16 portrait video.",
-      footerHint: "Choose a portrait clip so it fills the Vibes feed cleanly."
-    };
-  }
-
-    return {
-      kicker: "Live Feed",
-      title: "Create post",
-      subtitle: "Publish instantly to the live campus feed.",
-      button: "Publish post",
-      accentLabel: "Public post",
-      captionLabel: "Caption",
-      captionPlaceholder: "What's on your mind?",
-      mediaHint: "Posts can be text-only, image-first, or video-first.",
-      footerHint: "Need image or video? Add it from the media panel."
-    };
-  }
-
-function loadVideoMetadata(file: File) {
-  return new Promise<{ duration: number; height: number; width: number }>((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file);
-    const video = document.createElement("video");
-
-    const cleanup = () => {
-      video.removeAttribute("src");
-      video.load();
-      URL.revokeObjectURL(objectUrl);
-    };
-
-    video.preload = "metadata";
-    video.onloadedmetadata = () => {
-      resolve({
-        duration: video.duration,
-        height: video.videoHeight,
-        width: video.videoWidth
-      });
-      cleanup();
-    };
-
-    video.onerror = () => {
-      cleanup();
-      reject(new Error("Unable to read this video."));
-    };
-
-    video.src = objectUrl;
-  });
-}
-
+/* ─── Helpers ────────────────────────────────────────────────────────────── */
 function getInitials(name: string, username: string) {
   const source = name.trim() || username.trim();
   const tokens = source.split(/\s+/u).filter(Boolean);
-
   if (tokens.length >= 2) {
     return `${tokens[0][0] ?? ""}${tokens[1][0] ?? ""}`.toUpperCase();
   }
-
   return source.slice(0, 2).toUpperCase();
 }
 
+function formatDuration(seconds: number) {
+  const total = Math.max(1, Math.round(seconds));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function loadVideoMetadata(file: File) {
+  return new Promise<{ duration: number; height: number; width: number }>(
+    (resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const v = document.createElement("video");
+      const cleanup = () => {
+        v.removeAttribute("src");
+        v.load();
+        URL.revokeObjectURL(url);
+      };
+      v.preload = "metadata";
+      v.onloadedmetadata = () => {
+        resolve({ duration: v.duration, height: v.videoHeight, width: v.videoWidth });
+        cleanup();
+      };
+      v.onerror = () => { cleanup(); reject(new Error("Unable to read this video.")); };
+      v.src = url;
+    }
+  );
+}
+
+function parseKind(value: string | null): CampusUploadKind {
+  if (value === "story" || value === "vibe") return value;
+  return "post";
+}
+
+/* ─── Shimmer skeleton ───────────────────────────────────────────────────── */
+function ShimmerBlock({ className }: { className?: string }) {
+  return <div className={`cs-shimmer ${className ?? ""}`} />;
+}
+
+/* ─── Progress bar ───────────────────────────────────────────────────────── */
+function UploadProgress({ progress, label }: { progress: number; label: string }) {
+  return (
+    <div className="cs-progress-wrap">
+      <span className="cs-progress-label">{label}</span>
+      <div className="cs-progress-track">
+        <div className="cs-progress-fill" style={{ width: `${Math.round(progress * 100)}%` }} />
+      </div>
+      <span className="cs-progress-pct">{Math.round(progress * 100)}%</span>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CampusUploadShell — main export
+   ══════════════════════════════════════════════════════════════════════════ */
 export function CampusUploadShell({
   collegeName,
   viewerEmail,
   viewerName,
-  viewerUsername
+  viewerUsername,
 }: CampusUploadShellProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const defaultKind = parseKind(searchParams.get("kind"));
-  const returnTo = searchParams.get("from") || (defaultKind === "vibe" ? "/vibes" : "/home");
-  const [selectedKind, setSelectedKind] = useState<CampusUploadKind>(defaultKind);
+  const returnTo =
+    searchParams.get("from") || (defaultKind === "vibe" ? "/vibes" : "/home");
+
+  /* ── Creation mode (choice / vibe / moment) ──────────────────────────── */
+  const [mode, setMode] = useState<CreationMode>(() =>
+    defaultKind === "vibe" ? "vibe" : defaultKind === "post" ? "moment" : "choice"
+  );
+
+  /* ── Form state ──────────────────────────────────────────────────────── */
   const [caption, setCaption] = useState("");
-  const [mediaUrl, setMediaUrl] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [mediaKind, setMediaKind] = useState<CampusUploadMediaKind>(null);
-  const [durationSeconds, setDurationSeconds] = useState<number | null>(null);
-  const [isPortraitVideo, setIsPortraitVideo] = useState<boolean | null>(null);
+  const [communityTag, setCommunityTag] = useState(COMMUNITY_TAGS[0]);
   const [message, setMessage] = useState<string | null>(null);
   const [isPreparingMedia, setIsPreparingMedia] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadLabel, setUploadLabel] = useState("Optimizing video for campus feed...");
 
-  useEffect(() => {
-    setSelectedKind(defaultKind);
-  }, [defaultKind]);
+  /* ── Vibe (single video) ─────────────────────────────────────────────── */
+  const [vibeVideoUrl, setVibeVideoUrl] = useState<string | null>(null);
+  const [vibeVideoFile, setVibeVideoFile] = useState<File | null>(null);
+  const [vibeDuration, setVibeDuration] = useState<number | null>(null);
+  const [vibeIsPortrait, setVibeIsPortrait] = useState<boolean | null>(null);
+  const [vibeIsDragOver, setVibeIsDragOver] = useState(false);
+  const vibeInputRef = useRef<HTMLInputElement | null>(null);
+  const vibeVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  const summary = useMemo(() => getSummary(selectedKind), [selectedKind]);
-  const avatarInitials = useMemo(() => getInitials(viewerName, viewerUsername), [viewerName, viewerUsername]);
+  /* ── Moment (text + multi-images) ────────────────────────────────────── */
+  const [momentImages, setMomentImages] = useState<{ url: string; file: File }[]>([]);
+  const momentInputRef = useRef<HTMLInputElement | null>(null);
+
+  /* ── Derived ─────────────────────────────────────────────────────────── */
+  const avatarInitials = useMemo(
+    () => getInitials(viewerName, viewerUsername),
+    [viewerName, viewerUsername]
+  );
 
   const canPublish = useMemo(() => {
-    const trimmedCaption = caption.trim();
-
-    if (selectedKind === "story") {
-      return Boolean(mediaUrl && mediaKind);
+    if (mode === "vibe") {
+      return Boolean(vibeVideoUrl && vibeIsPortrait !== false);
     }
-
-    if (selectedKind === "vibe") {
-      return Boolean(mediaUrl && mediaKind === "video" && isPortraitVideo !== false);
+    if (mode === "moment") {
+      return Boolean(caption.trim() || momentImages.length > 0);
     }
+    return false;
+  }, [mode, vibeVideoUrl, vibeIsPortrait, caption, momentImages]);
 
-    return Boolean(trimmedCaption || mediaUrl);
-  }, [caption, isPortraitVideo, mediaKind, mediaUrl, selectedKind]);
-
-  async function handleMediaChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-
-    if (!file) {
+  /* ── progress simulator for demo (real upload doesn't expose events) ─── */
+  useEffect(() => {
+    if (!isPreparingMedia) {
+      setUploadProgress(0);
       return;
     }
+    setUploadProgress(0.05);
+    const id = window.setInterval(() => {
+      setUploadProgress((p) => {
+        if (p >= 0.9) { clearInterval(id); return 0.9; }
+        return p + 0.07;
+      });
+    }, 220);
+    return () => clearInterval(id);
+  }, [isPreparingMedia]);
 
-    const nextMediaKind: CampusUploadMediaKind = file.type.startsWith("video/")
-      ? "video"
-      : file.type.startsWith("image/")
-        ? "image"
-        : null;
+  /* ── Helpers ─────────────────────────────────────────────────────────── */
+  function handleClose() {
+    router.push(returnTo);
+  }
 
-    if (!nextMediaKind) {
-      setMessage("Only image and video files are supported right now.");
+  /* ── Vibe video pick ─────────────────────────────────────────────────── */
+  async function processVibeFile(file: File) {
+    if (!file.type.startsWith("video/")) {
+      setMessage("Vibes only accept video files.");
       return;
     }
-
     setIsPreparingMedia(true);
-    setDurationSeconds(null);
-    setIsPortraitVideo(null);
-    setMessage(nextMediaKind === "video" ? "Optimizing your video for upload..." : null);
+    setUploadLabel("Optimizing video for campus feed...");
+    setMessage(null);
 
     try {
-      const prepared =
-        nextMediaKind === "video"
-          ? await prepareSocialUploadFile(file, {
-              maxVideoBytes: MAX_VIDEO_BYTES,
-              targetVideoBytes: TARGET_VIDEO_BYTES
-            })
-          : {
-              file,
-              optimizationSummary: null
-            };
-      const preparedFile = prepared.file;
-      const objectUrl = URL.createObjectURL(preparedFile);
-
-      if (mediaUrl?.startsWith("blob:")) {
-        URL.revokeObjectURL(mediaUrl);
-      }
-
-      setMediaUrl(objectUrl);
-      setSelectedFile(preparedFile);
-      setMediaKind(nextMediaKind);
+      const prepared = await prepareSocialUploadFile(file, {
+        maxVideoBytes: MAX_VIDEO_BYTES,
+        targetVideoBytes: TARGET_VIDEO_BYTES,
+      });
+      const pf = prepared.file;
+      const objectUrl = URL.createObjectURL(pf);
+      if (vibeVideoUrl?.startsWith("blob:")) URL.revokeObjectURL(vibeVideoUrl);
+      setVibeVideoUrl(objectUrl);
+      setVibeVideoFile(pf);
       setMessage(prepared.optimizationSummary);
 
-      if (nextMediaKind === "video") {
-        const metadata = await loadVideoMetadata(preparedFile);
-        setDurationSeconds(metadata.duration);
-        setIsPortraitVideo(metadata.height > metadata.width);
-      } else {
-        setIsPortraitVideo(null);
-      }
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "We could not prepare this media right now.");
+      const meta = await loadVideoMetadata(pf);
+      setVibeDuration(meta.duration);
+      setVibeIsPortrait(meta.height > meta.width);
+      setUploadProgress(1);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Could not prepare video.");
     } finally {
       setIsPreparingMedia(false);
     }
   }
 
-  function handleClose() {
-    router.push(returnTo);
+  function handleVibeInputChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) void processVibeFile(file);
   }
 
+  function handleVibeDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setVibeIsDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) void processVibeFile(file);
+  }
+
+  /* ── Moment image pick ───────────────────────────────────────────────── */
+  function handleMomentInputChange(e: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    const valid = files.filter((f) => f.type.startsWith("image/"));
+    if (valid.length === 0) { setMessage("Only image files are supported for Moments."); return; }
+    setMessage(null);
+
+    const entries = valid.slice(0, 6 - momentImages.length).map((f) => ({
+      url: URL.createObjectURL(f),
+      file: f,
+    }));
+    setMomentImages((prev) => [...prev, ...entries]);
+  }
+
+  function removeMomentImage(index: number) {
+    setMomentImages((prev) => {
+      const next = [...prev];
+      const removed = next.splice(index, 1)[0];
+      if (removed?.url.startsWith("blob:")) URL.revokeObjectURL(removed.url);
+      return next;
+    });
+  }
+
+  /* ── Publish ────────────────────────────────────────────────────────── */
   async function handlePublish() {
-    const trimmedCaption = caption.trim();
+    if (isPreparingMedia) { setMessage("Please wait until optimization finishes."); return; }
 
-    if (isPreparingMedia) {
-      setMessage("Please wait until the media is ready.");
+    if (mode === "vibe") {
+      if (!vibeVideoFile) { setMessage("Add a portrait video before posting."); return; }
+      if (!vibeIsPortrait) { setMessage("Use a 9:16 portrait video for Vibes."); return; }
+    }
+
+    if (mode === "moment" && !caption.trim() && momentImages.length === 0) {
+      setMessage("Add a caption or photo before posting.");
       return;
-    }
-
-    if (selectedKind !== "post" && !mediaUrl) {
-      setMessage("Story and Vibes uploads need media before publishing.");
-      return;
-    }
-
-    if (selectedKind === "vibe") {
-      if (mediaKind !== "video") {
-        setMessage("Vibes only support video uploads.");
-        return;
-      }
-
-      if (!isPortraitVideo) {
-        setMessage("Choose a portrait video for Vibes so it fills the feed correctly.");
-        return;
-      }
-    }
-
-    if (selectedKind === "post" && !trimmedCaption && !mediaUrl) {
-      setMessage("Add a caption or media before publishing your post.");
-      return;
-    }
-
-    if (selectedFile) {
-      const maxBytes = mediaKind === "video" ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
-
-      if (selectedFile.size > maxBytes) {
-        setMessage(
-          mediaKind === "video"
-            ? "Video is too large right now. Keep it under 10 MB."
-            : "Image is too large right now. Keep it under 4 MB."
-        );
-        return;
-      }
     }
 
     setIsPublishing(true);
     setMessage(null);
 
     try {
-      const uploadedMedia = selectedFile ? await uploadSocialMediaAsset(selectedFile, selectedKind) : null;
-      const route = selectedKind === "story" ? "/api/stories" : selectedKind === "vibe" ? "/api/vibes" : "/api/posts";
-      const inferredTitle = trimmedCaption ? trimmedCaption.slice(0, 72) : "";
-      const payload =
-        selectedKind === "story"
-          ? {
-              mediaType: mediaKind,
-              mediaUrl: uploadedMedia?.url ?? null,
-              mediaStoragePath: uploadedMedia?.storagePath ?? null,
-              mediaMimeType: uploadedMedia?.mimeType ?? null,
-              mediaSizeBytes: uploadedMedia?.sizeBytes ?? null,
-              caption: trimmedCaption || null
-            }
-          : selectedKind === "vibe"
-            ? {
-                title: inferredTitle || null,
-                body: trimmedCaption || "Fresh campus vibe.",
-                mediaUrl: uploadedMedia?.url ?? null,
-                mediaStoragePath: uploadedMedia?.storagePath ?? null,
-                mediaMimeType: uploadedMedia?.mimeType ?? null,
-                mediaSizeBytes: uploadedMedia?.sizeBytes ?? null,
-                location: collegeName
-              }
-            : {
-                title: inferredTitle,
-                body: trimmedCaption || "",
-                kind: mediaKind ?? "text",
-                mediaUrl: uploadedMedia?.url ?? null,
-                mediaStoragePath: uploadedMedia?.storagePath ?? null,
-                mediaMimeType: uploadedMedia?.mimeType ?? null,
-                mediaSizeBytes: uploadedMedia?.sizeBytes ?? null,
-                location: collegeName
-              };
-
-      const response = await fetch(route, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json"
-        },
-        body: JSON.stringify(payload)
-      });
-
-      const responsePayload = (await response.json().catch(() => null)) as
-        | {
-            error?: {
-              message?: string;
-            };
-          }
-        | null;
-
-      if (!response.ok) {
-        console.error("[upload-composer] publish-failed", {
-          route,
-          status: response.status,
-          error: responsePayload?.error?.message ?? null
+      if (mode === "vibe" && vibeVideoFile) {
+        const uploadedMedia = await uploadSocialMediaAsset(vibeVideoFile, "vibe");
+        const trimmedCaption = caption.trim();
+        const response = await fetch("/api/vibes", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            title: trimmedCaption ? trimmedCaption.slice(0, 72) : null,
+            body: trimmedCaption || "Fresh campus vibe.",
+            mediaUrl: uploadedMedia?.url ?? null,
+            mediaStoragePath: uploadedMedia?.storagePath ?? null,
+            mediaMimeType: uploadedMedia?.mimeType ?? null,
+            mediaSizeBytes: uploadedMedia?.sizeBytes ?? null,
+            location: collegeName,
+          }),
         });
-        setMessage(responsePayload?.error?.message ?? "We could not publish this right now.");
-        return;
+        const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+        if (!response.ok) { setMessage(payload?.error?.message ?? "Could not publish Vibe."); return; }
+      } else {
+        // moment — upload all images if present
+        let completed = 0;
+        const total = momentImages.length;
+        let uploadedMediaAssets: any[] = [];
+
+        if (total > 0) {
+          setMessage(`Uploading 0/${total}...`);
+          const uploadPromises = momentImages.map(async (img) => {
+            const uploaded = await uploadSocialMediaAsset(img.file, "post");
+            completed++;
+            setMessage(`Uploading ${completed}/${total}...`);
+            return {
+              url: uploaded?.url ?? "",
+              kind: "image",
+              storagePath: uploaded?.storagePath ?? null,
+              mimeType: uploaded?.mimeType ?? null,
+              sizeBytes: uploaded?.sizeBytes ?? null
+            };
+          });
+          // Ensure all media are processed in parallel
+          uploadedMediaAssets = await Promise.all(uploadPromises);
+          setMessage("Optimizing layout...");
+        }
+
+        const trimmedCaption = caption.trim();
+        const response = await fetch("/api/posts", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            title: trimmedCaption ? trimmedCaption.slice(0, 72) : "",
+            body: trimmedCaption || "",
+            kind: total > 0 ? "image" : "text",
+            mediaAssets: uploadedMediaAssets.length > 0 ? uploadedMediaAssets : undefined,
+            location: collegeName,
+          }),
+        });
+        const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+        if (!response.ok) { setMessage(payload?.error?.message ?? "Could not publish Moment."); return; }
       }
 
       router.push(returnTo);
       router.refresh();
-    } catch (error) {
-      console.error("[upload-composer] publish-request-failed", {
-        kind: selectedKind,
-        message: error instanceof Error ? error.message : "unknown"
-      });
-      setMessage(error instanceof Error ? error.message : "We could not publish this right now.");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Could not publish right now.");
     } finally {
       setIsPublishing(false);
     }
   }
 
+  /* ════════════════════════════════════════════════════════════════════════
+     RENDER
+     ════════════════════════════════════════════════════════════════════════ */
   return (
-    <main className="vyb-upload-page">
-      <section className="vyb-upload-modal">
-        <div className="vyb-upload-drawer-handle" aria-hidden="true" />
+    <div className="cs-overlay">
+      {/* backdrop blur */}
+      <div className="cs-backdrop" onClick={handleClose} aria-hidden="true" />
 
-        <header className="vyb-upload-modal-header">
-          <div className="vyb-upload-modal-copy">
-            <span className="vyb-upload-kicker">{summary.kicker}</span>
-            <h1>{summary.title}</h1>
-            <p>{summary.subtitle}</p>
+      <div
+        className={`cs-shell cs-shell--${mode}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Creation Studio"
+      >
+        {/* ── Header ────────────────────────────────────────────────────── */}
+        <div className="cs-header">
+          <div className="cs-header-brand">
+            {mode !== "choice" && (
+              <button
+                type="button"
+                className="cs-back-btn"
+                onClick={() => setMode("choice")}
+                aria-label="Back to choice"
+              >
+                <svg viewBox="0 0 24 24" className="cs-icon" aria-hidden="true">
+                  <path d="M19 12H5M12 5l-7 7 7 7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            )}
+            <span className="cs-header-label">
+              {mode === "choice" ? "Creation Studio" : mode === "vibe" ? "Vibe" : "Moment"}
+            </span>
           </div>
 
-          <div className="vyb-upload-header-actions">
-            <button
-              type="button"
-              className={`vyb-upload-submit-top${canPublish ? " is-active" : ""}`}
-              onClick={handlePublish}
-              disabled={!canPublish || isPublishing || isPreparingMedia}
-            >
-              {isPreparingMedia ? "Preparing..." : isPublishing ? "Posting..." : summary.button}
-            </button>
-            <button type="button" className="vyb-upload-close" onClick={handleClose} aria-label="Close composer">
-              <CloseIcon />
+          <div className="cs-header-actions">
+            {mode !== "choice" && (
+              <button
+                type="button"
+                className={`cs-publish-top${canPublish ? " cs-publish-top--active" : ""}`}
+                onClick={handlePublish}
+                disabled={!canPublish || isPublishing || isPreparingMedia}
+              >
+                {isPublishing ? "Posting…" : mode === "vibe" ? "Post Vibe" : "Post Moment"}
+              </button>
+            )}
+            <button type="button" className="cs-close-btn" onClick={handleClose} aria-label="Close">
+              <IcoClose />
             </button>
           </div>
-        </header>
-
-        <div className="vyb-upload-kind-row" role="tablist" aria-label="Select composer type">
-          {(["post", "story", "vibe"] as CampusUploadKind[]).map((kind) => (
-            <button
-              key={kind}
-              type="button"
-              role="tab"
-              aria-selected={selectedKind === kind}
-              className={`vyb-upload-kind-chip${selectedKind === kind ? " is-active" : ""}`}
-              onClick={() => setSelectedKind(kind)}
-            >
-              {kind === "post" ? "Post" : kind === "story" ? "Story" : "Vibe"}
-            </button>
-          ))}
         </div>
 
-        <div className="vyb-upload-modal-body">
-          <div className="vyb-upload-main-pane">
-            <div className="vyb-upload-user-card">
-              <div className="vyb-upload-avatar" aria-hidden="true">
-                {avatarInitials}
-              </div>
+        {/* ── Body ──────────────────────────────────────────────────────── */}
 
-              <div className="vyb-upload-user-copy">
-                <strong>{viewerName}</strong>
-                <span>@{viewerUsername}</span>
-              </div>
+        {/* ─── CHOICE SCREEN ─────────────────────────────────────────── */}
+        {mode === "choice" && (
+          <div className="cs-choice-screen">
+            <p className="cs-choice-sub">What do you want to share today?</p>
+            <div className="cs-choice-cards">
 
-              <span className="vyb-upload-user-pill">{summary.accentLabel}</span>
+              <button
+                type="button"
+                className="cs-choice-card cs-choice-card--vibe"
+                onClick={() => setMode("vibe")}
+              >
+                <div className="cs-choice-card-glow cs-choice-card-glow--vibe" />
+                <div className="cs-choice-icon-wrap cs-choice-icon-wrap--vibe">
+                  <IcoVideo />
+                </div>
+                <strong className="cs-choice-title">Vibe</strong>
+                <span className="cs-choice-desc">9:16 portrait video · Campus reel</span>
+                <span className="cs-choice-badge">Video</span>
+              </button>
+
+              <button
+                type="button"
+                className="cs-choice-card cs-choice-card--moment"
+                onClick={() => setMode("moment")}
+              >
+                <div className="cs-choice-card-glow cs-choice-card-glow--moment" />
+                <div className="cs-choice-icon-wrap cs-choice-icon-wrap--moment">
+                  <IcoImage />
+                </div>
+                <strong className="cs-choice-title">Moment</strong>
+                <span className="cs-choice-desc">Photo or text · Campus feed post</span>
+                <span className="cs-choice-badge cs-choice-badge--teal">Photo / Text</span>
+              </button>
+
             </div>
-
-            <label className="vyb-upload-field is-textarea">
-              <span>{summary.captionLabel}</span>
-              <textarea
-                value={caption}
-                onChange={(event) => setCaption(event.target.value)}
-                placeholder={summary.captionPlaceholder}
-                rows={selectedKind === "story" ? 6 : 7}
-                disabled={isPublishing || isPreparingMedia}
-              />
-            </label>
-
-            {message ? <p className="vyb-upload-message">{message}</p> : null}
           </div>
+        )}
 
-          <aside className="vyb-upload-side-pane">
-            <div className="vyb-upload-side-header">
-              <h2>Tools</h2>
-            </div>
-
-            <div className="vyb-upload-option-grid">
-              <button type="button" className={`vyb-upload-option-card${mediaUrl ? " is-active" : ""}`} onClick={() => fileInputRef.current?.click()}>
-                <div className="vyb-upload-option-copy">
-                  <span className="vyb-upload-option-icon ic-media">
-                    {mediaKind === "video" ? <VideoIcon /> : <ImageIcon />}
-                  </span>
-                  <strong>{mediaUrl ? "Replace" : "Media"}</strong>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                className={`vyb-upload-option-card${selectedKind === "story" ? " is-active" : ""}`}
-                onClick={() => setSelectedKind("story")}
+        {/* ─── VIBE SCREEN ───────────────────────────────────────────── */}
+        {mode === "vibe" && (
+          <div className="cs-vibe-screen">
+            {/* Left: 9:16 video area */}
+            <div className="cs-vibe-left">
+              <div
+                className={`cs-vibe-dropzone${vibeIsDragOver ? " cs-vibe-dropzone--drag" : ""}${vibeVideoUrl ? " cs-vibe-dropzone--has-media" : ""}`}
+                onDragOver={(e) => { e.preventDefault(); setVibeIsDragOver(true); }}
+                onDragLeave={() => setVibeIsDragOver(false)}
+                onDrop={handleVibeDrop}
+                onClick={() => !vibeVideoUrl && vibeInputRef.current?.click()}
               >
-                <div className="vyb-upload-option-copy">
-                  <span className="vyb-upload-option-icon ic-story">
-                    <StoryIcon />
-                  </span>
-                  <strong>Story</strong>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                className={`vyb-upload-option-card${selectedKind === "vibe" ? " is-active" : ""}`}
-                onClick={() => setSelectedKind("vibe")}
-              >
-                <div className="vyb-upload-option-copy">
-                  <span className="vyb-upload-option-icon ic-vibe">
-                    <SparkIcon />
-                  </span>
-                  <strong>Vibe</strong>
-                </div>
-              </button>
-
-              <div className="vyb-upload-option-card is-static">
-                <div className="vyb-upload-option-copy">
-                  <span className="vyb-upload-option-icon ic-feed">
-                    {selectedKind === "post" ? <FeedIcon /> : <GlobeIcon />}
-                  </span>
-                  <strong>{selectedKind === "story" ? "Followers" : "Campus"}</strong>
-                </div>
-              </div>
-            </div>
-
-            <div className="vyb-upload-preview-card">
-              <div className="vyb-upload-preview-frame">
-                {mediaUrl ? (
-                  mediaKind === "video" ? (
-                    <video src={mediaUrl} className="vyb-upload-preview-media" controls muted playsInline />
-                  ) : (
-                    <img src={mediaUrl} alt="Upload preview" className="vyb-upload-preview-media" />
-                  )
-                ) : (
-                  <div className="vyb-upload-preview-empty">
-                    <div className="vyb-upload-preview-icons">
-                      <ImageIcon />
-                      <VideoIcon />
+                {isPreparingMedia ? (
+                  <div className="cs-vibe-shimmer-wrap">
+                    <ShimmerBlock className="cs-vibe-shimmer-full" />
+                    <div className="cs-vibe-shimmer-overlay">
+                      <div className="cs-vibe-shimmer-spinner" />
+                      <UploadProgress progress={uploadProgress} label={uploadLabel} />
                     </div>
-                    <strong>{selectedKind === "story" ? "Your story needs media" : "Media preview"}</strong>
-                    <span>{summary.mediaHint}</span>
+                  </div>
+                ) : vibeVideoUrl ? (
+                  <>
+                    <video
+                      ref={vibeVideoRef}
+                      src={vibeVideoUrl}
+                      className="cs-vibe-preview-video"
+                      autoPlay
+                      loop
+                      muted
+                      playsInline
+                    />
+                    <div className="cs-vibe-video-overlay">
+                      <button
+                        type="button"
+                        className="cs-vibe-replace-btn"
+                        onClick={(e) => { e.stopPropagation(); vibeInputRef.current?.click(); }}
+                      >
+                        Replace video
+                      </button>
+                      {vibeDuration && (
+                        <span className="cs-vibe-duration">{formatDuration(vibeDuration)}</span>
+                      )}
+                    </div>
+                    {vibeIsPortrait === false && (
+                      <div className="cs-vibe-warning">
+                        ⚠ Use a portrait (9:16) video for Vibes
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="cs-vibe-empty">
+                    <div className="cs-vibe-empty-icon">
+                      <IcoUpload />
+                    </div>
+                    <strong>Drop your video here</strong>
+                    <span>or click to browse</span>
+                    <span className="cs-vibe-empty-hint">9:16 portrait · MP4 / MOV · Max 10 MB</span>
                   </div>
                 )}
               </div>
+              <input
+                ref={vibeInputRef}
+                type="file"
+                accept="video/*"
+                className="cs-file-input"
+                disabled={isPreparingMedia || isPublishing}
+                onChange={handleVibeInputChange}
+              />
+            </div>
 
-              <div className="vyb-upload-preview-meta">
-                <span>{mediaKind === "video" ? "Video selected" : mediaKind === "image" ? "Image selected" : "No media selected"}</span>
-                {selectedFile ? <span>Size: {formatBytes(selectedFile.size)}</span> : null}
-                {durationSeconds ? <span>Duration: {formatDuration(durationSeconds)}</span> : null}
-                {selectedKind === "vibe" ? (
-                  <span>{isPortraitVideo === false ? "Landscape video selected" : "Portrait-ready clip"}</span>
-                ) : null}
-                <span>{viewerEmail}</span>
+            {/* Right: caption + community */}
+            <div className="cs-vibe-right">
+              {/* User pill */}
+              <div className="cs-user-row">
+                <div className="cs-avatar" aria-hidden="true">{avatarInitials}</div>
+                <div className="cs-user-info">
+                  <strong>{viewerName}</strong>
+                  <span>@{viewerUsername}</span>
+                </div>
+                <span className="cs-user-pill">Public Vibe</span>
+              </div>
+
+              {/* Caption */}
+              <div className="cs-caption-wrap">
+                <textarea
+                  className="cs-caption-area"
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
+                  placeholder="Tell everyone what this vibe is about… #campus @friends"
+                  rows={6}
+                  disabled={isPublishing}
+                />
+              </div>
+
+              {/* Community tag */}
+              <div className="cs-community-select-wrap">
+                <label className="cs-community-label" htmlFor="cs-community-vibe">
+                  <IcoSpark />
+                  Tag Community
+                </label>
+                <div className="cs-select-wrap">
+                  <select
+                    id="cs-community-vibe"
+                    className="cs-select"
+                    value={communityTag}
+                    onChange={(e) => setCommunityTag(e.target.value)}
+                    disabled={isPublishing}
+                  >
+                    {COMMUNITY_TAGS.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                  <span className="cs-select-chevron"><IcoChevronDown /></span>
+                </div>
+              </div>
+
+              {/* Meta info */}
+              {vibeVideoFile && (
+                <div className="cs-vibe-meta">
+                  <span>{formatBytes(vibeVideoFile.size)}</span>
+                  {vibeDuration && <span>{formatDuration(vibeDuration)}</span>}
+                  <span className={vibeIsPortrait === false ? "cs-meta-warn" : "cs-meta-ok"}>
+                    {vibeIsPortrait === false ? "Landscape — not ideal" : vibeIsPortrait ? "Portrait ✓" : "—"}
+                  </span>
+                </div>
+              )}
+
+              {message && <p className="cs-message">{message}</p>}
+            </div>
+          </div>
+        )}
+
+        {/* ─── MOMENT SCREEN ─────────────────────────────────────────── */}
+        {mode === "moment" && (
+          <div className="cs-moment-screen">
+            {/* User row */}
+            <div className="cs-user-row cs-user-row--moment">
+              <div className="cs-avatar" aria-hidden="true">{avatarInitials}</div>
+              <div className="cs-user-info">
+                <strong>{viewerName}</strong>
+                <span>@{viewerUsername}</span>
+              </div>
+              <span className="cs-user-pill cs-user-pill--moment">Moment</span>
+            </div>
+
+            {/* Caption area */}
+            <div className="cs-moment-caption-wrap">
+              <textarea
+                className="cs-moment-caption"
+                value={caption}
+                onChange={(e) => setCaption(e.target.value)}
+                placeholder="What's on your mind? #hashtag @mention"
+                rows={5}
+                disabled={isPublishing}
+              />
+            </div>
+
+            {/* Image strip */}
+            <div className="cs-moment-images">
+              {momentImages.map((img, i) => (
+                <div key={img.url} className="cs-moment-img-thumb">
+                  <img src={img.url} alt={`Upload ${i + 1}`} />
+                  <button
+                    type="button"
+                    className="cs-moment-img-remove"
+                    onClick={() => removeMomentImage(i)}
+                    aria-label="Remove image"
+                  >
+                    <IcoTrash />
+                  </button>
+                </div>
+              ))}
+              {momentImages.length < 6 && (
+                <button
+                  type="button"
+                  className="cs-moment-img-add"
+                  onClick={() => momentInputRef.current?.click()}
+                  aria-label="Add photo"
+                >
+                  <IcoPlus />
+                  <span>{momentImages.length === 0 ? "Add photo" : "More"}</span>
+                </button>
+              )}
+            </div>
+
+            {/* Community */}
+            <div className="cs-community-select-wrap cs-community-select-wrap--moment">
+              <label className="cs-community-label" htmlFor="cs-community-moment">
+                <IcoSpark />
+                Tag Community
+              </label>
+              <div className="cs-select-wrap">
+                <select
+                  id="cs-community-moment"
+                  className="cs-select"
+                  value={communityTag}
+                  onChange={(e) => setCommunityTag(e.target.value)}
+                  disabled={isPublishing}
+                >
+                  {COMMUNITY_TAGS.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+                <span className="cs-select-chevron"><IcoChevronDown /></span>
               </div>
             </div>
 
+            {message && <p className="cs-message">{message}</p>}
+
             <input
-              ref={fileInputRef}
+              ref={momentInputRef}
               type="file"
-              accept={selectedKind === "vibe" ? "video/*" : "image/*,video/*"}
-              className="vyb-reels-file-input"
-              disabled={isPreparingMedia || isPublishing}
-              onChange={handleMediaChange}
+              accept="image/*"
+              multiple
+              className="cs-file-input"
+              disabled={isPublishing}
+              onChange={handleMomentInputChange}
             />
-          </aside>
-        </div>
-
-        <footer className="vyb-upload-footer">
-          <div className="vyb-upload-footer-copy">
-            <span>{summary.footerHint}</span>
-            <button type="button" className="vyb-upload-footer-link" onClick={() => fileInputRef.current?.click()}>
-              Open media picker
-            </button>
           </div>
+        )}
 
-          <div className="vyb-upload-footer-actions">
-            <button type="button" className="vyb-upload-secondary-button" onClick={handleClose} disabled={isPublishing || isPreparingMedia}>
-              Cancel
-            </button>
-            <button type="button" className="vyb-upload-primary-button" onClick={handlePublish} disabled={!canPublish || isPublishing || isPreparingMedia}>
-              {isPreparingMedia ? "Preparing..." : isPublishing ? "Publishing..." : summary.button}
-            </button>
+        {/* ── Footer (always visible in vibe/moment) ─────────────────────── */}
+        {mode !== "choice" && (
+          <div className="cs-footer">
+            <div className="cs-footer-hint">
+              {mode === "vibe"
+                ? "Portrait 9:16 clip fills the Vibes feed perfectly"
+                : "Up to 6 photos · Text-only posts are fine too"}
+            </div>
+            <div className="cs-footer-actions">
+              <button
+                type="button"
+                className="cs-cancel-btn"
+                onClick={handleClose}
+                disabled={isPublishing || isPreparingMedia}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={`cs-post-btn${canPublish ? " cs-post-btn--active" : ""}`}
+                onClick={handlePublish}
+                disabled={!canPublish || isPublishing || isPreparingMedia}
+              >
+                {isPublishing
+                  ? "Posting…"
+                  : isPreparingMedia
+                    ? "Preparing…"
+                    : mode === "vibe"
+                      ? "Post Vibe ✦"
+                      : "Post Moment ✦"}
+              </button>
+            </div>
           </div>
-        </footer>
-      </section>
-    </main>
+        )}
+      </div>
+    </div>
   );
 }

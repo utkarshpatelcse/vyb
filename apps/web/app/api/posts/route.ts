@@ -30,6 +30,13 @@ export async function POST(request: Request) {
         mediaSizeBytes?: number | null;
         location?: string | null;
         placement?: "feed" | "vibe";
+        mediaAssets?: {
+          url: string;
+          kind: "image" | "video";
+          mimeType?: string;
+          sizeBytes?: number;
+          storagePath?: string;
+        }[];
       }
     | null;
 
@@ -61,6 +68,7 @@ export async function POST(request: Request) {
         mediaStoragePath: payload.mediaStoragePath ?? null,
         mediaMimeType: payload.mediaMimeType ?? null,
         mediaSizeBytes: payload.mediaSizeBytes ?? null,
+        mediaAssets: payload.mediaAssets ?? null,
         location: payload.location ?? null
       },
       viewer

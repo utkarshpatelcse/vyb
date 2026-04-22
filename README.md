@@ -17,6 +17,8 @@ Multi-tenant campus platform architecture with a responsive web client in Phase 
 - Firebase Data Connect admin SDKs are generated and the schema/connectors compile successfully
 - Identity, campus, social, and resources modules now fail closed when Data Connect writes are unavailable instead of mutating local JSON stores
 - Campus post, story, and vibe media now upload to Firebase Storage before publish requests, and large videos are optimized before the final size gate runs
+- The live social surface now supports full-screen post and vibe viewing, likers sheets, repost/report/delete actions, optimistic likes, and responsive threaded comments with replies plus GIF/sticker attachments
+- The story lane and viewer now support seen-state rings, progress playback, story likes, and a dedicated immersive vibes experience across desktop and mobile
 - The `vyb` Data Connect service is deployed in `asia-south1` on project `vybnet-e2242`
 - Firebase Admin now isolates Data Connect connectors per app instance to avoid cross-connector operation cache collisions
 - Vyb remains the product brand; any college-specific config in this repo is only rollout reference data for the first onboarded tenant

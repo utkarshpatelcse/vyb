@@ -586,6 +586,16 @@ function mapPostRecord(item, counts = null) {
     placement: normalizePlacement(item.placement),
     kind: item.kind ?? "text",
     mediaUrl: item.mediaUrl ?? null,
+    media: item.postMediaRecords_on_post?.length > 0
+      ? item.postMediaRecords_on_post
+          .map(record => ({
+            url: record.mediaUrl ?? item.mediaUrl ?? null,
+            kind: record.mediaType === "video" ? "video" : "image"
+          }))
+          .filter(record => Boolean(record.url))
+      : item.mediaUrl
+      ? [{ url: item.mediaUrl, kind: item.kind === "video" ? "video" : "image" }]
+      : [],
     location: item.location ?? null,
     title: item.title ?? "Campus update",
     body: item.body ?? "",
@@ -727,18 +737,43 @@ export async function findPostById(postId, { tenantId = null, viewerMembershipId
 export async function createPost(payload) {
   const id = randomUUID();
   const placement = normalizePlacement(payload.placement);
-  const media = await persistMediaAsset({
-    tenantId: payload.tenantId,
-    userId: payload.userId,
-    assetId: id,
-    assetType: "posts",
-    mediaUrl: payload.mediaUrl ?? null,
-    mediaType: payload.kind,
-    placement,
-    storagePathOverride: payload.mediaStoragePath ?? null,
-    mediaMimeTypeOverride: payload.mediaMimeType ?? null,
-    mediaSizeBytesOverride: payload.mediaSizeBytes ?? null
-  });
+
+  // Fallback map if legacy mediaUrl was used instead of mediaAssets
+  const initialMediaAssets = payload.mediaAssets?.length > 0 
+    ? payload.mediaAssets 
+    : payload.mediaUrl
+    ? [{
+        url: payload.mediaUrl,
+        kind: payload.kind,
+        storagePath: payload.mediaStoragePath ?? null,
+        mimeType: payload.mediaMimeType ?? null,
+        sizeBytes: payload.mediaSizeBytes ?? null
+      }]
+    : [];
+
+  const mediaResults = await Promise.all(
+    initialMediaAssets.map((asset, index) =>
+      persistMediaAsset({
+        tenantId: payload.tenantId,
+        userId: payload.userId,
+        assetId: `${id}_${index}`,
+        assetType: "posts",
+        mediaUrl: asset.url,
+        mediaType: asset.kind,
+        placement,
+        storagePathOverride: asset.storagePath ?? null,
+        mediaMimeTypeOverride: asset.mimeType ?? null,
+        mediaSizeBytesOverride: asset.sizeBytes ?? null
+      })
+    )
+  );
+
+  const primaryMedia = mediaResults[0] ?? {
+    mediaUrl: null,
+    storagePath: null,
+    mediaMimeType: null,
+    mediaSizeBytes: null
+  };
 
   await createPostMutation(getSocialDc(), {
     id,
@@ -752,26 +787,34 @@ export async function createPost(payload) {
     kind: payload.kind,
     title: payload.title ?? "Campus update",
     body: payload.body,
-    mediaUrl: media.mediaUrl,
-    storagePath: media.storagePath,
-    mediaMimeType: media.mediaMimeType,
-    mediaSizeBytes: media.mediaSizeBytes === null ? null : String(media.mediaSizeBytes),
+    mediaUrl: primaryMedia.mediaUrl,
+    storagePath: primaryMedia.storagePath,
+    mediaMimeType: primaryMedia.mediaMimeType,
+    mediaSizeBytes: primaryMedia.mediaSizeBytes === null ? null : String(primaryMedia.mediaSizeBytes),
     location: payload.location ?? null,
     status: "published"
   });
 
-  if (media.storagePath && media.mediaMimeType && media.mediaSizeBytes !== null) {
-    await createPostMediaMutation(getSocialDc(), {
-      tenantId: payload.tenantId,
-      postId: id,
-      storagePath: media.storagePath,
-      mediaType: payload.kind,
-      mimeType: media.mediaMimeType,
-      sizeBytes: String(media.mediaSizeBytes),
-      width: null,
-      height: null,
-      durationMs: null
-    });
+  if (mediaResults.length > 0) {
+    await Promise.all(
+      mediaResults.map((media, index) => {
+        if (media.storagePath && media.mediaMimeType && media.mediaSizeBytes !== null) {
+          return createPostMediaMutation(getSocialDc(), {
+            tenantId: payload.tenantId,
+            postId: id,
+            mediaUrl: media.mediaUrl,
+            storagePath: media.storagePath,
+            mediaType: initialMediaAssets[index].kind,
+            mimeType: media.mediaMimeType,
+            sizeBytes: String(media.mediaSizeBytes),
+            width: null,
+            height: null,
+            durationMs: null
+          });
+        }
+        return Promise.resolve();
+      })
+    );
   }
 
   return {
@@ -782,7 +825,11 @@ export async function createPost(payload) {
     membershipId: payload.membershipId,
     placement,
     kind: payload.kind,
-    mediaUrl: media.mediaUrl,
+    mediaUrl: primaryMedia.mediaUrl,
+    media: mediaResults.map((media, index) => ({
+      url: media.mediaUrl,
+      kind: initialMediaAssets[index].kind
+    })),
     location: payload.location ?? null,
     title: payload.title ?? "Campus update",
     body: payload.body,
