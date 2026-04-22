@@ -5965,13 +5965,208 @@ a {
 
 .vyb-events-brand-block strong,
 .vyb-reels-brand-block strong {
+  .vyb-market-compose-field-row,
+  .vyb-market-detail-layout,
+  .vyb-market-detail-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .vyb-market-upload-header,
+  .vyb-market-upload-item {
+    align-items: flex-start;
+  }
+
+  .vyb-market-media-viewer {
+    gap: 0.85rem;
+  }
+
+  .vyb-market-media-viewer-stage {
+    gap: 0.65rem;
+  }
+
+  .vyb-market-media-viewer-frame {
+    min-height: min(68vh, 36rem);
+  }
+
+  .vyb-market-fab {
+    right: 1rem;
+    bottom: 5.5rem;
+  }
+}
+
+@media (max-width: 719px) {
+  .vyb-market-stat-row,
+  .vyb-market-side-stats,
+  .vyb-market-card-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .vyb-market-header-icon,
+  .vyb-market-create-button,
+  .vyb-market-primary-action,
+  .vyb-market-secondary-action {
+    min-height: 2.8rem;
+  }
+
+  .vyb-market-toolbar {
+    padding: 0.75rem;
+  }
+
+  .vyb-market-toolbar-line {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "tabs tabs tabs"
+      "search filter sort";
+    gap: 0.55rem;
+    align-items: center;
+  }
+
+  .vyb-market-tabs {
+    grid-area: tabs;
+    width: 100%;
+  }
+
+  .vyb-market-search-box-inline {
+    grid-area: search;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .vyb-market-filter-select {
+    min-width: 2.85rem;
+    width: 2.85rem;
+    height: 2.85rem;
+    min-height: 2.85rem;
+    justify-content: center;
+    padding: 0;
+    border-radius: 0.95rem;
+  }
+
+  .vyb-market-filter-select-filter {
+    grid-area: filter;
+  }
+
+  .vyb-market-filter-select-sort {
+    grid-area: sort;
+  }
+
+  .vyb-market-filter-select span {
+    display: none;
+  }
+
+  .vyb-market-filter-select select {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .vyb-market-toolbar-count {
+    display: none;
+  }
+
+  .vyb-market-compose-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .vyb-market-compose-preview-gallery,
+  .vyb-market-detail-gallery {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .vyb-market-detail-thumbs {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .vyb-market-media-viewer {
+    border-radius: 1.1rem;
+  }
+
+  .vyb-market-media-viewer-stage {
+    position: relative;
+    grid-template-columns: 1fr;
+  }
+
+  .vyb-market-media-viewer-nav {
+    display: none;
+  }
+
+  .vyb-market-media-viewer-thumb-button {
+    min-width: 2.75rem;
+    width: 2.75rem;
+  }
+
+  .vyb-market-detail-open-hint {
+    font-size: 0.68rem;
+  }
+}
+
+/* --- EVENTS PAGE UI --- */
+.vyb-events-main {
+  --vyb-events-header-offset: 5.2rem;
+}
+
+.vyb-events-header,
+.vyb-reels-header {
+  position: sticky;
+  top: 0;
+  z-index: 35;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+  min-height: 5.2rem;
+  padding: 1rem clamp(1rem, 3vw, 2rem);
+  background:
+    linear-gradient(180deg, rgba(10, 10, 12, 0.96), rgba(10, 10, 12, 0.9)),
+    rgba(10, 10, 12, 0.9);
+  backdrop-filter: blur(18px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.vyb-events-shell,
+.vyb-reels-shell {
+  width: min(100%, 1080px);
+  margin: 0 auto;
+  padding: 1.35rem clamp(1rem, 3vw, 1.75rem) 7rem;
+  display: grid;
+  gap: 1.35rem;
+}
+
+.vyb-events-brand-block,
+.vyb-reels-brand-block {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.vyb-events-kicker,
+.vyb-events-section-label,
+.vyb-reels-kicker,
+.vyb-reels-section-label {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.vyb-events-kicker,
+.vyb-reels-kicker {
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.vyb-events-brand-block strong,
+.vyb-reels-brand-block strong {
   font-size: 1.45rem;
   font-weight: 900;
   letter-spacing: -0.04em;
 }
 
 .vyb-events-brand-block strong {
-  color: #ffd37d;
+  color: #ffffff;
 }
 
 .vyb-reels-brand-block strong {
@@ -6062,8 +6257,9 @@ a {
 }
 
 .vyb-events-host-button {
-  background: linear-gradient(135deg, #ff9e4f, #ff5ec8);
-  box-shadow: 0 16px 28px rgba(255, 116, 95, 0.24);
+  background: #4f46e5;
+  box-shadow: 0 8px 16px rgba(79, 70, 229, 0.25);
+  color: #f8fafc;
 }
 
 .vyb-reels-upload-button {
@@ -6591,10 +6787,19 @@ a {
 
   .vyb-events-header,
   .vyb-reels-header {
-    grid-template-columns: 1fr;
-    align-items: stretch;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
     min-height: auto;
     padding: 1rem;
+  }
+
+  .vyb-events-search,
+  .vyb-reels-search {
+    width: 100%;
+    order: 3;
   }
 
   .vyb-events-header-actions,
@@ -6603,11 +6808,6 @@ a {
   }
 
   .vyb-events-host-button,
-  .vyb-reels-upload-button {
-    width: 100%;
-  }
-
-  .vyb-events-shell,
   .vyb-reels-shell {
     padding: 1rem 1rem 6.5rem;
     gap: 1rem;
@@ -10993,3 +11193,181 @@ html {
   height: 18px;
 }
 
+
+
+
+/* --- MOBILE UI BUG BUGFIXES --- */
+
+@media (max-width: 899px) {
+  .vyb-campus-bottom-nav {
+    height: auto !important;
+    min-height: 4.6rem !important;
+    padding-bottom: calc(0.35rem + env(safe-area-inset-bottom)) !important;
+  }
+  
+  .vyb-campus-bottom-item {
+    height: auto !important;
+    padding-top: 0.2rem;
+  }
+}
+
+
+/* --- OPTION 2 HEADER FLEX ALIGNMENT FIX --- */
+.vyb-events-header,
+.vyb-reels-header {
+  display: flex !important;
+  align-items: center;
+  gap: 1rem;
+}
+
+@media (min-width: 900px) {
+  .vyb-events-brand-block { order: 1; flex: 0 0 auto; }
+  .vyb-events-search      { order: 2; flex: 1 1 0%; }
+  .vyb-events-icon-button { order: 3; flex: 0 0 auto; }
+  .vyb-events-host-button { order: 4; flex: 0 0 auto; }
+  .vyb-reels-upload-button { order: 4; flex: 0 0 auto; }
+}
+
+@media (max-width: 899px) {
+  .vyb-events-header,
+  .vyb-reels-header {
+    flex-wrap: wrap !important;
+    /* Use 0 vertical gap and manual margin or rely on gap */
+    gap: 1rem 0 !important; 
+  }
+  
+  /* Pseudo element to force a flex line break */
+  .vyb-events-header::before,
+  .vyb-reels-header::before {
+    content: "";
+    width: 100%;
+    order: 3;
+    display: block;
+  }
+
+  .vyb-events-brand-block { 
+    order: 1 !important;
+    flex: 1 1 0% !important;
+    min-width: 0 !important;
+    margin-right: 0.75rem !important;
+  }
+  
+  .vyb-events-host-button,
+  .vyb-reels-upload-button { 
+    order: 2 !important;
+    flex: 0 0 auto !important;
+    width: auto !important;
+    height: 3rem !important;
+    min-height: 3rem !important;
+    padding: 0 1.25rem !important;
+    border-radius: 999px !important;
+    white-space: nowrap !important;
+  }
+
+  .vyb-events-host-button span,
+  .vyb-reels-upload-button span {
+    white-space: nowrap !important;
+  }
+
+  .vyb-events-search,
+  .vyb-reels-search { 
+    order: 4 !important;
+    flex: 1 1 0% !important;
+    width: auto !important; 
+    min-width: 0 !important;
+    margin-right: 0.75rem !important;
+  }
+  
+  .vyb-events-icon-button { 
+    order: 5 !important;
+    flex: 0 0 auto !important;
+  }
+}
+
+
+/* --- PROFILE HEADER COMPACT OVERRIDE --- */
+.vyb-insta-profile-shell {
+  max-width: 930px;
+  margin: 0 auto;
+  padding: 0.75rem 1rem 4rem;
+}
+
+.vyb-insta-header {
+  gap: 1.5rem !important;
+  margin-bottom: 1rem !important;
+  padding: 0.75rem 1rem !important;
+}
+
+.vyb-insta-avatar {
+  width: 86px !important;
+  height: 86px !important;
+}
+
+.vyb-insta-avatar-fallback {
+  font-size: 1.8rem !important;
+}
+
+.vyb-insta-top-row {
+  margin-bottom: 0.6rem !important;
+  gap: 0.85rem !important;
+}
+
+.vyb-insta-top-row h1 {
+  font-size: 1.1rem !important;
+}
+
+.vyb-insta-stats {
+  gap: 1.75rem !important;
+  margin-bottom: 0.65rem !important;
+}
+
+.vyb-insta-stats span {
+  font-size: 0.875rem !important;
+}
+
+.vyb-insta-bio {
+  font-size: 0.85rem !important;
+  line-height: 1.35 !important;
+}
+
+.vyb-insta-bio strong {
+  font-size: 0.9rem !important;
+  margin-bottom: 0.1rem !important;
+}
+
+.vyb-insta-bio p {
+  margin: 0 !important;
+  color: rgba(203, 213, 225, 0.8);
+}
+
+/* Mobile overrides for compact header */
+@media (max-width: 768px) {
+  .vyb-insta-header {
+    gap: 1rem !important;
+    padding: 0.5rem 0 !important;
+    margin-bottom: 0.75rem !important;
+  }
+
+  .vyb-insta-avatar {
+    width: 72px !important;
+    height: 72px !important;
+  }
+
+  .vyb-insta-avatar-fallback {
+    font-size: 1.5rem !important;
+  }
+
+  .vyb-insta-stats {
+    gap: 1.25rem !important;
+    margin-bottom: 0.5rem !important;
+  }
+
+  .vyb-insta-stats span {
+    font-size: 0.8rem !important;
+  }
+
+  .vyb-insta-top-row {
+    margin-bottom: 0.4rem !important;
+    gap: 0.65rem !important;
+  }
+}

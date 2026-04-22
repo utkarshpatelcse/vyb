@@ -464,42 +464,33 @@ export function CampusEventsShell({
             />
           </label>
 
-          <div className="vyb-events-header-actions">
-            <button type="button" className="vyb-events-icon-button" aria-label="Notifications">
-              <BellIcon />
-            </button>
-            <button type="button" className="vyb-events-host-button">
-              <TicketIcon />
-              <span>Host event</span>
-            </button>
-          </div>
+          <button type="button" className="vyb-events-icon-button" aria-label="Notifications">
+            <BellIcon />
+          </button>
+          <button type="button" className="vyb-events-host-button">
+            <TicketIcon />
+            <span>Host event</span>
+          </button>
         </header>
 
         <div className="vyb-events-shell vyb-events-shell-compact">
-          <section className="vyb-events-toolbar vyb-events-toolbar-compact">
-            <div className="vyb-events-toolbar-copy">
-              <div>
-                <span className="vyb-events-section-label">Live campus feed</span>
-                <h2>{filteredEvents.length} event{filteredEvents.length === 1 ? "" : "s"} in your active lane</h2>
-              </div>
-              <p>Skip the landing-page feel and jump straight into real event discovery, saves, and RSVP intent.</p>
-            </div>
-
-            <div className="vyb-events-scope-row">
+          <section style={{ marginBottom: "2rem", width: "100%", maxWidth: "930px", margin: "0 auto 2rem" }}>
+            <div className="vyb-insta-tabs" role="tablist">
               {scopeOptions.map((option) => (
                 <button
                   key={option.id}
                   type="button"
-                  className={`vyb-events-scope-pill${activeScope === option.id ? " is-active" : ""}`}
+                  role="tab"
+                  aria-selected={activeScope === option.id}
+                  className={`vyb-insta-tab${activeScope === option.id ? " active" : ""}`}
                   onClick={() => setActiveScope(option.id)}
                 >
-                  <span>{option.label}</span>
-                  <strong>{option.count}</strong>
+                  <span>{option.label.toUpperCase()}</span>
                 </button>
               ))}
             </div>
 
-            <div className="vyb-events-chip-row">
+            <div className="vyb-events-chip-row" style={{ paddingTop: "1rem", justifyContent: "center" }}>
               {categories.map((category) => (
                 <button
                   key={category}
