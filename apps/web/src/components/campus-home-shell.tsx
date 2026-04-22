@@ -1249,9 +1249,6 @@ export function CampusHomeShell({
                         <Link href={getProfileHref(post.author.username, viewerUsername)} className="fc-author-name">
                           {post.author.displayName || post.author.username}
                         </Link>
-                        {post.location ? (
-                          <span className="fc-community-chip">#{post.location}</span>
-                        ) : null}
                       </div>
                       <div className="fc-header-bottom">
                         <span className="fc-username">@{post.author.username}</span>

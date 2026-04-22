@@ -8,7 +8,9 @@ import { SocialPostActionSheet } from "./social-post-action-sheet";
 import { SocialPostLightbox } from "./social-post-lightbox";
 import { SocialPostLikersSheet } from "./social-post-likers-sheet";
 import { SocialThreadSheet } from "./social-thread-sheet";
+import { SignOutButton } from "./sign-out-button";
 import { useSocialPostEngagement } from "./use-social-post-engagement";
+import { VybLogoLockup } from "./vyb-logo";
 
 type CampusReelsShellProps = {
   viewerName: string;
@@ -309,7 +311,6 @@ export function CampusReelsShell({
   );
 
   const identityLine = [course, stream].filter(Boolean).join(" / ") || `${collegeName} • ${role}`;
-  const campusBadge = `@${viewerEmail.split("@")[1] ?? "campus"}`;
   const activePost = engagement.posts[clamp(activeIndex, 0, Math.max(engagement.posts.length - 1, 0))] ?? null;
 
   useEffect(() => {
@@ -895,7 +896,7 @@ export function CampusReelsShell({
   }
 
   return (
-    <main className="vyb-vibes-theater-page">
+    <main className="vyb-campus-home vyb-vibes-theater-page">
       <div className="vyb-vibes-theater-backdrop" aria-hidden="true">
         {isDesktop && activePost?.mediaUrl ? (
           activePost.kind === "video" ? (
@@ -907,249 +908,273 @@ export function CampusReelsShell({
         <div className="vyb-vibes-theater-backdrop-wash" />
       </div>
 
-      <header className="vyb-vibes-topbar">
-        <div className="vyb-vibes-topbar-copy">
-          <Link href="/home" className="vyb-vibes-brand">
-            VYB
-          </Link>
-          <div>
-            <strong>Campus vibes</strong>
-            <span>{identityLine}</span>
+      <aside className="vyb-campus-sidebar vyb-campus-rail">
+        <Link href="/home" className="vyb-campus-branding">
+          <VybLogoLockup priority />
+        </Link>
+
+        <nav className="vyb-campus-nav">
+          {navItems.map((item) => (
+            <Link key={item.label} href={item.href} className={`vyb-campus-nav-item${item.active ? " is-active" : ""}`}>
+              {item.icon}
+              <span>{item.label}</span>
+            </Link>
+          ))}
+        </nav>
+
+        <div className="vyb-campus-sidebar-footer">
+          <div className="vyb-campus-sidebar-user">
+            <strong>{viewerName}</strong>
+            <span>@{viewerUsername}</span>
           </div>
+          <SignOutButton className="vyb-campus-signout" />
         </div>
+      </aside>
 
-        <div className="vyb-vibes-topbar-actions">
-          <Link href="/search" className="vyb-vibes-topbar-icon" aria-label="Search campus">
-            <SearchIcon />
-          </Link>
-          <Link href="/create?kind=vibe&from=%2Fvibes" className="vyb-vibes-topbar-icon is-primary" aria-label="Upload vibe">
-            <PlusIcon />
-          </Link>
-          <Link href="/dashboard" className="vyb-vibes-viewer-chip">
-            <span className="vyb-vibes-viewer-avatar">{getInitials(viewerName || viewerUsername)}</span>
-            <span className="vyb-vibes-viewer-copy">
-              <strong>{viewerName}</strong>
-              <span>@{viewerUsername}</span>
-            </span>
-          </Link>
-        </div>
-      </header>
+      <section className="vyb-campus-main vyb-vibes-main">
+        <header className="vyb-vibes-topbar">
+          <div className="vyb-vibes-topbar-copy">
+            <Link href="/home" className="vyb-vibes-brand">
+              VYB
+            </Link>
+            <div>
+              <strong>Campus vibes</strong>
+              <span>{identityLine}</span>
+            </div>
+          </div>
 
-      {flashMessage ? <div className="vyb-campus-flash-message vyb-vibes-flash">{flashMessage}</div> : null}
-
-      <section className="vyb-vibes-stage-shell">
-        {engagement.posts.length === 0 ? (
-          <div className="vyb-vibes-empty-state">
-            <span className="vyb-vibes-empty-kicker">Vibes</span>
-            <strong>No vibes live yet</strong>
-            <p>Upload the first campus vibe and turn this lane into a live theater.</p>
-            <Link href="/create?kind=vibe&from=%2Fvibes" className="vyb-vibes-empty-cta">
+          <div className="vyb-vibes-topbar-actions">
+            <Link href="/search" className="vyb-vibes-topbar-icon" aria-label="Search campus">
+              <SearchIcon />
+            </Link>
+            <Link href="/create?kind=vibe&from=%2Fvibes" className="vyb-vibes-topbar-icon is-primary" aria-label="Upload vibe">
               <PlusIcon />
-              <span>Upload vibe</span>
+            </Link>
+            <Link href="/dashboard" className="vyb-vibes-viewer-chip">
+              <span className="vyb-vibes-viewer-avatar">{getInitials(viewerName || viewerUsername)}</span>
+              <span className="vyb-vibes-viewer-copy">
+                <strong>{viewerName}</strong>
+                <span>@{viewerUsername}</span>
+              </span>
             </Link>
           </div>
-        ) : (
-          <div ref={feedRef} className="vyb-vibes-feed" onWheel={handleWheel}>
-            {engagement.posts.map((item, index) => {
-              const isActive = activePost?.id === item.id;
-              const profileHref = item.author.username === viewerUsername ? "/dashboard" : `/u/${encodeURIComponent(item.author.username)}`;
-              const progress = progressByPost[item.id] ?? 0;
+        </header>
 
-              return (
-                <section key={item.id} id={`post-${item.id}`} className="vyb-vibes-slide">
-                  <motion.article
-                    className={`vyb-vibes-stage${isActive ? " is-active" : ""}`}
-                    initial={false}
-                    animate={{
-                      opacity: isActive ? 1 : isDesktop ? 0.75 : 1,
-                      scale: isActive || !isDesktop ? 1 : 0.95
-                    }}
-                    transition={{
-                      type: "spring",
-                      stiffness: 170,
-                      damping: 26
-                    }}
-                  >
-                    <div
-                      className="vyb-vibes-stage-media-shell"
-                      role="presentation"
+        {flashMessage ? <div className="vyb-campus-flash-message vyb-vibes-flash">{flashMessage}</div> : null}
+
+        <section className="vyb-vibes-stage-shell">
+          {engagement.posts.length === 0 ? (
+            <div className="vyb-vibes-empty-state">
+              <span className="vyb-vibes-empty-kicker">Vibes</span>
+              <strong>No vibes live yet</strong>
+              <p>Upload the first campus vibe and turn this lane into a live theater.</p>
+              <Link href="/create?kind=vibe&from=%2Fvibes" className="vyb-vibes-empty-cta">
+                <PlusIcon />
+                <span>Upload vibe</span>
+              </Link>
+            </div>
+          ) : (
+            <div ref={feedRef} className="vyb-vibes-feed" onWheel={handleWheel}>
+              {engagement.posts.map((item) => {
+                const isActive = activePost?.id === item.id;
+                const profileHref = item.author.username === viewerUsername ? "/dashboard" : `/u/${encodeURIComponent(item.author.username)}`;
+                const progress = progressByPost[item.id] ?? 0;
+
+                return (
+                  <section key={item.id} id={`post-${item.id}`} className="vyb-vibes-slide">
+                    <motion.article
+                      className={`vyb-vibes-stage${isActive ? " is-active" : ""}`}
+                      initial={false}
+                      animate={{
+                        opacity: isActive ? 1 : isDesktop ? 0.75 : 1,
+                        scale: isActive || !isDesktop ? 1 : 0.95
+                      }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 170,
+                        damping: 26
+                      }}
                     >
-                      {item.mediaUrl ? (
-                        item.kind === "video" ? (
-                          <video
-                            ref={(node) => {
-                              videoRefs.current[item.id] = node;
-                            }}
-                            src={item.mediaUrl}
-                            className="vyb-vibes-stage-media"
-                            playsInline
-                            loop
-                            muted={isMuted}
-                            preload={isActive ? "auto" : "metadata"}
-                            onTimeUpdate={(event) => handleVideoProgress(item.id, event.currentTarget)}
-                            onLoadedMetadata={(event) => handleVideoProgress(item.id, event.currentTarget)}
-                          />
-                        ) : (
-                          <img src={item.mediaUrl} alt={item.body || item.title} className="vyb-vibes-stage-media" />
-                        )
-                      ) : (
-                        <div className="vyb-vibes-stage-fallback">
-                          <strong>{item.title || "Campus vibe"}</strong>
-                          <p>{item.body}</p>
-                        </div>
-                      )}
-
-                      <div className="vyb-vibes-stage-gradient" />
-
                       <div
-                        className="vyb-vibes-press-surface"
-                        aria-hidden="true"
-                        onPointerDown={() => handleMediaPointerDown(item)}
-                        onPointerUp={() => handleMediaPointerUp(item)}
-                        onPointerCancel={handleMediaPointerCancel}
-                        onPointerLeave={handleMediaPointerCancel}
-                        onContextMenu={(event) => event.preventDefault()}
-                      />
-
-                      {item.kind === "video" ? (
-                        <button
-                          type="button"
-                          className="vyb-vibes-volume-toggle"
-                          aria-label={isMuted ? "Unmute active vibe" : "Mute active vibe"}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setIsMuted((current) => !current);
-
-                            if (isPlaybackPaused) {
-                              setIsPlaybackPaused(false);
-                            }
-                          }}
-                        >
-                          {isMuted ? <VolumeMutedIcon /> : <VolumeOnIcon />}
-                        </button>
-                      ) : null}
-
-                      {item.kind === "video" && speedBoostPostId === item.id ? (
-                        <span className="vyb-vibes-speed-badge" aria-hidden="true">
-                          2x
-                        </span>
-                      ) : null}
-
-                      {heartBurstPostId === item.id ? (
-                        <span className="vyb-vibes-double-heart" aria-hidden="true">
-                          <HeartBurstIcon />
-                        </span>
-                      ) : null}
-
-                      <motion.div
-                        className="vyb-vibes-overlay-copy"
-                        initial={false}
-                        animate={{
-                          opacity: isActive ? 1 : 0.7,
-                          y: isActive ? 0 : 10
-                        }}
-                        transition={{ type: "spring", stiffness: 190, damping: 24 }}
+                        className="vyb-vibes-stage-media-shell"
+                        role="presentation"
                       >
-                        <div className="vyb-vibes-author-row">
-                          <Link href={profileHref} className="vyb-vibes-author-avatar" aria-label={`Open ${item.author.displayName} profile`}>
-                            {getInitials(item.author.displayName)}
-                          </Link>
-                          <div className="vyb-vibes-author-copy">
-                            <Link href={profileHref}>
-                              <strong>{item.author.displayName}</strong>
-                            </Link>
-                            <span>@{item.author.username}</span>
+                        {item.mediaUrl ? (
+                          item.kind === "video" ? (
+                            <video
+                              ref={(node) => {
+                                videoRefs.current[item.id] = node;
+                              }}
+                              src={item.mediaUrl}
+                              className="vyb-vibes-stage-media"
+                              playsInline
+                              loop
+                              muted={isMuted}
+                              preload={isActive ? "auto" : "metadata"}
+                              onTimeUpdate={(event) => handleVideoProgress(item.id, event.currentTarget)}
+                              onLoadedMetadata={(event) => handleVideoProgress(item.id, event.currentTarget)}
+                            />
+                          ) : (
+                            <img src={item.mediaUrl} alt={item.body || item.title} className="vyb-vibes-stage-media" />
+                          )
+                        ) : (
+                          <div className="vyb-vibes-stage-fallback">
+                            <strong>{item.title || "Campus vibe"}</strong>
+                            <p>{item.body}</p>
                           </div>
-                          <span className="vyb-vibes-campus-badge">{campusBadge}</span>
-                        </div>
-                        <p className="vyb-vibes-caption">{item.body}</p>
-                        <div className="vyb-vibes-stage-meta">
-                          <span>{collegeName}</span>
-                          <span>{formatMetric(item.reactions)} likes</span>
-                          <button type="button" onClick={() => void openPostLikes(item)}>
-                            See likes
+                        )}
+
+                        <div className="vyb-vibes-stage-gradient" />
+
+                        <div
+                          className="vyb-vibes-press-surface"
+                          aria-hidden="true"
+                          onPointerDown={() => handleMediaPointerDown(item)}
+                          onPointerUp={() => handleMediaPointerUp(item)}
+                          onPointerCancel={handleMediaPointerCancel}
+                          onPointerLeave={handleMediaPointerCancel}
+                          onContextMenu={(event) => event.preventDefault()}
+                        />
+
+                        {item.kind === "video" ? (
+                          <button
+                            type="button"
+                            className="vyb-vibes-volume-toggle"
+                            aria-label={isMuted ? "Unmute active vibe" : "Mute active vibe"}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setIsMuted((current) => !current);
+
+                              if (isPlaybackPaused) {
+                                setIsPlaybackPaused(false);
+                              }
+                            }}
+                          >
+                            {isMuted ? <VolumeMutedIcon /> : <VolumeOnIcon />}
                           </button>
-                        </div>
-                      </motion.div>
+                        ) : null}
 
-                      <motion.div
-                        className="vyb-vibes-action-rail"
-                        initial={false}
-                        animate={{
-                          opacity: isActive ? 1 : 0.78,
-                          x: isActive ? 0 : 8
-                        }}
-                        transition={{ type: "spring", stiffness: 190, damping: 25 }}
-                      >
-                        <button
-                          type="button"
-                          className={`vyb-vibes-action-button${item.viewerReactionType === "like" ? " is-active" : ""}`}
-                          disabled={engagement.loadingPostId === item.id}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void handlePostLike(item, true);
-                          }}
-                        >
-                          <HeartIcon />
-                          <span>{formatMetric(item.reactions)}</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="vyb-vibes-action-button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void engagement.openThread(item.id);
-                          }}
-                        >
-                          <CommentIcon />
-                          <span>{formatMetric(item.comments)}</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="vyb-vibes-action-button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void handleDirectRepost(item);
-                          }}
-                        >
-                          <RepostIcon />
-                          <span>Repost</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="vyb-vibes-action-button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void handleCopyPostLink(item);
-                          }}
-                        >
-                          <ShareIcon />
-                          <span>Share</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="vyb-vibes-action-button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setActionMessage(null);
-                            setActionPost(item);
-                          }}
-                        >
-                          <MenuIcon />
-                          <span>More</span>
-                        </button>
-                      </motion.div>
+                        {item.kind === "video" && speedBoostPostId === item.id ? (
+                          <span className="vyb-vibes-speed-badge" aria-hidden="true">
+                            2x
+                          </span>
+                        ) : null}
 
-                      <span className="vyb-vibes-progress-line" aria-hidden="true">
-                        <span style={{ transform: `scaleX(${item.kind === "video" ? progress : isActive ? 1 : 0})` }} />
-                      </span>
-                    </div>
-                  </motion.article>
-                </section>
-              );
-            })}
-          </div>
-        )}
+                        {heartBurstPostId === item.id ? (
+                          <span className="vyb-vibes-double-heart" aria-hidden="true">
+                            <HeartBurstIcon />
+                          </span>
+                        ) : null}
+
+                        <motion.div
+                          className="vyb-vibes-overlay-copy"
+                          initial={false}
+                          animate={{
+                            opacity: isActive ? 1 : 0.7,
+                            y: isActive ? 0 : 10
+                          }}
+                          transition={{ type: "spring", stiffness: 190, damping: 24 }}
+                        >
+                          <div className="vyb-vibes-author-row">
+                            <Link href={profileHref} className="vyb-vibes-author-avatar" aria-label={`Open ${item.author.displayName} profile`}>
+                              {getInitials(item.author.displayName)}
+                            </Link>
+                            <div className="vyb-vibes-author-copy">
+                              <Link href={profileHref}>
+                                <strong>{item.author.displayName}</strong>
+                              </Link>
+                              <span>@{item.author.username}</span>
+                            </div>
+                          </div>
+                          <p className="vyb-vibes-caption">{item.body}</p>
+                          <div className="vyb-vibes-stage-meta">
+                            <span>{collegeName}</span>
+                            <span>{formatMetric(item.reactions)} likes</span>
+                            <button type="button" onClick={() => void openPostLikes(item)}>
+                              See likes
+                            </button>
+                          </div>
+                        </motion.div>
+
+                        <motion.div
+                          className="vyb-vibes-action-rail"
+                          initial={false}
+                          animate={{
+                            opacity: isActive ? 1 : 0.78,
+                            x: isActive ? 0 : 8
+                          }}
+                          transition={{ type: "spring", stiffness: 190, damping: 25 }}
+                        >
+                          <button
+                            type="button"
+                            className={`vyb-vibes-action-button${item.viewerReactionType === "like" ? " is-active" : ""}`}
+                            disabled={engagement.loadingPostId === item.id}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handlePostLike(item, true);
+                            }}
+                          >
+                            <HeartIcon />
+                            <span>{formatMetric(item.reactions)}</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="vyb-vibes-action-button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void engagement.openThread(item.id);
+                            }}
+                          >
+                            <CommentIcon />
+                            <span>{formatMetric(item.comments)}</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="vyb-vibes-action-button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleDirectRepost(item);
+                            }}
+                          >
+                            <RepostIcon />
+                            <span>Repost</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="vyb-vibes-action-button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleCopyPostLink(item);
+                            }}
+                          >
+                            <ShareIcon />
+                            <span>Share</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="vyb-vibes-action-button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setActionMessage(null);
+                              setActionPost(item);
+                            }}
+                          >
+                            <MenuIcon />
+                            <span>More</span>
+                          </button>
+                        </motion.div>
+
+                        <span className="vyb-vibes-progress-line" aria-hidden="true">
+                          <span style={{ transform: `scaleX(${item.kind === "video" ? progress : isActive ? 1 : 0})` }} />
+                        </span>
+                      </div>
+                    </motion.article>
+                  </section>
+                );
+              })}
+            </div>
+          )}
+        </section>
       </section>
 
       <nav className="vyb-campus-bottom-nav">
