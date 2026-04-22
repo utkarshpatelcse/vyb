@@ -1140,9 +1140,9 @@ export function CampusHomeShell({
               <AddPostIcon />
               <span>Create post</span>
             </button>
-            <button type="button" className="vyb-campus-top-icon" aria-label="Messages">
+            <Link href="/messages" className="vyb-campus-top-icon vyb-campus-top-link" aria-label="Open campus messages">
               <SendIcon />
-            </button>
+            </Link>
           </div>
         </header>
 
@@ -1158,6 +1158,9 @@ export function CampusHomeShell({
               <AddPostIcon />
               <span>Post</span>
             </button>
+            <Link href="/messages" className="vyb-campus-top-icon vyb-campus-top-link" aria-label="Open campus messages">
+              <SendIcon />
+            </Link>
           </div>
         </header>
 

@@ -38,11 +38,11 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
       const response = await fetch(`/api/posts/${encodeURIComponent(postId)}/comments`);
       const payload = (await response.json().catch(() => null)) as
         | {
-            items?: CommentItem[];
-            error?: {
-              message?: string;
-            };
-          }
+          items?: CommentItem[];
+          error?: {
+            message?: string;
+          };
+        }
         | null;
 
       if (!response.ok) {
@@ -82,21 +82,27 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
       return null;
     }
 
-    const isAlreadyLiked = currentPost.viewerReactionType === "like";
+    if (currentPost.viewerReactionType === "like") {
+      return {
+        postId,
+        membershipId: "",
+        reactionType: "like",
+        aggregateCount: currentPost.reactions,
+        active: true,
+        viewerReactionType: "like"
+      };
+    }
 
-    // Optimistic toggle immediately
     setLoadingPostId(postId);
     setThreadMessage(null);
     setPosts((current) =>
       current.map((post) =>
         post.id === postId
           ? {
-              ...post,
-              reactions: isAlreadyLiked
-                ? Math.max(0, post.reactions - 1)
-                : post.reactions + 1,
-              viewerReactionType: isAlreadyLiked ? null : "like"
-            }
+            ...post,
+            reactions: post.reactions + 1,
+            viewerReactionType: "like"
+          }
           : post
       )
     );
@@ -114,10 +120,10 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
       const payload = (await response.json().catch(() => null)) as
         | ReactionResponse
         | {
-            error?: {
-              message?: string;
-            };
-          }
+          error?: {
+            message?: string;
+          };
+        }
         | null;
 
       if (!response.ok || !payload || !("aggregateCount" in payload)) {
@@ -125,10 +131,10 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
           current.map((post) =>
             post.id === postId
               ? {
-                  ...post,
-                  reactions: currentPost.reactions,
-                  viewerReactionType: currentPost.viewerReactionType
-                }
+                ...post,
+                reactions: currentPost.reactions,
+                viewerReactionType: currentPost.viewerReactionType
+              }
               : post
           )
         );
@@ -142,10 +148,10 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
         current.map((post) =>
           post.id === postId
             ? {
-                ...post,
-                reactions: payload.aggregateCount,
-                viewerReactionType: payload.viewerReactionType
-              }
+              ...post,
+              reactions: payload.aggregateCount,
+              viewerReactionType: payload.viewerReactionType
+            }
             : post
         )
       );
@@ -155,10 +161,10 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
         current.map((post) =>
           post.id === postId
             ? {
-                ...post,
-                reactions: currentPost.reactions,
-                viewerReactionType: currentPost.viewerReactionType
-              }
+              ...post,
+              reactions: currentPost.reactions,
+              viewerReactionType: currentPost.viewerReactionType
+            }
             : post
         )
       );
@@ -202,11 +208,11 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
       });
       const payload = (await response.json().catch(() => null)) as
         | {
-            item?: CommentItem;
-            error?: {
-              message?: string;
-            };
-          }
+          item?: CommentItem;
+          error?: {
+            message?: string;
+          };
+        }
         | null;
 
       if (!response.ok || !payload?.item) {
@@ -222,9 +228,9 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
         current.map((item) =>
           item.id === post.id
             ? {
-                ...item,
-                comments: item.comments + 1
-              }
+              ...item,
+              comments: item.comments + 1
+            }
             : item
         )
       );
@@ -265,10 +271,10 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
       [post.id]: (current[post.id] ?? []).map((item) =>
         item.id === commentId
           ? {
-              ...item,
-              reactions: item.reactions + 1,
-              viewerHasLiked: true
-            }
+            ...item,
+            reactions: item.reactions + 1,
+            viewerHasLiked: true
+          }
           : item
       )
     }));
@@ -280,12 +286,12 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
       });
       const payload = (await response.json().catch(() => null)) as
         | {
-            aggregateCount?: number;
-            active?: boolean;
-            error?: {
-              message?: string;
-            };
-          }
+          aggregateCount?: number;
+          active?: boolean;
+          error?: {
+            message?: string;
+          };
+        }
         | null;
 
       if (!response.ok || typeof payload?.aggregateCount !== "number") {
@@ -294,10 +300,10 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
           [post.id]: (current[post.id] ?? []).map((item) =>
             item.id === commentId
               ? {
-                  ...item,
-                  reactions: currentComment.reactions,
-                  viewerHasLiked: currentComment.viewerHasLiked
-                }
+                ...item,
+                reactions: currentComment.reactions,
+                viewerHasLiked: currentComment.viewerHasLiked
+              }
               : item
           )
         }));
@@ -310,10 +316,10 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
         [post.id]: (current[post.id] ?? []).map((item) =>
           item.id === commentId
             ? {
-                ...item,
-                reactions: payload.aggregateCount!,
-                viewerHasLiked: Boolean(payload.active)
-              }
+              ...item,
+              reactions: payload.aggregateCount!,
+              viewerHasLiked: Boolean(payload.active)
+            }
             : item
         )
       }));
@@ -325,10 +331,10 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
         [post.id]: (current[post.id] ?? []).map((item) =>
           item.id === commentId
             ? {
-                ...item,
-                reactions: currentComment.reactions,
-                viewerHasLiked: currentComment.viewerHasLiked
-              }
+              ...item,
+              reactions: currentComment.reactions,
+              viewerHasLiked: currentComment.viewerHasLiked
+            }
             : item
         )
       }));

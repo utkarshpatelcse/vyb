@@ -1,0 +1,111 @@
+type ChatIdentity @table(name: "chat_identities", singular: "chatIdentity", plural: "chatIdentities", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  chatIdentityKey: String! @col(name: "chat_identity_key") @unique
+  tenant: Tenant!
+  user: User!
+  membership: TenantMembership!
+  publicKey: String! @col(name: "public_key")
+  algorithm: String! @default(value: "ECDH-P256")
+  keyVersion: Int! @col(name: "key_version") @default(value: 1)
+  lastPublishedAt: Timestamp! @col(name: "last_published_at") @default(expr: "request.time")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type ChatConversation
+  @table(name: "chat_conversations", singular: "chatConversation", plural: "chatConversations", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  conversationKey: String! @col(name: "conversation_key") @unique
+  tenant: Tenant!
+  kind: String! @default(value: "direct")
+  createdByUserId: UUID! @col(name: "created_by_user_id")
+  lastMessageId: UUID @col(name: "last_message_id")
+  lastMessageAt: Timestamp @col(name: "last_message_at")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type ChatParticipant
+  @table(name: "chat_participants", singular: "chatParticipant", plural: "chatParticipants", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  chatParticipantKey: String! @col(name: "chat_participant_key") @unique
+  tenant: Tenant!
+  conversation: ChatConversation!
+  membership: TenantMembership!
+  user: User!
+  joinedAt: Timestamp! @col(name: "joined_at") @default(expr: "request.time")
+  lastReadMessageId: UUID @col(name: "last_read_message_id")
+  lastReadAt: Timestamp @col(name: "last_read_at")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type ChatMessage @table(name: "chat_messages", singular: "chatMessage", plural: "chatMessages", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  tenant: Tenant!
+  conversation: ChatConversation!
+  senderMembership: TenantMembership!
+  senderUserId: UUID! @col(name: "sender_user_id")
+  senderIdentity: ChatIdentity!
+  messageKind: String! @col(name: "message_kind")
+  cipherText: String! @col(name: "cipher_text")
+  cipherIv: String! @col(name: "cipher_iv")
+  cipherAlgorithm: String! @col(name: "cipher_algorithm")
+  replyToMessageId: UUID @col(name: "reply_to_message_id")
+  attachmentUrl: String @col(name: "attachment_url")
+  attachmentStoragePath: String @col(name: "attachment_storage_path")
+  attachmentMimeType: String @col(name: "attachment_mime_type")
+  attachmentSizeBytes: Int64 @col(name: "attachment_size_bytes")
+  attachmentWidth: Int @col(name: "attachment_width")
+  attachmentHeight: Int @col(name: "attachment_height")
+  attachmentDurationMs: Int @col(name: "attachment_duration_ms")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type ChatMessageReaction
+  @table(name: "chat_message_reactions", singular: "chatMessageReaction", plural: "chatMessageReactions", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  chatMessageReactionKey: String! @col(name: "chat_message_reaction_key") @unique
+  tenant: Tenant!
+  message: ChatMessage!
+  membership: TenantMembership!
+  emoji: String!
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+extend type ChatIdentity {
+  tenantId: UUID!
+  userId: UUID!
+  membershipId: UUID!
+}
+
+extend type ChatConversation {
+  tenantId: UUID!
+}
+
+extend type ChatParticipant {
+  tenantId: UUID!
+  conversationId: UUID!
+  membershipId: UUID!
+  userId: UUID!
+}
+
+extend type ChatMessage {
+  tenantId: UUID!
+  conversationId: UUID!
+  senderMembershipId: UUID!
+  senderIdentityId: UUID!
+}
+
+extend type ChatMessageReaction {
+  tenantId: UUID!
+  messageId: UUID!
+  membershipId: UUID!
+}

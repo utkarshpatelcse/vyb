@@ -490,6 +490,181 @@ export interface ActivityListResponse {
   items: ActivityItem[];
 }
 
+export type ChatConversationKind = "direct";
+export type ChatMessageKind = "text" | "image" | "vibe_card" | "deal_card" | "system";
+export type ChatSeedType = "deal" | "vibe";
+
+export interface ChatIdentitySummary {
+  id: string;
+  userId: string;
+  membershipId: string;
+  publicKey: string;
+  algorithm: string;
+  keyVersion: number;
+  updatedAt: string;
+}
+
+export interface ChatPeerSummary {
+  userId: string;
+  membershipId: string;
+  username: string;
+  displayName: string;
+  course?: string | null;
+  stream?: string | null;
+  avatarUrl?: string | null;
+  publicKey?: ChatIdentitySummary | null;
+}
+
+export interface ChatEncryptedAttachment {
+  kind: "image";
+  url: string;
+  storagePath: string | null;
+  mimeType: string;
+  sizeBytes: number;
+  width?: number | null;
+  height?: number | null;
+}
+
+export interface ChatVibeCardPayload {
+  postId: string;
+  title: string;
+  body: string;
+  mediaUrl: string | null;
+  authorUsername: string;
+}
+
+export interface ChatDealCardPayload {
+  targetType: "listing" | "request";
+  targetId: string;
+  title: string;
+  amountLabel: string;
+  category: string;
+  campusSpot: string;
+  counterpartUsername: string;
+  counterpartDisplayName: string;
+}
+
+export interface ChatMessageReactionItem {
+  membershipId: string;
+  emoji: string;
+  createdAt: string;
+}
+
+export interface ChatMessageRecord {
+  id: string;
+  conversationId: string;
+  senderUserId: string;
+  senderMembershipId: string;
+  senderIdentityId: string;
+  messageKind: ChatMessageKind;
+  cipherText: string;
+  cipherIv: string;
+  cipherAlgorithm: string;
+  replyToMessageId: string | null;
+  attachment: ChatEncryptedAttachment | null;
+  createdAt: string;
+  reactions: ChatMessageReactionItem[];
+}
+
+export interface ChatConversationPreview {
+  id: string;
+  tenantId: string;
+  kind: ChatConversationKind;
+  peer: ChatPeerSummary;
+  lastMessage: ChatMessageRecord | null;
+  lastActivityAt: string;
+  unreadCount: number;
+}
+
+export interface ChatInboxResponse {
+  viewer: {
+    userId: string;
+    membershipId: string;
+    activeIdentity: ChatIdentitySummary | null;
+  };
+  items: ChatConversationPreview[];
+}
+
+export interface ChatConversationResponse {
+  viewer: {
+    userId: string;
+    membershipId: string;
+    activeIdentity: ChatIdentitySummary | null;
+  };
+  conversation: {
+    id: string;
+    tenantId: string;
+    kind: ChatConversationKind;
+    peer: ChatPeerSummary;
+    messages: ChatMessageRecord[];
+    lastReadMessageId: string | null;
+    lastReadAt: string | null;
+  };
+}
+
+export interface CreateChatConversationRequest {
+  recipientUserId?: string;
+  recipientUsername?: string;
+  seedType?: ChatSeedType | null;
+  initialCipherText?: string | null;
+  initialCipherIv?: string | null;
+  initialCipherAlgorithm?: string | null;
+}
+
+export interface CreateChatConversationResponse {
+  conversation: ChatConversationResponse["conversation"];
+  created: boolean;
+}
+
+export interface SendChatMessageRequest {
+  messageKind: ChatMessageKind;
+  cipherText: string;
+  cipherIv: string;
+  cipherAlgorithm: string;
+  replyToMessageId?: string | null;
+  attachment?: ChatEncryptedAttachment | null;
+}
+
+export interface SendChatMessageResponse {
+  item: ChatMessageRecord;
+  conversationPreview: ChatConversationPreview;
+}
+
+export interface MarkChatReadResponse {
+  conversationId: string;
+  messageId: string;
+  readAt: string;
+}
+
+export interface ReactToChatMessageResponse {
+  messageId: string;
+  membershipId: string;
+  emoji: string | null;
+  aggregate: ChatMessageReactionItem[];
+}
+
+export interface UpsertChatIdentityRequest {
+  publicKey: string;
+  algorithm: string;
+  keyVersion: number;
+}
+
+export interface UpsertChatIdentityResponse {
+  identity: ChatIdentitySummary;
+}
+
+export interface UploadEncryptedChatAttachmentRequest {
+  fileName: string;
+  mimeType: string;
+  base64Data: string;
+  width?: number | null;
+  height?: number | null;
+}
+
+export interface UploadEncryptedChatAttachmentResponse {
+  attachment: ChatEncryptedAttachment;
+}
+
 export type MarketTab = "sale" | "buying" | "lend";
 export type MarketRequestTab = Exclude<MarketTab, "sale">;
 export type MarketTone = "violet" | "magenta" | "cyan";

@@ -2,7 +2,7 @@
 
 Owner: Product and Engineering
 Last Updated: 2026-04-22
-Change Summary: Added the first-college professional web entry flow, backend-verified session bootstrap, mandatory profile completion gating, the authenticated `/home` feed landing surface, the Phase 1 Cloud Run plus Vercel hosting preparation, the first live campus-social flow for posts, stories, vibes, search, follows, and user IDs, the market dashboard move to live-only Data Connect reads, the richer social engagement layer for likers, reposts, story viewing, immersive vibes, and responsive comment threads, plus the campus events hosting and registration flow with team entry, host review, and CSV export.
+Change Summary: Added the first-college professional web entry flow, backend-verified session bootstrap, mandatory profile completion gating, the authenticated `/home` feed landing surface, the Phase 1 Cloud Run plus Vercel hosting preparation, the first live campus-social flow for posts, stories, vibes, search, follows, and user IDs, the market dashboard move to live-only Data Connect reads, the richer social engagement layer for likers, reposts, story viewing, immersive vibes, responsive comment threads, story music composition, premium playback controls, and the new encrypted campus-chat rollout plan, plus the campus events hosting and registration flow with team entry, host review, and CSV export.
 
 ## 1. Why We Are Building This
 
@@ -57,7 +57,8 @@ Scope:
 - tenant onboarding
 - college join-request review queue
 - memberships and communities
-- Campus Square feed with posts, stories, vibes, threaded comments, and baseline repost/report flows
+- Campus Square feed with posts, stories, immersive vibes, threaded comments, baseline repost/report flows, and single-asset story music composition
+- one-to-one encrypted campus messaging with inbox search, market deal cards, and low-cost realtime presence or typing fanout
 - Resource Vault
 - moderation
 - admin operations
@@ -69,7 +70,9 @@ Exit criteria:
 - an admin can approve, reject, or send back a college join request
 - a user can post to the correct community
 - a user can comment, reply, and react inside the live campus feed
-- a user can publish a story, open the story viewer, and browse the dedicated vibes lane
+- a user can publish a story, add another story from the same own-story bubble, open the immersive story viewer, and browse the dedicated vibes lane
+- a supported client can compose one music-backed story clip and play back the published story audio inside the viewer
+- a verified student can open the encrypted inbox, start a one-to-one campus chat, and exchange realtime messages with read and typing state
 - a user can upload and browse notes
 - moderation can review and remove reported content
 - the system runs as `web + backend`, not a fleet of early services
@@ -168,8 +171,9 @@ After implementation:
 - local development is now intended to run as `pnpm dev` or `web + backend`, not six separate terminals
 - the campus composer now uploads post/story/vibe media into Firebase Storage before publish, with client-side video optimization before the final upload size gate
 - feed and vibes cards now support full-screen media viewing, likers sheets, repost and quote-repost flows, report actions, author edit/delete actions, and optimistic like feedback
-- story lanes now render unified rings with seen-state tracking, while the story viewer supports progress bars, tap navigation, and story likes
-- the `/vibes` route now uses an immersive theater-style mobile and desktop layout, and the home feed now surfaces a dedicated vibes teaser row
+- story lanes now render unified rings with seen-state tracking, a dedicated add-story affordance on the author bubble, and an immersive viewer with segmented progress bars, tap navigation, long-press pause, story likes, embedded-audio playback, and mute control
+- the story composer now supports royalty-free music search, 15-second to 60-second clip selection, draggable music sticker placement, and client-side MP4 export for one selected story asset before publish
+- the `/vibes` route now uses an immersive theater-style mobile and desktop layout, the home feed now surfaces a dedicated vibes teaser row, and active vibe playback defaults to sound-on with tap pause/resume plus press-and-hold speed-up behavior
 - comment threads now support replies, comment likes, GIF/sticker attachments, a desktop side-panel treatment, and a mobile bottom-sheet composer
 - JSON-backed mutation fallbacks have been removed from the active identity, resources, social, and market write paths
 - the market dashboard now reads directly from Data Connect without seeding or rendering JSON-backed preview inventory
@@ -184,10 +188,14 @@ After implementation:
 5. add moderation publish and review flows for posts, stories, vibes, and resources
 6. introduce a simple admin surface for onboarding and moderation operations
 7. refine ranking, moderation review ergonomics, and creator-quality media/transcoding behavior on top of the live engagement baseline
+8. evaluate low-end-device fallback behavior for client-side story music export and browser autoplay restrictions
+9. ship the Phase 1 encrypted campus-chat slice with one-to-one conversations, deal-card entry points, and low-cost realtime fanout
 
 ## 8. Decision Log Snapshot
 
 - A dedicated vibes lane ships in Phase 1, while ranking-heavy reels expansion stays deferred
+- Phase 1 story music uses a royalty-free search provider plus client-side `ffmpeg.wasm` composition for one selected story asset instead of adding a backend transcoding service
+- Phase 1 encrypted chat stays inside the modular monolith with Firebase Realtime Database only for presence, typing, and encrypted delivery fanout, not as a second custom Socket deployable
 - Wallet is not part of Phase 1
 - Phase 1 backend is a modular monolith, not a multi-deployable service fleet
 - `deleted_at`, index strategy, unique constraints, and `user_activity` are mandatory baseline design concerns
@@ -202,3 +210,7 @@ After implementation:
 - weak content moderation policy
 - empty feed problem if utility content is not seeded
 - operational complexity if documentation discipline slips
+- client-side story music export may be slow on low-end devices or fail under memory pressure
+- browser autoplay rules can still force muted startup on some media surfaces until the user interacts
+- browser-held E2EE keys create recovery and multi-device limitations until secure key backup or rotation flows are designed
+- Firebase Realtime Database rules and availability become part of the chat rollout checklist

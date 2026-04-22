@@ -2,7 +2,7 @@
 
 Owner: Architecture Team
 Last Updated: 2026-04-22
-Change Summary: Updated the live vibes contract for backend-backed short-form discovery with immersive playback consumers and shared engagement metadata.
+Change Summary: Updated the live vibes contract for backend-backed short-form discovery with immersive playback consumers, sound-on startup intent, tap pause or resume, and press-and-hold speed controls.
 
 ## Endpoint Definition
 
@@ -19,6 +19,7 @@ Change Summary: Updated the live vibes contract for backend-backed short-form di
 
 - response shape matches feed-style items, filtered to vibe placement
 - each item preserves author identity, reaction counts, comment counts, viewer reaction state, media URL, and copy needed for the immersive vibe overlay
+- playback note: the API does not add a separate playback config object; clients derive default sound-on, pause or resume, and temporary speed-up behavior from the shared vibe media payload plus local UI policy
 
 ## Core Rules
 
@@ -26,3 +27,4 @@ Change Summary: Updated the live vibes contract for backend-backed short-form di
 - only published vibe items appear in the public list
 - the same author and reaction metadata model as the main feed is preserved
 - likes, comments, reposts, edit/delete, and report flows use the shared post interaction endpoints
+- immersive vibe clients should attempt active-item sound-on playback, tolerate browser mute fallback, pause or resume on a single tap, and support temporary speed-up while the press gesture is held

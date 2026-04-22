@@ -1,8 +1,8 @@
 # Vyb High Level Design
 
 Owner: Architecture Team
-Last Updated: 2026-04-19
-Change Summary: Switched Phase 1 runtime to a modular monolith backend, preserved extraction-ready domain boundaries, kept college join requests as a first-class campus module concern, clarified the public-landing plus authenticated-home-feed web split, recorded the Phase 1 hosting topology of Vercel plus Cloud Run, and captured the live campus-social flow for user IDs, follows, stories, and vibes.
+Last Updated: 2026-04-22
+Change Summary: Synced the HLD with the live Phase 1 social surface, including stories, immersive vibes, story music composition through a web-edge helper route, the new encrypted direct-messaging architecture, and the current client-side media architecture limits.
 
 ## 1. Document Purpose
 
@@ -26,17 +26,19 @@ Vyb should become the digital HQ of campus life. The platform must balance:
 - verified authentication
 - college and community onboarding
 - admin-reviewed college join requests for unknown domains
-- Campus Square feed with text and image posts
-- campus user IDs, profile search, follows, and time-limited stories
+- Campus Square feed with text and image posts, immersive vibes, and responsive comment interactions
+- campus user IDs, profile search, follows, and time-limited stories with embedded-audio playback support
+- royalty-free story music search and client-side story MP4 composition for one selected story asset at a time
+- encrypted one-to-one campus messaging with inbox search, read and typing state, vibe shares, and marketplace deal cards
 - Resource Vault for notes and academic files
 - moderation and admin controls
 
 ### Phase 2: Engagement
 
-- short-form video / reels
-- richer comments and ranking refinement
+- ranking refinement for feed, story, and vibe discovery
+- creator tooling refinement for short-form posting
+- richer comments and lightweight polls
 - anonymous Nook with strict moderation
-- polls and lightweight engagement loops
 
 ### Phase 3: Economy
 
@@ -99,6 +101,7 @@ vyb/
           identity/
           campus/
           social/
+          chat/
           resources/
           moderation/
           media/
@@ -114,6 +117,7 @@ vyb/
       identity/
       campus/
       social/
+      chat/
       resources/
       moderation/
       wallet/
@@ -144,6 +148,7 @@ vyb/
 - server-rendered routes where useful
 - public marketing and auth entry routes plus an authenticated home-feed route after onboarding
 - direct upload UX for media and resources
+- web-edge story-music proxying plus client-side ffmpeg.wasm composition for single-asset music stories
 - installable app shell with manifest and service worker
 - no privileged business logic
 
@@ -162,6 +167,7 @@ Responsibilities:
 - public API routing
 - module orchestration
 - Data Connect access for privileged business flows
+- Firebase Realtime Database fanout only for approved low-cost realtime chat presence, typing, and encrypted delivery events
 
 ### 7.3 Phase 1 Hosting Topology
 
@@ -203,13 +209,13 @@ Owns:
 Owns:
 
 - feed posts
+- vibe discovery metadata and shared engagement state
 - follow graph
-- story visibility and active-story lanes
+- story visibility, active-story lanes, story-view state, and final story media records including music-backed exported videos
 - public profile discovery by campus user ID
 - comments
 - reactions
 - social ranking metadata
-- future reels metadata
 
 ### 8.4 Resources Module
 
@@ -220,7 +226,19 @@ Owns:
 - file metadata
 - vault permissions
 
-### 8.5 Future Modules
+### 8.5 Chat Module
+
+Owns:
+
+- direct-message inbox metadata
+- one-to-one conversation state
+- encrypted message persistence and read state
+- chat identity public-key registration for E2EE
+- chat reactions and reply metadata
+- marketplace deal-card message seeds and vibe-card share metadata
+- low-cost realtime fanout coordination through approved Firebase Realtime Database paths
+
+### 8.6 Future Modules
 
 - moderation
 - media
@@ -240,13 +258,16 @@ These remain module candidates first. They become separate services only through
 ```text
 Client -> Backend edge layer -> Target module -> Data Connect Admin SDK -> PostgreSQL
 Client -> Firebase Storage -> Backend media registration flow -> Moderation / worker logic
+Client -> apps/web /api/story-music -> Openverse audio catalog -> client-side ffmpeg.wasm composition -> Firebase Storage -> Backend story publish
+Client -> Backend edge layer -> Chat module -> Data Connect Admin SDK -> PostgreSQL
+Client -> Firebase Realtime Database -> presence / typing / encrypted delivery fanout for approved chat paths
 Unknown-domain user -> Backend edge layer -> Campus module -> college join request queue -> admin decision
 ```
 
 ### 9.2 Internal Interaction Rules
 
 - Web never calls module internals directly.
-- Web only calls the public backend APIs plus Firebase Auth / Firebase Storage.
+- Web only calls the public backend APIs, approved web-edge helper APIs, plus Firebase Auth / Firebase Storage.
 - Module-to-module calls must be explicit and documented in the relevant LLD.
 - Prefer direct module invocation inside the monolith over synthetic internal HTTP.
 - If asynchronous workflows are needed, start with an outbox pattern. Introduce a broker only through ADR.
@@ -262,6 +283,7 @@ Unknown-domain user -> Backend edge layer -> Campus module -> college join reque
 | Posts | Social | Moderation, Analytics | Social |
 | Comments | Social | Moderation | Social |
 | Reactions | Social | Analytics | Social |
+| Direct chats | Chat | Identity, Market | Chat |
 | Resources | Resources | Campus, Moderation | Resources |
 | Media metadata | Media | Social, Resources, Moderation | Media |
 | Reports | Moderation | Social, Resources | Moderation |
@@ -311,6 +333,11 @@ Recommended when relevant:
 - `post_media`
 - `comments`
 - `reactions`
+- `chat_identities`
+- `chat_conversations`
+- `chat_participants`
+- `chat_messages`
+- `chat_message_reactions`
 - `courses`
 - `resources`
 - `resource_files`
@@ -364,10 +391,12 @@ Recommended when relevant:
 ## 12. Media Architecture
 
 - File storage: Firebase Storage
-- Web uploads use client-side compression for large images before upload
+- Web uploads use client-side compression for large images and bounded video optimization before upload
+- Story music for one selected story asset is composed client-side through ffmpeg.wasm and uploaded as the final MP4 artifact
+- Chat image attachments are encrypted in the browser before upload and stored as encrypted blobs plus metadata; plaintext message bodies must never be persisted by backend-owned systems
 - Uploads must include metadata such as `tenant_id`, `uploader_id`, `content_type`, and `origin_module`
 - Uploaded media is not publishable until backend metadata registration succeeds
-- Reels in Phase 2 require validation for size, duration, MIME type, and transcoding strategy
+- Vibes and stories in Phase 1 require validation for size, duration, MIME type, and bounded playback rules without introducing a backend transcoding service yet
 
 ### Storage Path Convention
 
@@ -376,7 +405,14 @@ tenants/{tenantId}/users/{userId}/social/{postId}/{fileName}
 tenants/{tenantId}/users/{userId}/resources/{resourceId}/{fileName}
 ```
 
-## 13. Observability
+## 13. Realtime and E2EE Notes
+
+- Phase 1 direct messaging stays inside the modular monolith as a `chat` module and does not justify a separate Socket microservice yet.
+- Low-latency presence, typing, and encrypted delivery fanout may use Firebase Realtime Database because it preserves low cost while keeping the backend as the message system of record.
+- The backend stores encrypted message payloads and encrypted attachment references only; decryption happens in approved clients through the Web Crypto API.
+- Phase 1 E2EE is scoped to one-to-one chats and starts with one active browser-held device key per account until secure multi-device key sync is designed and approved.
+
+## 14. Observability
 
 Mandatory for the backend:
 
@@ -394,7 +430,7 @@ Mandatory per module:
 - explicit log events for high-risk writes
 - clear error shapes at the public API boundary
 
-## 14. Future Microservice Extraction Path
+## 15. Future Microservice Extraction Path
 
 Modules may be extracted later, but only when at least one of these becomes true:
 
@@ -412,7 +448,7 @@ Extraction rules:
 - replace internal module calls with HTTP or async calls only after an ADR
 - do not extract multiple modules at once without evidence
 
-## 15. Wallet and Competition Constraints
+## 16. Wallet and Competition Constraints
 
 Wallet is intentionally excluded from Phase 1. When introduced later:
 
@@ -422,7 +458,7 @@ Wallet is intentionally excluded from Phase 1. When introduced later:
 - payouts require reconciliation and audit support
 - legal review is mandatory before entry-fee competitions launch
 
-## 16. Recommended Documentation Flow
+## 17. Recommended Documentation Flow
 
 1. Update `SRS.md`
 2. Update `HLD.md` if architecture changes
@@ -431,7 +467,7 @@ Wallet is intentionally excluded from Phase 1. When introduced later:
 5. Implement
 6. Update `MASTER_PLAN.md`
 
-## 17. Open Decisions
+## 18. Open Decisions
 
 - whether to use Data Connect client SDK for any direct read paths in Phase 1
 - whether notifications start with email only or include push

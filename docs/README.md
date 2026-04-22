@@ -1,8 +1,8 @@
 # Vyb Documentation Hub
 
 Owner: Architecture and Product
-Last Updated: 2026-04-19
-Change Summary: Synced the docs hub with the modular monolith Phase 1 architecture.
+Last Updated: 2026-04-22
+Change Summary: Synced the docs hub with the live Phase 1 social surface, including immersive stories and vibes, story music composition notes, and the required supporting ADR and API contracts.
 
 This directory is the single source of truth for product, architecture, delivery, and engineering process.
 
@@ -22,15 +22,17 @@ This directory is the single source of truth for product, architecture, delivery
    Execution-ready LLDs for the core Phase 1 backend modules.
 7. `docs/contracts/phase-1/`
    API contracts for the current public Phase 1 backend endpoints.
-8. `docs/query-reviews/phase-1/`
+8. `docs/architecture/ADR_001_PHASE1_HOSTING_TOPOLOGY.md` and later ADRs
+   Accepted architecture decisions for hosting, external services, and new runtime dependencies.
+9. `docs/query-reviews/phase-1/`
    Query reviews for the hot paths we expect to matter in Phase 1.
-9. `docs/templates/LLD_TEMPLATE.md`
+10. `docs/templates/LLD_TEMPLATE.md`
    The mandatory template for any feature-level Low Level Design.
-10. `docs/templates/API_CONTRACT_TEMPLATE.md`
+11. `docs/templates/API_CONTRACT_TEMPLATE.md`
    The mandatory template for documenting public or internal API contracts.
-11. `docs/templates/QUERY_REVIEW_TEMPLATE.md`
+12. `docs/templates/QUERY_REVIEW_TEMPLATE.md`
    The mandatory template for hot-path queries and index justification.
-12. `docs/templates/ADR_TEMPLATE.md`
+13. `docs/templates/ADR_TEMPLATE.md`
    The mandatory template for architecture decisions such as Redis, Pub/Sub, caching, search, or a new third-party service.
 
 ## Rules For Updating Docs

@@ -1,5 +1,9 @@
 # Social Module LLD
 
+Owner: Social Platform
+Last Updated: 2026-04-22
+Change Summary: Expanded the Phase 1 social design for immersive stories and vibes, own-story add affordances, story music search and client-side export, and premium playback controls across desktop and mobile.
+
 ## 1. Metadata
 
 - Feature name: Social Module Phase 1
@@ -10,11 +14,11 @@
 - Status: Active
 - Linked SRS section: 2.4 Campus Square Feed and 2.6 Moderation
 - Linked HLD section: Phase 1 Module Map, Media Architecture, Observability
-- Linked ADRs: None yet
+- Linked ADRs: `ADR_002_STORY_MUSIC_SEARCH_AND_CLIENT_EXPORT.md`
 
 ## 2. Problem Statement
 
-We need a trustworthy campus social layer where verified members can create posts, short-form vibes, and time-limited stories, search other users by campus user ID, follow profiles, repost campus content, inspect likers, participate in threaded comments, and report unsafe content. The module must remain tenant-safe, community-aware, and ready for future ranking without forcing that complexity into Phase 1.
+We need a trustworthy campus social layer where verified members can create posts, short-form vibes, and time-limited stories, search other users by campus user ID, follow profiles, repost campus content, inspect likers, participate in threaded comments, report unsafe content, and consume immersive story and vibe playback across mobile and desktop. Phase 1 also includes optional royalty-free music composition for one story asset at publish time. The module must remain tenant-safe, community-aware, and ready for future ranking without forcing that complexity into Phase 1.
 
 ## 3. Scope
 
@@ -23,6 +27,8 @@ In scope:
 - text and image posts
 - video vibes
 - time-limited stories
+- immersive story viewer behaviors, including segmented progress, own-story add affordance, seen-state rings, and viewer audio playback
+- royalty-free story music search plus single-asset client-side story music composition before publish
 - public profile discovery by campus user ID
 - follow and unfollow graph
 - feed reads by tenant and community
@@ -34,6 +40,7 @@ In scope:
 - story reactions and seen state
 - author edit and soft delete for posts and vibes
 - responsive desktop and mobile social interaction surfaces
+- immersive vibes playback with default sound-on intent, tap pause or resume, and press-and-hold speed-up
 - extraction-ready domain boundaries
 
 Out of scope:
@@ -43,6 +50,9 @@ Out of scope:
 - ranking personalization
 - direct messaging
 - third-party GIF search provider integration
+- multi-asset story music export in one batch publish
+- backend media transcoding or waveform generation for story music
+- premium licensed music catalog ingestion beyond the selected royalty-free provider
 - dedicated transcoding fleet for social video
 
 ## 4. Owning Module
@@ -62,6 +72,8 @@ Out of scope:
 - Flow 7: an author edits or soft-deletes their own post or vibe.
 - Flow 8: a viewer opens the story viewer, progresses through stories, marks them seen, and optionally likes a story.
 - Flow 9: user reports unsafe social content when moderation support is enabled.
+- Flow 10: user selects one story asset, browses the royalty-free music library, previews a 15, 30, 45, or 60 second clip, positions the music sticker, exports the final MP4 in the browser, and then publishes it as a normal story item.
+- Flow 11: viewer opens `/vibes`, the active item attempts sound-on playback, a single tap pauses or resumes, and a press-and-hold temporarily boosts playback speed.
 
 ## 6. API Design
 
@@ -123,7 +135,7 @@ Out of scope:
 
 - caller: web or future native client
 - auth requirement: verified membership required
-- request schema: tenant id, media type, media payload, optional caption
+- request schema: tenant id, media type, media payload, optional caption, and optional client-exported music-backed video reference when story music composition is used
 - response schema: created story payload with expiry
 - error schema: invalid media, unauthorized scope, validation failure
 - rate limit policy: moderate per user
@@ -136,6 +148,15 @@ Out of scope:
 - response schema: active stories visible to the current viewer
 - error schema: invalid tenant
 - rate limit policy: moderate per user
+
+### `GET /api/story-music`
+
+- caller: web story composer only
+- auth requirement: same-origin client access; no extra app auth gate in Phase 1
+- request schema: search mode accepts optional `q` and `limit`; stream mode accepts `mode=stream` and `trackId`
+- response schema: search returns royalty-free track summaries; stream returns proxied audio bytes for the selected track
+- error schema: upstream provider unavailable, track missing, invalid query
+- rate limit policy: low to moderate per client to protect upstream usage
 
 ### `GET /v1/users/search`
 
@@ -253,6 +274,18 @@ Out of scope:
 - interaction type: direct in-process invocation
 - failure handling: return visible report errors without mutating social content state
 
+- calling layer: web story composer
+- target module: `apps/web /api/story-music`
+- reason: query the approved royalty-free music provider and proxy the selected track back to the browser for export
+- interaction type: same-origin web helper request
+- failure handling: show visible music-library or stream-fetch errors and keep normal story publishing available
+
+- calling layer: web story composer
+- target module: browser-side `ffmpeg.wasm`
+- reason: merge one selected visual asset, the selected music clip, and the draggable music sticker into the final MP4 before upload
+- interaction type: client-side media composition
+- failure handling: abort export, surface safe client error text, and allow publish retry without server mutation
+
 ## 8. Data Model Changes
 
 - tables touched: `posts`, `post_media`, `stories`, `story_reactions`, `story_views`, `follows`, `comments`, `comment_reactions`, `reactions`, `user_activity`
@@ -289,9 +322,10 @@ Out of scope:
 
 - auth checks: membership must be verified for posting, story creation, following, commenting, reacting, reposting, and reporting
 - tenant checks: reads and writes validated through campus-owned context
-- input validation: body length, media count, allowed MIME types, campus user-ID resolution, reaction enums, repost quote length, and author-only edit/delete gates
+- input validation: body length, media count, allowed MIME types, campus user-ID resolution, reaction enums, repost quote length, author-only edit/delete gates, story music clip lengths limited to 15 or 30 or 45 or 60 seconds, and story music publish limited to one selected asset at a time
 - abuse prevention: post, comment, reaction, and report rate limits plus content status workflow
 - audit logging: report creation, moderator removals, and privileged edits
+- client behavior notes: vibe playback should attempt sound-on startup with safe muted fallback if the browser blocks autoplay; story viewer audio must remain user-toggleable; own-story bubbles must support separate open-story and add-story interactions
 
 ## 11. Observability
 
@@ -307,6 +341,9 @@ Out of scope:
 - reaction race: last write wins under unique constraint and upsert behavior
 - follow race: duplicate follow writes collapse to one relationship
 - story expiry race: story reads always filter by active expiry window
+- royalty-free music provider unavailable: story music search and streaming fail without blocking plain story publish
+- `ffmpeg.wasm` assets fail to load or client export exceeds device capacity: music-backed story export fails locally and the composer should offer retry or publish without music
+- browser autoplay policy blocks sound-on startup: vibes or story audio may require an explicit user unmute interaction even when the product defaults to sound-on intent
 
 ## 13. Rollout Plan
 
@@ -316,8 +353,9 @@ Out of scope:
 
 ## 14. Test Plan
 
-- unit tests: post validation, story visibility, follow graph, reaction upsert, comment-thread building, repost validation, and soft-delete guards
-- integration tests: post create with campus access, post update/delete, story create, story seen, user search, follow update, feed pagination, and report create
+- unit tests: post validation, story visibility, follow graph, reaction upsert, comment-thread building, repost validation, story music input validation, and soft-delete guards
+- integration tests: post create with campus access, post update/delete, story create, story seen, user search, follow update, feed pagination, report create, and story music search helper responses
+- client verification: immersive story viewer playback, story audio toggle behavior, own-story add affordance, vibe tap pause or resume, and press-and-hold speed boost on supported browsers
 - contract tests: post create, feed read, vibe read, story create/read/react/seen, user search, public profile, follow update, comment create, comment reaction update, post likes, repost create, and post update/delete
 - manual QA: create post, browse feed, publish story, follow a user, search by user ID, open public profile, react, inspect likers, comment, reply, repost, report, and browse the immersive vibes route
 

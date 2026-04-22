@@ -1,5 +1,9 @@
 # Vyb
 
+Owner: Product and Engineering
+Last Updated: 2026-04-22
+Change Summary: Synced the repo overview with the live Phase 1 social, story music, immersive playback, market, and campus events capabilities.
+
 Multi-tenant campus platform architecture with a responsive web client in Phase 1 and a future native mobile client.
 
 ## Current State
@@ -18,7 +22,9 @@ Multi-tenant campus platform architecture with a responsive web client in Phase 
 - Identity, campus, social, and resources modules now fail closed when Data Connect writes are unavailable instead of mutating local JSON stores
 - Campus post, story, and vibe media now upload to Firebase Storage before publish requests, and large videos are optimized before the final size gate runs
 - The live social surface now supports full-screen post and vibe viewing, likers sheets, repost/report/delete actions, optimistic likes, and responsive threaded comments with replies plus GIF/sticker attachments
-- The story lane and viewer now support seen-state rings, progress playback, story likes, and a dedicated immersive vibes experience across desktop and mobile
+- The story composer now supports royalty-free music search, 15/30/45/60-second clip trimming, draggable music sticker placement, and client-side MP4 export for a single story asset
+- The story lane and viewer now support own-story add affordances, seen-state rings, progress playback, story likes, embedded-audio playback, and mute or unmute controls
+- The dedicated `/vibes` theater now supports immersive desktop and mobile playback, default active audio-on behavior, tap pause or resume, and press-and-hold 2x playback
 - The `vyb` Data Connect service is deployed in `asia-south1` on project `vybnet-e2242`
 - Firebase Admin now isolates Data Connect connectors per app instance to avoid cross-connector operation cache collisions
 - Vyb remains the product brand; any college-specific config in this repo is only rollout reference data for the first onboarded tenant

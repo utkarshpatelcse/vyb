@@ -28,7 +28,6 @@ import {
   listStoryReactionsByTenant as listStoryReactionsByTenantQuery,
   softDeleteFollow as softDeleteFollowMutation,
   softDeletePost as softDeletePostMutation,
-  softDeleteReaction as softDeleteReactionMutation,
   updateReaction as updateReactionMutation,
   updateStoryReaction as updateStoryReactionMutation
 } from "../../../../../packages/dataconnect/social-admin-sdk/esm/index.esm.js";
@@ -587,16 +586,6 @@ function mapPostRecord(item, counts = null) {
     placement: normalizePlacement(item.placement),
     kind: item.kind ?? "text",
     mediaUrl: item.mediaUrl ?? null,
-    media: item.postMediaRecords_on_post?.length > 0
-      ? item.postMediaRecords_on_post
-          .map(record => ({
-            url: record.mediaUrl ?? item.mediaUrl ?? null,
-            kind: record.mediaType === "video" ? "video" : "image"
-          }))
-          .filter(record => Boolean(record.url))
-      : item.mediaUrl
-      ? [{ url: item.mediaUrl, kind: item.kind === "video" ? "video" : "image" }]
-      : [],
     location: item.location ?? null,
     title: item.title ?? "Campus update",
     body: item.body ?? "",
@@ -676,16 +665,16 @@ export async function listPosts({
 
   const response = userId
     ? await listPostsByAuthorQuery(getSocialDc(), {
-        tenantId,
-        authorUserId: userId,
-        placement: normalizedPlacement,
-        limit: effectiveLimit
-      })
+      tenantId,
+      authorUserId: userId,
+      placement: normalizedPlacement,
+      limit: effectiveLimit
+    })
     : await listFeedByTenantQuery(getSocialDc(), {
-        tenantId,
-        placement: normalizedPlacement,
-        limit: effectiveLimit
-      });
+      tenantId,
+      placement: normalizedPlacement,
+      limit: effectiveLimit
+    });
 
   const filtered = response.data.posts
     .filter((item) => (communityId ? item.communityId === communityId : true))
@@ -738,43 +727,18 @@ export async function findPostById(postId, { tenantId = null, viewerMembershipId
 export async function createPost(payload) {
   const id = randomUUID();
   const placement = normalizePlacement(payload.placement);
-
-  // Fallback map if legacy mediaUrl was used instead of mediaAssets
-  const initialMediaAssets = payload.mediaAssets?.length > 0 
-    ? payload.mediaAssets 
-    : payload.mediaUrl
-    ? [{
-        url: payload.mediaUrl,
-        kind: payload.kind,
-        storagePath: payload.mediaStoragePath ?? null,
-        mimeType: payload.mediaMimeType ?? null,
-        sizeBytes: payload.mediaSizeBytes ?? null
-      }]
-    : [];
-
-  const mediaResults = await Promise.all(
-    initialMediaAssets.map((asset, index) =>
-      persistMediaAsset({
-        tenantId: payload.tenantId,
-        userId: payload.userId,
-        assetId: `${id}_${index}`,
-        assetType: "posts",
-        mediaUrl: asset.url,
-        mediaType: asset.kind,
-        placement,
-        storagePathOverride: asset.storagePath ?? null,
-        mediaMimeTypeOverride: asset.mimeType ?? null,
-        mediaSizeBytesOverride: asset.sizeBytes ?? null
-      })
-    )
-  );
-
-  const primaryMedia = mediaResults[0] ?? {
-    mediaUrl: null,
-    storagePath: null,
-    mediaMimeType: null,
-    mediaSizeBytes: null
-  };
+  const media = await persistMediaAsset({
+    tenantId: payload.tenantId,
+    userId: payload.userId,
+    assetId: id,
+    assetType: "posts",
+    mediaUrl: payload.mediaUrl ?? null,
+    mediaType: payload.kind,
+    placement,
+    storagePathOverride: payload.mediaStoragePath ?? null,
+    mediaMimeTypeOverride: payload.mediaMimeType ?? null,
+    mediaSizeBytesOverride: payload.mediaSizeBytes ?? null
+  });
 
   await createPostMutation(getSocialDc(), {
     id,
@@ -788,34 +752,26 @@ export async function createPost(payload) {
     kind: payload.kind,
     title: payload.title ?? "Campus update",
     body: payload.body,
-    mediaUrl: primaryMedia.mediaUrl,
-    storagePath: primaryMedia.storagePath,
-    mediaMimeType: primaryMedia.mediaMimeType,
-    mediaSizeBytes: primaryMedia.mediaSizeBytes === null ? null : String(primaryMedia.mediaSizeBytes),
+    mediaUrl: media.mediaUrl,
+    storagePath: media.storagePath,
+    mediaMimeType: media.mediaMimeType,
+    mediaSizeBytes: media.mediaSizeBytes === null ? null : String(media.mediaSizeBytes),
     location: payload.location ?? null,
     status: "published"
   });
 
-  if (mediaResults.length > 0) {
-    await Promise.all(
-      mediaResults.map((media, index) => {
-        if (media.storagePath && media.mediaMimeType && media.mediaSizeBytes !== null) {
-          return createPostMediaMutation(getSocialDc(), {
-            tenantId: payload.tenantId,
-            postId: id,
-            mediaUrl: media.mediaUrl,
-            storagePath: media.storagePath,
-            mediaType: initialMediaAssets[index].kind,
-            mimeType: media.mediaMimeType,
-            sizeBytes: String(media.mediaSizeBytes),
-            width: null,
-            height: null,
-            durationMs: null
-          });
-        }
-        return Promise.resolve();
-      })
-    );
+  if (media.storagePath && media.mediaMimeType && media.mediaSizeBytes !== null) {
+    await createPostMediaMutation(getSocialDc(), {
+      tenantId: payload.tenantId,
+      postId: id,
+      storagePath: media.storagePath,
+      mediaType: payload.kind,
+      mimeType: media.mediaMimeType,
+      sizeBytes: String(media.mediaSizeBytes),
+      width: null,
+      height: null,
+      durationMs: null
+    });
   }
 
   return {
@@ -826,11 +782,7 @@ export async function createPost(payload) {
     membershipId: payload.membershipId,
     placement,
     kind: payload.kind,
-    mediaUrl: primaryMedia.mediaUrl,
-    media: mediaResults.map((media, index) => ({
-      url: media.mediaUrl,
-      kind: initialMediaAssets[index].kind
-    })),
+    mediaUrl: media.mediaUrl,
     location: payload.location ?? null,
     title: payload.title ?? "Campus update",
     body: payload.body,
@@ -906,10 +858,10 @@ export async function listCommentsByPost({ tenantId, postId, limit = 50, viewerM
   const comments = response.data.comments ?? [];
   const reactionMaps = comments.length
     ? await buildCommentReactionMaps(
-        tenantId,
-        comments.map((item) => item.id),
-        viewerMembershipId
-      )
+      tenantId,
+      comments.map((item) => item.id),
+      viewerMembershipId
+    )
     : null;
 
   return comments.map((item) => mapCommentRecord(item, reactionMaps));
@@ -920,20 +872,6 @@ export async function upsertReaction(payload) {
   const existing = await getReactionByKeyQuery(getSocialDc(), { reactionKey });
   const current = existing.data.reactions[0] ?? null;
 
-  // Toggle: if same reaction already exists → unlike (soft-delete it)
-  if (current && current.reactionType === payload.reactionType) {
-    await softDeleteReactionMutation(getSocialDc(), { id: current.id });
-    return {
-      postId: payload.postId,
-      membershipId: payload.membershipId,
-      reactionType: payload.reactionType,
-      aggregateCount: await countReactionsByPost(payload.postId),
-      active: false,
-      viewerReactionType: null
-    };
-  }
-
-  // Different reaction type already exists → update it
   if (current) {
     await updateReactionMutation(getSocialDc(), {
       id: current.id,
@@ -1117,14 +1055,23 @@ export async function listStories({ tenantId, viewerUserId, viewerMembershipId =
   ]);
 
   const followingIds = new Set(followingResponse.data.follows.map((item) => item.followingUserId));
-  const records = storyResponse.data.stories.filter((item) => {
+  const latestByUser = new Map();
+
+  for (const item of storyResponse.data.stories) {
     if (!isActiveStory(item)) {
-      return false;
+      continue;
     }
 
-    return item.userId === viewerUserId || followingIds.has(item.userId);
-  });
+    if (item.userId !== viewerUserId && !followingIds.has(item.userId)) {
+      continue;
+    }
 
+    if (!latestByUser.has(item.userId)) {
+      latestByUser.set(item.userId, item);
+    }
+  }
+
+  const records = Array.from(latestByUser.values());
   if (records.length === 0) {
     return [];
   }
@@ -1136,10 +1083,10 @@ export async function listStories({ tenantId, viewerUserId, viewerMembershipId =
   );
   const viewMaps = viewerMembershipId
     ? await buildStoryViewMaps(
-        tenantId,
-        records.map((item) => item.id),
-        viewerMembershipId
-      )
+      tenantId,
+      records.map((item) => item.id),
+      viewerMembershipId
+    )
     : { viewerSeen: new Map() };
 
   return records.map((item) => mapStoryRecord(item, viewerUserId, reactionMaps, viewMaps));

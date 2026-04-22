@@ -13,6 +13,31 @@ export interface AuditLog_Key {
   __typename?: 'AuditLog_Key';
 }
 
+export interface ChatConversation_Key {
+  id: UUIDString;
+  __typename?: 'ChatConversation_Key';
+}
+
+export interface ChatIdentity_Key {
+  id: UUIDString;
+  __typename?: 'ChatIdentity_Key';
+}
+
+export interface ChatMessageReaction_Key {
+  id: UUIDString;
+  __typename?: 'ChatMessageReaction_Key';
+}
+
+export interface ChatMessage_Key {
+  id: UUIDString;
+  __typename?: 'ChatMessage_Key';
+}
+
+export interface ChatParticipant_Key {
+  id: UUIDString;
+  __typename?: 'ChatParticipant_Key';
+}
+
 export interface CommentReaction_Key {
   id: UUIDString;
   __typename?: 'CommentReaction_Key';

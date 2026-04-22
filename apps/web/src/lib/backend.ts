@@ -1,6 +1,10 @@
 import "server-only";
 import type {
   ActivityListResponse,
+  ChatConversationResponse,
+  ChatInboxResponse,
+  CreateChatConversationRequest,
+  CreateChatConversationResponse,
   ClientShellResponse,
   CommentReactionResponse,
   CommentListResponse,
@@ -16,6 +20,7 @@ import type {
   FeedListResponse,
   ListCoursesResponse,
   ListResourcesResponse,
+  MarkChatReadResponse,
   ManageMarketListingResponse,
   MarketDashboardResponse,
   MeResponse,
@@ -24,6 +29,7 @@ import type {
   PostLikerListResponse,
   ReactionKind,
   ReactionResponse,
+  ReactToChatMessageResponse,
   RepostPostRequest,
   RepostPostResponse,
   SessionBootstrapRequest,
@@ -33,10 +39,15 @@ import type {
   StoryReactionResponse,
   ToggleMarketSaveRequest,
   ToggleMarketSaveResponse,
+  SendChatMessageRequest,
+  SendChatMessageResponse,
+  UploadEncryptedChatAttachmentResponse,
   UpdateMarketListingRequest,
   UpdateMarketListingResponse,
   UpdatePostRequest,
   UpdatePostResponse,
+  UpsertChatIdentityRequest,
+  UpsertChatIdentityResponse,
   UpdateUsernameRequest,
   UpdateUsernameResponse,
   UserSearchResponse
@@ -547,4 +558,55 @@ export async function uploadSocialMediaAsset(
 ) {
   const response = await postBackendJson<{ asset: UploadedSocialMediaAsset }>("/v1/social-media/upload", payload, viewer);
   return response.asset;
+}
+
+export async function getChatInbox(viewer: DevSession) {
+  return fetchBackendJson<ChatInboxResponse>("/v1/chats", viewer);
+}
+
+export async function createChatConversation(viewer: DevSession, payload: CreateChatConversationRequest) {
+  return postBackendJson<CreateChatConversationResponse>("/v1/chats", payload, viewer);
+}
+
+export async function getChatConversation(viewer: DevSession, conversationId: string) {
+  return fetchBackendJson<ChatConversationResponse>(`/v1/chats/${encodeURIComponent(conversationId)}`, viewer);
+}
+
+export async function sendChatMessage(viewer: DevSession, conversationId: string, payload: SendChatMessageRequest) {
+  return postBackendJson<SendChatMessageResponse>(`/v1/chats/${encodeURIComponent(conversationId)}/messages`, payload, viewer);
+}
+
+export async function markChatRead(viewer: DevSession, conversationId: string, messageId: string) {
+  return mutateBackendJson<MarkChatReadResponse>(
+    `/v1/chats/${encodeURIComponent(conversationId)}/read`,
+    "PUT",
+    { messageId },
+    viewer
+  );
+}
+
+export async function reactToChatMessage(viewer: DevSession, messageId: string, emoji: string) {
+  return mutateBackendJson<ReactToChatMessageResponse>(
+    `/v1/chats/messages/${encodeURIComponent(messageId)}/reactions`,
+    "PUT",
+    { emoji },
+    viewer
+  );
+}
+
+export async function upsertChatIdentity(viewer: DevSession, payload: UpsertChatIdentityRequest) {
+  return mutateBackendJson<UpsertChatIdentityResponse>("/v1/chats/keys", "PUT", payload, viewer);
+}
+
+export async function uploadEncryptedChatAttachment(
+  viewer: DevSession,
+  payload: {
+    fileName: string;
+    mimeType: string;
+    base64Data: string;
+    width?: number | null;
+    height?: number | null;
+  }
+) {
+  return postBackendJson<UploadEncryptedChatAttachmentResponse>("/v1/chats/media/upload", payload, viewer);
 }

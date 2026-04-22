@@ -1,0 +1,217 @@
+import { readJson, sendError, sendJson } from "../../lib/http.mjs";
+import { getProfileByUserId } from "../identity/profile-repository.mjs";
+import { resolveLiveContext } from "../shared/viewer-context.mjs";
+import {
+  createOrGetDirectConversation,
+  getChatConversation,
+  listChatInbox,
+  markChatConversationRead,
+  reactToChatMessage,
+  sendChatMessage,
+  uploadEncryptedChatAttachment,
+  upsertChatIdentity
+} from "./repository.mjs";
+
+function requireNonEmptyString(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function buildChatViewer(resolved, profile) {
+  return {
+    userId: resolved.live.user.id,
+    membershipId: resolved.live.membership.id,
+    tenantId: resolved.live.tenant.id,
+    username: profile?.username ?? resolved.viewer.primaryEmail.split("@")[0] ?? resolved.live.user.id,
+    displayName: profile?.fullName ?? resolved.viewer.displayName
+  };
+}
+
+function sendChatFailure(response, scope, resolved, error) {
+  console.error(`[chat] ${scope}:failed`, {
+    tenantId: resolved?.live?.tenant?.id ?? null,
+    userId: resolved?.live?.user?.id ?? null,
+    message: error instanceof Error ? error.message : "unknown"
+  });
+
+  sendError(
+    response,
+    502,
+    `${scope.toUpperCase()}_FAILED`,
+    error instanceof Error ? error.message : "Chat service is unavailable right now."
+  );
+}
+
+export function getChatModuleHealth() {
+  return {
+    module: "chat",
+    status: "ok"
+  };
+}
+
+export async function handleChatRoute({ request, response, url, context }) {
+  if (!context.actor || !url.pathname.startsWith("/v1/chats")) {
+    return false;
+  }
+
+  const resolved = await resolveLiveContext(context.actor);
+  if (!resolved?.live?.tenant || !resolved.live.user || !resolved.live.membership) {
+    sendError(response, 401, "UNAUTHENTICATED", "An authenticated membership is required.");
+    return true;
+  }
+
+  const profile = await getProfileByUserId({
+    tenantId: resolved.live.tenant.id,
+    userId: resolved.live.user.id
+  }).catch(() => null);
+
+  if (!profile?.profileCompleted) {
+    sendError(response, 403, "PROFILE_INCOMPLETE", "Complete your profile before opening campus chat.");
+    return true;
+  }
+
+  const viewer = buildChatViewer(resolved, profile);
+
+  if (request.method === "GET" && url.pathname === "/v1/chats") {
+    try {
+      sendJson(response, 200, await listChatInbox(viewer));
+    } catch (error) {
+      sendChatFailure(response, "chat_inbox", resolved, error);
+    }
+    return true;
+  }
+
+  if (request.method === "POST" && url.pathname === "/v1/chats") {
+    const payload = await readJson(request);
+    if (!payload || typeof payload !== "object") {
+      sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+      return true;
+    }
+
+    if (!requireNonEmptyString(payload.recipientUserId) && !requireNonEmptyString(payload.recipientUsername)) {
+      sendError(response, 400, "INVALID_RECIPIENT", "Choose a valid recipient before opening a chat.");
+      return true;
+    }
+
+    try {
+      sendJson(response, 200, await createOrGetDirectConversation(viewer, payload));
+    } catch (error) {
+      sendChatFailure(response, "chat_create", resolved, error);
+    }
+    return true;
+  }
+
+  if (request.method === "PUT" && url.pathname === "/v1/chats/keys") {
+    const payload = await readJson(request);
+    if (!payload || typeof payload !== "object") {
+      sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+      return true;
+    }
+
+    if (!requireNonEmptyString(payload.publicKey)) {
+      sendError(response, 400, "INVALID_PUBLIC_KEY", "A public key is required for encrypted chat.");
+      return true;
+    }
+
+    try {
+      sendJson(response, 200, await upsertChatIdentity(viewer, payload));
+    } catch (error) {
+      sendChatFailure(response, "chat_key_publish", resolved, error);
+    }
+    return true;
+  }
+
+  if (request.method === "POST" && url.pathname === "/v1/chats/media/upload") {
+    const payload = await readJson(request);
+    if (!payload || typeof payload !== "object") {
+      sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+      return true;
+    }
+
+    if (!requireNonEmptyString(payload.fileName) || !requireNonEmptyString(payload.mimeType) || !requireNonEmptyString(payload.base64Data)) {
+      sendError(response, 400, "INVALID_FILE", "Encrypted attachment upload is missing file data.");
+      return true;
+    }
+
+    try {
+      sendJson(response, 201, await uploadEncryptedChatAttachment(viewer, payload));
+    } catch (error) {
+      sendChatFailure(response, "chat_media_upload", resolved, error);
+    }
+    return true;
+  }
+
+  const conversationMatch = url.pathname.match(/^\/v1\/chats\/([^/]+)$/);
+  if (request.method === "GET" && conversationMatch) {
+    try {
+      const payload = await getChatConversation(viewer, conversationMatch[1]);
+      if (!payload) {
+        sendError(response, 404, "CHAT_NOT_FOUND", "We could not find that conversation.");
+        return true;
+      }
+
+      sendJson(response, 200, payload);
+    } catch (error) {
+      sendChatFailure(response, "chat_detail", resolved, error);
+    }
+    return true;
+  }
+
+  const sendMatch = url.pathname.match(/^\/v1\/chats\/([^/]+)\/messages$/);
+  if (request.method === "POST" && sendMatch) {
+    const payload = await readJson(request);
+    if (!payload || typeof payload !== "object") {
+      sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+      return true;
+    }
+
+    if (!requireNonEmptyString(payload.cipherText) || !requireNonEmptyString(payload.cipherIv)) {
+      sendError(response, 400, "INVALID_MESSAGE", "Encrypted message data is required.");
+      return true;
+    }
+
+    try {
+      sendJson(response, 201, await sendChatMessage(viewer, sendMatch[1], payload));
+    } catch (error) {
+      sendChatFailure(response, "chat_send", resolved, error);
+    }
+    return true;
+  }
+
+  const readMatch = url.pathname.match(/^\/v1\/chats\/([^/]+)\/read$/);
+  if (request.method === "PUT" && readMatch) {
+    const payload = await readJson(request);
+    const messageId = requireNonEmptyString(payload?.messageId) ? payload.messageId.trim() : null;
+
+    if (!messageId) {
+      sendError(response, 400, "INVALID_MESSAGE", "Choose a valid message to mark as read.");
+      return true;
+    }
+
+    try {
+      sendJson(response, 200, await markChatConversationRead(viewer, readMatch[1], messageId));
+    } catch (error) {
+      sendChatFailure(response, "chat_read", resolved, error);
+    }
+    return true;
+  }
+
+  const reactionMatch = url.pathname.match(/^\/v1\/chats\/messages\/([^/]+)\/reactions$/);
+  if (request.method === "PUT" && reactionMatch) {
+    const payload = await readJson(request);
+    const emoji = requireNonEmptyString(payload?.emoji) ? payload.emoji.trim() : null;
+
+    if (!emoji) {
+      sendError(response, 400, "INVALID_EMOJI", "Choose a reaction first.");
+      return true;
+    }
+
+    try {
+      sendJson(response, 200, await reactToChatMessage(viewer, reactionMatch[1], emoji));
+    } catch (error) {
+      sendChatFailure(response, "chat_reaction", resolved, error);
+    }
+    return true;
+  }
+
+  return false;
+}

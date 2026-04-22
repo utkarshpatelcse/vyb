@@ -20,6 +20,7 @@ type BackendModules = {
   handleIdentityRoute: (args: BackendRouteArgs) => Promise<boolean>;
   handleCampusRoute: (args: BackendRouteArgs) => Promise<boolean>;
   handleSocialRoute: (args: BackendRouteArgs) => Promise<boolean>;
+  handleChatRoute: (args: BackendRouteArgs) => Promise<boolean>;
   handleResourcesRoute: (args: BackendRouteArgs) => Promise<boolean>;
   handleMarketRoute: (args: BackendRouteArgs) => Promise<boolean>;
   handleModerationRoute: (args: BackendRouteArgs) => Promise<boolean>;
@@ -143,17 +144,20 @@ async function loadBackendModules() {
       // @ts-expect-error Server-only bridge imports backend runtime modules directly.
       import("../../../backend/src/modules/social/index.mjs"),
       // @ts-expect-error Server-only bridge imports backend runtime modules directly.
+      import("../../../backend/src/modules/chat/index.mjs"),
+      // @ts-expect-error Server-only bridge imports backend runtime modules directly.
       import("../../../backend/src/modules/resources/index.mjs"),
       // @ts-expect-error Server-only bridge imports backend runtime modules directly.
       import("../../../backend/src/modules/market/index.mjs"),
       // @ts-expect-error Server-only bridge imports backend runtime modules directly.
       import("../../../backend/src/modules/moderation/index.mjs")
-    ]).then(([requestContextModule, httpModule, identityModule, campusModule, socialModule, resourcesModule, marketModule, moderationModule]) => ({
+    ]).then(([requestContextModule, httpModule, identityModule, campusModule, socialModule, chatModule, resourcesModule, marketModule, moderationModule]) => ({
       createRequestContext: requestContextModule.createRequestContext,
       sendError: httpModule.sendError,
       handleIdentityRoute: identityModule.handleIdentityRoute,
       handleCampusRoute: campusModule.handleCampusRoute,
       handleSocialRoute: socialModule.handleSocialRoute,
+      handleChatRoute: chatModule.handleChatRoute,
       handleResourcesRoute: resourcesModule.handleResourcesRoute,
       handleMarketRoute: marketModule.handleMarketRoute,
       handleModerationRoute: moderationModule.handleModerationRoute
@@ -177,6 +181,7 @@ export async function invokeBackendRoute(requestInit: BackendBridgeRequest) {
     modules.handleIdentityRoute,
     modules.handleCampusRoute,
     modules.handleSocialRoute,
+    modules.handleChatRoute,
     modules.handleResourcesRoute,
     modules.handleMarketRoute,
     modules.handleModerationRoute

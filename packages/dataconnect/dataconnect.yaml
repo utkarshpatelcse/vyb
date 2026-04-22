@@ -13,6 +13,7 @@ connectorDirs:
   - ./identity
   - ./campus
   - ./social
+  - ./chat
   - ./resources
   - ./moderation
   - ./marketplace

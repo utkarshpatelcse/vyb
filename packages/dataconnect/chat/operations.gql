@@ -1,0 +1,132 @@
+query ListChatIdentitiesByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  chatIdentities(
+    where: {
+      tenantId: { eq: $tenantId }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ updatedAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    userId
+    membershipId
+    publicKey
+    algorithm
+    keyVersion
+    updatedAt
+  }
+}
+
+query ListChatConversationsByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  chatConversations(
+    where: {
+      tenantId: { eq: $tenantId }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ lastMessageAt: DESC }, { updatedAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    conversationKey
+    kind
+    createdByUserId
+    lastMessageId
+    lastMessageAt
+    createdAt
+    updatedAt
+  }
+}
+
+query ListChatParticipantsByMembership($membershipId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  chatParticipants(
+    where: {
+      membershipId: { eq: $membershipId }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ updatedAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    conversationId
+    membershipId
+    userId
+    lastReadMessageId
+    lastReadAt
+    updatedAt
+  }
+}
+
+query ListChatParticipantsByConversation($conversationId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  chatParticipants(
+    where: {
+      conversationId: { eq: $conversationId }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: ASC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    conversationId
+    membershipId
+    userId
+    lastReadMessageId
+    lastReadAt
+    createdAt
+    updatedAt
+  }
+}
+
+query ListChatMessagesByConversation($conversationId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  chatMessages(
+    where: {
+      conversationId: { eq: $conversationId }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: ASC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    conversationId
+    senderMembershipId
+    senderUserId
+    senderIdentityId
+    messageKind
+    cipherText
+    cipherIv
+    cipherAlgorithm
+    replyToMessageId
+    attachmentUrl
+    attachmentStoragePath
+    attachmentMimeType
+    attachmentSizeBytes
+    attachmentWidth
+    attachmentHeight
+    attachmentDurationMs
+    createdAt
+    updatedAt
+  }
+}
+
+query ListChatMessageReactionsByConversation($conversationId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  chatMessageReactions(
+    where: {
+      message: { conversationId: { eq: $conversationId } }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    messageId
+    membershipId
+    emoji
+    createdAt
+    updatedAt
+  }
+}

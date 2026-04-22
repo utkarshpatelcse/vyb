@@ -1,0 +1,6 @@
+connectorId: chat
+generate:
+  adminNodeSdk:
+    outputDir: ../chat-admin-sdk
+    package: "@vyb/dataconnect-chat-admin"
+    packageJsonDir: ../chat-admin-sdk

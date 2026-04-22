@@ -27,13 +27,6 @@ query ListFeedByTenant($tenantId: UUID!, $placement: String! = "feed", $limit: I
     location
     status
     createdAt
-    postMediaRecords_on_post(orderBy: [{ createdAt: ASC }]) {
-      id
-      mediaUrl
-      mediaType
-      mimeType
-      sizeBytes
-    }
   }
 }
 
@@ -72,13 +65,6 @@ query ListPostsByAuthor(
     location
     status
     createdAt
-    postMediaRecords_on_post(orderBy: [{ createdAt: ASC }]) {
-      id
-      mediaUrl
-      mediaType
-      mimeType
-      sizeBytes
-    }
   }
 }
 
@@ -102,13 +88,6 @@ query GetPostById($id: UUID!) @auth(level: NO_ACCESS) {
     location
     status
     createdAt
-    postMediaRecords_on_post(orderBy: [{ createdAt: ASC }]) {
-      id
-      mediaUrl
-      mediaType
-      mimeType
-      sizeBytes
-    }
   }
 }
 
@@ -441,7 +420,6 @@ mutation CreatePost(
 mutation CreatePostMedia(
   $tenantId: UUID!
   $postId: UUID!
-  $mediaUrl: String
   $storagePath: String!
   $mediaType: String!
   $mimeType: String!
@@ -454,7 +432,6 @@ mutation CreatePostMedia(
     data: {
       tenantId: $tenantId
       postId: $postId
-      mediaUrl: $mediaUrl
       storagePath: $storagePath
       mediaType: $mediaType
       mimeType: $mimeType
@@ -697,16 +674,6 @@ mutation SoftDeletePost($id: UUID!) @auth(level: NO_ACCESS) @transaction {
     key: { id: $id }
     data: {
       status: "removed"
-      deletedAt_expr: "request.time"
-      updatedAt_expr: "request.time"
-    }
-  )
-}
-
-mutation SoftDeleteReaction($id: UUID!) @auth(level: NO_ACCESS) @transaction {
-  reaction_update(
-    key: { id: $id }
-    data: {
       deletedAt_expr: "request.time"
       updatedAt_expr: "request.time"
     }

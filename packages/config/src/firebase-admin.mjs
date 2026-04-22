@@ -85,6 +85,7 @@ function buildFirebaseAdminOptions() {
   return {
     credential: resolveFirebaseCredential(),
     projectId: process.env.FIREBASE_PROJECT_ID,
+    databaseURL: process.env.FIREBASE_DATABASE_URL ?? process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
     storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
   };
 }

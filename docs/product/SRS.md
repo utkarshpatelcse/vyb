@@ -2,7 +2,7 @@
 
 Owner: Product Team
 Last Updated: 2026-04-22
-Change Summary: Added the first-college verified auth rollout, profile completion requirements, the authenticated home-feed landing flow for the current Phase 1 web surface, the Phase 1 hosting topology requirement, and the live social requirements for stories, vibes, reposts, likers, story-viewer state, and responsive threaded comments.
+Change Summary: Added the first-college verified auth rollout, profile completion requirements, the authenticated home-feed landing flow for the current Phase 1 web surface, the Phase 1 hosting topology requirement, the live social requirements for immersive stories, story music, sound-on vibes, reposts, likers, story-viewer state, and responsive threaded comments, plus the new encrypted direct-messaging requirements.
 
 ## 1. Introduction
 
@@ -12,7 +12,7 @@ This SRS defines the functional and non-functional requirements for Vyb. It is a
 
 ### 1.2 Scope
 
-Vyb is a verified digital campus platform for students, faculty, and alumni. Phase 1 focuses on identity, communities, social posting, academic resources, and controlled college onboarding.
+Vyb is a verified digital campus platform for students, faculty, and alumni. Phase 1 focuses on identity, communities, social posting, encrypted direct messaging, academic resources, and controlled college onboarding.
 
 Phase 1 ships through the web client and one backend runtime. The architecture must remain ready for future native Android and iOS applications and later microservice extraction without forcing that operational complexity today.
 
@@ -78,7 +78,9 @@ Phase 1 ships through the web client and one backend runtime. The architecture m
 - Users shall search other campus profiles by user ID or name.
 - Users shall follow or unfollow other campus profiles inside the same tenant.
 - Users shall publish time-limited stories and those stories shall be visible to the author plus followed users.
-- Story lanes and the story viewer shall expose seen-state, progress indicators, tap navigation, and story-like interactions.
+- Verified users shall optionally attach a royalty-free music track to one story photo or one story video, choose a 15, 30, 45, or 60 second clip window, and publish the resulting muxed MP4 story.
+- Story lanes and the story viewer shall expose seen-state, progress indicators, tap navigation, embedded-audio playback where available, and story-like interactions.
+- The dedicated vibes surface shall default active video audio on, allow single-tap pause or resume, and allow temporary 2x playback while press-and-hold is active.
 - Reported or unsafe content shall be reviewable by moderators.
 
 ### 2.5 Resource Vault
@@ -88,7 +90,22 @@ Phase 1 ships through the web client and one backend runtime. The architecture m
 - Users shall browse and search recent or relevant resources within their tenant.
 - Resource access controls shall respect tenant membership.
 
-### 2.6 Moderation
+### 2.6 Direct Messaging
+
+- Verified users shall open a direct-message inbox scoped to their current tenant.
+- The inbox shall support search across active chats and searchable campus profiles.
+- Direct messaging in Phase 1 shall be limited to one-to-one conversations.
+- Clients shall encrypt chat message payloads before those payloads are sent to the backend.
+- Backend-owned databases shall persist encrypted message payloads and encrypted attachment references only, not plaintext message bodies.
+- The inbox shall show active chat previews with participant avatar, online indicator, last activity time, and last visible encrypted-message preview after client decryption.
+- The chat room shall support text messages, encrypted image attachments, shared vibe cards, and marketplace deal cards.
+- The chat room shall expose sent and read status indicators, typing indicators, swipe-to-reply behavior, and long-press emoji reactions.
+- The chat composer shall include camera, gallery, and microphone entry affordances in both desktop and mobile layouts.
+- Marketplace-originated chats shall render a deal card with accept or decline actions.
+- Realtime presence, typing, and encrypted delivery fanout shall use an approved low-cost realtime channel.
+- Phase 1 E2EE shall start with one active browser-held key per account; secure multi-device key sync is deferred.
+
+### 2.7 Moderation
 
 - Users shall report posts, vibes, comments, stories, and resources.
 - Moderators shall review reports.
@@ -127,12 +144,14 @@ The following are intentionally deferred out of Phase 1:
 - Async jobs shall be retry-safe and idempotent.
 - Upload failures shall not produce orphaned published content.
 - The production backend runtime shall remain deployable as one Cloud Run service for core identity, campus, social, and resources flows.
+- Realtime direct-messaging support shall not require a second custom backend microservice in Phase 1.
 
 ### 4.4 Performance
 
 - Feed and resource list endpoints shall use pagination.
 - Hot queries shall be index-backed.
 - Large image uploads should use client-side compression before upload where practical.
+- Realtime chat fanout should feel effectively instant for active conversations on supported networks.
 
 ### 4.5 Maintainability
 
@@ -147,7 +166,10 @@ The following are intentionally deferred out of Phase 1:
 - The Phase 1 web client shall support PWA installability for compatible mobile browsers.
 - New UI features shall define mobile and desktop behavior before implementation.
 - The vibes surface shall support immersive full-height mobile playback and centered desktop theater playback.
+- The story composer shall support one-asset music composition, draggable music sticker placement, and viewer audio playback on supported browsers.
+- The vibes surface shall support default sound-on playback, tap pause or resume, and press-and-hold speed boost on both mobile and desktop pointer-capable clients.
 - Comment threads shall support a desktop side-panel treatment and a mobile bottom-sheet treatment with keyboard-safe composer behavior.
+- The chat inbox shall support responsive split-pane desktop behavior and conversation-first mobile behavior with a sticky bottom composer.
 - Backend APIs shall remain portable across web and future native apps.
 - Shared code shall prioritize contracts, validation, and domain logic over forced component sharing.
 
@@ -173,8 +195,11 @@ The following are intentionally deferred out of Phase 1:
 - Firebase Auth
 - Firebase Data Connect
 - Firebase Storage
+- Firebase Realtime Database for approved low-cost chat presence, typing, and encrypted delivery fanout
 - Google Cloud Run for the Phase 1 backend host
 - Vercel for the Phase 1 web host
+- Openverse API for royalty-free story music search and audio fetches
+- jsDelivr-hosted ffmpeg.wasm core assets for client-side story music composition
 - Gemini API in later phases
 
 ## 6. Core Data Requirements
@@ -189,6 +214,8 @@ The following are intentionally deferred out of Phase 1:
 - Phase 1 avoids high-legal-risk money flows
 - Phase 1 avoids anonymous posting
 - Phase 1 ships bounded short-form video and story engagement without advanced ranking or transcoding fleets
+- story music export remains a single-asset client-side composition flow in Phase 1 and does not introduce a backend transcoding service
+- direct messaging remains one-to-one in Phase 1 and does not include secure multi-device key sync yet
 - Documentation is mandatory and not optional
 - Phase 1 backend hosting must not require multiple deployables for core identity, campus, social, and resources flows
 
@@ -204,8 +231,9 @@ The following are intentionally deferred out of Phase 1:
 - The student can open a post or vibe in a full-screen viewer, like it, inspect likers, and interact through comments or replies
 - The student can repost or quote repost another campus post or vibe
 - The student can set a campus user ID, search other verified users by that ID, and follow them
-- The student can publish a story and followed users can see it in their story lane with seen-state and viewer progress
-- The student can upload a vibe and see it on the dedicated short-form discovery route
+- The student can publish a story, optionally attach a royalty-free music clip to a single story asset, and followed users can see it in their story lane with seen-state, viewer progress, and embedded audio playback
+- The student can upload a vibe, open it on the dedicated short-form discovery route, hear sound by default where autoplay policies allow, pause or resume it on tap, and temporarily speed it up while holding the screen
+- The student can open an encrypted direct chat, search campus users, send text or encrypted image messages, share vibe or deal cards, and observe typing plus read state in realtime on supported clients
 - The student can upload and browse academic resources
 - A moderator can review a reported item and take action
 - The Phase 1 system can run with one backend runtime plus the web client
