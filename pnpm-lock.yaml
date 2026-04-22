@@ -106,6 +106,15 @@ importers:
         specifier: ^13.4.0
         version: 13.8.0
 
+  packages/dataconnect/chat-admin-sdk:
+    dependencies:
+      '@vyb/dataconnect-chat-admin':
+        specifier: 'file:'
+        version: 'link:'
+      firebase-admin:
+        specifier: ^13.4.0
+        version: 13.8.0
+
   packages/dataconnect/identity-admin-sdk:
     dependencies:
       firebase-admin:
