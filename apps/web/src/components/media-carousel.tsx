@@ -32,9 +32,16 @@ export function MediaCarousel({
   const x = useMotionValue(0);
   const total = items.length;
 
-  // Double-tap detection
+  // Double-tap detection — only fires when user did NOT drag
   const lastTap = useRef(0);
+  const dragOccurred = useRef(false);
+
   function handleTap() {
+    // If the user swiped/dragged, suppress the tap entirely
+    if (dragOccurred.current) {
+      dragOccurred.current = false;
+      return;
+    }
     const now = Date.now();
     if (now - lastTap.current < 310) {
       onDoubleTap?.();
@@ -53,6 +60,17 @@ export function MediaCarousel({
       stiffness: 300,
       damping: 30,
     });
+  }
+
+  function handleDragStart() {
+    dragOccurred.current = false;
+  }
+
+  function handleDrag(_: unknown, info: { offset: { x: number } }) {
+    // Mark as drag if finger moved more than 5px horizontally
+    if (Math.abs(info.offset.x) > 5) {
+      dragOccurred.current = true;
+    }
   }
 
   function handleDragEnd(_: unknown, info: { offset: { x: number }; velocity: { x: number } }) {
@@ -118,6 +136,8 @@ export function MediaCarousel({
           drag="x"
           dragConstraints={{ left: 0, right: 0 }}
           dragElastic={0.12}
+          onDragStart={handleDragStart}
+          onDrag={handleDrag}
           onDragEnd={handleDragEnd}
           onTap={handleTap}
           whileTap={{ cursor: "grabbing" }}

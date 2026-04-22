@@ -10,6 +10,8 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "@vyb/app-core": "workspace:*",
     "@vyb/config": "workspace:*",
     "@vyb/contracts": "workspace:*",
