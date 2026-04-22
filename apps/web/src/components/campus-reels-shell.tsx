@@ -840,7 +840,7 @@ export function CampusReelsShell({
                 <section key={item.id} id={`post-${item.id}`} className="vyb-vibes-slide">
                   <motion.article
                     className={`vyb-vibes-stage${isActive ? " is-active" : ""}`}
-                    initial={prefersReducedMotion ? false : { opacity: 0, y: 30 }}
+                    initial={false}
                     animate={{
                       opacity: isActive ? 1 : isDesktop ? 0.75 : 1,
                       scale: isActive || !isDesktop ? 1 : 0.95
@@ -906,6 +906,7 @@ export function CampusReelsShell({
 
                       <motion.div
                         className="vyb-vibes-overlay-copy"
+                        initial={false}
                         animate={{
                           opacity: isActive ? 1 : 0.7,
                           y: isActive ? 0 : 10
@@ -936,6 +937,7 @@ export function CampusReelsShell({
 
                       <motion.div
                         className="vyb-vibes-action-rail"
+                        initial={false}
                         animate={{
                           opacity: isActive ? 1 : 0.78,
                           x: isActive ? 0 : 8
