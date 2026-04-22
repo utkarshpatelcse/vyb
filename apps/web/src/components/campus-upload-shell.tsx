@@ -27,12 +27,15 @@ type CampusUploadShellProps = {
   viewerUsername: string;
 };
 
-type CreationMode = "choice" | "vibe" | "moment";
+type CreationMode = "choice" | "story" | "vibe" | "moment";
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 10 * 1024 * 1024;
 const TARGET_VIDEO_BYTES = 8 * 1024 * 1024;
+const STORY_IMAGE_DURATION_SECONDS = 15;
+const STORY_MAX_TOTAL_SECONDS = 60;
+const STORY_MAX_IMAGES = STORY_MAX_TOTAL_SECONDS / STORY_IMAGE_DURATION_SECONDS;
 
 const COMMUNITY_TAGS = [
   "Campus-wide",
@@ -260,7 +263,13 @@ export function CampusUploadShell({
 
   /* ── Creation mode (choice / vibe / moment) ──────────────────────────── */
   const [mode, setMode] = useState<CreationMode>(() =>
-    defaultKind === "vibe" ? "vibe" : defaultKind === "post" ? "moment" : "choice"
+    defaultKind === "vibe"
+      ? "vibe"
+      : defaultKind === "story"
+        ? "story"
+        : defaultKind === "post"
+          ? "moment"
+          : "choice"
   );
 
   /* ── Form state ──────────────────────────────────────────────────────── */
@@ -294,6 +303,9 @@ export function CampusUploadShell({
   const canPublish = useMemo(() => {
     if (mode === "vibe") {
       return Boolean(vibeVideoUrl && vibeIsPortrait !== false);
+    }
+    if (mode === "story") {
+      return momentImages.length > 0;
     }
     if (mode === "moment") {
       return Boolean(caption.trim() || momentImages.length > 0);
@@ -373,14 +385,24 @@ export function CampusUploadShell({
     const files = Array.from(e.target.files ?? []);
     e.target.value = "";
     const valid = files.filter((f) => f.type.startsWith("image/"));
-    if (valid.length === 0) { setMessage("Only image files are supported for Moments."); return; }
+    if (valid.length === 0) {
+      setMessage(mode === "story" ? "Only image files are supported for Stories." : "Only image files are supported for Moments.");
+      return;
+    }
     setMessage(null);
 
-    const entries = valid.slice(0, 6 - momentImages.length).map((f) => ({
+    const mediaLimit = mode === "story" ? STORY_MAX_IMAGES : 6;
+    const availableSlots = Math.max(0, mediaLimit - momentImages.length);
+    const nextFiles = valid.slice(0, availableSlots);
+    const entries = nextFiles.map((f) => ({
       url: URL.createObjectURL(f),
       file: f,
     }));
     setMomentImages((prev) => [...prev, ...entries]);
+
+    if (mode === "story" && valid.length > availableSlots) {
+      setMessage(`Stories support up to ${STORY_MAX_IMAGES} photos so the full sequence stays within ${STORY_MAX_TOTAL_SECONDS} seconds.`);
+    }
   }
 
   function removeMomentImage(index: number) {
@@ -403,6 +425,10 @@ export function CampusUploadShell({
 
     if (mode === "moment" && !caption.trim() && momentImages.length === 0) {
       setMessage("Add a caption or photo before posting.");
+      return;
+    }
+    if (mode === "story" && momentImages.length === 0) {
+      setMessage("Add at least one photo before posting your Story.");
       return;
     }
 
@@ -429,7 +455,7 @@ export function CampusUploadShell({
         const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
         if (!response.ok) { setMessage(payload?.error?.message ?? "Could not publish Vibe."); return; }
       } else {
-        // moment — upload all images if present
+        // story / moment — upload all images if present
         let completed = 0;
         const total = momentImages.length;
         let uploadedMediaAssets: any[] = [];
@@ -437,7 +463,7 @@ export function CampusUploadShell({
         if (total > 0) {
           setMessage(`Uploading 0/${total}...`);
           const uploadPromises = momentImages.map(async (img) => {
-            const uploaded = await uploadSocialMediaAsset(img.file, "post");
+            const uploaded = await uploadSocialMediaAsset(img.file, mode === "story" ? "story" : "post");
             completed++;
             setMessage(`Uploading ${completed}/${total}...`);
             return {
@@ -454,19 +480,40 @@ export function CampusUploadShell({
         }
 
         const trimmedCaption = caption.trim();
-        const response = await fetch("/api/posts", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            title: trimmedCaption ? trimmedCaption.slice(0, 72) : "",
-            body: trimmedCaption || "",
-            kind: total > 0 ? "image" : "text",
-            mediaAssets: uploadedMediaAssets.length > 0 ? uploadedMediaAssets : undefined,
-            location: collegeName,
-          }),
-        });
-        const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
-        if (!response.ok) { setMessage(payload?.error?.message ?? "Could not publish Moment."); return; }
+        if (mode === "story") {
+          for (let index = 0; index < uploadedMediaAssets.length; index += 1) {
+            setMessage(`Publishing ${index + 1}/${uploadedMediaAssets.length} stories...`);
+            const asset = uploadedMediaAssets[index];
+            const response = await fetch("/api/stories", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                mediaType: "image",
+                mediaUrl: asset.url,
+                mediaStoragePath: asset.storagePath ?? null,
+                mediaMimeType: asset.mimeType ?? null,
+                mediaSizeBytes: asset.sizeBytes ?? null,
+                caption: trimmedCaption || null,
+              }),
+            });
+            const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+            if (!response.ok) { setMessage(payload?.error?.message ?? "Could not publish Story."); return; }
+          }
+        } else {
+          const response = await fetch("/api/posts", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              title: trimmedCaption ? trimmedCaption.slice(0, 72) : "",
+              body: trimmedCaption || "",
+              kind: total > 0 ? "image" : "text",
+              mediaAssets: uploadedMediaAssets.length > 0 ? uploadedMediaAssets : undefined,
+              location: collegeName,
+            }),
+          });
+          const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+          if (!response.ok) { setMessage(payload?.error?.message ?? "Could not publish Moment."); return; }
+        }
       }
 
       router.push(returnTo);
@@ -508,7 +555,7 @@ export function CampusUploadShell({
               </button>
             )}
             <span className="cs-header-label">
-              {mode === "choice" ? "Creation Studio" : mode === "vibe" ? "Vibe" : "Moment"}
+              {mode === "choice" ? "Creation Studio" : mode === "vibe" ? "Vibe" : mode === "story" ? "Story" : "Moment"}
             </span>
           </div>
 
@@ -520,7 +567,7 @@ export function CampusUploadShell({
                 onClick={handlePublish}
                 disabled={!canPublish || isPublishing || isPreparingMedia}
               >
-                {isPublishing ? "Posting…" : mode === "vibe" ? "Post Vibe" : "Post Moment"}
+                {isPublishing ? "Posting…" : mode === "vibe" ? "Post Vibe" : mode === "story" ? "Post Story" : "Post Moment"}
               </button>
             )}
             <button type="button" className="cs-close-btn" onClick={handleClose} aria-label="Close">
@@ -536,6 +583,20 @@ export function CampusUploadShell({
           <div className="cs-choice-screen">
             <p className="cs-choice-sub">What do you want to share today?</p>
             <div className="cs-choice-cards">
+
+              <button
+                type="button"
+                className="cs-choice-card cs-choice-card--moment"
+                onClick={() => setMode("story")}
+              >
+                <div className="cs-choice-card-glow cs-choice-card-glow--moment" />
+                <div className="cs-choice-icon-wrap cs-choice-icon-wrap--moment">
+                  <IcoImage />
+                </div>
+                <strong className="cs-choice-title">Story</strong>
+                <span className="cs-choice-desc">Photo sequence for your campus story ring</span>
+                <span className="cs-choice-badge cs-choice-badge--teal">Story</span>
+              </button>
 
               <button
                 type="button"
@@ -701,8 +762,8 @@ export function CampusUploadShell({
           </div>
         )}
 
-        {/* ─── MOMENT SCREEN ─────────────────────────────────────────── */}
-        {mode === "moment" && (
+        {/* ─── STORY / MOMENT SCREEN ─────────────────────────────────── */}
+        {(mode === "story" || mode === "moment") && (
           <div className="cs-moment-screen">
             {/* User row */}
             <div className="cs-user-row cs-user-row--moment">
@@ -711,7 +772,7 @@ export function CampusUploadShell({
                 <strong>{viewerName}</strong>
                 <span>@{viewerUsername}</span>
               </div>
-              <span className="cs-user-pill cs-user-pill--moment">Moment</span>
+              <span className="cs-user-pill cs-user-pill--moment">{mode === "story" ? "Story" : "Moment"}</span>
             </div>
 
             {/* Caption area */}
@@ -720,7 +781,7 @@ export function CampusUploadShell({
                 className="cs-moment-caption"
                 value={caption}
                 onChange={(e) => setCaption(e.target.value)}
-                placeholder="What's on your mind? #hashtag @mention"
+                placeholder={mode === "story" ? "Add a caption for your story..." : "What's on your mind? #hashtag @mention"}
                 rows={5}
                 disabled={isPublishing}
               />
@@ -741,40 +802,41 @@ export function CampusUploadShell({
                   </button>
                 </div>
               ))}
-              {momentImages.length < 6 && (
+              {momentImages.length < (mode === "story" ? STORY_MAX_IMAGES : 6) && (
                 <button
                   type="button"
                   className="cs-moment-img-add"
                   onClick={() => momentInputRef.current?.click()}
-                  aria-label="Add photo"
-                >
-                  <IcoPlus />
-                  <span>{momentImages.length === 0 ? "Add photo" : "More"}</span>
-                </button>
+                    aria-label={mode === "story" ? "Add story photo" : "Add photo"}
+                  >
+                    <IcoPlus />
+                    <span>{momentImages.length === 0 ? (mode === "story" ? "Add story photo" : "Add photo") : "More"}</span>
+                  </button>
               )}
             </div>
 
-            {/* Community */}
-            <div className="cs-community-select-wrap cs-community-select-wrap--moment">
-              <label className="cs-community-label" htmlFor="cs-community-moment">
-                <IcoSpark />
-                Tag Community
-              </label>
-              <div className="cs-select-wrap">
-                <select
-                  id="cs-community-moment"
-                  className="cs-select"
-                  value={communityTag}
-                  onChange={(e) => setCommunityTag(e.target.value)}
-                  disabled={isPublishing}
-                >
-                  {COMMUNITY_TAGS.map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
-                <span className="cs-select-chevron"><IcoChevronDown /></span>
+            {mode === "moment" && (
+              <div className="cs-community-select-wrap cs-community-select-wrap--moment">
+                <label className="cs-community-label" htmlFor="cs-community-moment">
+                  <IcoSpark />
+                  Tag Community
+                </label>
+                <div className="cs-select-wrap">
+                  <select
+                    id="cs-community-moment"
+                    className="cs-select"
+                    value={communityTag}
+                    onChange={(e) => setCommunityTag(e.target.value)}
+                    disabled={isPublishing}
+                  >
+                    {COMMUNITY_TAGS.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                  <span className="cs-select-chevron"><IcoChevronDown /></span>
+                </div>
               </div>
-            </div>
+            )}
 
             {message && <p className="cs-message">{message}</p>}
 
@@ -790,13 +852,15 @@ export function CampusUploadShell({
           </div>
         )}
 
-        {/* ── Footer (always visible in vibe/moment) ─────────────────────── */}
+        {/* ── Footer (always visible in story/vibe/moment) ───────────────── */}
         {mode !== "choice" && (
           <div className="cs-footer">
             <div className="cs-footer-hint">
-              {mode === "vibe"
-                ? "Portrait 9:16 clip fills the Vibes feed perfectly"
-                : "Up to 6 photos · Text-only posts are fine too"}
+                {mode === "vibe"
+                  ? "Portrait 9:16 clip fills the Vibes feed perfectly"
+                : mode === "story"
+                  ? `Each selected photo stays for ${STORY_IMAGE_DURATION_SECONDS} seconds · up to ${STORY_MAX_IMAGES} photos (${STORY_MAX_TOTAL_SECONDS}s max)`
+                  : "Up to 6 photos · Text-only posts are fine too"}
             </div>
             <div className="cs-footer-actions">
               <button
@@ -819,7 +883,9 @@ export function CampusUploadShell({
                     ? "Preparing…"
                     : mode === "vibe"
                       ? "Post Vibe ✦"
-                      : "Post Moment ✦"}
+                      : mode === "story"
+                        ? "Post Story ✦"
+                        : "Post Moment ✦"}
               </button>
             </div>
           </div>

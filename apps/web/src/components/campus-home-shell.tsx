@@ -3,7 +3,7 @@
 import type { FeedCard, PostLikerItem, StoryCard, UserSearchItem } from "@vyb/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { SocialPostActionSheet } from "./social-post-action-sheet";
 import { SocialPostLightbox } from "./social-post-lightbox";
 import { SocialPostLikersSheet } from "./social-post-likers-sheet";
@@ -81,6 +81,9 @@ function layoutStyle() {
   } as CSSProperties;
 }
 
+const STORY_IMAGE_DURATION_MS = 15_000;
+const STORY_VIDEO_MAX_DURATION_MS = 60_000;
+
 function buildSeenStoryMap(items: StoryCard[]) {
   return items.reduce<Record<string, true>>((accumulator, story) => {
     if (story.viewerHasSeen) {
@@ -89,6 +92,61 @@ function buildSeenStoryMap(items: StoryCard[]) {
 
     return accumulator;
   }, {});
+}
+
+type StoryRailGroup = {
+  userId: string;
+  username: string;
+  displayName: string;
+  isOwn: boolean;
+  preview: StoryCard;
+  items: StoryCard[];
+  allSeen: boolean;
+};
+
+function buildStoryRailGroups(items: StoryCard[], viewerUsername: string) {
+  const groups = new Map<string, StoryRailGroup>();
+
+  for (const story of items) {
+    const isOwnStory = story.isOwn || story.username === viewerUsername;
+    const existing = groups.get(story.userId);
+
+    if (!existing) {
+      groups.set(story.userId, {
+        userId: story.userId,
+        username: story.username,
+        displayName: story.displayName,
+        isOwn: isOwnStory,
+        preview: story,
+        items: [story],
+        allSeen: Boolean(story.viewerHasSeen)
+      });
+      continue;
+    }
+
+    existing.items.push(story);
+    existing.isOwn = existing.isOwn || isOwnStory;
+
+    if (new Date(story.createdAt).getTime() > new Date(existing.preview.createdAt).getTime()) {
+      existing.preview = story;
+    }
+  }
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      items: [...group.items].sort(
+        (left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
+      ),
+      allSeen: group.items.every((story) => story.viewerHasSeen)
+    }))
+    .sort((left, right) => {
+      if (left.isOwn !== right.isOwn) {
+        return left.isOwn ? -1 : 1;
+      }
+
+      return new Date(right.preview.createdAt).getTime() - new Date(left.preview.createdAt).getTime();
+    });
 }
 
 function IconBase({ children }: { children: ReactNode }) {
@@ -291,6 +349,8 @@ export function CampusHomeShell({
   const [vibeStrip, setVibeStrip] = useState(trendingVibes);
   const [selectedStoryIndex, setSelectedStoryIndex] = useState<number | null>(null);
   const [storyProgress, setStoryProgress] = useState(0);
+  const [isStoryPaused, setIsStoryPaused] = useState(false);
+  const [storyMessageDraft, setStoryMessageDraft] = useState("");
   const [seenStoryIds, setSeenStoryIds] = useState<Record<string, true>>({});
   const [draftBody, setDraftBody] = useState("");
   const [composerMessage, setComposerMessage] = useState<string | null>(null);
@@ -308,13 +368,38 @@ export function CampusHomeShell({
   const [actionPost, setActionPost] = useState<FeedCard | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const storyVideoRef = useRef<HTMLVideoElement | null>(null);
+  const storyHoldTimeoutRef = useRef<number | null>(null);
+  const storyPointerDownAtRef = useRef<number>(0);
+  const storyPointerZoneRef = useRef<"left" | "center" | "right">("center");
 
-  const selectedStory = selectedStoryIndex === null ? null : storyFeed[selectedStoryIndex] ?? null;
+  const storyGroups = useMemo(() => buildStoryRailGroups(storyFeed, viewerUsername), [storyFeed, viewerUsername]);
+  const storySequence = useMemo(() => storyGroups.flatMap((group) => group.items), [storyGroups]);
+  const ownStoryGroup = storyGroups.find((group) => group.isOwn) ?? null;
+  const otherStoryGroups = storyGroups.filter((group) => !group.isOwn);
+  const selectedStory = selectedStoryIndex === null ? null : storySequence[selectedStoryIndex] ?? null;
+  const selectedStoryGroup = selectedStory
+    ? storyGroups.find((group) => group.userId === selectedStory.userId) ?? null
+    : null;
+  const selectedStoryGroupStartIndex =
+    selectedStoryGroup?.items[0]
+      ? storySequence.findIndex((story) => story.id === selectedStoryGroup.items[0]?.id)
+      : -1;
+  const selectedStoryGroupIndex =
+    selectedStoryGroupStartIndex >= 0 && selectedStoryIndex !== null
+      ? selectedStoryIndex - selectedStoryGroupStartIndex
+      : 0;
 
   useEffect(() => {
     setStoryFeed(stories);
     setSeenStoryIds(buildSeenStoryMap(stories));
   }, [stories]);
+
+  useEffect(() => {
+    setStoryMessageDraft("");
+    setIsStoryPaused(false);
+    setStoryProgress(0);
+  }, [selectedStory?.id]);
 
   useEffect(() => {
     setVibeStrip(trendingVibes);
@@ -353,6 +438,12 @@ export function CampusHomeShell({
   }, [heartBurstPostId]);
 
   useEffect(() => {
+    return () => {
+      clearStoryHoldTimer();
+    };
+  }, []);
+
+  useEffect(() => {
     if (!selectedStory) {
       setStoryProgress(0);
       return;
@@ -379,21 +470,27 @@ export function CampusHomeShell({
       }).catch(() => null);
     }
 
-    const durationMs = selectedStory.mediaType === "video" ? 6500 : 5200;
+    if (isStoryPaused) {
+      return;
+    }
+
+    const durationMs = selectedStory.mediaType === "video" ? STORY_VIDEO_MAX_DURATION_MS : STORY_IMAGE_DURATION_MS;
     let frameId = 0;
+    const initialProgress = storyProgress;
     const startedAt = performance.now();
 
     const tick = (now: number) => {
-      const nextProgress = Math.min(1, (now - startedAt) / durationMs);
+      const nextProgress = Math.min(1, initialProgress + (now - startedAt) / durationMs);
       setStoryProgress(nextProgress);
 
       if (nextProgress >= 1) {
+        setStoryProgress(0);
         setSelectedStoryIndex((current) => {
           if (current === null) {
             return null;
           }
 
-          return current + 1 < storyFeed.length ? current + 1 : null;
+          return current + 1 < storySequence.length ? current + 1 : null;
         });
         return;
       }
@@ -406,7 +503,20 @@ export function CampusHomeShell({
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [selectedStory, storyFeed.length]);
+  }, [selectedStory, storySequence.length, isStoryPaused]);
+
+  useEffect(() => {
+    if (!selectedStory || selectedStory.mediaType !== "video" || !storyVideoRef.current) {
+      return;
+    }
+
+    if (isStoryPaused) {
+      storyVideoRef.current.pause();
+      return;
+    }
+
+    void storyVideoRef.current.play().catch(() => null);
+  }, [selectedStory, isStoryPaused]);
 
   const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
   const navItems = useMemo(
@@ -668,19 +778,72 @@ export function CampusHomeShell({
     }
   }
 
-  function openStoryAt(index: number) {
-    setSelectedStoryIndex(index);
+  function openStoryGroup(group: StoryRailGroup) {
+    const firstUnseenStory = group.items.find((story) => !story.viewerHasSeen);
+    const targetStoryId = firstUnseenStory?.id ?? group.items[0]?.id ?? null;
+
+    if (!targetStoryId) {
+      return;
+    }
+
+    const nextIndex = storySequence.findIndex((story) => story.id === targetStoryId);
+    setStoryProgress(0);
+    setSelectedStoryIndex(nextIndex >= 0 ? nextIndex : null);
   }
 
   function moveStory(offset: number) {
+    setStoryProgress(0);
     setSelectedStoryIndex((current) => {
       if (current === null) {
         return null;
       }
 
       const next = current + offset;
-      return next >= 0 && next < storyFeed.length ? next : null;
+      return next >= 0 && next < storySequence.length ? next : null;
     });
+  }
+
+  function clearStoryHoldTimer() {
+    if (storyHoldTimeoutRef.current !== null) {
+      window.clearTimeout(storyHoldTimeoutRef.current);
+      storyHoldTimeoutRef.current = null;
+    }
+  }
+
+  function handleStoryPointerDown(zone: "left" | "center" | "right") {
+    storyPointerZoneRef.current = zone;
+    storyPointerDownAtRef.current = performance.now();
+    clearStoryHoldTimer();
+    storyHoldTimeoutRef.current = window.setTimeout(() => {
+      setIsStoryPaused(true);
+    }, 180);
+  }
+
+  function handleStoryPointerUp() {
+    const pressDuration = performance.now() - storyPointerDownAtRef.current;
+    const activeZone = storyPointerZoneRef.current;
+    const wasLongPress = pressDuration >= 180;
+
+    clearStoryHoldTimer();
+    setIsStoryPaused(false);
+
+    if (wasLongPress) {
+      return;
+    }
+
+    if (activeZone === "left") {
+      moveStory(-1);
+      return;
+    }
+
+    if (activeZone === "right") {
+      moveStory(1);
+    }
+  }
+
+  function handleStoryPointerCancel() {
+    clearStoryHoldTimer();
+    setIsStoryPaused(false);
   }
 
   async function handleQuickPostPublish() {
@@ -809,6 +972,15 @@ export function CampusHomeShell({
     }
   }
 
+  function handleStoryMessageSubmit() {
+    if (!storyMessageDraft.trim()) {
+      return;
+    }
+
+    setFlashMessage("Story replies are coming soon.");
+    setStoryMessageDraft("");
+  }
+
   async function handleEditPost(post: FeedCard, payload: { title: string | null; body: string; location: string | null }) {
     setActionBusy(true);
     setActionMessage(null);
@@ -915,28 +1087,47 @@ export function CampusHomeShell({
 
         <div className="vyb-campus-feed-stack">
           <div className="vyb-campus-stories">
-            <button type="button" className="vyb-campus-story vyb-campus-story-add" onClick={() => router.push("/create?kind=story&from=%2Fhome")}>
-              <span className="vyb-campus-story-ring vyb-campus-story-ring-add">
-                <AddPostIcon />
-              </span>
-              <span>Your story</span>
-            </button>
-
-            {storyFeed.map((story, index) => (
+            {ownStoryGroup ? (
               <button
-                key={story.id}
                 type="button"
-                className={`vyb-campus-story${seenStoryIds[story.id] ? " is-seen" : ""}`}
-                onClick={() => openStoryAt(index)}
+                className={`vyb-campus-story vyb-campus-story-own${ownStoryGroup.allSeen ? " is-seen" : ""}`}
+                onClick={() => openStoryGroup(ownStoryGroup)}
               >
-                <span className={`vyb-campus-story-ring${selectedStory?.id === story.id ? " is-active" : ""}`}>
-                  {story.mediaType === "video" ? (
-                    <video src={story.mediaUrl} muted playsInline autoPlay loop />
+                <span
+                  className={`vyb-campus-story-ring${selectedStoryGroup?.userId === ownStoryGroup.userId ? " is-active" : ""}`}
+                >
+                  {ownStoryGroup.preview.mediaType === "video" ? (
+                    <video src={ownStoryGroup.preview.mediaUrl} muted playsInline autoPlay loop />
                   ) : (
-                    <img src={story.mediaUrl} alt={story.username} />
+                    <img src={ownStoryGroup.preview.mediaUrl} alt="Your story" />
                   )}
                 </span>
-                <span>{story.username}</span>
+                <span>Your story</span>
+              </button>
+            ) : (
+              <button type="button" className="vyb-campus-story vyb-campus-story-add" onClick={() => router.push("/create?kind=story&from=%2Fhome")}>
+                <span className="vyb-campus-story-ring vyb-campus-story-ring-add">
+                  <AddPostIcon />
+                </span>
+                <span>Your story</span>
+              </button>
+            )}
+
+            {otherStoryGroups.map((group) => (
+              <button
+                key={group.userId}
+                type="button"
+                className={`vyb-campus-story${group.allSeen ? " is-seen" : ""}`}
+                onClick={() => openStoryGroup(group)}
+              >
+                <span className={`vyb-campus-story-ring${selectedStoryGroup?.userId === group.userId ? " is-active" : ""}`}>
+                  {group.preview.mediaType === "video" ? (
+                    <video src={group.preview.mediaUrl} muted playsInline autoPlay loop />
+                  ) : (
+                    <img src={group.preview.mediaUrl} alt={group.username} />
+                  )}
+                </span>
+                <span>{group.username}</span>
               </button>
             ))}
           </div>
@@ -1280,15 +1471,25 @@ export function CampusHomeShell({
       {selectedStory ? (
         <div className="vyb-story-viewer-backdrop" role="presentation" onClick={() => setSelectedStoryIndex(null)}>
           <div className="vyb-story-viewer" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            {selectedStory.mediaType === "image" ? (
+              <div
+                className="vyb-story-viewer-blur"
+                style={{ backgroundImage: `url(${selectedStory.mediaUrl})` }}
+                aria-hidden="true"
+              />
+            ) : null}
+            <div className="vyb-story-viewer-scrim vyb-story-viewer-scrim-top" aria-hidden="true" />
+            <div className="vyb-story-viewer-scrim vyb-story-viewer-scrim-bottom" aria-hidden="true" />
+
             <div className="vyb-story-viewer-progress">
-              {storyFeed.map((story, index) => (
+              {(selectedStoryGroup?.items ?? []).map((story, index) => (
                 <span key={story.id} className="vyb-story-viewer-progress-bar">
                   <span
                     style={{
                       transform: `scaleX(${
-                        index < (selectedStoryIndex ?? 0)
+                        index < selectedStoryGroupIndex
                           ? 1
-                          : index === selectedStoryIndex
+                          : index === selectedStoryGroupIndex
                             ? storyProgress
                             : 0
                       })`
@@ -1299,42 +1500,101 @@ export function CampusHomeShell({
             </div>
 
             <div className="vyb-story-viewer-head">
-              <div>
-                <strong>@{selectedStory.username}</strong>
-                <span>{selectedStory.displayName}</span>
+              <div className="vyb-story-viewer-user">
+                <span className="vyb-story-viewer-avatar" aria-hidden="true">
+                  {(selectedStory.displayName.trim() || selectedStory.username).slice(0, 2).toUpperCase()}
+                </span>
+                <div className="vyb-story-viewer-user-copy">
+                  <strong>{selectedStory.isOwn ? "Your story" : selectedStory.displayName}</strong>
+                  <span>
+                    @{selectedStory.username} • {timeAgo(selectedStory.createdAt)}
+                  </span>
+                </div>
               </div>
-              <button type="button" className="vyb-campus-compose-secondary" onClick={() => setSelectedStoryIndex(null)}>
-                Close
+              <button
+                type="button"
+                className="vyb-story-viewer-close"
+                aria-label="Close story viewer"
+                onClick={() => setSelectedStoryIndex(null)}
+              >
+                <CloseIcon />
               </button>
             </div>
 
-            <div className="vyb-story-viewer-media">
-              {selectedStory.mediaType === "video" ? (
-                <video src={selectedStory.mediaUrl} controls autoPlay muted playsInline loop />
-              ) : (
-                <img src={selectedStory.mediaUrl} alt={selectedStory.username} />
-              )}
+            <div className="vyb-story-viewer-media-wrap">
+              <div className="vyb-story-viewer-media">
+                {selectedStory.mediaType === "video" ? (
+                  <video
+                    className="vyb-story-viewer-video"
+                    ref={storyVideoRef}
+                    src={selectedStory.mediaUrl}
+                    autoPlay
+                    muted
+                    playsInline
+                    loop={false}
+                  />
+                ) : (
+                  <img className="vyb-story-viewer-image" src={selectedStory.mediaUrl} alt={selectedStory.username} />
+                )}
+              </div>
 
-              <div className="vyb-story-viewer-nav">
-                <button type="button" aria-label="Previous story" onClick={() => moveStory(-1)} />
-                <button type="button" aria-label="Next story" onClick={() => moveStory(1)} />
+              <div className="vyb-story-viewer-nav" aria-hidden="true">
+                <button
+                  type="button"
+                  aria-label="Previous story"
+                  onPointerDown={() => handleStoryPointerDown("left")}
+                  onPointerUp={handleStoryPointerUp}
+                  onPointerCancel={handleStoryPointerCancel}
+                  onPointerLeave={handleStoryPointerCancel}
+                  onContextMenu={(event) => event.preventDefault()}
+                />
+                <button
+                  type="button"
+                  aria-label="Pause story"
+                  onPointerDown={() => handleStoryPointerDown("center")}
+                  onPointerUp={handleStoryPointerUp}
+                  onPointerCancel={handleStoryPointerCancel}
+                  onPointerLeave={handleStoryPointerCancel}
+                  onContextMenu={(event) => event.preventDefault()}
+                />
+                <button
+                  type="button"
+                  aria-label="Next story"
+                  onPointerDown={() => handleStoryPointerDown("right")}
+                  onPointerUp={handleStoryPointerUp}
+                  onPointerCancel={handleStoryPointerCancel}
+                  onPointerLeave={handleStoryPointerCancel}
+                  onContextMenu={(event) => event.preventDefault()}
+                />
               </div>
             </div>
 
             {selectedStory.caption ? <p className="vyb-story-viewer-caption">{selectedStory.caption}</p> : null}
 
             <div className="vyb-story-viewer-actions">
+              <label className="vyb-story-viewer-message">
+                <input
+                  type="text"
+                  value={storyMessageDraft}
+                  onChange={(event) => setStoryMessageDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      handleStoryMessageSubmit();
+                    }
+                  }}
+                  placeholder="Send message"
+                />
+              </label>
               <button
                 type="button"
-                className={`vyb-campus-compose-primary vyb-story-like-button${selectedStory.viewerHasLiked ? " is-active" : ""}`}
+                className={`vyb-story-viewer-heart${selectedStory.viewerHasLiked ? " is-active" : ""}`}
                 disabled={storyBusyId === selectedStory.id}
+                aria-label={selectedStory.viewerHasLiked ? "Liked story" : "Like story"}
                 onClick={() => void handleStoryLike(selectedStory.id)}
               >
-                {storyBusyId === selectedStory.id
-                  ? "Liking..."
-                  : selectedStory.viewerHasLiked
-                    ? `Liked • ${formatMetric(selectedStory.reactions)}`
-                    : `Like story • ${formatMetric(selectedStory.reactions)}`}
+                <HeartIcon />
+                <span>{formatMetric(selectedStory.reactions)}</span>
               </button>
             </div>
           </div>

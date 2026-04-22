@@ -1102,23 +1102,14 @@ export async function listStories({ tenantId, viewerUserId, viewerMembershipId =
   ]);
 
   const followingIds = new Set(followingResponse.data.follows.map((item) => item.followingUserId));
-  const latestByUser = new Map();
-
-  for (const item of storyResponse.data.stories) {
+  const records = storyResponse.data.stories.filter((item) => {
     if (!isActiveStory(item)) {
-      continue;
+      return false;
     }
 
-    if (item.userId !== viewerUserId && !followingIds.has(item.userId)) {
-      continue;
-    }
+    return item.userId === viewerUserId || followingIds.has(item.userId);
+  });
 
-    if (!latestByUser.has(item.userId)) {
-      latestByUser.set(item.userId, item);
-    }
-  }
-
-  const records = Array.from(latestByUser.values());
   if (records.length === 0) {
     return [];
   }
