@@ -229,6 +229,7 @@ export interface StoryCard {
   isOwn: boolean;
   reactions: number;
   viewerHasLiked: boolean;
+  viewerHasSeen: boolean;
 }
 
 export interface StoryListResponse {
@@ -292,8 +293,13 @@ export interface CommentItem {
   postId: string;
   membershipId: string;
   authorUserId: string;
+  parentCommentId: string | null;
   body: string;
+  mediaUrl: string | null;
+  mediaType: "image" | "gif" | "sticker" | null;
   createdAt: string;
+  reactions: number;
+  viewerHasLiked: boolean;
   author: {
     userId: string;
     username: string;
@@ -325,6 +331,77 @@ export interface StoryReactionResponse {
   reactionType: StoryReactionKind | null;
   aggregateCount: number;
   active: boolean;
+}
+
+export interface CommentReactionResponse {
+  commentId: string;
+  membershipId: string;
+  reactionType: "like" | null;
+  aggregateCount: number;
+  active: boolean;
+}
+
+export interface StorySeenResponse {
+  storyId: string;
+  membershipId: string;
+  viewed: boolean;
+}
+
+export interface PostLikerItem {
+  membershipId: string;
+  userId: string | null;
+  username: string;
+  displayName: string;
+  reactionType: ReactionKind;
+  reactedAt: string;
+}
+
+export interface PostLikerListResponse {
+  postId: string;
+  items: PostLikerItem[];
+}
+
+export interface DeletePostResponse {
+  postId: string;
+  deleted: boolean;
+}
+
+export interface UpdatePostRequest {
+  title?: string | null;
+  body?: string | null;
+  location?: string | null;
+}
+
+export interface UpdatePostResponse {
+  item: FeedCard;
+}
+
+export interface RepostPostRequest {
+  quote?: string | null;
+  placement?: FeedPlacement;
+}
+
+export interface RepostPostResponse {
+  item: FeedCard;
+}
+
+export interface CreateReportRequest {
+  targetType: string;
+  targetId: string;
+  reason: string;
+}
+
+export interface CreateReportResponse {
+  item: {
+    id: string;
+    tenantId: string;
+    membershipId: string;
+    targetType: string;
+    targetId: string;
+    reason: string;
+    status: string;
+    createdAt: string;
+  };
 }
 
 export interface CourseItem {

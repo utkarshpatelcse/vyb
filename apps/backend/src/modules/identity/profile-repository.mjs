@@ -202,6 +202,7 @@ function mapMembershipProfile(item) {
   }
 
   return {
+    membershipId: item.id,
     userId: item.userId,
     tenantId: item.tenantId,
     primaryEmail: item.user.primaryEmail,

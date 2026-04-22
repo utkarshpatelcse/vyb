@@ -2,13 +2,17 @@ import "server-only";
 import type {
   ActivityListResponse,
   ClientShellResponse,
+  CommentReactionResponse,
   CommentListResponse,
+  CreateReportRequest,
+  CreateReportResponse,
   ContactMarketPostRequest,
   ContactMarketPostResponse,
   CreateCommentResponse,
   CreateMarketPostRequest,
   CreateMarketPostResponse,
   CreateStoryResponse,
+  DeletePostResponse,
   FeedListResponse,
   ListCoursesResponse,
   ListResourcesResponse,
@@ -17,16 +21,22 @@ import type {
   MeResponse,
   PublicProfileResponse,
   ProfileResponse,
+  PostLikerListResponse,
   ReactionKind,
   ReactionResponse,
+  RepostPostRequest,
+  RepostPostResponse,
   SessionBootstrapRequest,
   SessionBootstrapResponse,
   StoryListResponse,
+  StorySeenResponse,
   StoryReactionResponse,
   ToggleMarketSaveRequest,
   ToggleMarketSaveResponse,
   UpdateMarketListingRequest,
   UpdateMarketListingResponse,
+  UpdatePostRequest,
+  UpdatePostResponse,
   UpdateUsernameRequest,
   UpdateUsernameResponse,
   UserSearchResponse
@@ -370,12 +380,23 @@ export async function getPostComments(viewer: DevSession, postId: string, limit 
   return fetchBackendJson<CommentListResponse>(`/v1/posts/${encodeURIComponent(postId)}/comments?${params.toString()}`, viewer);
 }
 
-export async function createPostComment(viewer: DevSession, postId: string, body: string) {
+export async function createPostComment(
+  viewer: DevSession,
+  postId: string,
+  payload: {
+    body?: string;
+    parentCommentId?: string | null;
+    mediaUrl?: string | null;
+    mediaType?: "image" | "gif" | "sticker" | null;
+    mediaMimeType?: string | null;
+    mediaSizeBytes?: number | null;
+  }
+) {
   return postBackendJson<CreateCommentResponse>(
     `/v1/posts/${encodeURIComponent(postId)}/comments`,
     {
       membershipId: viewer.membershipId,
-      body
+      ...payload
     },
     viewer
   );
@@ -399,6 +420,48 @@ export async function reactToStory(viewer: DevSession, storyId: string) {
     {},
     viewer
   );
+}
+
+export async function reactToComment(viewer: DevSession, commentId: string) {
+  return mutateBackendJson<CommentReactionResponse>(
+    `/v1/comments/${encodeURIComponent(commentId)}/reactions`,
+    "PUT",
+    {},
+    viewer
+  );
+}
+
+export async function markStorySeenOnBackend(viewer: DevSession, storyId: string) {
+  return mutateBackendJson<StorySeenResponse>(
+    `/v1/stories/${encodeURIComponent(storyId)}/seen`,
+    "PUT",
+    {},
+    viewer
+  );
+}
+
+export async function getPostLikes(viewer: DevSession, postId: string, limit = 50) {
+  const params = new URLSearchParams({
+    limit: String(limit)
+  });
+
+  return fetchBackendJson<PostLikerListResponse>(`/v1/posts/${encodeURIComponent(postId)}/likes?${params.toString()}`, viewer);
+}
+
+export async function repostCampusPost(viewer: DevSession, postId: string, payload: RepostPostRequest) {
+  return postBackendJson<RepostPostResponse>(`/v1/posts/${encodeURIComponent(postId)}/repost`, payload, viewer);
+}
+
+export async function deleteCampusPost(viewer: DevSession, postId: string) {
+  return mutateBackendJson<DeletePostResponse>(`/v1/posts/${encodeURIComponent(postId)}`, "DELETE", {}, viewer);
+}
+
+export async function updateCampusPost(viewer: DevSession, postId: string, payload: UpdatePostRequest) {
+  return mutateBackendJson<UpdatePostResponse>(`/v1/posts/${encodeURIComponent(postId)}`, "PATCH", payload, viewer);
+}
+
+export async function createContentReport(viewer: DevSession, payload: CreateReportRequest) {
+  return postBackendJson<CreateReportResponse>("/v1/reports", payload, viewer);
 }
 
 export async function getCampusCourses(viewer: DevSession, limit = 20) {

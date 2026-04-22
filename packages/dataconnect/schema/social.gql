@@ -50,7 +50,23 @@ type Comment @table(name: "comments", singular: "comment", plural: "comments", k
   authorUserId: UUID @col(name: "author_user_id")
   parentComment: Comment
   body: String!
+  mediaUrl: String @col(name: "media_url")
+  mediaType: String @col(name: "media_type")
+  mediaMimeType: String @col(name: "media_mime_type")
+  mediaSizeBytes: Int64 @col(name: "media_size_bytes")
   status: String! @default(value: "published")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type CommentReaction
+  @table(name: "comment_reactions", singular: "commentReaction", plural: "commentReactions", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  commentReactionKey: String! @col(name: "comment_reaction_key") @unique
+  comment: Comment!
+  membership: TenantMembership!
+  reactionType: String! @col(name: "reaction_type")
   createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
   updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
   deletedAt: Timestamp @col(name: "deleted_at")
@@ -97,6 +113,18 @@ type StoryReaction
   deletedAt: Timestamp @col(name: "deleted_at")
 }
 
+type StoryView
+  @table(name: "story_views", singular: "storyView", plural: "storyViews", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  storyViewKey: String! @col(name: "story_view_key") @unique
+  story: Story!
+  membership: TenantMembership!
+  seenAt: Timestamp! @col(name: "seen_at") @default(expr: "request.time")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
 type Follow @table(name: "follows", singular: "follow", plural: "follows", key: ["id"]) {
   id: UUID! @default(expr: "uuidV4()")
   followKey: String! @col(name: "follow_key") @unique
@@ -126,6 +154,11 @@ extend type Comment {
   parentCommentId: UUID
 }
 
+extend type CommentReaction {
+  commentId: UUID!
+  membershipId: UUID!
+}
+
 extend type Reaction {
   postId: UUID!
   membershipId: UUID!
@@ -136,6 +169,11 @@ extend type Story {
 }
 
 extend type StoryReaction {
+  storyId: UUID!
+  membershipId: UUID!
+}
+
+extend type StoryView {
   storyId: UUID!
   membershipId: UUID!
 }

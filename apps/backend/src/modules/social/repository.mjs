@@ -27,12 +27,243 @@ import {
   listStoryReactionsByStory as listStoryReactionsByStoryQuery,
   listStoryReactionsByTenant as listStoryReactionsByTenantQuery,
   softDeleteFollow as softDeleteFollowMutation,
+  softDeletePost as softDeletePostMutation,
   updateReaction as updateReactionMutation,
   updateStoryReaction as updateStoryReactionMutation
 } from "../../../../../packages/dataconnect/social-admin-sdk/esm/index.esm.js";
 
 const TENANT_SCAN_LIMIT = 5000;
 const FEED_SCAN_MULTIPLIER = 4;
+
+const EXTENDED_COMMENT_FIELDS = `
+  id
+  postId
+  membershipId
+  authorUserId
+  parentCommentId
+  body
+  mediaUrl
+  mediaType
+  mediaMimeType
+  mediaSizeBytes
+  status
+  createdAt
+`;
+
+const LIST_COMMENTS_BY_POST_EXTENDED_QUERY = `
+  query ListCommentsByPostExtended($postId: UUID!, $limit: Int!) {
+    comments(
+      where: { postId: { eq: $postId }, deletedAt: { isNull: true } }
+      orderBy: [{ createdAt: ASC }]
+      limit: $limit
+    ) {
+      ${EXTENDED_COMMENT_FIELDS}
+    }
+  }
+`;
+
+const GET_COMMENT_BY_ID_QUERY = `
+  query GetCommentById($id: UUID!) {
+    comment(key: { id: $id }) {
+      ${EXTENDED_COMMENT_FIELDS}
+      tenantId
+    }
+  }
+`;
+
+const LIST_COMMENT_REACTIONS_BY_TENANT_QUERY = `
+  query ListCommentReactionsByTenant($tenantId: UUID!, $limit: Int!) {
+    commentReactions(
+      where: { comment: { tenantId: { eq: $tenantId } }, deletedAt: { isNull: true } }
+      orderBy: [{ createdAt: DESC }]
+      limit: $limit
+    ) {
+      id
+      commentId
+      membershipId
+      reactionType
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+const LIST_COMMENT_REACTIONS_BY_COMMENT_QUERY = `
+  query ListCommentReactionsByComment($commentId: UUID!, $limit: Int!) {
+    commentReactions(
+      where: { commentId: { eq: $commentId }, deletedAt: { isNull: true } }
+      orderBy: [{ createdAt: DESC }]
+      limit: $limit
+    ) {
+      id
+      commentId
+      membershipId
+      reactionType
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+const GET_COMMENT_REACTION_BY_KEY_QUERY = `
+  query GetCommentReactionByKey($commentReactionKey: String!) {
+    commentReactions(
+      where: { commentReactionKey: { eq: $commentReactionKey }, deletedAt: { isNull: true } }
+      limit: 1
+    ) {
+      id
+      commentId
+      membershipId
+      reactionType
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+const CREATE_COMMENT_EXTENDED_MUTATION = `
+  mutation CreateCommentExtended(
+    $id: UUID!
+    $tenantId: UUID!
+    $postId: UUID!
+    $membershipId: UUID!
+    $authorUserId: UUID!
+    $parentCommentId: UUID
+    $body: String!
+    $mediaUrl: String
+    $mediaType: String
+    $mediaMimeType: String
+    $mediaSizeBytes: Int64
+  ) {
+    comment_insert(
+      data: {
+        id: $id
+        tenantId: $tenantId
+        postId: $postId
+        membershipId: $membershipId
+        authorUserId: $authorUserId
+        parentCommentId: $parentCommentId
+        body: $body
+        mediaUrl: $mediaUrl
+        mediaType: $mediaType
+        mediaMimeType: $mediaMimeType
+        mediaSizeBytes: $mediaSizeBytes
+        status: "published"
+        createdAt_expr: "request.time"
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
+
+const CREATE_COMMENT_REACTION_MUTATION = `
+  mutation CreateCommentReaction(
+    $id: UUID!
+    $commentReactionKey: String!
+    $commentId: UUID!
+    $membershipId: UUID!
+    $reactionType: String!
+  ) {
+    commentReaction_insert(
+      data: {
+        id: $id
+        commentReactionKey: $commentReactionKey
+        commentId: $commentId
+        membershipId: $membershipId
+        reactionType: $reactionType
+        createdAt_expr: "request.time"
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
+
+const UPDATE_COMMENT_REACTION_MUTATION = `
+  mutation UpdateCommentReaction($id: UUID!, $reactionType: String!) {
+    commentReaction_update(
+      key: { id: $id }
+      data: {
+        reactionType: $reactionType
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
+
+const LIST_STORY_VIEWS_BY_TENANT_QUERY = `
+  query ListStoryViewsByTenant($tenantId: UUID!, $limit: Int!) {
+    storyViews(
+      where: { story: { tenantId: { eq: $tenantId } }, deletedAt: { isNull: true } }
+      orderBy: [{ createdAt: DESC }]
+      limit: $limit
+    ) {
+      id
+      storyId
+      membershipId
+      seenAt
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+const GET_STORY_VIEW_BY_KEY_QUERY = `
+  query GetStoryViewByKey($storyViewKey: String!) {
+    storyViews(where: { storyViewKey: { eq: $storyViewKey }, deletedAt: { isNull: true } }, limit: 1) {
+      id
+      storyId
+      membershipId
+      seenAt
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+const CREATE_STORY_VIEW_MUTATION = `
+  mutation CreateStoryView(
+    $id: UUID!
+    $storyViewKey: String!
+    $storyId: UUID!
+    $membershipId: UUID!
+  ) {
+    storyView_insert(
+      data: {
+        id: $id
+        storyViewKey: $storyViewKey
+        storyId: $storyId
+        membershipId: $membershipId
+        seenAt_expr: "request.time"
+        createdAt_expr: "request.time"
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
+
+const UPDATE_POST_MUTATION = `
+  mutation UpdatePost($id: UUID!, $title: String, $body: String!, $location: String) {
+    post_update(
+      key: { id: $id }
+      data: {
+        title: $title
+        body: $body
+        location: $location
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
 
 function getSocialDc() {
   return getFirebaseDataConnect(socialConnectorConfig);
@@ -72,6 +303,14 @@ function buildReactionKey(postId, membershipId) {
 }
 
 function buildStoryReactionKey(storyId, membershipId) {
+  return `${storyId}:${membershipId}`;
+}
+
+function buildCommentReactionKey(commentId, membershipId) {
+  return `${commentId}:${membershipId}`;
+}
+
+function buildStoryViewKey(storyId, membershipId) {
   return `${storyId}:${membershipId}`;
 }
 
@@ -258,6 +497,64 @@ async function buildStoryReactionMaps(tenantId, storyIds, viewerMembershipId = n
   };
 }
 
+async function buildCommentReactionMaps(tenantId, commentIds, viewerMembershipId = null) {
+  const response = await getSocialDc().executeGraphqlRead(LIST_COMMENT_REACTIONS_BY_TENANT_QUERY, {
+    operationName: "ListCommentReactionsByTenant",
+    variables: {
+      tenantId,
+      limit: TENANT_SCAN_LIMIT
+    }
+  });
+
+  const idSet = new Set(commentIds);
+  const reactions = new Map();
+  const viewerReactions = new Map();
+
+  for (const item of response.data.commentReactions ?? []) {
+    if (!idSet.has(item.commentId)) {
+      continue;
+    }
+
+    reactions.set(item.commentId, Number(reactions.get(item.commentId) ?? 0) + 1);
+
+    if (viewerMembershipId && item.membershipId === viewerMembershipId && !viewerReactions.has(item.commentId)) {
+      viewerReactions.set(item.commentId, item.reactionType ?? "like");
+    }
+  }
+
+  return {
+    reactions,
+    viewerReactions
+  };
+}
+
+async function buildStoryViewMaps(tenantId, storyIds, viewerMembershipId = null) {
+  const response = await getSocialDc().executeGraphqlRead(LIST_STORY_VIEWS_BY_TENANT_QUERY, {
+    operationName: "ListStoryViewsByTenant",
+    variables: {
+      tenantId,
+      limit: TENANT_SCAN_LIMIT
+    }
+  });
+
+  const idSet = new Set(storyIds);
+  const viewerSeen = new Map();
+
+  for (const item of response.data.storyViews ?? []) {
+    if (!idSet.has(item.storyId)) {
+      continue;
+    }
+
+    if (viewerMembershipId && item.membershipId === viewerMembershipId && !viewerSeen.has(item.storyId)) {
+      viewerSeen.set(item.storyId, true);
+    }
+  }
+
+  return {
+    viewerSeen
+  };
+}
+
 async function countStoryReactionsByStory(storyId) {
   const response = await listStoryReactionsByStoryQuery(getSocialDc(), {
     storyId,
@@ -265,6 +562,18 @@ async function countStoryReactionsByStory(storyId) {
   });
 
   return response.data.storyReactions.length;
+}
+
+async function countCommentReactionsByComment(commentId) {
+  const response = await getSocialDc().executeGraphqlRead(LIST_COMMENT_REACTIONS_BY_COMMENT_QUERY, {
+    operationName: "ListCommentReactionsByComment",
+    variables: {
+      commentId,
+      limit: TENANT_SCAN_LIMIT
+    }
+  });
+
+  return response.data.commentReactions.length;
 }
 
 function mapPostRecord(item, counts = null) {
@@ -293,19 +602,24 @@ function mapPostRecord(item, counts = null) {
   };
 }
 
-function mapCommentRecord(item) {
+function mapCommentRecord(item, reactionMaps = null) {
   return {
     id: item.id,
     postId: item.postId,
     membershipId: item.membershipId,
     authorUserId: item.authorUserId,
+    parentCommentId: item.parentCommentId ?? null,
     body: item.body,
+    mediaUrl: item.mediaUrl ?? null,
+    mediaType: item.mediaType ?? null,
     createdAt: toIsoString(item.createdAt),
+    reactions: Number(reactionMaps?.reactions?.get(item.id) ?? 0),
+    viewerHasLiked: Boolean(reactionMaps?.viewerReactions?.get(item.id)),
     author: null
   };
 }
 
-function mapStoryRecord(item, viewerUserId = null, reactionMaps = null) {
+function mapStoryRecord(item, viewerUserId = null, reactionMaps = null, viewMaps = null) {
   return {
     id: item.id,
     tenantId: item.tenantId,
@@ -319,7 +633,8 @@ function mapStoryRecord(item, viewerUserId = null, reactionMaps = null) {
     expiresAt: toIsoString(item.expiresAt),
     isOwn: item.userId === viewerUserId,
     reactions: Number(reactionMaps?.reactions?.get(item.id) ?? 0),
-    viewerHasLiked: Boolean(reactionMaps?.viewerReactions?.get(item.id))
+    viewerHasLiked: Boolean(reactionMaps?.viewerReactions?.get(item.id)),
+    viewerHasSeen: Boolean(viewMaps?.viewerSeen?.get(item.id))
   };
 }
 
@@ -485,13 +800,34 @@ export async function createPost(payload) {
 
 export async function createComment(payload) {
   const id = randomUUID();
-  await createCommentMutation(getSocialDc(), {
-    id,
+  const media = await persistMediaAsset({
     tenantId: payload.tenantId,
-    postId: payload.postId,
-    membershipId: payload.membershipId,
-    authorUserId: payload.authorUserId,
-    body: payload.body
+    userId: payload.authorUserId,
+    assetId: id,
+    assetType: "comments",
+    mediaUrl: payload.mediaUrl ?? null,
+    mediaType: payload.mediaType === "gif" || payload.mediaType === "sticker" ? "image" : payload.mediaType ?? "image",
+    placement: payload.placement ?? "feed",
+    storagePathOverride: payload.mediaStoragePath ?? null,
+    mediaMimeTypeOverride: payload.mediaMimeType ?? null,
+    mediaSizeBytesOverride: payload.mediaSizeBytes ?? null
+  });
+
+  await getSocialDc().executeGraphql(CREATE_COMMENT_EXTENDED_MUTATION, {
+    operationName: "CreateCommentExtended",
+    variables: {
+      id,
+      tenantId: payload.tenantId,
+      postId: payload.postId,
+      membershipId: payload.membershipId,
+      authorUserId: payload.authorUserId,
+      parentCommentId: payload.parentCommentId ?? null,
+      body: payload.body,
+      mediaUrl: media.mediaUrl,
+      mediaType: payload.mediaType ?? null,
+      mediaMimeType: media.mediaMimeType,
+      mediaSizeBytes: media.mediaSizeBytes === null ? null : String(media.mediaSizeBytes)
+    }
   });
 
   return {
@@ -499,19 +835,36 @@ export async function createComment(payload) {
     postId: payload.postId,
     membershipId: payload.membershipId,
     authorUserId: payload.authorUserId,
+    parentCommentId: payload.parentCommentId ?? null,
     body: payload.body,
+    mediaUrl: media.mediaUrl,
+    mediaType: payload.mediaType ?? null,
     createdAt: new Date().toISOString(),
+    reactions: 0,
+    viewerHasLiked: false,
     author: null
   };
 }
 
-export async function listCommentsByPost({ postId, limit = 50 }) {
-  const response = await listCommentsByPostQuery(getSocialDc(), {
-    postId,
-    limit
+export async function listCommentsByPost({ tenantId, postId, limit = 50, viewerMembershipId = null }) {
+  const response = await getSocialDc().executeGraphqlRead(LIST_COMMENTS_BY_POST_EXTENDED_QUERY, {
+    operationName: "ListCommentsByPostExtended",
+    variables: {
+      postId,
+      limit
+    }
   });
 
-  return response.data.comments.map((item) => mapCommentRecord(item));
+  const comments = response.data.comments ?? [];
+  const reactionMaps = comments.length
+    ? await buildCommentReactionMaps(
+        tenantId,
+        comments.map((item) => item.id),
+        viewerMembershipId
+      )
+    : null;
+
+  return comments.map((item) => mapCommentRecord(item, reactionMaps));
 }
 
 export async function upsertReaction(payload) {
@@ -544,6 +897,120 @@ export async function upsertReaction(payload) {
   };
 }
 
+export async function listPostReactions({ postId, limit = 100 }) {
+  const response = await listReactionsByPostQuery(getSocialDc(), {
+    postId,
+    limit
+  });
+
+  return response.data.reactions.map((item) => ({
+    id: item.id,
+    postId: item.postId,
+    membershipId: item.membershipId,
+    reactionType: item.reactionType ?? "like",
+    createdAt: toIsoString(item.createdAt)
+  }));
+}
+
+export async function upsertCommentReaction(payload) {
+  const commentReactionKey = buildCommentReactionKey(payload.commentId, payload.membershipId);
+  const existing = await getSocialDc().executeGraphqlRead(GET_COMMENT_REACTION_BY_KEY_QUERY, {
+    operationName: "GetCommentReactionByKey",
+    variables: {
+      commentReactionKey
+    }
+  });
+  const current = existing.data.commentReactions?.[0] ?? null;
+
+  if (current) {
+    await getSocialDc().executeGraphql(UPDATE_COMMENT_REACTION_MUTATION, {
+      operationName: "UpdateCommentReaction",
+      variables: {
+        id: current.id,
+        reactionType: payload.reactionType
+      }
+    });
+  } else {
+    await getSocialDc().executeGraphql(CREATE_COMMENT_REACTION_MUTATION, {
+      operationName: "CreateCommentReaction",
+      variables: {
+        id: randomUUID(),
+        commentReactionKey,
+        commentId: payload.commentId,
+        membershipId: payload.membershipId,
+        reactionType: payload.reactionType
+      }
+    });
+  }
+
+  return {
+    commentId: payload.commentId,
+    membershipId: payload.membershipId,
+    reactionType: payload.reactionType,
+    aggregateCount: await countCommentReactionsByComment(payload.commentId),
+    active: true
+  };
+}
+
+export async function deletePost(postId) {
+  await softDeletePostMutation(getSocialDc(), {
+    id: postId
+  });
+
+  return {
+    postId,
+    deleted: true
+  };
+}
+
+export async function findCommentById(commentId, { tenantId = null, viewerMembershipId = null } = {}) {
+  const response = await getSocialDc().executeGraphqlRead(GET_COMMENT_BY_ID_QUERY, {
+    operationName: "GetCommentById",
+    variables: {
+      id: commentId
+    }
+  });
+  const item = response.data.comment;
+
+  if (!item || item.status === "removed" || (tenantId && item.tenantId !== tenantId)) {
+    return null;
+  }
+
+  const reactionMaps = {
+    reactions: new Map([[item.id, await countCommentReactionsByComment(item.id)]]),
+    viewerReactions: new Map()
+  };
+
+  if (viewerMembershipId) {
+    const existing = await getSocialDc().executeGraphqlRead(GET_COMMENT_REACTION_BY_KEY_QUERY, {
+      operationName: "GetCommentReactionByKey",
+      variables: {
+        commentReactionKey: buildCommentReactionKey(item.id, viewerMembershipId)
+      }
+    });
+    const current = existing.data.commentReactions?.[0] ?? null;
+    if (current) {
+      reactionMaps.viewerReactions.set(item.id, current.reactionType ?? "like");
+    }
+  }
+
+  return mapCommentRecord(item, reactionMaps);
+}
+
+export async function updatePost(postId, payload, { tenantId = null, viewerMembershipId = null } = {}) {
+  await getSocialDc().executeGraphql(UPDATE_POST_MUTATION, {
+    operationName: "UpdatePost",
+    variables: {
+      id: postId,
+      title: payload.title ?? null,
+      body: payload.body,
+      location: payload.location ?? null
+    }
+  });
+
+  return findPostById(postId, { tenantId, viewerMembershipId });
+}
+
 export async function findStoryById(storyId, { tenantId = null, viewerUserId = null, viewerMembershipId = null } = {}) {
   const response = await getStoryByIdQuery(getSocialDc(), { id: storyId });
   const item = response.data.story;
@@ -567,7 +1034,11 @@ export async function findStoryById(storyId, { tenantId = null, viewerUserId = n
     }
   }
 
-  return mapStoryRecord(item, viewerUserId, reactionMaps);
+  const viewMaps = viewerMembershipId
+    ? await buildStoryViewMaps(item.tenantId, [item.id], viewerMembershipId)
+    : { viewerSeen: new Map() };
+
+  return mapStoryRecord(item, viewerUserId, reactionMaps, viewMaps);
 }
 
 export async function listStories({ tenantId, viewerUserId, viewerMembershipId = null }) {
@@ -610,8 +1081,15 @@ export async function listStories({ tenantId, viewerUserId, viewerMembershipId =
     records.map((item) => item.id),
     viewerMembershipId
   );
+  const viewMaps = viewerMembershipId
+    ? await buildStoryViewMaps(
+        tenantId,
+        records.map((item) => item.id),
+        viewerMembershipId
+      )
+    : { viewerSeen: new Map() };
 
-  return records.map((item) => mapStoryRecord(item, viewerUserId, reactionMaps));
+  return records.map((item) => mapStoryRecord(item, viewerUserId, reactionMaps, viewMaps));
 }
 
 export async function createStory(payload) {
@@ -659,7 +1137,8 @@ export async function createStory(payload) {
     expiresAt: expiresAt.toISOString(),
     isOwn: true,
     reactions: 0,
-    viewerHasLiked: false
+    viewerHasLiked: false,
+    viewerHasSeen: true
   };
 }
 
@@ -689,6 +1168,35 @@ export async function upsertStoryReaction(payload) {
     reactionType: payload.reactionType,
     aggregateCount: await countStoryReactionsByStory(payload.storyId),
     active: true
+  };
+}
+
+export async function markStorySeen({ storyId, membershipId }) {
+  const storyViewKey = buildStoryViewKey(storyId, membershipId);
+  const existing = await getSocialDc().executeGraphqlRead(GET_STORY_VIEW_BY_KEY_QUERY, {
+    operationName: "GetStoryViewByKey",
+    variables: {
+      storyViewKey
+    }
+  });
+  const current = existing.data.storyViews?.[0] ?? null;
+
+  if (!current) {
+    await getSocialDc().executeGraphql(CREATE_STORY_VIEW_MUTATION, {
+      operationName: "CreateStoryView",
+      variables: {
+        id: randomUUID(),
+        storyViewKey,
+        storyId,
+        membershipId
+      }
+    });
+  }
+
+  return {
+    storyId,
+    membershipId,
+    viewed: true
   };
 }
 

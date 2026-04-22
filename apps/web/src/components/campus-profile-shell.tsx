@@ -373,9 +373,10 @@ export function CampusProfileShell({
     { id: "reels" as const, label: "Reels", icon: <ReelsIcon /> },
     { id: "saved" as const, label: "Saved", icon: <BookmarkIcon /> }
   ];
-  const reelPosts = posts.filter((post) => post.kind === "video");
+  const feedPosts = posts.filter((post) => post.placement !== "vibe");
+  const reelPosts = posts.filter((post) => post.placement === "vibe" || post.kind === "video");
   const visiblePosts =
-    activeTab === "posts" ? posts : activeTab === "reels" ? reelPosts : ([] as FeedCard[]);
+    activeTab === "posts" ? feedPosts : activeTab === "reels" ? reelPosts : ([] as FeedCard[]);
   const likesCount = posts.reduce((total, post) => total + post.reactions, 0);
   const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
   const secondaryLine = collegeName;

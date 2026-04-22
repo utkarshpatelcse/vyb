@@ -13,16 +13,22 @@ import {
   createComment,
   createPost,
   createStory,
+  deletePost,
+  findCommentById,
   findPostById,
   findStoryById,
   followUser,
   getFollowStats,
   isFollowing,
   listCommentsByPost,
+  listPostReactions,
   listPosts,
   listPostsByUser,
   listStories,
+  markStorySeen,
   unfollowUser,
+  updatePost,
+  upsertCommentReaction,
   upsertReaction,
   upsertStoryReaction
 } from "./repository.mjs";
@@ -30,6 +36,7 @@ import {
 const allowedPostKinds = new Set(["text", "image", "video"]);
 const allowedReactionTypes = new Set(["fire", "support", "like"]);
 const allowedStoryMediaTypes = new Set(["image", "video"]);
+const allowedCommentMediaTypes = new Set(["image", "gif", "sticker"]);
 
 function requireNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
@@ -90,6 +97,48 @@ async function enrichCommentItems(tenantId, items) {
   }));
 }
 
+async function buildReactionMemberItems(tenantId, items) {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const profiles = await listProfilesByTenant(tenantId);
+  const profileByMembershipId = new Map(
+    profiles
+      .filter((profile) => typeof profile.membershipId === "string" && profile.membershipId.trim().length > 0)
+      .map((profile) => [profile.membershipId, profile])
+  );
+
+  return items.map((item) => {
+    const profile = profileByMembershipId.get(item.membershipId) ?? null;
+
+    return {
+      membershipId: item.membershipId,
+      userId: profile?.userId ?? null,
+      username: profile?.username ?? "vyb_user",
+      displayName: profile?.fullName ?? "Vyb Student",
+      reactionType: item.reactionType ?? "like",
+      reactedAt: item.createdAt
+    };
+  });
+}
+
+function buildRepostBody(post, quote = null) {
+  const trimmedQuote = requireNonEmptyString(quote) ? quote.trim() : null;
+  const originalBody = requireNonEmptyString(post.body) ? post.body.trim() : "";
+  const repostLine = `Reposted from @${post.author.username}`;
+
+  if (trimmedQuote && originalBody) {
+    return `${trimmedQuote}\n\n${repostLine}\n${originalBody}`;
+  }
+
+  if (trimmedQuote) {
+    return `${trimmedQuote}\n\n${repostLine}`;
+  }
+
+  return originalBody ? `${repostLine}\n${originalBody}` : repostLine;
+}
+
 function resolveTenantScope({ requestedTenantId, resolvedTenantId, routeLabel }) {
   if (resolvedTenantId && requestedTenantId && requestedTenantId !== resolvedTenantId) {
     console.warn(`[social] ${routeLabel}:tenant-mismatch`, {
@@ -129,11 +178,17 @@ async function buildUserSearchItems({ tenantId, viewerUserId, query, limit }) {
           followingUserId: profile.userId
         }),
         stats: {
-          posts: await countPostsByUser({
-            tenantId,
-            userId: profile.userId,
-            placement: "feed"
-          }),
+          posts:
+            (await countPostsByUser({
+              tenantId,
+              userId: profile.userId,
+              placement: "feed"
+            })) +
+            (await countPostsByUser({
+              tenantId,
+              userId: profile.userId,
+              placement: "vibe"
+            })),
           followers: followStats.followers,
           following: followStats.following
         }
@@ -167,11 +222,17 @@ async function buildSuggestedUserItems({ tenantId, viewerUserId, limit }) {
           followingUserId: profile.userId
         }),
         stats: {
-          posts: await countPostsByUser({
-            tenantId,
-            userId: profile.userId,
-            placement: "feed"
-          }),
+          posts:
+            (await countPostsByUser({
+              tenantId,
+              userId: profile.userId,
+              placement: "feed"
+            })) +
+            (await countPostsByUser({
+              tenantId,
+              userId: profile.userId,
+              placement: "vibe"
+            })),
           followers: followStats.followers,
           following: followStats.following
         }
@@ -568,13 +629,25 @@ export async function handleSocialRoute({ request, response, url, context }) {
       tenantId,
       userId: profile.userId
     });
-    const posts = await listPostsByUser({
-      tenantId,
-      userId: profile.userId,
-      limit: 24,
-      placement: "feed",
-      viewerMembershipId: resolvedMembershipId
-    });
+    const [feedPosts, vibePosts] = await Promise.all([
+      listPostsByUser({
+        tenantId,
+        userId: profile.userId,
+        limit: 24,
+        placement: "feed",
+        viewerMembershipId: resolvedMembershipId
+      }),
+      listPostsByUser({
+        tenantId,
+        userId: profile.userId,
+        limit: 24,
+        placement: "vibe",
+        viewerMembershipId: resolvedMembershipId
+      })
+    ]);
+    const posts = [...feedPosts, ...vibePosts].sort(
+      (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+    );
 
     sendJson(response, 200, {
       profile: {
@@ -678,6 +751,194 @@ export async function handleSocialRoute({ request, response, url, context }) {
     return true;
   }
 
+  const postLikesMatch = request.method === "GET" ? url.pathname.match(/^\/v1\/posts\/([^/]+)\/likes$/) : null;
+  if (postLikesMatch) {
+    const post = await findPostById(postLikesMatch[1], {
+      tenantId: resolvedTenantId ?? null,
+      viewerMembershipId: resolvedMembershipId
+    });
+    if (!post) {
+      sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
+      return true;
+    }
+
+    const limit = parseLimit(url.searchParams.get("limit"), 50);
+    if (limit === null) {
+      sendError(response, 400, "INVALID_LIMIT", "limit must be an integer between 1 and 50.");
+      return true;
+    }
+
+    const items = await buildReactionMemberItems(
+      post.tenantId,
+      await listPostReactions({
+        postId: post.id,
+        limit
+      })
+    );
+
+    sendJson(response, 200, {
+      postId: post.id,
+      items
+    });
+    return true;
+  }
+
+  const repostMatch = request.method === "POST" ? url.pathname.match(/^\/v1\/posts\/([^/]+)\/repost$/) : null;
+  if (repostMatch) {
+    const payload = await readJson(request);
+    if (!payload || typeof payload !== "object") {
+      sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+      return true;
+    }
+
+    const post = await findPostById(repostMatch[1], {
+      tenantId: resolvedTenantId ?? null,
+      viewerMembershipId: resolvedMembershipId
+    });
+    if (!post) {
+      sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
+      return true;
+    }
+
+    const profile = await getProfileByUserId({
+      tenantId: post.tenantId,
+      userId: resolvedUserId
+    });
+    if (!profile?.profileCompleted) {
+      sendError(response, 403, "PROFILE_INCOMPLETE", "Complete your profile before reposting.");
+      return true;
+    }
+
+    const item = await createPost({
+      tenantId: post.tenantId,
+      communityId: post.communityId,
+      userId: resolvedUserId,
+      membershipId: resolvedMembershipId ?? context.actor.id,
+      authorUsername: profile.username,
+      authorName: profile.fullName,
+      placement: payload.placement === "vibe" ? "vibe" : payload.placement === "feed" ? "feed" : post.placement,
+      kind: post.kind,
+      mediaUrl: post.mediaUrl,
+      location: post.location ?? profile.collegeName,
+      title: requireNonEmptyString(payload.quote)
+        ? `Quote repost • ${post.author.displayName}`
+        : `Repost • ${post.author.displayName}`,
+      body: buildRepostBody(post, payload.quote ?? null)
+    });
+
+    await logSocialActivity({
+      tenantId: post.tenantId,
+      membershipId: resolvedMembershipId,
+      activityType: post.placement === "vibe" ? "vibe.reposted" : "post.reposted",
+      entityType: "post",
+      entityId: item.id,
+      metadata: {
+        sourcePostId: post.id,
+        placement: item.placement
+      }
+    });
+
+    sendJson(response, 201, { item: buildFeedPayload(item) });
+    return true;
+  }
+
+  const deletePostMatch = request.method === "DELETE" ? url.pathname.match(/^\/v1\/posts\/([^/]+)$/) : null;
+  if (deletePostMatch) {
+    const post = await findPostById(deletePostMatch[1], {
+      tenantId: resolvedTenantId ?? null,
+      viewerMembershipId: resolvedMembershipId
+    });
+    if (!post) {
+      sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
+      return true;
+    }
+
+    if (post.userId !== resolvedUserId) {
+      sendError(response, 403, "FORBIDDEN", "Only the post author can delete this post.");
+      return true;
+    }
+
+    const item = await deletePost(post.id);
+
+    await logSocialActivity({
+      tenantId: post.tenantId,
+      membershipId: resolvedMembershipId,
+      activityType: post.placement === "vibe" ? "vibe.deleted" : "post.deleted",
+      entityType: "post",
+      entityId: post.id,
+      metadata: {
+        placement: post.placement
+      }
+    });
+
+    sendJson(response, 200, item);
+    return true;
+  }
+
+  const updatePostMatch = request.method === "PATCH" ? url.pathname.match(/^\/v1\/posts\/([^/]+)$/) : null;
+  if (updatePostMatch) {
+    const payload = await readJson(request);
+    if (!payload || typeof payload !== "object") {
+      sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+      return true;
+    }
+
+    const post = await findPostById(updatePostMatch[1], {
+      tenantId: resolvedTenantId ?? null,
+      viewerMembershipId: resolvedMembershipId
+    });
+    if (!post) {
+      sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
+      return true;
+    }
+
+    if (post.userId !== resolvedUserId) {
+      sendError(response, 403, "FORBIDDEN", "Only the post author can edit this post.");
+      return true;
+    }
+
+    const nextTitle = requireNonEmptyString(payload.title) ? payload.title.trim() : post.title;
+    const nextBody = requireNonEmptyString(payload.body) ? payload.body.trim() : post.body;
+    const nextLocation =
+      typeof payload.location === "string"
+        ? payload.location.trim() || null
+        : payload.location === null
+          ? null
+          : post.location;
+
+    if (!requireNonEmptyString(nextBody) && !post.mediaUrl) {
+      sendError(response, 400, "INVALID_BODY", "Add a caption or keep existing media before saving.");
+      return true;
+    }
+
+    const item = await updatePost(
+      post.id,
+      {
+        title: nextTitle,
+        body: nextBody,
+        location: nextLocation
+      },
+      {
+        tenantId: post.tenantId,
+        viewerMembershipId: resolvedMembershipId
+      }
+    );
+
+    await logSocialActivity({
+      tenantId: post.tenantId,
+      membershipId: resolvedMembershipId,
+      activityType: post.placement === "vibe" ? "vibe.updated" : "post.updated",
+      entityType: "post",
+      entityId: post.id,
+      metadata: {
+        placement: post.placement
+      }
+    });
+
+    sendJson(response, 200, { item: buildFeedPayload(item) });
+    return true;
+  }
+
   const listCommentMatch = request.method === "GET" ? url.pathname.match(/^\/v1\/posts\/([^/]+)\/comments$/) : null;
   if (listCommentMatch) {
     const post = await findPostById(listCommentMatch[1], {
@@ -698,8 +959,10 @@ export async function handleSocialRoute({ request, response, url, context }) {
     const items = await enrichCommentItems(
       post.tenantId,
       await listCommentsByPost({
+        tenantId: post.tenantId,
         postId: listCommentMatch[1],
-        limit
+        limit,
+        viewerMembershipId: resolvedMembershipId
       })
     );
 
@@ -733,9 +996,37 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
-    if (!requireNonEmptyString(payload.body) || payload.body.trim().length < 2) {
+    const trimmedBody = requireNonEmptyString(payload.body) ? payload.body.trim() : "";
+    const trimmedMediaUrl = requireNonEmptyString(payload.mediaUrl) ? payload.mediaUrl.trim() : null;
+    const mediaType = requireNonEmptyString(payload.mediaType) ? payload.mediaType.trim() : null;
+
+    if (!trimmedBody && !trimmedMediaUrl) {
+      sendError(response, 400, "INVALID_COMMENT", "Add text or GIF/sticker media before commenting.");
+      return true;
+    }
+
+    if (trimmedBody && trimmedBody.length < 2) {
       sendError(response, 400, "INVALID_COMMENT", "body must be at least 2 characters long.");
       return true;
+    }
+
+    if (mediaType && !allowedCommentMediaTypes.has(mediaType)) {
+      sendError(response, 400, "INVALID_MEDIA_TYPE", "Comment media must be image, gif, or sticker.");
+      return true;
+    }
+
+    let parentCommentId = null;
+    if (requireNonEmptyString(payload.parentCommentId)) {
+      const parentComment = await findCommentById(payload.parentCommentId.trim(), {
+        tenantId: post.tenantId,
+        viewerMembershipId: resolvedMembershipId
+      });
+      if (!parentComment || parentComment.postId !== post.id) {
+        sendError(response, 404, "COMMENT_NOT_FOUND", "Reply target was not found.");
+        return true;
+      }
+
+      parentCommentId = parentComment.id;
     }
 
     const item = await createComment({
@@ -744,7 +1035,12 @@ export async function handleSocialRoute({ request, response, url, context }) {
       postId: commentMatch[1],
       membershipId,
       authorUserId: resolvedUserId,
-      body: payload.body.trim()
+      parentCommentId,
+      body: trimmedBody,
+      mediaUrl: trimmedMediaUrl,
+      mediaType,
+      mediaMimeType: requireNonEmptyString(payload.mediaMimeType) ? payload.mediaMimeType.trim() : null,
+      mediaSizeBytes: Number.isFinite(Number(payload.mediaSizeBytes)) ? Number(payload.mediaSizeBytes) : null
     });
 
     const authorProfile = await getProfileByUserId({
@@ -764,11 +1060,44 @@ export async function handleSocialRoute({ request, response, url, context }) {
       entityId: item.id,
       metadata: {
         postId: post.id,
-        placement: post.placement
+        placement: post.placement,
+        parentCommentId
       }
     });
 
     sendJson(response, 201, { item: enrichedItem });
+    return true;
+  }
+
+  const commentReactionMatch = request.method === "PUT" ? url.pathname.match(/^\/v1\/comments\/([^/]+)\/reactions$/) : null;
+  if (commentReactionMatch) {
+    const comment = await findCommentById(commentReactionMatch[1], {
+      tenantId: resolvedTenantId ?? null,
+      viewerMembershipId: resolvedMembershipId
+    });
+    if (!comment) {
+      sendError(response, 404, "COMMENT_NOT_FOUND", "Comment not found.");
+      return true;
+    }
+
+    const item = await upsertCommentReaction({
+      commentId: comment.id,
+      membershipId: resolvedMembershipId ?? context.actor.id,
+      reactionType: "like"
+    });
+
+    await logSocialActivity({
+      tenantId: resolvedTenantId,
+      membershipId: resolvedMembershipId ?? context.actor.id,
+      activityType: "comment.reaction.updated",
+      entityType: "comment",
+      entityId: comment.id,
+      metadata: {
+        reactionType: "like"
+      }
+    });
+
+    sendJson(response, 200, item);
     return true;
   }
 
@@ -845,6 +1174,36 @@ export async function handleSocialRoute({ request, response, url, context }) {
       metadata: {
         reactionType: "like"
       }
+    });
+
+    sendJson(response, 200, item);
+    return true;
+  }
+
+  const storySeenMatch = request.method === "PUT" ? url.pathname.match(/^\/v1\/stories\/([^/]+)\/seen$/) : null;
+  if (storySeenMatch) {
+    const story = await findStoryById(storySeenMatch[1], {
+      tenantId: resolvedTenantId ?? null,
+      viewerUserId: resolvedUserId,
+      viewerMembershipId: resolvedMembershipId
+    });
+    if (!story) {
+      sendError(response, 404, "STORY_NOT_FOUND", "Story not found.");
+      return true;
+    }
+
+    const item = await markStorySeen({
+      storyId: story.id,
+      membershipId: resolvedMembershipId ?? context.actor.id
+    });
+
+    await logSocialActivity({
+      tenantId: story.tenantId,
+      membershipId: resolvedMembershipId ?? context.actor.id,
+      activityType: "story.seen",
+      entityType: "story",
+      entityId: story.id,
+      metadata: null
     });
 
     sendJson(response, 200, item);

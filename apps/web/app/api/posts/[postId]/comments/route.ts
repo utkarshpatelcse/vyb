@@ -64,15 +64,20 @@ export async function POST(
   const payload = (await request.json().catch(() => null)) as
     | {
         body?: string;
+        parentCommentId?: string | null;
+        mediaUrl?: string | null;
+        mediaType?: "image" | "gif" | "sticker" | null;
+        mediaMimeType?: string | null;
+        mediaSizeBytes?: number | null;
       }
     | null;
 
-  if (!payload?.body) {
+  if (!payload?.body && !payload?.mediaUrl) {
     return NextResponse.json(
       {
         error: {
           code: "INVALID_COMMENT",
-          message: "Comment text is required."
+          message: "Comment text or GIF/sticker media is required."
         }
       },
       { status: 400 }
@@ -82,7 +87,17 @@ export async function POST(
   const { postId } = await context.params;
 
   try {
-    return NextResponse.json(await createPostComment(viewer, postId, payload.body), { status: 201 });
+    return NextResponse.json(
+      await createPostComment(viewer, postId, {
+        body: payload.body,
+        parentCommentId: payload.parentCommentId ?? null,
+        mediaUrl: payload.mediaUrl ?? null,
+        mediaType: payload.mediaType ?? null,
+        mediaMimeType: payload.mediaMimeType ?? null,
+        mediaSizeBytes: payload.mediaSizeBytes ?? null
+      }),
+      { status: 201 }
+    );
   } catch (error) {
     return NextResponse.json(
       {

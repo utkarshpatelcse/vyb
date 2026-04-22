@@ -103,6 +103,10 @@ query ListCommentsByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCES
     authorUserId
     parentCommentId
     body
+    mediaUrl
+    mediaType
+    mediaMimeType
+    mediaSizeBytes
     status
     createdAt
   }
@@ -120,8 +124,56 @@ query ListCommentsByPost($postId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
     authorUserId
     parentCommentId
     body
+    mediaUrl
+    mediaType
+    mediaMimeType
+    mediaSizeBytes
     status
     createdAt
+  }
+}
+
+query ListCommentReactionsByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  commentReactions(
+    where: { comment: { tenantId: { eq: $tenantId } }, deletedAt: { isNull: true } }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    commentId
+    membershipId
+    reactionType
+    createdAt
+    updatedAt
+  }
+}
+
+query ListCommentReactionsByComment($commentId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  commentReactions(
+    where: { commentId: { eq: $commentId }, deletedAt: { isNull: true } }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    commentId
+    membershipId
+    reactionType
+    createdAt
+    updatedAt
+  }
+}
+
+query GetCommentReactionByKey($commentReactionKey: String!) @auth(level: NO_ACCESS) {
+  commentReactions(
+    where: { commentReactionKey: { eq: $commentReactionKey }, deletedAt: { isNull: true } }
+    limit: 1
+  ) {
+    id
+    commentId
+    membershipId
+    reactionType
+    createdAt
+    updatedAt
   }
 }
 
@@ -242,6 +294,32 @@ query GetStoryReactionByKey($storyReactionKey: String!) @auth(level: NO_ACCESS) 
     storyId
     membershipId
     reactionType
+    createdAt
+    updatedAt
+  }
+}
+
+query ListStoryViewsByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  storyViews(
+    where: { story: { tenantId: { eq: $tenantId } }, deletedAt: { isNull: true } }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    storyId
+    membershipId
+    seenAt
+    createdAt
+    updatedAt
+  }
+}
+
+query GetStoryViewByKey($storyViewKey: String!) @auth(level: NO_ACCESS) {
+  storyViews(where: { storyViewKey: { eq: $storyViewKey }, deletedAt: { isNull: true } }, limit: 1) {
+    id
+    storyId
+    membershipId
+    seenAt
     createdAt
     updatedAt
   }
@@ -374,7 +452,12 @@ mutation CreateComment(
   $postId: UUID!
   $membershipId: UUID!
   $authorUserId: UUID!
+  $parentCommentId: UUID
   $body: String!
+  $mediaUrl: String
+  $mediaType: String
+  $mediaMimeType: String
+  $mediaSizeBytes: Int64
 ) @auth(level: NO_ACCESS) @transaction {
   comment_insert(
     data: {
@@ -383,9 +466,44 @@ mutation CreateComment(
       postId: $postId
       membershipId: $membershipId
       authorUserId: $authorUserId
+      parentCommentId: $parentCommentId
       body: $body
+      mediaUrl: $mediaUrl
+      mediaType: $mediaType
+      mediaMimeType: $mediaMimeType
+      mediaSizeBytes: $mediaSizeBytes
       status: "published"
       createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation CreateCommentReaction(
+  $id: UUID!
+  $commentReactionKey: String!
+  $commentId: UUID!
+  $membershipId: UUID!
+  $reactionType: String!
+) @auth(level: NO_ACCESS) @transaction {
+  commentReaction_insert(
+    data: {
+      id: $id
+      commentReactionKey: $commentReactionKey
+      commentId: $commentId
+      membershipId: $membershipId
+      reactionType: $reactionType
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation UpdateCommentReaction($id: UUID!, $reactionType: String!) @auth(level: NO_ACCESS) @transaction {
+  commentReaction_update(
+    key: { id: $id }
+    data: {
+      reactionType: $reactionType
       updatedAt_expr: "request.time"
     }
   )
@@ -480,6 +598,42 @@ mutation UpdateStoryReaction($id: UUID!, $reactionType: String!) @auth(level: NO
     key: { id: $id }
     data: {
       reactionType: $reactionType
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation CreateStoryView(
+  $id: UUID!
+  $storyViewKey: String!
+  $storyId: UUID!
+  $membershipId: UUID!
+) @auth(level: NO_ACCESS) @transaction {
+  storyView_insert(
+    data: {
+      id: $id
+      storyViewKey: $storyViewKey
+      storyId: $storyId
+      membershipId: $membershipId
+      seenAt_expr: "request.time"
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation UpdatePost(
+  $id: UUID!
+  $title: String
+  $body: String!
+  $location: String
+) @auth(level: NO_ACCESS) @transaction {
+  post_update(
+    key: { id: $id }
+    data: {
+      title: $title
+      body: $body
+      location: $location
       updatedAt_expr: "request.time"
     }
   )

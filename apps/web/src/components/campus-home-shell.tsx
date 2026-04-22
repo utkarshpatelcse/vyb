@@ -1,9 +1,12 @@
 "use client";
 
-import type { FeedCard, StoryCard, UserSearchItem } from "@vyb/contracts";
+import type { FeedCard, PostLikerItem, StoryCard, UserSearchItem } from "@vyb/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { SocialPostActionSheet } from "./social-post-action-sheet";
+import { SocialPostLightbox } from "./social-post-lightbox";
+import { SocialPostLikersSheet } from "./social-post-likers-sheet";
 import { SocialThreadSheet } from "./social-thread-sheet";
 import { SignOutButton } from "./sign-out-button";
 import { useSocialPostEngagement } from "./use-social-post-engagement";
@@ -18,6 +21,7 @@ type CampusHomeShellProps = {
   role: string;
   stories: StoryCard[];
   initialPosts: FeedCard[];
+  trendingVibes: FeedCard[];
   suggestedUsers: UserSearchItem[];
 };
 
@@ -33,6 +37,16 @@ function layoutStyle() {
     "--vyb-campus-left-width": "260px",
     "--vyb-campus-right-width": "320px"
   } as CSSProperties;
+}
+
+function buildSeenStoryMap(items: StoryCard[]) {
+  return items.reduce<Record<string, true>>((accumulator, story) => {
+    if (story.viewerHasSeen) {
+      accumulator[story.id] = true;
+    }
+
+    return accumulator;
+  }, {});
 }
 
 function IconBase({ children }: { children: ReactNode }) {
@@ -220,13 +234,17 @@ export function CampusHomeShell({
   role,
   stories,
   initialPosts,
+  trendingVibes,
   suggestedUsers
 }: CampusHomeShellProps) {
   const router = useRouter();
   const engagement = useSocialPostEngagement(initialPosts);
   const [recommendedUsers, setRecommendedUsers] = useState(suggestedUsers);
   const [storyFeed, setStoryFeed] = useState(stories);
-  const [selectedStory, setSelectedStory] = useState<StoryCard | null>(null);
+  const [vibeStrip, setVibeStrip] = useState(trendingVibes);
+  const [selectedStoryIndex, setSelectedStoryIndex] = useState<number | null>(null);
+  const [storyProgress, setStoryProgress] = useState(0);
+  const [seenStoryIds, setSeenStoryIds] = useState<Record<string, true>>({});
   const [draftBody, setDraftBody] = useState("");
   const [composerMessage, setComposerMessage] = useState<string | null>(null);
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
@@ -234,10 +252,26 @@ export function CampusHomeShell({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [followBusyUsername, setFollowBusyUsername] = useState<string | null>(null);
   const [storyBusyId, setStoryBusyId] = useState<string | null>(null);
+  const [heartBurstPostId, setHeartBurstPostId] = useState<string | null>(null);
+  const [lightboxPost, setLightboxPost] = useState<FeedCard | null>(null);
+  const [likesPost, setLikesPost] = useState<FeedCard | null>(null);
+  const [likesByPost, setLikesByPost] = useState<Record<string, PostLikerItem[]>>({});
+  const [likesLoadingPostId, setLikesLoadingPostId] = useState<string | null>(null);
+  const [likesMessage, setLikesMessage] = useState<string | null>(null);
+  const [actionPost, setActionPost] = useState<FeedCard | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+
+  const selectedStory = selectedStoryIndex === null ? null : storyFeed[selectedStoryIndex] ?? null;
 
   useEffect(() => {
     setStoryFeed(stories);
+    setSeenStoryIds(buildSeenStoryMap(stories));
   }, [stories]);
+
+  useEffect(() => {
+    setVibeStrip(trendingVibes);
+  }, [trendingVibes]);
 
   useEffect(() => {
     setRecommendedUsers(suggestedUsers);
@@ -257,6 +291,76 @@ export function CampusHomeShell({
     };
   }, [flashMessage]);
 
+  useEffect(() => {
+    if (!heartBurstPostId) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setHeartBurstPostId(null);
+    }, 720);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [heartBurstPostId]);
+
+  useEffect(() => {
+    if (!selectedStory) {
+      setStoryProgress(0);
+      return;
+    }
+
+    if (!selectedStory.viewerHasSeen) {
+      setSeenStoryIds((current) => ({
+        ...current,
+        [selectedStory.id]: true
+      }));
+      setStoryFeed((current) =>
+        current.map((story) =>
+          story.id === selectedStory.id
+            ? {
+                ...story,
+                viewerHasSeen: true
+              }
+            : story
+        )
+      );
+
+      void fetch(`/api/stories/${encodeURIComponent(selectedStory.id)}/seen`, {
+        method: "PUT"
+      }).catch(() => null);
+    }
+
+    const durationMs = selectedStory.mediaType === "video" ? 6500 : 5200;
+    let frameId = 0;
+    const startedAt = performance.now();
+
+    const tick = (now: number) => {
+      const nextProgress = Math.min(1, (now - startedAt) / durationMs);
+      setStoryProgress(nextProgress);
+
+      if (nextProgress >= 1) {
+        setSelectedStoryIndex((current) => {
+          if (current === null) {
+            return null;
+          }
+
+          return current + 1 < storyFeed.length ? current + 1 : null;
+        });
+        return;
+      }
+
+      frameId = window.requestAnimationFrame(tick);
+    };
+
+    frameId = window.requestAnimationFrame(tick);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [selectedStory, storyFeed.length]);
+
   const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
   const navItems = useMemo(
     () => [
@@ -268,6 +372,269 @@ export function CampusHomeShell({
     ],
     []
   );
+
+  function syncMirroredPost(postId: string, updater: (post: FeedCard) => FeedCard) {
+    setVibeStrip((current) => current.map((post) => (post.id === postId ? updater(post) : post)));
+    setLightboxPost((current) => (current?.id === postId ? updater(current) : current));
+    setLikesPost((current) => (current?.id === postId ? updater(current) : current));
+    setActionPost((current) => (current?.id === postId ? updater(current) : current));
+  }
+
+  function removeMirroredPost(postId: string) {
+    setVibeStrip((current) => current.filter((post) => post.id !== postId));
+    setLightboxPost((current) => (current?.id === postId ? null : current));
+    setLikesPost((current) => (current?.id === postId ? null : current));
+    setActionPost((current) => (current?.id === postId ? null : current));
+  }
+
+  async function handlePostLike(post: FeedCard, triggerBurst = false) {
+    if (triggerBurst) {
+      setHeartBurstPostId(post.id);
+    }
+
+    const reaction = await engagement.react(post.id);
+    if (!reaction) {
+      setFlashMessage("We could not update that like right now.");
+      return;
+    }
+
+    syncMirroredPost(post.id, (current) => ({
+      ...current,
+      reactions: reaction.aggregateCount,
+      viewerReactionType: (reaction.viewerReactionType ?? null) as FeedCard["viewerReactionType"]
+    }));
+    setLikesByPost((current) => {
+      const next = { ...current };
+      delete next[post.id];
+      return next;
+    });
+  }
+
+  async function openPostLightbox(post: FeedCard) {
+    setLightboxPost(post);
+    void engagement.loadComments(post.id);
+  }
+
+  async function openPostLikes(post: FeedCard) {
+    setLikesPost(post);
+    setLikesMessage(null);
+
+    if (likesByPost[post.id]) {
+      return;
+    }
+
+    setLikesLoadingPostId(post.id);
+
+    try {
+      const response = await fetch(`/api/posts/${encodeURIComponent(post.id)}/likes`);
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            items?: PostLikerItem[];
+            error?: {
+              message?: string;
+            };
+          }
+        | null;
+
+      if (!response.ok) {
+        setLikesMessage(payload?.error?.message ?? "We could not load the like list right now.");
+        return;
+      }
+
+      setLikesByPost((current) => ({
+        ...current,
+        [post.id]: payload?.items ?? []
+      }));
+    } catch {
+      setLikesMessage("We could not load the like list right now.");
+    } finally {
+      setLikesLoadingPostId(null);
+    }
+  }
+
+  async function handleDirectRepost(post: FeedCard, placement: "feed" | "vibe" = "feed") {
+    setActionBusy(true);
+    setActionMessage(null);
+
+    try {
+      const response = await fetch(`/api/posts/${encodeURIComponent(post.id)}/repost`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ placement })
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            item?: FeedCard;
+            error?: {
+              message?: string;
+            };
+          }
+        | null;
+
+      if (!response.ok || !payload?.item) {
+        setActionMessage(payload?.error?.message ?? "We could not repost this right now.");
+        return;
+      }
+
+      if (payload.item.placement === "feed") {
+        engagement.prependPost(payload.item);
+      } else {
+        setVibeStrip((current) => [payload.item!, ...current].slice(0, 10));
+      }
+
+      setActionPost(null);
+      setFlashMessage("Reposted to your campus lane.");
+      router.refresh();
+    } catch {
+      setActionMessage("We could not repost this right now.");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function handleQuoteRepost(post: FeedCard, quote: string, placement: "feed" | "vibe" = "feed") {
+    setActionBusy(true);
+    setActionMessage(null);
+
+    try {
+      const response = await fetch(`/api/posts/${encodeURIComponent(post.id)}/repost`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          quote,
+          placement
+        })
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            item?: FeedCard;
+            error?: {
+              message?: string;
+            };
+          }
+        | null;
+
+      if (!response.ok || !payload?.item) {
+        setActionMessage(payload?.error?.message ?? "We could not quote repost this right now.");
+        return;
+      }
+
+      if (payload.item.placement === "feed") {
+        engagement.prependPost(payload.item);
+      } else {
+        setVibeStrip((current) => [payload.item!, ...current].slice(0, 10));
+      }
+
+      setActionPost(null);
+      setFlashMessage("Your quote repost is now live.");
+      router.refresh();
+    } catch {
+      setActionMessage("We could not quote repost this right now.");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function handleDeletePost(post: FeedCard) {
+    setActionBusy(true);
+    setActionMessage(null);
+
+    try {
+      const response = await fetch(`/api/posts/${encodeURIComponent(post.id)}`, {
+        method: "DELETE"
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            deleted?: boolean;
+            error?: {
+              message?: string;
+            };
+          }
+        | null;
+
+      if (!response.ok || payload?.deleted !== true) {
+        setActionMessage(payload?.error?.message ?? "We could not delete this post right now.");
+        return;
+      }
+
+      engagement.removePost(post.id);
+      removeMirroredPost(post.id);
+      setActionPost(null);
+      setFlashMessage(post.placement === "vibe" ? "Vibe deleted." : "Post deleted.");
+      router.refresh();
+    } catch {
+      setActionMessage("We could not delete this post right now.");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function handleReportPost(post: FeedCard, reason: string) {
+    setActionBusy(true);
+    setActionMessage(null);
+
+    try {
+      const response = await fetch("/api/reports", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          targetType: "post",
+          targetId: post.id,
+          reason
+        })
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            error?: {
+              message?: string;
+            };
+          }
+        | null;
+
+      if (!response.ok) {
+        setActionMessage(payload?.error?.message ?? "We could not submit that report right now.");
+        return;
+      }
+
+      setActionPost(null);
+      setFlashMessage("Report submitted for review.");
+    } catch {
+      setActionMessage("We could not submit that report right now.");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function handleCopyPostLink(post: FeedCard) {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}#post-${post.id}`);
+      setActionPost(null);
+      setFlashMessage("Page link copied.");
+    } catch {
+      setActionMessage("We could not copy that link right now.");
+    }
+  }
+
+  function openStoryAt(index: number) {
+    setSelectedStoryIndex(index);
+  }
+
+  function moveStory(offset: number) {
+    setSelectedStoryIndex((current) => {
+      if (current === null) {
+        return null;
+      }
+
+      const next = current + offset;
+      return next >= 0 && next < storyFeed.length ? next : null;
+    });
+  }
 
   async function handleQuickPostPublish() {
     const body = draftBody.trim();
@@ -387,20 +754,49 @@ export function CampusHomeShell({
             : story
         )
       );
-      setSelectedStory((current) =>
-        current?.id === storyId
-          ? {
-              ...current,
-              reactions: payload.aggregateCount!,
-              viewerHasLiked: true
-            }
-          : current
-      );
       setFlashMessage("Story reaction updated.");
     } catch {
       setFlashMessage("We could not like that story right now.");
     } finally {
       setStoryBusyId(null);
+    }
+  }
+
+  async function handleEditPost(post: FeedCard, payload: { title: string | null; body: string; location: string | null }) {
+    setActionBusy(true);
+    setActionMessage(null);
+
+    try {
+      const response = await fetch(`/api/posts/${encodeURIComponent(post.id)}`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = (await response.json().catch(() => null)) as
+        | {
+            item?: FeedCard;
+            error?: {
+              message?: string;
+            };
+          }
+        | null;
+
+      if (!response.ok || !data?.item) {
+        setActionMessage(data?.error?.message ?? "We could not update this post right now.");
+        return;
+      }
+
+      engagement.replacePost(data.item);
+      syncMirroredPost(post.id, () => data.item!);
+      setActionPost(null);
+      setFlashMessage(post.placement === "vibe" ? "Vibe updated." : "Post updated.");
+      router.refresh();
+    } catch {
+      setActionMessage("We could not update this post right now.");
+    } finally {
+      setActionBusy(false);
     }
   }
 
@@ -479,9 +875,14 @@ export function CampusHomeShell({
               <span>Your story</span>
             </button>
 
-            {storyFeed.map((story) => (
-              <button key={story.id} type="button" className="vyb-campus-story" onClick={() => setSelectedStory(story)}>
-                <span className="vyb-campus-story-ring">
+            {storyFeed.map((story, index) => (
+              <button
+                key={story.id}
+                type="button"
+                className={`vyb-campus-story${seenStoryIds[story.id] ? " is-seen" : ""}`}
+                onClick={() => openStoryAt(index)}
+              >
+                <span className={`vyb-campus-story-ring${selectedStory?.id === story.id ? " is-active" : ""}`}>
                   {story.mediaType === "video" ? (
                     <video src={story.mediaUrl} muted playsInline autoPlay loop />
                   ) : (
@@ -501,70 +902,154 @@ export function CampusHomeShell({
               </div>
             ) : null}
 
-            {engagement.posts.map((post) => (
-              <article key={post.id} className="vyb-campus-feed-card">
-                <div className="vyb-campus-card-top">
-                  <div className="vyb-campus-card-author">
-                    <span className="vyb-campus-card-avatar">{post.author.displayName.slice(0, 1).toUpperCase()}</span>
-                    <div>
-                      <Link href={getProfileHref(post.author.username, viewerUsername)}>
-                        <strong>{post.author.username}</strong>
-                      </Link>
-                      <span>{post.location ?? collegeName}</span>
+            {engagement.posts.map((post, index) => (
+              <div key={post.id}>
+                <article id={`post-${post.id}`} className="vyb-campus-feed-card">
+                  <div className="vyb-campus-card-top">
+                    <div className="vyb-campus-card-author">
+                      <span className="vyb-campus-card-avatar">{post.author.displayName.slice(0, 1).toUpperCase()}</span>
+                      <div>
+                        <Link href={getProfileHref(post.author.username, viewerUsername)}>
+                          <strong>{post.author.username}</strong>
+                        </Link>
+                        <span>{post.location ?? collegeName}</span>
+                      </div>
                     </div>
-                  </div>
-                  <button type="button" className="vyb-campus-icon-button" aria-label="Post options">
-                    <MenuIcon />
-                  </button>
-                </div>
-
-                {post.mediaUrl && post.kind === "video" ? (
-                  <video src={post.mediaUrl} className="vyb-campus-post-image" controls playsInline muted loop />
-                ) : post.mediaUrl ? (
-                  <img src={post.mediaUrl} alt={post.body || post.title} className="vyb-campus-post-image" />
-                ) : (
-                  <div className="vyb-campus-post-copy-panel">
-                    {post.title ? <strong>{post.title}</strong> : null}
-                    <p>{post.body}</p>
-                  </div>
-                )}
-
-                <div className="vyb-campus-card-actions">
-                  <div className="vyb-campus-card-actions-left">
                     <button
                       type="button"
-                      className={`vyb-campus-action-icon${post.viewerReactionType === "like" ? " is-active" : ""}`}
-                      aria-label="Like post"
-                      disabled={engagement.loadingPostId === post.id}
-                      onClick={() => void engagement.react(post.id)}
+                      className="vyb-campus-icon-button"
+                      aria-label="Post options"
+                      onClick={() => {
+                        setActionMessage(null);
+                        setActionPost(post);
+                      }}
                     >
-                      <HeartIcon />
+                      <MenuIcon />
                     </button>
+                  </div>
+
+                  <div
+                    className="vyb-campus-post-media-shell"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => void openPostLightbox(post)}
+                    onDoubleClick={() => void handlePostLike(post, true)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        void openPostLightbox(post);
+                      }
+                    }}
+                  >
+                    {post.mediaUrl && post.kind === "video" ? (
+                      <video src={post.mediaUrl} className="vyb-campus-post-image" autoPlay muted playsInline loop preload="metadata" />
+                    ) : post.mediaUrl ? (
+                      <img src={post.mediaUrl} alt={post.body || post.title} className="vyb-campus-post-image" />
+                    ) : (
+                      <div className="vyb-campus-post-copy-panel">
+                        {post.title ? <strong>{post.title}</strong> : null}
+                        <p>{post.body}</p>
+                      </div>
+                    )}
+
+                    {heartBurstPostId === post.id ? (
+                      <span className="vyb-campus-heart-burst" aria-hidden="true">
+                        <HeartIcon />
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <div className="vyb-campus-card-actions">
+                    <div className="vyb-campus-card-actions-left">
+                      <button
+                        type="button"
+                        className={`vyb-campus-action-icon${post.viewerReactionType === "like" ? " is-active" : ""}`}
+                        aria-label="Like post"
+                        disabled={engagement.loadingPostId === post.id}
+                        onClick={() => void handlePostLike(post)}
+                      >
+                        <HeartIcon />
+                      </button>
+                      <button
+                        type="button"
+                        className="vyb-campus-action-icon"
+                        aria-label="Comment on post"
+                        onClick={() => void engagement.openThread(post.id)}
+                      >
+                        <CommentIcon />
+                      </button>
+                      <button
+                        type="button"
+                        className="vyb-campus-action-icon"
+                        aria-label="Repost post"
+                        onClick={() => {
+                          setActionMessage(null);
+                          setActionPost(post);
+                        }}
+                      >
+                        <ShareIcon />
+                      </button>
+                    </div>
                     <button
                       type="button"
                       className="vyb-campus-action-icon"
-                      aria-label="Comment on post"
-                      onClick={() => void engagement.openThread(post.id)}
+                      aria-label="Open full screen post"
+                      onClick={() => void openPostLightbox(post)}
                     >
-                      <CommentIcon />
-                    </button>
-                    <button type="button" className="vyb-campus-action-icon" aria-label="Share post">
-                      <ShareIcon />
+                      <BookmarkIcon />
                     </button>
                   </div>
-                  <button type="button" className="vyb-campus-action-icon" aria-label="Save post">
-                    <BookmarkIcon />
-                  </button>
-                </div>
 
-                <div className="vyb-campus-card-copy">
-                  <p className="vyb-campus-card-likes">{formatMetric(post.reactions)} likes</p>
-                  <p className="vyb-campus-card-meta">{formatMetric(post.comments)} comments</p>
-                  <p>
-                    <strong>{post.author.username}</strong> {post.body}
-                  </p>
-                </div>
-              </article>
+                  <div className="vyb-campus-card-copy">
+                    <button type="button" className="vyb-campus-card-likes vyb-campus-inline-stat" onClick={() => void openPostLikes(post)}>
+                      {formatMetric(post.reactions)} likes
+                    </button>
+                    <button type="button" className="vyb-campus-card-meta vyb-campus-inline-stat" onClick={() => void engagement.openThread(post.id)}>
+                      {formatMetric(post.comments)} comments
+                    </button>
+                    <p>
+                      <strong>{post.author.username}</strong> {post.body}
+                    </p>
+                  </div>
+                </article>
+
+                {(index + 1) % 4 === 0 && vibeStrip.length > 0 ? (
+                  <section className="vyb-home-vibes-teaser">
+                    <div className="vyb-home-vibes-teaser-head">
+                      <div>
+                        <strong>Trending vibes</strong>
+                        <span>Campus reels right inside the home feed.</span>
+                      </div>
+                      <Link href="/vibes">Open vibe lane</Link>
+                    </div>
+
+                    <div className="vyb-home-vibes-teaser-list">
+                      {vibeStrip.slice(0, 6).map((vibe) => (
+                        <button key={vibe.id} type="button" className="vyb-home-vibes-teaser-card" onClick={() => void openPostLightbox(vibe)}>
+                          <div className="vyb-home-vibes-teaser-media">
+                            {vibe.mediaUrl ? (
+                              vibe.kind === "video" ? (
+                                <video src={vibe.mediaUrl} autoPlay muted playsInline loop preload="metadata" />
+                              ) : (
+                                <img src={vibe.mediaUrl} alt={vibe.body || vibe.title} />
+                              )
+                            ) : (
+                              <div className="vyb-home-vibes-teaser-copy">
+                                <strong>{vibe.title}</strong>
+                                <p>{vibe.body}</p>
+                              </div>
+                            )}
+                          </div>
+                          <div className="vyb-home-vibes-teaser-meta">
+                            <strong>{vibe.author.displayName}</strong>
+                            <span>@{vibe.author.username}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+              </div>
             ))}
           </div>
         </div>
@@ -757,14 +1242,32 @@ export function CampusHomeShell({
       ) : null}
 
       {selectedStory ? (
-        <div className="vyb-story-viewer-backdrop" role="presentation" onClick={() => setSelectedStory(null)}>
+        <div className="vyb-story-viewer-backdrop" role="presentation" onClick={() => setSelectedStoryIndex(null)}>
           <div className="vyb-story-viewer" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <div className="vyb-story-viewer-progress">
+              {storyFeed.map((story, index) => (
+                <span key={story.id} className="vyb-story-viewer-progress-bar">
+                  <span
+                    style={{
+                      transform: `scaleX(${
+                        index < (selectedStoryIndex ?? 0)
+                          ? 1
+                          : index === selectedStoryIndex
+                            ? storyProgress
+                            : 0
+                      })`
+                    }}
+                  />
+                </span>
+              ))}
+            </div>
+
             <div className="vyb-story-viewer-head">
               <div>
                 <strong>@{selectedStory.username}</strong>
                 <span>{selectedStory.displayName}</span>
               </div>
-              <button type="button" className="vyb-campus-compose-secondary" onClick={() => setSelectedStory(null)}>
+              <button type="button" className="vyb-campus-compose-secondary" onClick={() => setSelectedStoryIndex(null)}>
                 Close
               </button>
             </div>
@@ -775,6 +1278,11 @@ export function CampusHomeShell({
               ) : (
                 <img src={selectedStory.mediaUrl} alt={selectedStory.username} />
               )}
+
+              <div className="vyb-story-viewer-nav">
+                <button type="button" aria-label="Previous story" onClick={() => moveStory(-1)} />
+                <button type="button" aria-label="Next story" onClick={() => moveStory(1)} />
+              </div>
             </div>
 
             {selectedStory.caption ? <p className="vyb-story-viewer-caption">{selectedStory.caption}</p> : null}
@@ -801,12 +1309,107 @@ export function CampusHomeShell({
         post={engagement.selectedPost}
         comments={engagement.selectedComments}
         draft={engagement.threadDraft}
+        mediaUrl={engagement.threadMediaUrl}
+        mediaType={engagement.threadMediaType}
+        replyTarget={engagement.threadReplyTarget}
         message={engagement.threadMessage}
         isLoading={engagement.threadLoading}
         isSubmitting={engagement.threadSubmitting}
         onClose={engagement.closeThread}
         onDraftChange={engagement.setThreadDraft}
+        onMediaUrlChange={engagement.setThreadMediaUrl}
+        onMediaTypeChange={engagement.setThreadMediaType}
+        onReply={engagement.beginReply}
+        onCommentLike={(commentId) => {
+          void engagement.reactToComment(commentId);
+        }}
+        onClearReply={engagement.clearReplyTarget}
         onSubmit={() => void engagement.submitComment()}
+      />
+
+      <SocialPostLightbox
+        post={lightboxPost}
+        comments={lightboxPost ? engagement.commentsByPost[lightboxPost.id] ?? [] : []}
+        isCommentsLoading={engagement.threadLoading}
+        viewerUsername={viewerUsername}
+        isLiking={lightboxPost ? engagement.loadingPostId === lightboxPost.id : false}
+        showHeartBurst={lightboxPost ? heartBurstPostId === lightboxPost.id : false}
+        onClose={() => setLightboxPost(null)}
+        onLike={() => {
+          if (lightboxPost) {
+            void handlePostLike(lightboxPost, true);
+          }
+        }}
+        onOpenComments={() => {
+          if (!lightboxPost) {
+            return;
+          }
+
+          setLightboxPost(null);
+          void engagement.openThread(lightboxPost.id);
+        }}
+        onOpenLikes={() => {
+          if (lightboxPost) {
+            void openPostLikes(lightboxPost);
+          }
+        }}
+        onOpenActions={() => {
+          if (lightboxPost) {
+            setActionPost(lightboxPost);
+          }
+        }}
+      />
+
+      <SocialPostLikersSheet
+        post={likesPost}
+        items={likesPost ? likesByPost[likesPost.id] ?? [] : []}
+        isLoading={likesPost ? likesLoadingPostId === likesPost.id : false}
+        message={likesMessage}
+        onClose={() => setLikesPost(null)}
+      />
+
+      <SocialPostActionSheet
+        post={actionPost}
+        isOwner={Boolean(actionPost && actionPost.author.username === viewerUsername)}
+        isBusy={actionBusy}
+        message={actionMessage}
+        onClose={() => setActionPost(null)}
+        onOpenDetail={() => {
+          if (actionPost) {
+            setActionPost(null);
+            void openPostLightbox(actionPost);
+          }
+        }}
+        onDirectRepost={() => {
+          if (actionPost) {
+            void handleDirectRepost(actionPost, "feed");
+          }
+        }}
+        onQuoteRepost={(quote) => {
+          if (actionPost) {
+            void handleQuoteRepost(actionPost, quote, "feed");
+          }
+        }}
+        onEdit={(payload) => {
+          if (actionPost) {
+            void handleEditPost(actionPost, payload);
+          }
+        }}
+        onDelete={() => {
+          if (actionPost) {
+            void handleDeletePost(actionPost);
+          }
+        }}
+        onReport={(reason) => {
+          if (actionPost) {
+            void handleReportPost(actionPost, reason);
+          }
+        }}
+        onCopyLink={() => {
+          if (actionPost) {
+            void handleCopyPostLink(actionPost);
+          }
+        }}
       />
     </main>
   );

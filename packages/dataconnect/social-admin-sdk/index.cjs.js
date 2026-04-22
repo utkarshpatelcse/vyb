@@ -42,6 +42,27 @@ function listCommentsByPost(dcOrVarsOrOptions, varsOrOptions, options) {
 }
 exports.listCommentsByPost = listCommentsByPost;
 
+function listCommentReactionsByTenant(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListCommentReactionsByTenant', inputVars, inputOpts);
+}
+exports.listCommentReactionsByTenant = listCommentReactionsByTenant;
+
+function listCommentReactionsByComment(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListCommentReactionsByComment', inputVars, inputOpts);
+}
+exports.listCommentReactionsByComment = listCommentReactionsByComment;
+
+function getCommentReactionByKey(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('GetCommentReactionByKey', inputVars, inputOpts);
+}
+exports.getCommentReactionByKey = getCommentReactionByKey;
+
 function listReactionsByTenant(dcOrVarsOrOptions, varsOrOptions, options) {
   const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
   dcInstance.useGen(true);
@@ -98,6 +119,20 @@ function getStoryReactionByKey(dcOrVarsOrOptions, varsOrOptions, options) {
 }
 exports.getStoryReactionByKey = getStoryReactionByKey;
 
+function listStoryViewsByTenant(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListStoryViewsByTenant', inputVars, inputOpts);
+}
+exports.listStoryViewsByTenant = listStoryViewsByTenant;
+
+function getStoryViewByKey(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('GetStoryViewByKey', inputVars, inputOpts);
+}
+exports.getStoryViewByKey = getStoryViewByKey;
+
 function listFollowingByUser(dcOrVarsOrOptions, varsOrOptions, options) {
   const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
   dcInstance.useGen(true);
@@ -140,6 +175,20 @@ function createComment(dcOrVarsOrOptions, varsOrOptions, options) {
 }
 exports.createComment = createComment;
 
+function createCommentReaction(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('CreateCommentReaction', inputVars, inputOpts);
+}
+exports.createCommentReaction = createCommentReaction;
+
+function updateCommentReaction(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('UpdateCommentReaction', inputVars, inputOpts);
+}
+exports.updateCommentReaction = updateCommentReaction;
+
 function createReaction(dcOrVarsOrOptions, varsOrOptions, options) {
   const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
   dcInstance.useGen(true);
@@ -174,6 +223,20 @@ function updateStoryReaction(dcOrVarsOrOptions, varsOrOptions, options) {
   return dcInstance.executeMutation('UpdateStoryReaction', inputVars, inputOpts);
 }
 exports.updateStoryReaction = updateStoryReaction;
+
+function createStoryView(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('CreateStoryView', inputVars, inputOpts);
+}
+exports.createStoryView = createStoryView;
+
+function updatePost(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('UpdatePost', inputVars, inputOpts);
+}
+exports.updatePost = updatePost;
 
 function createFollow(dcOrVarsOrOptions, varsOrOptions, options) {
   const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);

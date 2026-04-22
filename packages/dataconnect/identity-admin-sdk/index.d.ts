@@ -13,6 +13,11 @@ export interface AuditLog_Key {
   __typename?: 'AuditLog_Key';
 }
 
+export interface CommentReaction_Key {
+  id: UUIDString;
+  __typename?: 'CommentReaction_Key';
+}
+
 export interface Comment_Key {
   id: UUIDString;
   __typename?: 'Comment_Key';
@@ -141,6 +146,11 @@ export interface Resource_Key {
 export interface StoryReaction_Key {
   id: UUIDString;
   __typename?: 'StoryReaction_Key';
+}
+
+export interface StoryView_Key {
+  id: UUIDString;
+  __typename?: 'StoryView_Key';
 }
 
 export interface Story_Key {

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { CampusHomeShell } from "../../src/components/campus-home-shell";
 import {
   getCampusFeed,
+  getCampusVibes,
   getCampusStories,
   getSuggestedCampusUsers,
   getViewerMe,
@@ -18,11 +19,12 @@ export default async function AuthenticatedHomePage() {
     redirect("/login");
   }
 
-  const [profile, me, storyResponse, feedResponse, suggestedResponse] = await Promise.all([
+  const [profile, me, storyResponse, feedResponse, vibesResponse, suggestedResponse] = await Promise.all([
     getViewerProfile(viewer).catch(() => null),
     getViewerMe(viewer).catch(() => null),
     getCampusStories(viewer).catch(() => ({ items: [] })),
     getCampusFeed(viewer).catch(() => ({ tenantId: viewer.tenantId, communityId: null, items: [], nextCursor: null })),
+    getCampusVibes(viewer, 10).catch(() => ({ tenantId: viewer.tenantId, communityId: null, items: [], nextCursor: null })),
     getSuggestedCampusUsers(viewer, 5).catch(() => ({ query: "", items: [] }))
   ]);
 
@@ -44,6 +46,7 @@ export default async function AuthenticatedHomePage() {
       role={me?.membershipSummary.role ?? viewer.role}
       stories={storyResponse.items}
       initialPosts={feedResponse.items}
+      trendingVibes={vibesResponse.items}
       suggestedUsers={suggestedResponse.items}
     />
   );
