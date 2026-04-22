@@ -628,3 +628,131 @@ export interface ContactMarketPostResponse {
   targetId: string;
   targetType: "listing" | "request";
 }
+
+export type CampusEventStatus = "published" | "ended" | "cancelled" | "deleted";
+export type CampusEventPassKind = "free" | "rsvp" | "paid";
+export type CampusEventScope = "for-you" | "week" | "saved" | "ended";
+
+export interface CampusEventActorSummary {
+  userId: string;
+  username: string;
+  displayName: string;
+  role: MembershipSummary["role"];
+}
+
+export interface CampusEventMediaAsset {
+  id: string;
+  kind: "image" | "video";
+  url: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  storagePath: string | null;
+}
+
+export interface CampusEvent {
+  id: string;
+  tenantId: string;
+  host: CampusEventActorSummary;
+  title: string;
+  club: string;
+  category: string;
+  description: string;
+  location: string;
+  startsAt: string;
+  endsAt: string | null;
+  media: CampusEventMediaAsset[];
+  passKind: CampusEventPassKind;
+  passLabel: string;
+  capacity: number | null;
+  commentCount: number;
+  status: CampusEventStatus;
+  createdAt: string;
+  savedCount: number;
+  interestCount: number;
+  isSaved: boolean;
+  isInterested: boolean;
+  isHostedByViewer: boolean;
+}
+
+export interface CampusEventsViewerSummary {
+  userId: string;
+  username: string;
+  savedCount: number;
+  interestedCount: number;
+  hostedCount: number;
+}
+
+export interface CampusEventsDashboardResponse {
+  tenantId: string;
+  viewer: CampusEventsViewerSummary;
+  events: CampusEvent[];
+  hostedEvents: CampusEvent[];
+  categories: string[];
+}
+
+export interface CreateCampusEventRequest {
+  title: string;
+  club: string;
+  category: string;
+  description: string;
+  location: string;
+  startsAt: string;
+  endsAt?: string | null;
+  passKind: CampusEventPassKind;
+  passLabel?: string | null;
+  capacity?: number | null;
+  media?: CampusEventMediaAsset[];
+}
+
+export interface CreateCampusEventResponse {
+  dashboard: CampusEventsDashboardResponse;
+  eventId: string;
+}
+
+export interface UpdateCampusEventRequest {
+  eventId: string;
+  title: string;
+  club: string;
+  category: string;
+  description: string;
+  location: string;
+  startsAt: string;
+  endsAt?: string | null;
+  passKind: CampusEventPassKind;
+  passLabel?: string | null;
+  capacity?: number | null;
+  keepMediaIds?: string[];
+  media?: CampusEventMediaAsset[];
+}
+
+export interface UpdateCampusEventResponse {
+  dashboard: CampusEventsDashboardResponse;
+  eventId: string;
+}
+
+export interface ToggleCampusEventSaveRequest {
+  eventId: string;
+}
+
+export interface ToggleCampusEventSaveResponse {
+  dashboard: CampusEventsDashboardResponse;
+  eventId: string;
+  isSaved: boolean;
+}
+
+export interface ToggleCampusEventInterestRequest {
+  eventId: string;
+}
+
+export interface ToggleCampusEventInterestResponse {
+  dashboard: CampusEventsDashboardResponse;
+  eventId: string;
+  isInterested: boolean;
+}
+
+export interface ManageCampusEventResponse {
+  dashboard: CampusEventsDashboardResponse;
+  eventId: string;
+  action: "cancelled" | "deleted";
+}

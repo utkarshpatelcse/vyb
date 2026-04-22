@@ -1,8 +1,8 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, type PanInfo } from "framer-motion";
 import type { CommentItem, FeedCard } from "@vyb/contracts";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 
 type ThreadMediaKind = "gif" | "sticker";
 
@@ -255,7 +255,7 @@ export function SocialThreadSheet({
             role="dialog"
             aria-modal="true"
             aria-label="Post comments"
-            onClick={(event) => event.stopPropagation()}
+            onClick={(event: MouseEvent<HTMLDivElement>) => event.stopPropagation()}
             initial={isDesktop ? { opacity: 0, x: 40 } : { opacity: 0, y: 120 }}
             animate={
               isDesktop
@@ -267,7 +267,7 @@ export function SocialThreadSheet({
             drag={isDesktop ? false : "y"}
             dragConstraints={{ top: 0, bottom: 0 }}
             dragElastic={0.12}
-            onDragEnd={(_event, info) => {
+            onDragEnd={(_event, info: PanInfo) => {
               if (isDesktop) {
                 return;
               }

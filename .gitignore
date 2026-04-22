@@ -48,6 +48,7 @@ pnpm-debug.log*
 apps/backend/src/data/social-store.json
 apps/backend/data/*.bak
 apps/backend/data/*.tmp
+data/events-store.json
 
 # OS and editor files
 .DS_Store

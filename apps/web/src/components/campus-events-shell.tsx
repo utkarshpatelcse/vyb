@@ -1,34 +1,20 @@
 "use client";
 
+import type { CampusEvent, CampusEventScope, CampusEventsDashboardResponse } from "@vyb/contracts";
 import Link from "next/link";
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import { SignOutButton } from "./sign-out-button";
 import { VybLogoLockup } from "./vyb-logo";
 
-type EventScope = "for-you" | "week" | "saved";
-type EventItem = {
-  id: string;
-  title: string;
-  club: string;
-  host: string;
-  description: string;
-  location: string;
-  time: string;
-  dateLabel: string;
-  imageUrl: string;
-  category: string;
-  attendance: string;
-  passLabel: string;
-  comments: string;
-};
-
 type CampusEventsShellProps = {
   viewerName: string;
+  viewerUsername: string;
   collegeName: string;
   viewerEmail: string;
   course?: string | null;
   stream?: string | null;
   role: string;
+  initialDashboard?: CampusEventsDashboardResponse | null;
 };
 
 type ResizeSide = "left" | "right";
@@ -42,101 +28,79 @@ const MAX_RIGHT_WIDTH = 420;
 const LEFT_WIDTH_STORAGE_KEY = "vyb-campus-left-width";
 const RIGHT_WIDTH_STORAGE_KEY = "vyb-campus-right-width";
 
-const EVENTS: EventItem[] = [
-  {
-    id: "1",
-    title: "Neon Night Showcase",
-    club: "Cultural Council",
-    host: "culture.live",
-    description: "Student performances, live visuals, crowd moments, and late-evening campus energy in one outdoor setup.",
-    location: "Central lawn",
-    time: "Fri, 7:30 PM",
-    dateLabel: "25 Apr",
-    imageUrl: "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=1200&q=80&auto=format&fit=crop",
-    category: "Cultural",
-    attendance: "1.2K interested",
-    passLabel: "Free entry",
-    comments: "84 comments"
-  },
-  {
-    id: "2",
-    title: "Hack Sprint Zero",
-    club: "CodeCell",
-    host: "codecell.live",
-    description: "A quick pre-hackathon mixer with demo tables, team matching, and a fast mentor round.",
-    location: "Innovation lab",
-    time: "Sat, 10:00 AM",
-    dateLabel: "26 Apr",
-    imageUrl: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=1200&q=80&auto=format&fit=crop",
-    category: "Tech",
-    attendance: "480 builders",
-    passLabel: "RSVP needed",
-    comments: "39 comments"
-  },
-  {
-    id: "3",
-    title: "Startup Jam",
-    club: "E-Cell",
-    host: "ecell.live",
-    description: "Pitch warmups, sharp founder feedback, and fast room energy for teams building in public.",
-    location: "Seminar block",
-    time: "Sat, 4:00 PM",
-    dateLabel: "26 Apr",
-    imageUrl: "https://images.unsplash.com/photo-1552664730-d307ca884978?w=1200&q=80&auto=format&fit=crop",
-    category: "Workshop",
-    attendance: "210 founders",
-    passLabel: "Seats limited",
-    comments: "26 comments"
-  },
-  {
-    id: "4",
-    title: "Sunrise Run Club",
-    club: "Sports Board",
-    host: "fit.on.campus",
-    description: "Campus laps, stretch stops, and a recovery corner for early-morning runners.",
-    location: "Sports complex",
-    time: "Sun, 6:15 AM",
-    dateLabel: "27 Apr",
-    imageUrl: "https://images.unsplash.com/photo-1552674605-db6ffd4facb5?w=1200&q=80&auto=format&fit=crop",
-    category: "Sports",
-    attendance: "140 runners",
-    passLabel: "Open drop-in",
-    comments: "18 comments"
-  },
-  {
-    id: "5",
-    title: "Portfolio Review Room",
-    club: "Design Circle",
-    host: "design.circle",
-    description: "Bring product, UI, motion, or brand work for crisp feedback and peer reviews.",
-    location: "Studio bay",
-    time: "Mon, 3:30 PM",
-    dateLabel: "28 Apr",
-    imageUrl: "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=1200&q=80&auto=format&fit=crop",
-    category: "Workshop",
-    attendance: "96 designers",
-    passLabel: "Bring laptop",
-    comments: "13 comments"
-  },
-  {
-    id: "6",
-    title: "Indie Film Circle",
-    club: "Frame House",
-    host: "frame.house",
-    description: "A screening room vibe with a short discussion on storytelling, cuts, and visual language.",
-    location: "Mini auditorium",
-    time: "Mon, 7:00 PM",
-    dateLabel: "28 Apr",
-    imageUrl: "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=1200&q=80&auto=format&fit=crop",
-    category: "Cultural",
-    attendance: "320 attendees",
-    passLabel: "Free + popcorn",
-    comments: "44 comments"
-  }
-];
-
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function buildEmptyDashboard(viewerUsername: string): CampusEventsDashboardResponse {
+  return {
+    tenantId: "tenant-demo",
+    viewer: {
+      userId: "viewer",
+      username: viewerUsername,
+      savedCount: 0,
+      interestedCount: 0,
+      hostedCount: 0
+    },
+    events: [],
+    hostedEvents: [],
+    categories: []
+  };
+}
+
+function formatEventDayLabel(value: string) {
+  const timestamp = new Date(value);
+
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "numeric",
+    month: "short"
+  }).format(timestamp);
+}
+
+function formatEventTimeRange(event: CampusEvent) {
+  const start = new Date(event.startsAt);
+  const end = event.endsAt ? new Date(event.endsAt) : null;
+  const startLabel = new Intl.DateTimeFormat("en-IN", {
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(start);
+
+  if (!end) {
+    return startLabel;
+  }
+
+  const sameDay = start.toDateString() === end.toDateString();
+  const endLabel = new Intl.DateTimeFormat("en-IN", {
+    ...(sameDay ? {} : { weekday: "short" }),
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(end);
+
+  return `${startLabel} - ${endLabel}`;
+}
+
+function formatEventInterestLabel(value: number) {
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}K interested`;
+  }
+
+  if (value <= 0) {
+    return "Be the first to respond";
+  }
+
+  return `${value} interested`;
+}
+
+function isWithinNextWeek(event: CampusEvent) {
+  const now = Date.now();
+  const startsAt = new Date(event.startsAt).getTime();
+
+  return startsAt >= now && startsAt <= now + 7 * 24 * 60 * 60_000;
+}
+
+function getPrimaryMedia(event: CampusEvent) {
+  return event.media[0] ?? null;
 }
 
 function IconBase({ children }: { children: ReactNode }) {
@@ -275,23 +239,40 @@ function SparkIcon() {
   );
 }
 
+function CloseIcon() {
+  return (
+    <IconBase>
+      <path d="M7 7 17 17M17 7 7 17" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </IconBase>
+  );
+}
+
 export function CampusEventsShell({
   viewerName,
+  viewerUsername,
   collegeName,
   viewerEmail,
   course,
   stream,
-  role
+  role,
+  initialDashboard
 }: CampusEventsShellProps) {
+  const [dashboard, setDashboard] = useState(initialDashboard ?? buildEmptyDashboard(viewerUsername));
   const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH);
   const [rightWidth, setRightWidth] = useState(DEFAULT_RIGHT_WIDTH);
   const [activeResize, setActiveResize] = useState<ResizeSide | null>(null);
   const [searchValue, setSearchValue] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
-  const [activeScope, setActiveScope] = useState<EventScope>("for-you");
-  const [savedIds, setSavedIds] = useState<string[]>(["2", "6"]);
-  const [interestedIds, setInterestedIds] = useState<string[]>(["1", "3"]);
+  const [activeScope, setActiveScope] = useState<CampusEventScope>("for-you");
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [flashMessage, setFlashMessage] = useState<string | null>(null);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const resizeState = useRef<{ side: ResizeSide; startX: number; startWidth: number } | null>(null);
+
+  useEffect(() => {
+    setDashboard(initialDashboard ?? buildEmptyDashboard(viewerUsername));
+  }, [initialDashboard, viewerUsername]);
 
   useEffect(() => {
     const storedLeftWidth = Number.parseInt(window.localStorage.getItem(LEFT_WIDTH_STORAGE_KEY) ?? "", 10);
@@ -352,6 +333,30 @@ export function CampusEventsShell({
     };
   }, [activeResize]);
 
+  useEffect(() => {
+    if (!flashMessage) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setFlashMessage(null);
+    }, 2600);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [flashMessage]);
+
+  useEffect(() => {
+    if (!selectedEventId) {
+      return;
+    }
+
+    if (!dashboard.events.some((event) => event.id === selectedEventId) && !dashboard.hostedEvents.some((event) => event.id === selectedEventId)) {
+      setSelectedEventId(null);
+    }
+  }, [dashboard, selectedEventId]);
+
   function startResizeDrag(side: ResizeSide, event: PointerEvent<HTMLButtonElement>) {
     if (window.innerWidth < 900) {
       return;
@@ -366,12 +371,85 @@ export function CampusEventsShell({
     setActiveResize(side);
   }
 
-  function toggleSaved(id: string) {
-    setSavedIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  async function handleDashboardAction(
+    actionKey: string,
+    requestFactory: () => Promise<Response>,
+    successMessage: string,
+    errorMessage: string
+  ) {
+    setBusyAction(actionKey);
+
+    try {
+      const response = await requestFactory();
+      const payload = (await response.json().catch(() => null)) as { dashboard?: CampusEventsDashboardResponse; error?: { message?: string } } | null;
+
+      if (!response.ok || !payload?.dashboard) {
+        throw new Error(payload?.error?.message || errorMessage);
+      }
+
+      setDashboard(payload.dashboard);
+      setFlashMessage(successMessage);
+    } catch (error) {
+      setFlashMessage(error instanceof Error ? error.message : errorMessage);
+    } finally {
+      setBusyAction(null);
+    }
   }
 
-  function toggleInterested(id: string) {
-    setInterestedIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  async function toggleSaved(eventId: string) {
+    await handleDashboardAction(
+      `save:${eventId}`,
+      () => fetch(`/api/events/${eventId}/save`, { method: "POST" }),
+      "Saved events updated.",
+      "We could not update your saved events."
+    );
+  }
+
+  async function toggleInterested(eventId: string) {
+    await handleDashboardAction(
+      `interest:${eventId}`,
+      () => fetch(`/api/events/${eventId}/interest`, { method: "POST" }),
+      "Your RSVP was updated.",
+      "We could not update your RSVP."
+    );
+  }
+
+  async function cancelHostedEvent(eventId: string) {
+    await handleDashboardAction(
+      `cancel:${eventId}`,
+      () => fetch(`/api/events/${eventId}/cancel`, { method: "POST" }),
+      "Event cancelled.",
+      "We could not cancel this event."
+    );
+  }
+
+  async function deleteHostedEvent(eventId: string) {
+    await handleDashboardAction(
+      `delete:${eventId}`,
+      () => fetch(`/api/events/${eventId}`, { method: "DELETE" }),
+      "Event deleted.",
+      "We could not delete this event."
+    );
+  }
+
+  async function shareEvent(event: CampusEvent) {
+    const sharePayload = {
+      title: event.title,
+      text: `${event.title} by ${event.club} at ${collegeName} • ${formatEventTimeRange(event)}`,
+      url: `${window.location.origin}/events`
+    };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(sharePayload);
+      } else {
+        await navigator.clipboard.writeText(`${sharePayload.text}\n${sharePayload.url}`);
+      }
+
+      setFlashMessage("Event link ready to share.");
+    } catch {
+      setFlashMessage("Share was cancelled.");
+    }
   }
 
   const navItems = [
@@ -382,36 +460,85 @@ export function CampusEventsShell({
     { label: "Profile", href: "/dashboard", icon: <ProfileIcon /> }
   ];
 
-  const categories = ["All", ...new Set(EVENTS.map((event) => event.category))];
   const normalizedQuery = searchValue.trim().toLowerCase();
+  const categories = useMemo(() => ["All", ...dashboard.categories], [dashboard.categories]);
+  const scopedCounts = useMemo(
+    () => ({
+      "for-you": dashboard.events.filter((event) => event.status === "published").length,
+      week: dashboard.events.filter((event) => event.status === "published" && isWithinNextWeek(event)).length,
+      saved: dashboard.events.filter((event) => event.isSaved).length,
+      ended: dashboard.events.filter((event) => event.status === "ended").length
+    }),
+    [dashboard.events]
+  );
 
-  const filteredEvents = EVENTS.filter((event, index) => {
-    const matchesCategory = activeCategory === "All" || event.category === activeCategory;
-    const haystack = `${event.title} ${event.club} ${event.host} ${event.description} ${event.location} ${event.category}`.toLowerCase();
-    const matchesSearch = !normalizedQuery || haystack.includes(normalizedQuery);
+  const filteredEvents = useMemo(() => {
+    const nextEvents = dashboard.events.filter((event) => {
+      if (activeScope === "saved" && !event.isSaved) {
+        return false;
+      }
 
-    if (activeScope === "saved" && !savedIds.includes(event.id)) {
-      return false;
-    }
+      if (activeScope === "week" && !isWithinNextWeek(event)) {
+        return false;
+      }
 
-    if (activeScope === "week" && index > 3) {
-      return false;
-    }
+      if (activeScope === "ended") {
+        if (event.status !== "ended") {
+          return false;
+        }
+      } else if (event.status !== "published") {
+        return false;
+      }
 
-    return matchesCategory && matchesSearch;
-  });
+      if (activeCategory !== "All" && event.category !== activeCategory) {
+        return false;
+      }
+
+      if (!normalizedQuery) {
+        return true;
+      }
+
+      const haystack = `${event.title} ${event.club} ${event.host.username} ${event.description} ${event.location} ${event.category}`.toLowerCase();
+      return haystack.includes(normalizedQuery);
+    });
+
+    return nextEvents.sort((left, right) => {
+      const leftTime = new Date(left.startsAt).getTime();
+      const rightTime = new Date(right.startsAt).getTime();
+
+      if (activeScope === "ended") {
+        return rightTime - leftTime;
+      }
+
+      return leftTime - rightTime;
+    });
+  }, [activeCategory, activeScope, dashboard.events, normalizedQuery]);
+
+  const notificationEvents = useMemo(
+    () =>
+      dashboard.events
+        .filter((event) => event.status === "published" && (event.isSaved || event.isInterested))
+        .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
+        .slice(0, 6),
+    [dashboard.events]
+  );
+
+  const selectedEvent =
+    dashboard.events.find((event) => event.id === selectedEventId) ??
+    dashboard.hostedEvents.find((event) => event.id === selectedEventId) ??
+    null;
 
   const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
-
   const layoutStyle = {
     "--vyb-campus-left-width": `${leftWidth}px`,
     "--vyb-campus-right-width": `${rightWidth}px`
   } as CSSProperties;
 
-  const scopeOptions: Array<{ id: EventScope; label: string; count: number }> = [
-    { id: "for-you", label: "For you", count: EVENTS.length },
-    { id: "week", label: "This week", count: 4 },
-    { id: "saved", label: "Saved", count: savedIds.length }
+  const scopeOptions: Array<{ id: CampusEventScope; label: string; count: number }> = [
+    { id: "for-you", label: "For you", count: scopedCounts["for-you"] },
+    { id: "week", label: "This week", count: scopedCounts.week },
+    { id: "saved", label: "Saved", count: scopedCounts.saved },
+    { id: "ended", label: "Ended", count: scopedCounts.ended }
   ];
 
   return (
@@ -464,33 +591,72 @@ export function CampusEventsShell({
             />
           </label>
 
-          <button type="button" className="vyb-events-icon-button" aria-label="Notifications">
+          <button
+            type="button"
+            className={`vyb-events-icon-button${notificationsOpen ? " is-active" : ""}`}
+            aria-label="Open event notifications"
+            onClick={() => setNotificationsOpen((current) => !current)}
+          >
             <BellIcon />
           </button>
-          <button type="button" className="vyb-events-host-button">
+          <Link href="/events/host" className="vyb-events-host-button">
             <TicketIcon />
             <span>Host event</span>
-          </button>
+          </Link>
         </header>
 
+        {flashMessage ? <div className="vyb-campus-flash-message">{flashMessage}</div> : null}
+
+        {notificationsOpen ? (
+          <section className="vyb-events-notifications-panel">
+            <div className="vyb-events-notifications-head">
+              <strong>Your upcoming reminders</strong>
+              <button type="button" className="vyb-events-close-button" onClick={() => setNotificationsOpen(false)} aria-label="Close notifications">
+                <CloseIcon />
+              </button>
+            </div>
+            {notificationEvents.length === 0 ? (
+              <p className="vyb-events-notifications-empty">Saved and RSVP'd events will start showing up here.</p>
+            ) : (
+              <div className="vyb-events-notifications-list">
+                {notificationEvents.map((event) => (
+                  <button
+                    key={event.id}
+                    type="button"
+                    className="vyb-events-notification-item"
+                    onClick={() => {
+                      setSelectedEventId(event.id);
+                      setNotificationsOpen(false);
+                    }}
+                  >
+                    <strong>{event.title}</strong>
+                    <span>{formatEventTimeRange(event)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : null}
+
         <div className="vyb-events-shell vyb-events-shell-compact">
-          <section style={{ marginBottom: "2rem", width: "100%", maxWidth: "930px", margin: "0 auto 2rem" }}>
-            <div className="vyb-insta-tabs" role="tablist">
+          <section className="vyb-events-toolbar vyb-events-toolbar-compact">
+            <div className="vyb-events-scope-row vyb-events-scope-row-scroll" role="tablist" aria-label="Event lanes">
               {scopeOptions.map((option) => (
                 <button
                   key={option.id}
                   type="button"
                   role="tab"
                   aria-selected={activeScope === option.id}
-                  className={`vyb-insta-tab${activeScope === option.id ? " active" : ""}`}
+                  className={`vyb-events-scope-pill${activeScope === option.id ? " is-active" : ""}`}
                   onClick={() => setActiveScope(option.id)}
                 >
-                  <span>{option.label.toUpperCase()}</span>
+                  <span>{option.label}</span>
+                  <strong>{option.count}</strong>
                 </button>
               ))}
             </div>
 
-            <div className="vyb-events-chip-row" style={{ paddingTop: "1rem", justifyContent: "center" }}>
+            <div className="vyb-events-chip-row vyb-events-chip-row-scroll">
               {categories.map((category) => (
                 <button
                   key={category}
@@ -507,18 +673,33 @@ export function CampusEventsShell({
           {filteredEvents.length > 0 ? (
             <div className="vyb-events-feed">
               {filteredEvents.map((event) => {
-                const isSaved = savedIds.includes(event.id);
-                const isInterested = interestedIds.includes(event.id);
+                const primaryMedia = getPrimaryMedia(event);
+                const isSaved = event.isSaved;
+                const isInterested = event.isInterested;
+                const isOwnEvent = event.isHostedByViewer;
+                const busySave = busyAction === `save:${event.id}`;
+                const busyInterest = busyAction === `interest:${event.id}`;
 
                 return (
-                  <article key={event.id} className="vyb-events-feed-card">
+                  <article key={event.id} className="vyb-events-feed-card" role="button" tabIndex={0} onClick={() => setSelectedEventId(event.id)}>
                     <div className="vyb-events-feed-date">
-                      <span>{event.dateLabel}</span>
-                      <small>{event.time}</small>
+                      <span>{formatEventDayLabel(event.startsAt)}</span>
+                      <small>{formatEventTimeRange(event)}</small>
                     </div>
 
                     <div className="vyb-events-feed-media">
-                      <img src={event.imageUrl} alt={event.title} className="vyb-events-feed-image" />
+                      {primaryMedia ? (
+                        primaryMedia.kind === "video" ? (
+                          <video src={primaryMedia.url} className="vyb-events-feed-image" muted playsInline preload="metadata" />
+                        ) : (
+                          <img src={primaryMedia.url} alt={event.title} className="vyb-events-feed-image" />
+                        )
+                      ) : (
+                        <div className="vyb-events-feed-fallback">
+                          <SparkIcon />
+                          <span>{event.category}</span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="vyb-events-feed-content">
@@ -532,7 +713,11 @@ export function CampusEventsShell({
                           type="button"
                           className={`vyb-events-save-button${isSaved ? " is-active" : ""}`}
                           aria-label={isSaved ? `Unsave ${event.title}` : `Save ${event.title}`}
-                          onClick={() => toggleSaved(event.id)}
+                          disabled={busySave}
+                          onClick={(actionEvent) => {
+                            actionEvent.stopPropagation();
+                            void toggleSaved(event.id);
+                          }}
                         >
                           <BookmarkIcon />
                         </button>
@@ -541,9 +726,9 @@ export function CampusEventsShell({
                       <div className="vyb-events-feed-copy">
                         <div>
                           <h3>{event.title}</h3>
-                          <p>@{event.host}</p>
+                          <p>@{event.host.username}</p>
                         </div>
-                        <span className="vyb-events-attendance">{event.attendance}</span>
+                        <span className="vyb-events-attendance">{formatEventInterestLabel(event.interestCount)}</span>
                       </div>
 
                       <p className="vyb-events-feed-description">{event.description}</p>
@@ -551,7 +736,7 @@ export function CampusEventsShell({
                       <div className="vyb-events-meta-list">
                         <span>
                           <CalendarIcon />
-                          {event.time}
+                          {formatEventTimeRange(event)}
                         </span>
                         <span>
                           <LocationIcon />
@@ -562,11 +747,11 @@ export function CampusEventsShell({
                       <div className="vyb-events-feed-social">
                         <span>
                           <HeartIcon />
-                          {isInterested ? "You are going" : event.attendance}
+                          {isInterested ? "You are going" : formatEventInterestLabel(event.interestCount)}
                         </span>
                         <span>
                           <CommentIcon />
-                          {event.comments}
+                          {event.commentCount} comments
                         </span>
                       </div>
 
@@ -574,15 +759,36 @@ export function CampusEventsShell({
                         <button
                           type="button"
                           className={`vyb-events-primary-button${isInterested ? " is-active" : ""}`}
-                          onClick={() => toggleInterested(event.id)}
+                          disabled={busyInterest || event.status !== "published"}
+                          onClick={(actionEvent) => {
+                            actionEvent.stopPropagation();
+                            void toggleInterested(event.id);
+                          }}
                         >
                           <TicketIcon />
-                          <span>{isInterested ? "Going" : "Interested"}</span>
+                          <span>{isInterested ? "Going" : event.status === "ended" ? "Ended" : "Interested"}</span>
                         </button>
-                        <button type="button" className="vyb-events-secondary-button">
-                          <SendIcon />
-                          <span>Share</span>
-                        </button>
+                        {isOwnEvent ? (
+                          <Link
+                            href={`/events/host?edit=${encodeURIComponent(event.id)}`}
+                            className="vyb-events-secondary-button"
+                            onClick={(actionEvent) => actionEvent.stopPropagation()}
+                          >
+                            <span>Edit</span>
+                          </Link>
+                        ) : (
+                          <button
+                            type="button"
+                            className="vyb-events-secondary-button"
+                            onClick={(actionEvent) => {
+                              actionEvent.stopPropagation();
+                              void shareEvent(event);
+                            }}
+                          >
+                            <SendIcon />
+                            <span>Share</span>
+                          </button>
+                        )}
                       </div>
                     </div>
                   </article>
@@ -627,26 +833,51 @@ export function CampusEventsShell({
           <div className="vyb-events-side-stats">
             <div>
               <span>Saved</span>
-              <strong>{savedIds.length}</strong>
+              <strong>{dashboard.viewer.savedCount}</strong>
             </div>
             <div>
               <span>Going</span>
-              <strong>{interestedIds.length}</strong>
+              <strong>{dashboard.viewer.interestedCount}</strong>
+            </div>
+            <div>
+              <span>Hosted</span>
+              <strong>{dashboard.viewer.hostedCount}</strong>
             </div>
           </div>
         </div>
 
         <div className="vyb-campus-side-card vyb-events-side-card">
-          <span className="vyb-campus-side-label">Hot clubs</span>
+          <div className="vyb-events-side-list-head">
+            <span className="vyb-campus-side-label">Hosted by you</span>
+            <Link href="/events/host" className="vyb-events-inline-link">
+              New
+            </Link>
+          </div>
           <div className="vyb-events-side-list">
-            <div className="vyb-events-side-list-item">
-              <strong>culture.live</strong>
-              <span>Carrying the biggest social turnout this week across music and performance nights.</span>
-            </div>
-            <div className="vyb-events-side-list-item">
-              <strong>codecell.live</strong>
-              <span>Driving the strongest builder attendance with sprint rooms and fast RSVP conversion.</span>
-            </div>
+            {dashboard.hostedEvents.length === 0 ? (
+              <div className="vyb-events-side-list-item">
+                <strong>No hosted events yet</strong>
+                <span>Open the host page and publish your first campus event.</span>
+              </div>
+            ) : (
+              dashboard.hostedEvents.slice(0, 4).map((event) => (
+                <button key={event.id} type="button" className="vyb-events-side-list-item vyb-events-side-list-button" onClick={() => setSelectedEventId(event.id)}>
+                  <strong>{event.title}</strong>
+                  <span>{formatEventTimeRange(event)}</span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="vyb-campus-side-card vyb-events-side-card">
+          <span className="vyb-campus-side-label">Hot categories</span>
+          <div className="vyb-events-chip-row">
+            {dashboard.categories.slice(0, 6).map((category) => (
+              <button key={category} type="button" className="vyb-events-chip" onClick={() => setActiveCategory(category)}>
+                {category}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -661,6 +892,119 @@ export function CampusEventsShell({
           </Link>
         ))}
       </nav>
+
+      {selectedEvent ? (
+        <div className="vyb-events-detail-backdrop" role="presentation" onClick={() => setSelectedEventId(null)}>
+          <aside className="vyb-events-detail-sheet" role="dialog" aria-modal="true" aria-label={selectedEvent.title} onClick={(event) => event.stopPropagation()}>
+            <button type="button" className="vyb-events-detail-close" aria-label="Close event details" onClick={() => setSelectedEventId(null)}>
+              <CloseIcon />
+            </button>
+
+            <div className="vyb-events-detail-media">
+              {getPrimaryMedia(selectedEvent) ? (
+                getPrimaryMedia(selectedEvent)?.kind === "video" ? (
+                  <video src={getPrimaryMedia(selectedEvent)?.url} controls playsInline className="vyb-events-detail-image" />
+                ) : (
+                  <img src={getPrimaryMedia(selectedEvent)?.url} alt={selectedEvent.title} className="vyb-events-detail-image" />
+                )
+              ) : (
+                <div className="vyb-events-detail-fallback">
+                  <SparkIcon />
+                  <span>{selectedEvent.category}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="vyb-events-detail-copy">
+              <div className="vyb-events-detail-badges">
+                <span className="vyb-events-club-tag">{selectedEvent.club}</span>
+                <span className="vyb-events-pass-badge">{selectedEvent.passLabel}</span>
+                <span className={`vyb-events-status-pill is-${selectedEvent.status}`}>{selectedEvent.status}</span>
+              </div>
+
+              <div className="vyb-events-detail-head">
+                <div>
+                  <h2>{selectedEvent.title}</h2>
+                  <p>@{selectedEvent.host.username}</p>
+                </div>
+                <strong>{formatEventInterestLabel(selectedEvent.interestCount)}</strong>
+              </div>
+
+              <p className="vyb-events-detail-description">{selectedEvent.description}</p>
+
+              <div className="vyb-events-detail-meta">
+                <span>
+                  <CalendarIcon />
+                  {formatEventTimeRange(selectedEvent)}
+                </span>
+                <span>
+                  <LocationIcon />
+                  {selectedEvent.location}
+                </span>
+                {selectedEvent.capacity ? (
+                  <span>
+                    <TicketIcon />
+                    Capacity {selectedEvent.capacity}
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="vyb-events-detail-actions">
+                {!selectedEvent.isHostedByViewer ? (
+                  <>
+                    <button
+                      type="button"
+                      className={`vyb-events-primary-button${selectedEvent.isInterested ? " is-active" : ""}`}
+                      disabled={busyAction === `interest:${selectedEvent.id}` || selectedEvent.status !== "published"}
+                      onClick={() => toggleInterested(selectedEvent.id)}
+                    >
+                      <TicketIcon />
+                      <span>{selectedEvent.isInterested ? "Going" : selectedEvent.status === "ended" ? "Ended" : "Interested"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={`vyb-events-secondary-button${selectedEvent.isSaved ? " is-active" : ""}`}
+                      disabled={busyAction === `save:${selectedEvent.id}`}
+                      onClick={() => toggleSaved(selectedEvent.id)}
+                    >
+                      <BookmarkIcon />
+                      <span>{selectedEvent.isSaved ? "Saved" : "Save"}</span>
+                    </button>
+                    <button type="button" className="vyb-events-secondary-button" onClick={() => shareEvent(selectedEvent)}>
+                      <SendIcon />
+                      <span>Share</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Link href={`/events/host?edit=${encodeURIComponent(selectedEvent.id)}`} className="vyb-events-primary-button">
+                      <span>Edit event</span>
+                    </Link>
+                    {selectedEvent.status === "published" ? (
+                      <button
+                        type="button"
+                        className="vyb-events-secondary-button"
+                        disabled={busyAction === `cancel:${selectedEvent.id}`}
+                        onClick={() => cancelHostedEvent(selectedEvent.id)}
+                      >
+                        <span>Cancel event</span>
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="vyb-events-secondary-button"
+                      disabled={busyAction === `delete:${selectedEvent.id}`}
+                      onClick={() => deleteHostedEvent(selectedEvent.id)}
+                    >
+                      <span>Delete</span>
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </aside>
+        </div>
+      ) : null}
     </main>
   );
 }
