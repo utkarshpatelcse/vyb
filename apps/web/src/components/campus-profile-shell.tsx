@@ -849,7 +849,7 @@ export function CampusProfileShell({
 
         {message ? <div className="vyb-campus-flash-message">{message}</div> : null}
 
-        <div className="vyb-insta-profile-shell">
+        <div className="vyb-insta-profile-shell" style={{ display: (settingsOpen || editProfileOpen) ? "none" : "block" }}>
           <section className="vyb-insta-header">
             <div className="vyb-insta-avatar-container">
               <div className="vyb-insta-avatar">
@@ -885,7 +885,6 @@ export function CampusProfileShell({
 
               <div className="vyb-insta-bio">
                 <strong>{viewerName}</strong>
-                <span className="vyb-insta-badge">Verified {role}</span>
                 <p>{identityLine} • {collegeName}</p>
               </div>
             </div>
@@ -944,77 +943,14 @@ export function CampusProfileShell({
             </div>
           </section>
         </div>
-      </section>
-
-      <aside className="vyb-campus-right-panel vyb-campus-rail vyb-profile-right-panel">
-        <div className="vyb-campus-side-card vyb-profile-side-card">
-          <span className="vyb-campus-side-label">Profile control</span>
-          <div className="vyb-campus-side-user">
-            <img src={buildAvatarUrl(profileSeed)} alt={viewerName} />
-            <div>
-              <strong>{viewerName}</strong>
-              <span>@{username}</span>
-            </div>
-          </div>
-          <p className="vyb-profile-side-copy">{identityLine}</p>
-          {isOwnProfile ? (
-            <button type="button" className="vyb-profile-side-cta" onClick={() => setSettingsOpen(true)}>
-              Open settings
-            </button>
-          ) : (
-            <button type="button" className="vyb-profile-side-cta" disabled={busy} onClick={handleFollowToggle}>
-              {busy ? "Updating..." : followingState ? "Following" : "Follow"}
-            </button>
-          )}
-        </div>
-
-        <div className="vyb-campus-side-card vyb-profile-side-card">
-          <span className="vyb-campus-side-label">Saved shortcuts</span>
-          <div className="vyb-profile-shortcut-list">
-            <button type="button" className="vyb-profile-shortcut-button" onClick={() => setActiveTab("saved")}>
-              <strong>Saved posts</strong>
-              <span>Jump to your saved shelf on profile.</span>
-            </button>
-            <Link href="/market" className="vyb-profile-shortcut-button">
-              <strong>Saved listings</strong>
-              <span>Open marketplace and continue from your saved items.</span>
-            </Link>
-          </div>
-        </div>
-
-        {utilityCards.map((card) => (
-          <div key={card.key} className="vyb-campus-side-card vyb-profile-side-card">
-            <div className="vyb-profile-side-head">
-              <span className="vyb-campus-side-label">{card.title}</span>
-              <strong>{card.meta}</strong>
-            </div>
-            {card.content ?? <p className="vyb-profile-side-copy">{card.empty}</p>}
-          </div>
-        ))}
-      </aside>
-
-      <nav className="vyb-campus-bottom-nav">
-        {navItems.map((item) => (
-          <Link key={item.label} href={item.href} className={`vyb-campus-bottom-item${item.active ? " is-active" : ""}`}>
-            {item.icon}
-            <span>{item.label}</span>
-          </Link>
-        ))}
-      </nav>      {isOwnProfile && editProfileOpen ? (
-        <div className="vyb-insta-settings-backdrop" role="presentation" onClick={() => setEditProfileOpen(false)}>
-          <aside
-            className="vyb-insta-settings-modal"
-            style={{maxWidth: '500px'}}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Edit Profile"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="vyb-insta-settings-header">
-              <h2>Edit Profile</h2>
-              <button type="button" className="vyb-insta-close" onClick={() => setEditProfileOpen(false)} aria-label="Close edit profile">
-                <CloseIcon />
-              </button>
+      
+{isOwnProfile && editProfileOpen ? (
+        <div className="vyb-insta-profile-shell" style={{ padding: "0 1.5rem 2rem" }}>
+          <div className="vyb-insta-settings-inline">
+            <div className="vyb-insta-settings-header" style={{borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "1rem", marginBottom: "2rem", display: "flex", alignItems: "center", justifyContent: "space-between"}}>
+              <button type="button" className="vyb-insta-outline-btn" style={{border: "none", padding: "0.2rem 0", background: "transparent", color: "#94a3b8"}} onClick={() => setEditProfileOpen(false)}>← Back</button>
+              <h2 style={{margin: 0, fontSize: "1.15rem", fontWeight: 600}}>Edit Profile</h2>
+              <div style={{width: 50}}></div>
             </div>
 
             {message ? <p className="vyb-insta-settings-message">{message}</p> : null}
@@ -1083,24 +1019,17 @@ export function CampusProfileShell({
                 </div>
               </section>
             </div>
-          </aside>
+          </div>
         </div>
       ) : null}
 
       {isOwnProfile && settingsOpen ? (
-        <div className="vyb-insta-settings-backdrop" role="presentation" onClick={() => setSettingsOpen(false)}>
-          <aside
-            className="vyb-insta-settings-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Profile settings"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="vyb-insta-settings-header">
-              <h2>Settings</h2>
-              <button type="button" className="vyb-insta-close" onClick={() => setSettingsOpen(false)} aria-label="Close settings">
-                <CloseIcon />
-              </button>
+        <div className="vyb-insta-profile-shell" style={{ padding: "0 1.5rem 2rem" }}>
+          <div className="vyb-insta-settings-inline">
+            <div className="vyb-insta-settings-header" style={{borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "1rem", marginBottom: "2rem", display: "flex", alignItems: "center", justifyContent: "space-between"}}>
+              <button type="button" className="vyb-insta-outline-btn" style={{border: "none", padding: "0.2rem 0", background: "transparent", color: "#94a3b8"}} onClick={() => setSettingsOpen(false)}>← Back</button>
+              <h2 style={{margin: 0, fontSize: "1.15rem", fontWeight: 600}}>Settings</h2>
+              <div style={{width: 50}}></div>
             </div>
 
             {message ? <p className="vyb-insta-settings-message">{message}</p> : null}
@@ -1204,9 +1133,67 @@ export function CampusProfileShell({
                 </div>
               </section>
             </div>
-          </aside>
+          </div>
         </div>
       ) : null}
-    </main>
+    
+</section>
+
+      <aside className="vyb-campus-right-panel vyb-campus-rail vyb-profile-right-panel">
+        <div className="vyb-campus-side-card vyb-profile-side-card">
+          <span className="vyb-campus-side-label">Profile control</span>
+          <div className="vyb-campus-side-user">
+            <img src={buildAvatarUrl(profileSeed)} alt={viewerName} />
+            <div>
+              <strong>{viewerName}</strong>
+              <span>@{username}</span>
+            </div>
+          </div>
+          <p className="vyb-profile-side-copy">{identityLine}</p>
+          {isOwnProfile ? (
+            <button type="button" className="vyb-profile-side-cta" onClick={() => setSettingsOpen(true)}>
+              Open settings
+            </button>
+          ) : (
+            <button type="button" className="vyb-profile-side-cta" disabled={busy} onClick={handleFollowToggle}>
+              {busy ? "Updating..." : followingState ? "Following" : "Follow"}
+            </button>
+          )}
+        </div>
+
+        <div className="vyb-campus-side-card vyb-profile-side-card">
+          <span className="vyb-campus-side-label">Saved shortcuts</span>
+          <div className="vyb-profile-shortcut-list">
+            <button type="button" className="vyb-profile-shortcut-button" onClick={() => setActiveTab("saved")}>
+              <strong>Saved posts</strong>
+              <span>Jump to your saved shelf on profile.</span>
+            </button>
+            <Link href="/market" className="vyb-profile-shortcut-button">
+              <strong>Saved listings</strong>
+              <span>Open marketplace and continue from your saved items.</span>
+            </Link>
+          </div>
+        </div>
+
+        {utilityCards.map((card) => (
+          <div key={card.key} className="vyb-campus-side-card vyb-profile-side-card">
+            <div className="vyb-profile-side-head">
+              <span className="vyb-campus-side-label">{card.title}</span>
+              <strong>{card.meta}</strong>
+            </div>
+            {card.content ?? <p className="vyb-profile-side-copy">{card.empty}</p>}
+          </div>
+        ))}
+      </aside>
+
+      <nav className="vyb-campus-bottom-nav">
+        {navItems.map((item) => (
+          <Link key={item.label} href={item.href} className={`vyb-campus-bottom-item${item.active ? " is-active" : ""}`}>
+            {item.icon}
+            <span>{item.label}</span>
+          </Link>
+        ))}
+      </nav>      
+</main>
   );
 }
