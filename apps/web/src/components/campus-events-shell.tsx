@@ -1,6 +1,19 @@
 "use client";
 
-import type { CampusEvent, CampusEventScope, CampusEventsDashboardResponse } from "@vyb/contracts";
+import type {
+  CampusEvent,
+  CampusEventFormField,
+  CampusEventMediaAsset,
+  CampusEventRegistration,
+  CampusEventRegistrationAnswer,
+  CampusEventRegistrationStatus,
+  CampusEventScope,
+  CampusEventsDashboardResponse,
+  CampusEventTeamMember,
+  CampusEventViewerRegistrationResponse,
+  ManageCampusEventRegistrationResponse,
+  UpsertCampusEventRegistrationResponse
+} from "@vyb/contracts";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import { SignOutButton } from "./sign-out-button";
@@ -18,6 +31,29 @@ type CampusEventsShellProps = {
 };
 
 type ResizeSide = "left" | "right";
+
+type RegistrationDraftMember = {
+  id: string;
+  name: string;
+  email: string;
+  username: string;
+  phone: string;
+  role: string;
+};
+
+type RegistrationDraft = {
+  teamName: string;
+  note: string;
+  teamMembers: RegistrationDraftMember[];
+  answers: Record<string, string>;
+  attachments: Array<
+    CampusEventMediaAsset & {
+      file: File | null;
+      shouldRevoke: boolean;
+      source: "existing" | "upload";
+    }
+  >;
+};
 
 const DEFAULT_LEFT_WIDTH = 260;
 const DEFAULT_RIGHT_WIDTH = 320;
@@ -40,11 +76,49 @@ function buildEmptyDashboard(viewerUsername: string): CampusEventsDashboardRespo
       username: viewerUsername,
       savedCount: 0,
       interestedCount: 0,
-      hostedCount: 0
+      hostedCount: 0,
+      hostedPendingCount: 0,
+      hostedRegistrationCount: 0
     },
     events: [],
     hostedEvents: [],
     categories: []
+  };
+}
+
+function buildEmptyDraft(fields: CampusEventFormField[]): RegistrationDraft {
+  return {
+    teamName: "",
+    note: "",
+    teamMembers: [],
+    answers: Object.fromEntries(fields.map((field) => [field.id, ""])),
+    attachments: []
+  };
+}
+
+function buildDraftFromRegistration(fields: CampusEventFormField[], registration: CampusEventRegistration | null): RegistrationDraft {
+  if (!registration) {
+    return buildEmptyDraft(fields);
+  }
+
+  return {
+    teamName: registration.teamName ?? "",
+    note: registration.note ?? "",
+    teamMembers: registration.teamMembers.map((member) => ({
+      id: member.id,
+      name: member.name,
+      email: member.email ?? "",
+      username: member.username ?? "",
+      phone: member.phone ?? "",
+      role: member.role ?? ""
+    })),
+    answers: Object.fromEntries(fields.map((field) => [field.id, registration.answers.find((answer) => answer.fieldId === field.id)?.value ?? ""])),
+    attachments: registration.attachments.map((attachment) => ({
+      ...attachment,
+      file: null,
+      shouldRevoke: false,
+      source: "existing"
+    }))
   };
 }
 
@@ -80,27 +154,96 @@ function formatEventTimeRange(event: CampusEvent) {
   return `${startLabel} - ${endLabel}`;
 }
 
-function formatEventInterestLabel(value: number) {
+function formatInterestLabel(value: number) {
   if (value >= 1000) {
-    return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}K interested`;
+    return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}K responses`;
   }
 
   if (value <= 0) {
     return "Be the first to respond";
   }
 
-  return `${value} interested`;
+  return `${value} responses`;
+}
+
+function formatResponseMode(mode: CampusEvent["responseMode"]) {
+  if (mode === "apply") {
+    return "Application";
+  }
+
+  if (mode === "register") {
+    return "Registration";
+  }
+
+  return "Interest";
+}
+
+function formatRegistrationStatus(status: CampusEventRegistration["status"]) {
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function formatPrimaryActionLabel(event: CampusEvent) {
+  if (event.status === "ended") {
+    return "Ended";
+  }
+
+  if (event.responseMode === "interest") {
+    return event.isInterested ? "Going" : "Interested";
+  }
+
+  if (event.viewerRegistration) {
+    if (event.viewerRegistration.status === "approved") {
+      return event.responseMode === "apply" ? "Review application" : "Edit registration";
+    }
+    if (event.viewerRegistration.status === "waitlisted") {
+      return event.responseMode === "apply" ? "Edit application" : "Edit registration";
+    }
+    if (event.viewerRegistration.status === "rejected") {
+      return "Re-apply";
+    }
+    return event.responseMode === "apply" ? "Edit application" : "Edit registration";
+  }
+
+  return event.responseMode === "apply" ? "Apply now" : "Register";
 }
 
 function isWithinNextWeek(event: CampusEvent) {
   const now = Date.now();
   const startsAt = new Date(event.startsAt).getTime();
-
   return startsAt >= now && startsAt <= now + 7 * 24 * 60 * 60_000;
 }
 
 function getPrimaryMedia(event: CampusEvent) {
   return event.media[0] ?? null;
+}
+
+function getScopeFilteredEvents(events: CampusEvent[], activeScope: CampusEventScope) {
+  return events.filter((event) => {
+    if (activeScope === "saved" && !event.isSaved) {
+      return false;
+    }
+
+    if (activeScope === "week" && !isWithinNextWeek(event)) {
+      return false;
+    }
+
+    if (activeScope === "ended") {
+      return event.status === "ended";
+    }
+
+    return event.status === "published";
+  });
+}
+
+function createDraftMember(): RegistrationDraftMember {
+  return {
+    id: crypto.randomUUID(),
+    name: "",
+    email: "",
+    username: "",
+    phone: "",
+    role: ""
+  };
 }
 
 function IconBase({ children }: { children: ReactNode }) {
@@ -247,6 +390,22 @@ function CloseIcon() {
   );
 }
 
+function DownloadIcon() {
+  return (
+    <IconBase>
+      <path d="M12 3v11M8 10l4 4 4-4M5 19h14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </IconBase>
+  );
+}
+
+function UsersIcon() {
+  return (
+    <IconBase>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M10 7a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm8 14v-2a4 4 0 0 0-3-3.87M15 3.1a4 4 0 0 1 0 7.75" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </IconBase>
+  );
+}
+
 export function CampusEventsShell({
   viewerName,
   viewerUsername,
@@ -268,6 +427,17 @@ export function CampusEventsShell({
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [registrationSheetOpen, setRegistrationSheetOpen] = useState(false);
+  const [registrationDraft, setRegistrationDraft] = useState<RegistrationDraft>(buildEmptyDraft([]));
+  const [registrationLoading, setRegistrationLoading] = useState(false);
+  const [registrationError, setRegistrationError] = useState<string | null>(null);
+  const [brokenMediaIds, setBrokenMediaIds] = useState<string[]>([]);
+  const [hostRegistrations, setHostRegistrations] = useState<CampusEventRegistration[]>([]);
+  const [hostRegistrationsLoading, setHostRegistrationsLoading] = useState(false);
+  const [hostRegistrationsError, setHostRegistrationsError] = useState<string | null>(null);
+  const [hostRegistrationQuery, setHostRegistrationQuery] = useState("");
+  const [hostRegistrationStatuses, setHostRegistrationStatuses] = useState<CampusEventRegistrationStatus[]>([]);
+  const registrationFileInputRef = useRef<HTMLInputElement | null>(null);
   const resizeState = useRef<{ side: ResizeSide; startX: number; startWidth: number } | null>(null);
 
   useEffect(() => {
@@ -302,19 +472,16 @@ export function CampusEventsShell({
 
     function handlePointerMove(event: globalThis.PointerEvent) {
       const currentResize = resizeState.current;
-
       if (!currentResize) {
         return;
       }
 
       if (currentResize.side === "left") {
-        const nextWidth = clamp(currentResize.startWidth + (event.clientX - currentResize.startX), MIN_LEFT_WIDTH, MAX_LEFT_WIDTH);
-        setLeftWidth(nextWidth);
+        setLeftWidth(clamp(currentResize.startWidth + (event.clientX - currentResize.startX), MIN_LEFT_WIDTH, MAX_LEFT_WIDTH));
         return;
       }
 
-      const nextWidth = clamp(currentResize.startWidth - (event.clientX - currentResize.startX), MIN_RIGHT_WIDTH, MAX_RIGHT_WIDTH);
-      setRightWidth(nextWidth);
+      setRightWidth(clamp(currentResize.startWidth - (event.clientX - currentResize.startX), MIN_RIGHT_WIDTH, MAX_RIGHT_WIDTH));
     }
 
     function handlePointerUp() {
@@ -338,13 +505,8 @@ export function CampusEventsShell({
       return;
     }
 
-    const timeoutId = window.setTimeout(() => {
-      setFlashMessage(null);
-    }, 2600);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
+    const timeoutId = window.setTimeout(() => setFlashMessage(null), 2600);
+    return () => window.clearTimeout(timeoutId);
   }, [flashMessage]);
 
   useEffect(() => {
@@ -356,6 +518,62 @@ export function CampusEventsShell({
       setSelectedEventId(null);
     }
   }, [dashboard, selectedEventId]);
+
+  useEffect(() => {
+    setHostRegistrationQuery("");
+    setHostRegistrationStatuses([]);
+  }, [selectedEventId]);
+
+  const selectedEvent =
+    dashboard.events.find((event) => event.id === selectedEventId) ??
+    dashboard.hostedEvents.find((event) => event.id === selectedEventId) ??
+    null;
+
+  useEffect(() => {
+    if (!selectedEvent || !selectedEvent.isHostedByViewer) {
+      setHostRegistrations([]);
+      setHostRegistrationsError(null);
+      setHostRegistrationsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setHostRegistrationsLoading(true);
+    setHostRegistrationsError(null);
+    const searchParams = new URLSearchParams();
+    if (hostRegistrationQuery.trim()) {
+      searchParams.set("query", hostRegistrationQuery.trim());
+    }
+    if (hostRegistrationStatuses.length > 0) {
+      searchParams.set("status", hostRegistrationStatuses.join(","));
+    }
+    const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+
+    fetch(`/api/events/${selectedEvent.id}/registrations${suffix}`)
+      .then(async (response) => {
+        const payload = (await response.json().catch(() => null)) as { registrations?: CampusEventRegistration[]; error?: { message?: string } } | null;
+        if (!response.ok) {
+          throw new Error(payload?.error?.message || "We could not load registrations.");
+        }
+        if (!cancelled) {
+          setHostRegistrations(payload?.registrations ?? []);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setHostRegistrationsError(error instanceof Error ? error.message : "We could not load registrations.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setHostRegistrationsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hostRegistrationQuery, hostRegistrationStatuses, selectedEvent?.id, selectedEvent?.isHostedByViewer]);
 
   function startResizeDrag(side: ResizeSide, event: PointerEvent<HTMLButtonElement>) {
     if (window.innerWidth < 900) {
@@ -409,8 +627,8 @@ export function CampusEventsShell({
     await handleDashboardAction(
       `interest:${eventId}`,
       () => fetch(`/api/events/${eventId}/interest`, { method: "POST" }),
-      "Your RSVP was updated.",
-      "We could not update your RSVP."
+      "Your response was updated.",
+      "We could not update your response."
     );
   }
 
@@ -430,6 +648,184 @@ export function CampusEventsShell({
       "Event deleted.",
       "We could not delete this event."
     );
+  }
+
+  async function openRegistrationSheet(event: CampusEvent) {
+    setRegistrationSheetOpen(true);
+    setRegistrationLoading(true);
+    setRegistrationError(null);
+    setRegistrationDraft(buildEmptyDraft(event.registrationConfig.formFields));
+
+    try {
+      const response = await fetch(`/api/events/${event.id}/register`);
+      const payload = (await response.json().catch(() => null)) as CampusEventViewerRegistrationResponse | { error?: { message?: string } } | null;
+
+      if (!response.ok || !payload || !("event" in payload)) {
+        throw new Error(payload && "error" in payload ? payload.error?.message || "We could not load your registration." : "We could not load your registration.");
+      }
+
+      setRegistrationDraft(buildDraftFromRegistration(payload.event.registrationConfig.formFields, payload.registration));
+    } catch (error) {
+      setRegistrationError(error instanceof Error ? error.message : "We could not load your registration.");
+    } finally {
+      setRegistrationLoading(false);
+    }
+  }
+
+  function closeRegistrationSheet() {
+    for (const attachment of registrationDraft.attachments) {
+      if (attachment.shouldRevoke) {
+        URL.revokeObjectURL(attachment.url);
+      }
+    }
+    setRegistrationSheetOpen(false);
+    setRegistrationError(null);
+    setRegistrationLoading(false);
+  }
+
+  function addRegistrationAttachments(files: FileList | null) {
+    const fileItems = Array.from(files ?? []);
+    if (fileItems.length === 0) {
+      return;
+    }
+
+    setRegistrationDraft((current) => ({
+      ...current,
+      attachments: [
+        ...current.attachments,
+        ...fileItems.slice(0, Math.max(0, 3 - current.attachments.length)).map((file) => ({
+          id: `upload-${crypto.randomUUID()}`,
+          kind: "image" as const,
+          url: URL.createObjectURL(file),
+          fileName: file.name,
+          mimeType: file.type || "image/jpeg",
+          sizeBytes: file.size,
+          storagePath: null,
+          file,
+          shouldRevoke: true,
+          source: "upload" as const
+        }))
+      ]
+    }));
+  }
+
+  function removeRegistrationAttachment(attachmentId: string) {
+    setRegistrationDraft((current) => {
+      const target = current.attachments.find((attachment) => attachment.id === attachmentId);
+      if (target?.shouldRevoke) {
+        URL.revokeObjectURL(target.url);
+      }
+
+      return {
+        ...current,
+        attachments: current.attachments.filter((attachment) => attachment.id !== attachmentId)
+      };
+    });
+  }
+
+  async function submitRegistration(event: CampusEvent) {
+    if (event.registrationConfig.entryMode === "team" && !registrationDraft.teamName.trim()) {
+      setFlashMessage("Add a team name before submitting.");
+      return;
+    }
+
+    for (const field of event.registrationConfig.formFields) {
+      const value = registrationDraft.answers[field.id] ?? "";
+      if (field.required && !value.trim()) {
+        setFlashMessage(`Complete "${field.label}" before submitting.`);
+        return;
+      }
+    }
+
+    if (event.registrationConfig.allowAttachments && registrationDraft.attachments.length === 0) {
+      setFlashMessage(`Upload ${event.registrationConfig.attachmentLabel || "the required image"} before submitting.`);
+      return;
+    }
+
+    setBusyAction(`register:${event.id}`);
+
+    try {
+      const answers: CampusEventRegistrationAnswer[] = event.registrationConfig.formFields.map((field) => ({
+        fieldId: field.id,
+        label: field.label,
+        value: registrationDraft.answers[field.id] ?? ""
+      }));
+      const teamMembers: CampusEventTeamMember[] = registrationDraft.teamMembers.map((member) => ({
+        id: member.id,
+        name: member.name,
+        email: member.email || null,
+        username: member.username || null,
+        phone: member.phone || null,
+        role: member.role || null
+      }));
+
+      const formData = new FormData();
+      formData.set("eventId", event.id);
+      formData.set("teamName", registrationDraft.teamName);
+      formData.set("note", registrationDraft.note);
+      formData.set("teamMembers", JSON.stringify(teamMembers));
+      formData.set("answers", JSON.stringify(answers));
+
+      for (const attachment of registrationDraft.attachments) {
+        if (attachment.source === "existing") {
+          formData.append("keepAttachmentIds", attachment.id);
+        } else if (attachment.file) {
+          formData.append("attachments", attachment.file);
+        }
+      }
+
+      const response = await fetch(`/api/events/${event.id}/register`, {
+        method: "POST",
+        body: formData
+      });
+      const payload = (await response.json().catch(() => null)) as UpsertCampusEventRegistrationResponse | { error?: { message?: string } } | null;
+
+      if (!response.ok || !payload || !("dashboard" in payload)) {
+        throw new Error(payload && "error" in payload ? payload.error?.message || "We could not submit this registration." : "We could not submit this registration.");
+      }
+
+      setDashboard(payload.dashboard);
+      setSelectedEventId(payload.event.id);
+      setRegistrationSheetOpen(false);
+      setFlashMessage(event.responseMode === "apply" ? "Application submitted." : "Registration confirmed.");
+    } catch (error) {
+      setFlashMessage(error instanceof Error ? error.message : "We could not submit this registration.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function reviewRegistration(eventId: string, registrationId: string, status: "approved" | "waitlisted" | "rejected") {
+    const reviewNote =
+      status === "approved"
+        ? ""
+        : window.prompt(`Optional note for ${status}:`, "") ?? "";
+
+    setBusyAction(`review:${registrationId}`);
+
+    try {
+      const response = await fetch(`/api/events/${eventId}/registrations/${registrationId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          status,
+          reviewNote
+        })
+      });
+      const payload = (await response.json().catch(() => null)) as ManageCampusEventRegistrationResponse | { error?: { message?: string } } | null;
+
+      if (!response.ok || !payload || !("dashboard" in payload)) {
+        throw new Error(payload && "error" in payload ? payload.error?.message || "We could not update this registration." : "We could not update this registration.");
+      }
+
+      setDashboard(payload.dashboard);
+      setHostRegistrations(payload.registrations);
+      setFlashMessage(`Registration ${status}.`);
+    } catch (error) {
+      setFlashMessage(error instanceof Error ? error.message : "We could not update this registration.");
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   async function shareEvent(event: CampusEvent) {
@@ -452,6 +848,23 @@ export function CampusEventsShell({
     }
   }
 
+  function exportRegistrations(eventId: string) {
+    const searchParams = new URLSearchParams();
+    if (hostRegistrationQuery.trim()) {
+      searchParams.set("query", hostRegistrationQuery.trim());
+    }
+    if (hostRegistrationStatuses.length > 0) {
+      searchParams.set("status", hostRegistrationStatuses.join(","));
+    }
+
+    const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+    window.open(`/api/events/${eventId}/registrations/export${suffix}`, "_blank", "noopener,noreferrer");
+  }
+
+  function toggleHostRegistrationStatus(status: CampusEventRegistrationStatus) {
+    setHostRegistrationStatuses((current) => (current.includes(status) ? current.filter((candidate) => candidate !== status) : [...current, status]));
+  }
+
   const navItems = [
     { label: "Home", href: "/home", icon: <HomeIcon /> },
     { label: "Events", href: "/events", icon: <EventsIcon />, active: true },
@@ -461,7 +874,7 @@ export function CampusEventsShell({
   ];
 
   const normalizedQuery = searchValue.trim().toLowerCase();
-  const categories = useMemo(() => ["All", ...dashboard.categories], [dashboard.categories]);
+
   const scopedCounts = useMemo(
     () => ({
       "for-you": dashboard.events.filter((event) => event.status === "published").length,
@@ -472,28 +885,10 @@ export function CampusEventsShell({
     [dashboard.events]
   );
 
-  const filteredEvents = useMemo(() => {
-    const nextEvents = dashboard.events.filter((event) => {
-      if (activeScope === "saved" && !event.isSaved) {
-        return false;
-      }
+  const scopeFilteredEvents = useMemo(() => getScopeFilteredEvents(dashboard.events, activeScope), [activeScope, dashboard.events]);
 
-      if (activeScope === "week" && !isWithinNextWeek(event)) {
-        return false;
-      }
-
-      if (activeScope === "ended") {
-        if (event.status !== "ended") {
-          return false;
-        }
-      } else if (event.status !== "published") {
-        return false;
-      }
-
-      if (activeCategory !== "All" && event.category !== activeCategory) {
-        return false;
-      }
-
+  const searchableScopeEvents = useMemo(() => {
+    return scopeFilteredEvents.filter((event) => {
       if (!normalizedQuery) {
         return true;
       }
@@ -501,32 +896,40 @@ export function CampusEventsShell({
       const haystack = `${event.title} ${event.club} ${event.host.username} ${event.description} ${event.location} ${event.category}`.toLowerCase();
       return haystack.includes(normalizedQuery);
     });
+  }, [normalizedQuery, scopeFilteredEvents]);
+
+  const categories = useMemo(() => ["All", ...new Set(searchableScopeEvents.map((event) => event.category).filter(Boolean))], [searchableScopeEvents]);
+
+  useEffect(() => {
+    if (activeCategory !== "All" && !categories.includes(activeCategory)) {
+      setActiveCategory("All");
+    }
+  }, [activeCategory, categories]);
+
+  const filteredEvents = useMemo(() => {
+    const nextEvents = searchableScopeEvents.filter((event) => {
+      if (activeCategory !== "All" && event.category !== activeCategory) {
+        return false;
+      }
+
+      return true;
+    });
 
     return nextEvents.sort((left, right) => {
       const leftTime = new Date(left.startsAt).getTime();
       const rightTime = new Date(right.startsAt).getTime();
-
-      if (activeScope === "ended") {
-        return rightTime - leftTime;
-      }
-
-      return leftTime - rightTime;
+      return activeScope === "ended" ? rightTime - leftTime : leftTime - rightTime;
     });
-  }, [activeCategory, activeScope, dashboard.events, normalizedQuery]);
+  }, [activeCategory, activeScope, searchableScopeEvents]);
 
   const notificationEvents = useMemo(
     () =>
       dashboard.events
-        .filter((event) => event.status === "published" && (event.isSaved || event.isInterested))
+        .filter((event) => event.status === "published" && (event.isSaved || event.isInterested || event.viewerRegistration))
         .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
         .slice(0, 6),
     [dashboard.events]
   );
-
-  const selectedEvent =
-    dashboard.events.find((event) => event.id === selectedEventId) ??
-    dashboard.hostedEvents.find((event) => event.id === selectedEventId) ??
-    null;
 
   const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
   const layoutStyle = {
@@ -535,8 +938,7 @@ export function CampusEventsShell({
   } as CSSProperties;
 
   const scopeOptions: Array<{ id: CampusEventScope; label: string; count: number }> = [
-    { id: "for-you", label: "For you", count: scopedCounts["for-you"] },
-    { id: "week", label: "This week", count: scopedCounts.week },
+    { id: "for-you", label: "Upcoming", count: scopedCounts["for-you"] },
     { id: "saved", label: "Saved", count: scopedCounts.saved },
     { id: "ended", label: "Ended", count: scopedCounts.ended }
   ];
@@ -616,7 +1018,7 @@ export function CampusEventsShell({
               </button>
             </div>
             {notificationEvents.length === 0 ? (
-              <p className="vyb-events-notifications-empty">Saved and RSVP'd events will start showing up here.</p>
+              <p className="vyb-events-notifications-empty">Saved, interested, and registered events will show up here.</p>
             ) : (
               <div className="vyb-events-notifications-list">
                 {notificationEvents.map((event) => (
@@ -640,23 +1042,23 @@ export function CampusEventsShell({
 
         <div className="vyb-events-shell vyb-events-shell-compact">
           <section className="vyb-events-toolbar vyb-events-toolbar-compact">
-            <div className="vyb-events-scope-row vyb-events-scope-row-scroll" role="tablist" aria-label="Event lanes">
+            <div className="vyb-insta-tabs vyb-events-scope-row-scroll" role="tablist" aria-label="Event scopes">
               {scopeOptions.map((option) => (
                 <button
                   key={option.id}
                   type="button"
                   role="tab"
                   aria-selected={activeScope === option.id}
-                  className={`vyb-events-scope-pill${activeScope === option.id ? " is-active" : ""}`}
+                  aria-label={`${option.label} (${option.count})`}
+                  className={`vyb-insta-tab${activeScope === option.id ? " active" : ""}`}
                   onClick={() => setActiveScope(option.id)}
                 >
-                  <span>{option.label}</span>
-                  <strong>{option.count}</strong>
+                  <span>{option.label.toUpperCase()}</span>
                 </button>
               ))}
             </div>
 
-            <div className="vyb-events-chip-row vyb-events-chip-row-scroll">
+            <div className="vyb-events-chip-row-scroll">
               {categories.map((category) => (
                 <button
                   key={category}
@@ -675,7 +1077,6 @@ export function CampusEventsShell({
               {filteredEvents.map((event) => {
                 const primaryMedia = getPrimaryMedia(event);
                 const isSaved = event.isSaved;
-                const isInterested = event.isInterested;
                 const isOwnEvent = event.isHostedByViewer;
                 const busySave = busyAction === `save:${event.id}`;
                 const busyInterest = busyAction === `interest:${event.id}`;
@@ -688,11 +1089,23 @@ export function CampusEventsShell({
                     </div>
 
                     <div className="vyb-events-feed-media">
-                      {primaryMedia ? (
+                      {primaryMedia && !brokenMediaIds.includes(primaryMedia.id) ? (
                         primaryMedia.kind === "video" ? (
-                          <video src={primaryMedia.url} className="vyb-events-feed-image" muted playsInline preload="metadata" />
+                          <video
+                            src={primaryMedia.url}
+                            className="vyb-events-feed-image"
+                            muted
+                            playsInline
+                            preload="metadata"
+                            onError={() => setBrokenMediaIds((current) => (current.includes(primaryMedia.id) ? current : [...current, primaryMedia.id]))}
+                          />
                         ) : (
-                          <img src={primaryMedia.url} alt={event.title} className="vyb-events-feed-image" />
+                          <img
+                            src={primaryMedia.url}
+                            alt={event.title}
+                            className="vyb-events-feed-image"
+                            onError={() => setBrokenMediaIds((current) => (current.includes(primaryMedia.id) ? current : [...current, primaryMedia.id]))}
+                          />
                         )
                       ) : (
                         <div className="vyb-events-feed-fallback">
@@ -707,6 +1120,7 @@ export function CampusEventsShell({
                         <div className="vyb-events-feed-badges">
                           <span className="vyb-events-club-tag">{event.club}</span>
                           <span className="vyb-events-pass-badge">{event.passLabel}</span>
+                          <span className="vyb-events-response-badge">{formatResponseMode(event.responseMode)}</span>
                         </div>
 
                         <button
@@ -728,7 +1142,7 @@ export function CampusEventsShell({
                           <h3>{event.title}</h3>
                           <p>@{event.host.username}</p>
                         </div>
-                        <span className="vyb-events-attendance">{formatEventInterestLabel(event.interestCount)}</span>
+                        <span className="vyb-events-attendance">{formatInterestLabel(event.interestCount)}</span>
                       </div>
 
                       <p className="vyb-events-feed-description">{event.description}</p>
@@ -742,53 +1156,73 @@ export function CampusEventsShell({
                           <LocationIcon />
                           {event.location}
                         </span>
+                        {event.capacity ? (
+                          <span>
+                            <UsersIcon />
+                            {event.spotsLeft ?? 0} spots left
+                          </span>
+                        ) : null}
                       </div>
 
                       <div className="vyb-events-feed-social">
                         <span>
                           <HeartIcon />
-                          {isInterested ? "You are going" : formatEventInterestLabel(event.interestCount)}
+                          {event.viewerRegistration ? `${formatRegistrationStatus(event.viewerRegistration.status)} • ${formatInterestLabel(event.interestCount)}` : formatInterestLabel(event.interestCount)}
                         </span>
                         <span>
                           <CommentIcon />
-                          {event.commentCount} comments
+                          {event.registrationSummary.total} registrations
                         </span>
                       </div>
 
                       <div className="vyb-events-feed-actions">
-                        <button
-                          type="button"
-                          className={`vyb-events-primary-button${isInterested ? " is-active" : ""}`}
-                          disabled={busyInterest || event.status !== "published"}
-                          onClick={(actionEvent) => {
-                            actionEvent.stopPropagation();
-                            void toggleInterested(event.id);
-                          }}
-                        >
-                          <TicketIcon />
-                          <span>{isInterested ? "Going" : event.status === "ended" ? "Ended" : "Interested"}</span>
-                        </button>
                         {isOwnEvent ? (
                           <Link
                             href={`/events/host?edit=${encodeURIComponent(event.id)}`}
-                            className="vyb-events-secondary-button"
+                            className="vyb-events-primary-button"
                             onClick={(actionEvent) => actionEvent.stopPropagation()}
                           >
                             <span>Edit</span>
                           </Link>
+                        ) : event.responseMode === "interest" ? (
+                          <button
+                            type="button"
+                            className={`vyb-events-primary-button${event.isInterested ? " is-active" : ""}`}
+                            disabled={busyInterest || event.status !== "published"}
+                            onClick={(actionEvent) => {
+                              actionEvent.stopPropagation();
+                              void toggleInterested(event.id);
+                            }}
+                          >
+                            <TicketIcon />
+                            <span>{formatPrimaryActionLabel(event)}</span>
+                          </button>
                         ) : (
                           <button
                             type="button"
-                            className="vyb-events-secondary-button"
+                            className={`vyb-events-primary-button${event.viewerRegistration ? " is-active" : ""}`}
+                            disabled={busyAction === `register:${event.id}` || !event.isRegistrationOpen}
                             onClick={(actionEvent) => {
                               actionEvent.stopPropagation();
-                              void shareEvent(event);
+                              openRegistrationSheet(event);
                             }}
                           >
-                            <SendIcon />
-                            <span>Share</span>
+                            <TicketIcon />
+                            <span>{formatPrimaryActionLabel(event)}</span>
                           </button>
                         )}
+
+                        <button
+                          type="button"
+                          className="vyb-events-secondary-button"
+                          onClick={(actionEvent) => {
+                            actionEvent.stopPropagation();
+                            void shareEvent(event);
+                          }}
+                        >
+                          <SendIcon />
+                          <span>Share</span>
+                        </button>
                       </div>
                     </div>
                   </article>
@@ -836,12 +1270,16 @@ export function CampusEventsShell({
               <strong>{dashboard.viewer.savedCount}</strong>
             </div>
             <div>
-              <span>Going</span>
+              <span>Responded</span>
               <strong>{dashboard.viewer.interestedCount}</strong>
             </div>
             <div>
               <span>Hosted</span>
               <strong>{dashboard.viewer.hostedCount}</strong>
+            </div>
+            <div>
+              <span>Pending</span>
+              <strong>{dashboard.viewer.hostedPendingCount}</strong>
             </div>
           </div>
         </div>
@@ -863,7 +1301,7 @@ export function CampusEventsShell({
               dashboard.hostedEvents.slice(0, 4).map((event) => (
                 <button key={event.id} type="button" className="vyb-events-side-list-item vyb-events-side-list-button" onClick={() => setSelectedEventId(event.id)}>
                   <strong>{event.title}</strong>
-                  <span>{formatEventTimeRange(event)}</span>
+                  <span>{event.registrationSummary.total} registrations • {event.registrationSummary.submitted} pending</span>
                 </button>
               ))
             )}
@@ -871,9 +1309,9 @@ export function CampusEventsShell({
         </div>
 
         <div className="vyb-campus-side-card vyb-events-side-card">
-          <span className="vyb-campus-side-label">Hot categories</span>
+          <span className="vyb-campus-side-label">Live categories</span>
           <div className="vyb-events-chip-row">
-            {dashboard.categories.slice(0, 6).map((category) => (
+            {categories.filter((category) => category !== "All").slice(0, 6).map((category) => (
               <button key={category} type="button" className="vyb-events-chip" onClick={() => setActiveCategory(category)}>
                 {category}
               </button>
@@ -901,11 +1339,32 @@ export function CampusEventsShell({
             </button>
 
             <div className="vyb-events-detail-media">
-              {getPrimaryMedia(selectedEvent) ? (
+              {getPrimaryMedia(selectedEvent) && !brokenMediaIds.includes(getPrimaryMedia(selectedEvent)!.id) ? (
                 getPrimaryMedia(selectedEvent)?.kind === "video" ? (
-                  <video src={getPrimaryMedia(selectedEvent)?.url} controls playsInline className="vyb-events-detail-image" />
+                  <video
+                    src={getPrimaryMedia(selectedEvent)?.url}
+                    controls
+                    playsInline
+                    className="vyb-events-detail-image"
+                    onError={() => {
+                      const media = getPrimaryMedia(selectedEvent);
+                      if (media) {
+                        setBrokenMediaIds((current) => (current.includes(media.id) ? current : [...current, media.id]));
+                      }
+                    }}
+                  />
                 ) : (
-                  <img src={getPrimaryMedia(selectedEvent)?.url} alt={selectedEvent.title} className="vyb-events-detail-image" />
+                  <img
+                    src={getPrimaryMedia(selectedEvent)?.url}
+                    alt={selectedEvent.title}
+                    className="vyb-events-detail-image"
+                    onError={() => {
+                      const media = getPrimaryMedia(selectedEvent);
+                      if (media) {
+                        setBrokenMediaIds((current) => (current.includes(media.id) ? current : [...current, media.id]));
+                      }
+                    }}
+                  />
                 )
               ) : (
                 <div className="vyb-events-detail-fallback">
@@ -919,6 +1378,7 @@ export function CampusEventsShell({
               <div className="vyb-events-detail-badges">
                 <span className="vyb-events-club-tag">{selectedEvent.club}</span>
                 <span className="vyb-events-pass-badge">{selectedEvent.passLabel}</span>
+                <span className="vyb-events-response-badge">{formatResponseMode(selectedEvent.responseMode)}</span>
                 <span className={`vyb-events-status-pill is-${selectedEvent.status}`}>{selectedEvent.status}</span>
               </div>
 
@@ -927,7 +1387,7 @@ export function CampusEventsShell({
                   <h2>{selectedEvent.title}</h2>
                   <p>@{selectedEvent.host.username}</p>
                 </div>
-                <strong>{formatEventInterestLabel(selectedEvent.interestCount)}</strong>
+                <strong>{formatInterestLabel(selectedEvent.interestCount)}</strong>
               </div>
 
               <p className="vyb-events-detail-description">{selectedEvent.description}</p>
@@ -943,15 +1403,36 @@ export function CampusEventsShell({
                 </span>
                 {selectedEvent.capacity ? (
                   <span>
+                    <UsersIcon />
+                    {selectedEvent.spotsLeft ?? 0} / {selectedEvent.capacity} spots left
+                  </span>
+                ) : null}
+                {selectedEvent.registrationConfig.entryMode === "team" ? (
+                  <span>
                     <TicketIcon />
-                    Capacity {selectedEvent.capacity}
+                    Team {selectedEvent.registrationConfig.teamSizeMin}-{selectedEvent.registrationConfig.teamSizeMax}
                   </span>
                 ) : null}
               </div>
 
-              <div className="vyb-events-detail-actions">
-                {!selectedEvent.isHostedByViewer ? (
-                  <>
+              <div className="vyb-events-detail-summary-grid">
+                <div className="vyb-events-detail-summary-card">
+                  <span>Total responses</span>
+                  <strong>{selectedEvent.registrationSummary.total}</strong>
+                </div>
+                <div className="vyb-events-detail-summary-card">
+                  <span>Approved</span>
+                  <strong>{selectedEvent.registrationSummary.approved}</strong>
+                </div>
+                <div className="vyb-events-detail-summary-card">
+                  <span>Pending</span>
+                  <strong>{selectedEvent.registrationSummary.submitted}</strong>
+                </div>
+              </div>
+
+              {!selectedEvent.isHostedByViewer ? (
+                <div className="vyb-events-detail-actions">
+                  {selectedEvent.responseMode === "interest" ? (
                     <button
                       type="button"
                       className={`vyb-events-primary-button${selectedEvent.isInterested ? " is-active" : ""}`}
@@ -959,48 +1440,479 @@ export function CampusEventsShell({
                       onClick={() => toggleInterested(selectedEvent.id)}
                     >
                       <TicketIcon />
-                      <span>{selectedEvent.isInterested ? "Going" : selectedEvent.status === "ended" ? "Ended" : "Interested"}</span>
+                      <span>{formatPrimaryActionLabel(selectedEvent)}</span>
                     </button>
+                  ) : (
                     <button
                       type="button"
-                      className={`vyb-events-secondary-button${selectedEvent.isSaved ? " is-active" : ""}`}
-                      disabled={busyAction === `save:${selectedEvent.id}`}
-                      onClick={() => toggleSaved(selectedEvent.id)}
+                      className={`vyb-events-primary-button${selectedEvent.viewerRegistration ? " is-active" : ""}`}
+                      disabled={busyAction === `register:${selectedEvent.id}` || !selectedEvent.isRegistrationOpen}
+                      onClick={() => openRegistrationSheet(selectedEvent)}
                     >
-                      <BookmarkIcon />
-                      <span>{selectedEvent.isSaved ? "Saved" : "Save"}</span>
+                      <TicketIcon />
+                      <span>{formatPrimaryActionLabel(selectedEvent)}</span>
                     </button>
-                    <button type="button" className="vyb-events-secondary-button" onClick={() => shareEvent(selectedEvent)}>
-                      <SendIcon />
-                      <span>Share</span>
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <Link href={`/events/host?edit=${encodeURIComponent(selectedEvent.id)}`} className="vyb-events-primary-button">
-                      <span>Edit event</span>
-                    </Link>
-                    {selectedEvent.status === "published" ? (
-                      <button
-                        type="button"
-                        className="vyb-events-secondary-button"
-                        disabled={busyAction === `cancel:${selectedEvent.id}`}
-                        onClick={() => cancelHostedEvent(selectedEvent.id)}
-                      >
-                        <span>Cancel event</span>
-                      </button>
-                    ) : null}
+                  )}
+                  <button
+                    type="button"
+                    className={`vyb-events-secondary-button${selectedEvent.isSaved ? " is-active" : ""}`}
+                    disabled={busyAction === `save:${selectedEvent.id}`}
+                    onClick={() => toggleSaved(selectedEvent.id)}
+                  >
+                    <BookmarkIcon />
+                    <span>{selectedEvent.isSaved ? "Saved" : "Save"}</span>
+                  </button>
+                  <button type="button" className="vyb-events-secondary-button" onClick={() => shareEvent(selectedEvent)}>
+                    <SendIcon />
+                    <span>Share</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="vyb-events-detail-actions">
+                  <Link href={`/events/host?edit=${encodeURIComponent(selectedEvent.id)}`} className="vyb-events-primary-button">
+                    <span>Edit event</span>
+                  </Link>
+                  <button type="button" className="vyb-events-secondary-button" onClick={() => exportRegistrations(selectedEvent.id)}>
+                    <DownloadIcon />
+                    <span>Export CSV</span>
+                  </button>
+                  {selectedEvent.status === "published" ? (
                     <button
                       type="button"
                       className="vyb-events-secondary-button"
-                      disabled={busyAction === `delete:${selectedEvent.id}`}
-                      onClick={() => deleteHostedEvent(selectedEvent.id)}
+                      disabled={busyAction === `cancel:${selectedEvent.id}`}
+                      onClick={() => cancelHostedEvent(selectedEvent.id)}
                     >
-                      <span>Delete</span>
+                      <span>Cancel event</span>
                     </button>
-                  </>
-                )}
+                  ) : null}
+                  <button
+                    type="button"
+                    className="vyb-events-secondary-button"
+                    disabled={busyAction === `delete:${selectedEvent.id}`}
+                    onClick={() => deleteHostedEvent(selectedEvent.id)}
+                  >
+                    <span>Delete</span>
+                  </button>
+                </div>
+              )}
+
+              {selectedEvent.viewerRegistration && !selectedEvent.isHostedByViewer ? (
+                <div className={`vyb-events-registration-state is-${selectedEvent.viewerRegistration.status}`}>
+                  <strong>{formatRegistrationStatus(selectedEvent.viewerRegistration.status)}</strong>
+                  <span>
+                    {selectedEvent.viewerRegistration.teamName ? `${selectedEvent.viewerRegistration.teamName} | ` : ""}
+                    {selectedEvent.viewerRegistration.teamSize} attendee{selectedEvent.viewerRegistration.teamSize > 1 ? "s" : ""}
+                  </span>
+                  {selectedEvent.viewerRegistration.attachmentCount > 0 ? <span>{selectedEvent.viewerRegistration.attachmentCount} attachment(s) uploaded</span> : null}
+                  {selectedEvent.viewerRegistration.reviewNote ? <p>{selectedEvent.viewerRegistration.reviewNote}</p> : null}
+                </div>
+              ) : null}
+
+              {selectedEvent.registrationConfig.formFields.length > 0 ? (
+                <section className="vyb-events-form-preview">
+                  <strong>Registration asks for</strong>
+                  <div className="vyb-events-form-preview-list">
+                    {selectedEvent.registrationConfig.formFields.map((field) => (
+                      <div key={field.id} className="vyb-events-form-preview-item">
+                        <span>{field.label}</span>
+                        <small>{field.type.replace("_", " ")}{field.required ? " | required" : ""}</small>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
+              {selectedEvent.registrationConfig.allowAttachments ? (
+                <section className="vyb-events-form-preview">
+                  <strong>Attachment request</strong>
+                  <div className="vyb-events-form-preview-list">
+                    <div className="vyb-events-form-preview-item">
+                      <span>{selectedEvent.registrationConfig.attachmentLabel || "Supporting image"}</span>
+                      <small>Image upload</small>
+                    </div>
+                  </div>
+                </section>
+              ) : null}
+
+              {selectedEvent.isHostedByViewer ? (
+                <section className="vyb-events-registration-admin">
+                  <div className="vyb-events-side-list-head">
+                    <span className="vyb-campus-side-label">Registrations</span>
+                    <span className="vyb-events-inline-link">{hostRegistrations.length} total</span>
+                  </div>
+
+                  <div className="vyb-events-registration-admin-filters">
+                    <label className="vyb-events-search vyb-events-search-compact">
+                      <SearchIcon />
+                      <input
+                        type="search"
+                        value={hostRegistrationQuery}
+                        onChange={(event) => setHostRegistrationQuery(event.target.value)}
+                        placeholder="Search people, answers, or teams"
+                        aria-label="Search registrations"
+                      />
+                    </label>
+                    <div className="vyb-events-registration-filter-row">
+                      {(["submitted", "approved", "waitlisted", "rejected"] as CampusEventRegistrationStatus[]).map((status) => (
+                        <button
+                          key={status}
+                          type="button"
+                          className={`vyb-events-status-pill${hostRegistrationStatuses.includes(status) ? ` is-${status}` : ""}`}
+                          onClick={() => toggleHostRegistrationStatus(status)}
+                        >
+                          {formatRegistrationStatus(status)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {hostRegistrationsLoading ? <p className="vyb-events-notifications-empty">Loading registrations...</p> : null}
+                  {hostRegistrationsError ? <p className="vyb-events-notifications-empty">{hostRegistrationsError}</p> : null}
+                  {!hostRegistrationsLoading && !hostRegistrationsError && hostRegistrations.length === 0 ? (
+                    <p className="vyb-events-notifications-empty">No registrations yet. Responses will appear here with full form data.</p>
+                  ) : null}
+
+                  <div className="vyb-events-registration-list">
+                    {hostRegistrations.map((registration) => (
+                      <article key={registration.id} className="vyb-events-registration-card">
+                        <div className="vyb-events-registration-head">
+                          <div>
+                            <strong>{registration.attendee.displayName}</strong>
+                            <span>
+                              @{registration.attendee.username}
+                              {registration.teamName ? ` | ${registration.teamName}` : ""}
+                            </span>
+                          </div>
+                          <span className={`vyb-events-status-pill is-${registration.status}`}>{formatRegistrationStatus(registration.status)}</span>
+                        </div>
+
+                        <div className="vyb-events-registration-meta">
+                          <span>Submitted {new Date(registration.submittedAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</span>
+                          <span>{registration.teamSize} attendee{registration.teamSize > 1 ? "s" : ""}</span>
+                        </div>
+
+                        {registration.teamMembers.length > 0 ? (
+                          <div className="vyb-events-registration-block">
+                            <strong>Team members</strong>
+                            <p>
+                              {registration.teamMembers.map((member) => [member.name, member.username, member.role].filter(Boolean).join(" | ")).join(" || ")}
+                            </p>
+                          </div>
+                        ) : null}
+
+                        {registration.attachments.length > 0 ? (
+                          <div className="vyb-events-registration-block">
+                            <strong>Attachments</strong>
+                            <div className="vyb-events-registration-attachment-list">
+                              {registration.attachments.map((attachment) => (
+                                <a key={attachment.id} href={attachment.url} target="_blank" rel="noreferrer" className="vyb-events-registration-attachment">
+                                  <img src={attachment.url} alt={attachment.fileName} />
+                                  <span>{attachment.fileName}</span>
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {registration.answers.length > 0 ? (
+                          <div className="vyb-events-registration-block">
+                            <strong>Form answers</strong>
+                            <div className="vyb-events-registration-answers">
+                              {registration.answers.map((answer) => (
+                                <div key={`${registration.id}:${answer.fieldId}`} className="vyb-events-registration-answer">
+                                  <span>{answer.label}</span>
+                                  <p>{answer.value}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {registration.note ? (
+                          <div className="vyb-events-registration-block">
+                            <strong>Applicant note</strong>
+                            <p>{registration.note}</p>
+                          </div>
+                        ) : null}
+
+                        {registration.reviewNote ? (
+                          <div className="vyb-events-registration-block">
+                            <strong>Host note</strong>
+                            <p>{registration.reviewNote}</p>
+                          </div>
+                        ) : null}
+
+                        <div className="vyb-events-registration-actions">
+                          <button
+                            type="button"
+                            className="vyb-events-secondary-button"
+                            disabled={busyAction === `review:${registration.id}`}
+                            onClick={() => reviewRegistration(selectedEvent.id, registration.id, "approved")}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            className="vyb-events-secondary-button"
+                            disabled={busyAction === `review:${registration.id}`}
+                            onClick={() => reviewRegistration(selectedEvent.id, registration.id, "waitlisted")}
+                          >
+                            Waitlist
+                          </button>
+                          <button
+                            type="button"
+                            className="vyb-events-secondary-button"
+                            disabled={busyAction === `review:${registration.id}`}
+                            onClick={() => reviewRegistration(selectedEvent.id, registration.id, "rejected")}
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+            </div>
+          </aside>
+        </div>
+      ) : null}
+
+      {registrationSheetOpen && selectedEvent && !selectedEvent.isHostedByViewer && selectedEvent.responseMode !== "interest" ? (
+        <div className="vyb-events-detail-backdrop" role="presentation" onClick={closeRegistrationSheet}>
+          <aside className="vyb-events-registration-sheet" role="dialog" aria-modal="true" aria-label={`${selectedEvent.title} registration`} onClick={(event) => event.stopPropagation()}>
+            <div className="vyb-events-notifications-head">
+              <strong>{selectedEvent.responseMode === "apply" ? "Apply for event" : "Register for event"}</strong>
+              <button type="button" className="vyb-events-close-button" onClick={closeRegistrationSheet} aria-label="Close registration form">
+                <CloseIcon />
+              </button>
+            </div>
+
+            <div className="vyb-events-registration-copy">
+              <h3>{selectedEvent.title}</h3>
+              <p>{selectedEvent.registrationConfig.entryMode === "team" ? "Team entry is enabled. Add teammates and complete the host form." : "Fill the required details to confirm your spot."}</p>
+            </div>
+
+            {registrationLoading ? <p className="vyb-events-notifications-empty">Loading your saved answers...</p> : null}
+            {registrationError ? <p className="vyb-events-notifications-empty">{registrationError}</p> : null}
+
+            {selectedEvent.registrationConfig.entryMode === "team" ? (
+              <>
+                <label className="vyb-event-host-field">
+                  <span>Team name</span>
+                  <input value={registrationDraft.teamName} onChange={(event) => setRegistrationDraft((current) => ({ ...current, teamName: event.target.value }))} placeholder="Byte Brigade" />
+                </label>
+
+                <div className="vyb-events-registration-team-head">
+                  <strong>Team members</strong>
+                  <button
+                    type="button"
+                    className="vyb-events-secondary-button"
+                    onClick={() =>
+                      setRegistrationDraft((current) => ({
+                        ...current,
+                        teamMembers: [...current.teamMembers, createDraftMember()]
+                      }))
+                    }
+                  >
+                    Add member
+                  </button>
+                </div>
+
+                <div className="vyb-events-team-member-list">
+                  {registrationDraft.teamMembers.map((member) => (
+                    <div key={member.id} className="vyb-events-team-member-card">
+                      <div className="vyb-events-team-member-grid">
+                        <input
+                          value={member.name}
+                          onChange={(event) =>
+                            setRegistrationDraft((current) => ({
+                              ...current,
+                              teamMembers: current.teamMembers.map((candidate) => (candidate.id === member.id ? { ...candidate, name: event.target.value } : candidate))
+                            }))
+                          }
+                          placeholder="Member name"
+                        />
+                        <input
+                          value={member.username}
+                          onChange={(event) =>
+                            setRegistrationDraft((current) => ({
+                              ...current,
+                              teamMembers: current.teamMembers.map((candidate) => (candidate.id === member.id ? { ...candidate, username: event.target.value } : candidate))
+                            }))
+                          }
+                          placeholder="@username"
+                        />
+                        <input
+                          value={member.email}
+                          onChange={(event) =>
+                            setRegistrationDraft((current) => ({
+                              ...current,
+                              teamMembers: current.teamMembers.map((candidate) => (candidate.id === member.id ? { ...candidate, email: event.target.value } : candidate))
+                            }))
+                          }
+                          placeholder="Email"
+                        />
+                        <input
+                          value={member.role}
+                          onChange={(event) =>
+                            setRegistrationDraft((current) => ({
+                              ...current,
+                              teamMembers: current.teamMembers.map((candidate) => (candidate.id === member.id ? { ...candidate, role: event.target.value } : candidate))
+                            }))
+                          }
+                          placeholder="Role"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="vyb-event-host-media-remove"
+                        onClick={() =>
+                          setRegistrationDraft((current) => ({
+                            ...current,
+                            teamMembers: current.teamMembers.filter((candidate) => candidate.id !== member.id)
+                          }))
+                        }
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : null}
+
+            <div className="vyb-events-registration-fields">
+              {selectedEvent.registrationConfig.formFields.map((field) => (
+                <label key={field.id} className="vyb-event-host-field">
+                  <span>
+                    {field.label}
+                    {field.required ? " *" : ""}
+                  </span>
+                  {field.type === "long_text" ? (
+                    <textarea
+                      rows={4}
+                      value={registrationDraft.answers[field.id] ?? ""}
+                      onChange={(event) =>
+                        setRegistrationDraft((current) => ({
+                          ...current,
+                          answers: {
+                            ...current.answers,
+                            [field.id]: event.target.value
+                          }
+                        }))
+                      }
+                      placeholder={field.placeholder ?? ""}
+                    />
+                  ) : field.type === "select" ? (
+                    <select
+                      value={registrationDraft.answers[field.id] ?? ""}
+                      onChange={(event) =>
+                        setRegistrationDraft((current) => ({
+                          ...current,
+                          answers: {
+                            ...current.answers,
+                            [field.id]: event.target.value
+                          }
+                        }))
+                      }
+                    >
+                      <option value="">Choose one</option>
+                      {(field.options ?? []).map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type={field.type === "email" ? "email" : field.type === "number" ? "text" : "text"}
+                      inputMode={field.type === "number" || field.type === "phone" ? "numeric" : undefined}
+                      value={registrationDraft.answers[field.id] ?? ""}
+                      onChange={(event) =>
+                        setRegistrationDraft((current) => ({
+                          ...current,
+                          answers: {
+                            ...current.answers,
+                            [field.id]: event.target.value
+                          }
+                        }))
+                      }
+                      placeholder={field.placeholder ?? ""}
+                    />
+                  )}
+                  {field.helpText ? <small className="vyb-event-host-help">{field.helpText}</small> : null}
+                </label>
+              ))}
+            </div>
+
+            {selectedEvent.registrationConfig.allowAttachments ? (
+              <div className="vyb-events-registration-block">
+                <div className="vyb-events-registration-team-head">
+                  <strong>{selectedEvent.registrationConfig.attachmentLabel || "Supporting image"}</strong>
+                  <button type="button" className="vyb-events-secondary-button" onClick={() => registrationFileInputRef.current?.click()}>
+                    Add image
+                  </button>
+                  <input
+                    ref={registrationFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    multiple
+                    onChange={(event) => {
+                      addRegistrationAttachments(event.target.files);
+                      event.target.value = "";
+                    }}
+                  />
+                </div>
+                <div className="vyb-events-registration-attachment-list">
+                  {registrationDraft.attachments.map((attachment) => (
+                    <div key={attachment.id} className="vyb-events-registration-attachment is-editable">
+                      <img src={attachment.url} alt={attachment.fileName} />
+                      <span>{attachment.fileName}</span>
+                      <button type="button" className="vyb-event-host-media-remove" onClick={() => removeRegistrationAttachment(attachment.id)}>
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                  {registrationDraft.attachments.length === 0 ? <p className="vyb-events-notifications-empty">No image uploaded yet.</p> : null}
+                </div>
               </div>
+            ) : null}
+
+            <label className="vyb-event-host-field">
+              <span>Note for host</span>
+              <textarea
+                rows={3}
+                value={registrationDraft.note}
+                onChange={(event) => setRegistrationDraft((current) => ({ ...current, note: event.target.value }))}
+                placeholder="Anything else the host should know?"
+              />
+            </label>
+
+            <div className="vyb-events-registration-footer">
+              <button type="button" className="vyb-events-secondary-button" onClick={closeRegistrationSheet}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="vyb-events-host-button"
+                disabled={busyAction === `register:${selectedEvent.id}` || registrationLoading}
+                onClick={() => submitRegistration(selectedEvent)}
+              >
+                <span>
+                  {busyAction === `register:${selectedEvent.id}`
+                    ? "Saving..."
+                    : selectedEvent.viewerRegistration
+                      ? selectedEvent.responseMode === "apply"
+                        ? "Update application"
+                        : "Update registration"
+                      : selectedEvent.responseMode === "apply"
+                        ? "Submit application"
+                        : "Confirm registration"}
+                </span>
+              </button>
             </div>
           </aside>
         </div>

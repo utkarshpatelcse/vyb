@@ -12760,27 +12760,29 @@ a {
 }
 .vyb-insta-tabs {
   display: flex;
-  justify-content: center;
-  gap: 3rem;
+  justify-content: flex-start;
+  gap: 1.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 .vyb-insta-tab {
   background: transparent;
   border: none;
-  color: #64748b;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  color: rgba(255, 255, 255, 0.42);
   font-weight: 600;
-  font-size: 0.8rem;
-  letter-spacing: 0.1em;
-  padding: 1.25rem 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  padding: 0.5rem 0;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  border-top: 1px solid transparent;
-  margin-top: -1px;
+  transition: color 0.2s ease, border-color 0.2s ease;
 }
 .vyb-insta-tab.active {
   color: #fff;
-  border-top-color: #fff;
+  border-bottom-color: #fff;
 }
 .vyb-insta-tab svg {
   width: 14px;
@@ -13987,9 +13989,9 @@ html {
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   CREATION STUDIO — Premium Upload Modal
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   CREATION STUDIO â€” Premium Upload Modal
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 .cs-icon {
   width: 20px;
@@ -14947,4 +14949,665 @@ html {
   .cs-footer-hint { text-align: center; flex: none; }
   .cs-footer-actions { width: 100%; justify-content: center; }
   .cs-post-btn, .cs-cancel-btn { flex: 1; justify-content: center; }
+}
+
+
+/* --- TABS TOOLBAR MINIMAL CSS FIX --- */
+.vyb-events-toolbar,
+.vyb-reels-toolbar {
+  background: transparent !important;
+  border: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  padding: 1rem 0 !important; 
+  border-radius: 0 !important;
+}
+
+@media (max-width: 899px) {
+  .vyb-events-toolbar,
+  .vyb-reels-toolbar {
+    padding: 1rem 0 0.5rem 0 !important;
+    margin: 0 !important; /* Prevents overflow */
+  }
+}
+
+.vyb-events-response-badge,
+.vyb-events-registration-state,
+.vyb-events-detail-summary-card,
+.vyb-events-form-preview-item,
+.vyb-events-registration-card,
+.vyb-events-team-member-card,
+.vyb-event-host-mode-option,
+.vyb-event-host-question-card,
+.vyb-event-host-preview-stack,
+.vyb-events-registration-sheet {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.56);
+  box-shadow: 0 16px 40px rgba(2, 6, 23, 0.26);
+}
+
+.vyb-events-response-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.38rem 0.72rem;
+  border-radius: 999px;
+  color: rgba(224, 231, 255, 0.92);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.vyb-events-detail-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.vyb-events-detail-summary-card {
+  border-radius: 18px;
+  padding: 0.95rem 1rem;
+}
+
+.vyb-events-detail-summary-card span,
+.vyb-events-form-preview-item small,
+.vyb-events-registration-meta,
+.vyb-events-registration-copy p,
+.vyb-event-host-help,
+.vyb-event-host-preview-stack span {
+  display: block;
+  color: rgba(148, 163, 184, 0.86);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.vyb-events-detail-summary-card strong,
+.vyb-event-host-preview-stack strong {
+  display: block;
+  color: #f8fafc;
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-top: 0.15rem;
+}
+
+.vyb-events-registration-state {
+  border-radius: 18px;
+  padding: 1rem 1.1rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.vyb-events-registration-state strong {
+  color: #f8fafc;
+  font-size: 0.98rem;
+}
+
+.vyb-events-registration-state span,
+.vyb-events-registration-state p {
+  margin: 0;
+  color: rgba(203, 213, 225, 0.85);
+  font-size: 0.88rem;
+}
+
+.vyb-events-registration-state.is-approved {
+  border-color: rgba(16, 185, 129, 0.34);
+}
+
+.vyb-events-registration-state.is-waitlisted {
+  border-color: rgba(245, 158, 11, 0.34);
+}
+
+.vyb-events-registration-state.is-rejected {
+  border-color: rgba(239, 68, 68, 0.34);
+}
+
+.vyb-events-form-preview,
+.vyb-events-registration-admin {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.vyb-events-form-preview > strong,
+.vyb-events-registration-block strong,
+.vyb-events-registration-team-head strong {
+  color: #f8fafc;
+  font-size: 0.92rem;
+}
+
+.vyb-events-form-preview-list,
+.vyb-events-registration-list,
+.vyb-events-registration-fields,
+.vyb-events-team-member-list,
+.vyb-event-host-question-list,
+.vyb-event-host-preview-stack {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.vyb-events-form-preview-item,
+.vyb-events-registration-card,
+.vyb-events-team-member-card,
+.vyb-event-host-question-card {
+  border-radius: 18px;
+  padding: 0.95rem 1rem;
+}
+
+.vyb-events-form-preview-item span,
+.vyb-events-registration-head strong,
+.vyb-events-registration-answer span,
+.vyb-events-registration-copy h3,
+.vyb-event-host-mode-option strong {
+  color: #f8fafc;
+  font-weight: 700;
+}
+
+.vyb-events-registration-head,
+.vyb-events-registration-actions,
+.vyb-events-registration-team-head,
+.vyb-event-host-section-head,
+.vyb-event-host-question-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.vyb-events-registration-head {
+  align-items: flex-start;
+}
+
+.vyb-events-registration-head span,
+.vyb-events-registration-answer p,
+.vyb-events-registration-block p,
+.vyb-event-host-mode-option span,
+.vyb-event-host-section-head p {
+  margin: 0;
+  color: rgba(203, 213, 225, 0.82);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.vyb-events-registration-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
+}
+
+.vyb-events-registration-block {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.vyb-events-registration-answers {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.vyb-events-registration-answer {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.vyb-events-registration-sheet {
+  width: min(100%, 540px);
+  max-height: min(92vh, 920px);
+  overflow-y: auto;
+  border-radius: 28px;
+  padding: 1.2rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.vyb-events-registration-copy {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.vyb-events-registration-copy h3 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.vyb-events-registration-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.vyb-events-team-member-grid,
+.vyb-event-host-question-grid,
+.vyb-event-host-inline-grid,
+.vyb-event-host-mode-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.vyb-events-team-member-grid,
+.vyb-event-host-question-grid,
+.vyb-event-host-inline-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.vyb-event-host-mode-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.vyb-event-host-mode-option {
+  border-radius: 18px;
+  padding: 1rem;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.vyb-event-host-mode-option.is-active,
+.vyb-event-host-mode-option:hover {
+  transform: translateY(-1px);
+  border-color: rgba(99, 102, 241, 0.42);
+  background: rgba(79, 70, 229, 0.12);
+}
+
+.vyb-event-host-mode-card,
+.vyb-event-host-question-card,
+.vyb-event-host-preview-stack {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.vyb-event-host-section-head {
+  align-items: flex-start;
+}
+
+.vyb-event-host-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: rgba(226, 232, 240, 0.92);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.vyb-event-host-checkbox input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  flex: 0 0 1rem;
+  accent-color: #6366f1;
+}
+
+.vyb-event-host-checkbox span {
+  margin-bottom: 0 !important;
+  font-size: 0.88rem !important;
+  line-height: 1.4;
+}
+
+.vyb-event-host-utility-button {
+  min-height: 2.3rem !important;
+  padding: 0 0.95rem !important;
+  border-radius: 0.9rem !important;
+  font-size: 0.88rem !important;
+  justify-self: flex-start;
+}
+
+.vyb-event-host-question-actions {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.vyb-event-host-question-actions .vyb-event-host-checkbox {
+  flex: 1;
+  min-width: 0;
+}
+
+.vyb-event-host-question-remove {
+  min-height: 2.3rem;
+  padding: 0 0.95rem;
+  border-radius: 0.9rem;
+}
+
+.vyb-event-host-preview-stack > div {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.vyb-events-search-compact {
+  min-width: 0;
+}
+
+.vyb-events-registration-admin-filters,
+.vyb-event-host-option-builder,
+.vyb-event-host-option-list,
+.vyb-event-host-option-input,
+.vyb-events-registration-filter-row,
+.vyb-events-registration-attachment-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.vyb-events-registration-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.vyb-event-host-option-list,
+.vyb-events-registration-attachment-list {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.vyb-event-host-option-input {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.vyb-event-host-option-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: fit-content;
+  padding: 0.45rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.16);
+  border: 1px solid rgba(99, 102, 241, 0.24);
+  color: #eef2ff;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.vyb-event-host-option-chip button {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+}
+
+.vyb-events-registration-attachment {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.75rem;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(15, 23, 42, 0.5);
+  color: #f8fafc;
+  text-decoration: none;
+}
+
+.vyb-events-registration-attachment.is-editable {
+  align-items: start;
+}
+
+.vyb-events-registration-attachment img {
+  width: 100%;
+  aspect-ratio: 1.1;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+.vyb-events-registration-attachment span {
+  color: rgba(226, 232, 240, 0.92);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+@media (max-width: 899px) {
+  .vyb-events-detail-summary-grid,
+  .vyb-event-host-mode-grid,
+  .vyb-event-host-inline-grid,
+  .vyb-event-host-question-grid,
+  .vyb-events-team-member-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .vyb-event-host-option-input {
+    grid-template-columns: 1fr;
+  }
+
+  .vyb-events-registration-sheet {
+    width: min(100%, 100vw - 1rem);
+    padding: 1rem;
+    border-radius: 24px;
+  }
+
+  .vyb-events-registration-footer,
+  .vyb-events-registration-head,
+  .vyb-events-registration-team-head,
+  .vyb-event-host-section-head,
+  .vyb-event-host-question-actions {
+    flex-wrap: wrap;
+  }
+
+  .vyb-events-registration-footer,
+  .vyb-events-registration-head,
+  .vyb-events-registration-team-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .vyb-event-host-section-head,
+  .vyb-event-host-question-actions {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+
+/* --- UI POLISH: TABS & HOST EVENT FORM --- */
+
+/* Minimal Sliding Tabs for Events */
+.vyb-events-scope-row-scroll {
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  padding-bottom: 0 !important;
+  margin-bottom: 1.2rem;
+  gap: 1.5rem !important;
+}
+.vyb-events-scope-pill {
+  border: none !important;
+  background: transparent !important;
+  padding: 0 0 0.75rem 0 !important;
+  border-radius: 0 !important;
+  position: relative;
+  font-weight: 500 !important;
+  color: rgba(255, 255, 255, 0.45) !important;
+}
+.vyb-events-scope-pill.is-active {
+  color: white !important;
+  font-weight: 600 !important;
+  background: transparent !important;
+}
+.vyb-events-scope-pill.is-active::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: white;
+  border-radius: 2px 2px 0 0;
+}
+
+/* Make counts hidden or styled nicely since it overlaps in minimal design */
+.vyb-events-scope-pill strong {
+  display: none !important;
+}
+
+/* Host Event Form Card Professional Overhaul */
+.vyb-event-host-form-card {
+  background: rgba(255, 255, 255, 0.015) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  border-radius: 1.5rem !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2) !important;
+  padding: 2.5rem !important;
+}
+
+.vyb-event-host-field input,
+.vyb-event-host-field textarea,
+.vyb-event-host-field select {
+  background: rgba(15, 23, 42, 0.6) !important; /* Slate inset */
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  border-radius: 0.75rem !important;
+  padding: 1rem 1.25rem !important;
+  color: #f8fafc !important;
+  font-size: 0.95rem !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.vyb-event-host-field input:focus,
+.vyb-event-host-field textarea:focus,
+.vyb-event-host-field select:focus {
+  border-color: rgba(99, 102, 241, 0.6) !important; /* Indigo glow */
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15) !important;
+  background: rgba(15, 23, 42, 0.8) !important;
+  outline: none;
+}
+
+.vyb-event-host-field span {
+  font-weight: 500 !important;
+  color: rgba(255, 255, 255, 0.8) !important;
+  margin-bottom: 0.35rem !important;
+  letter-spacing: -0.01em;
+}
+
+/* Modernize DateTime Inputs */
+input[type="datetime-local"] {
+  color-scheme: dark; /* Native dark mode for the picker popup */
+  position: relative;
+  cursor: text;
+}
+
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) opacity(0.5); /* Modern minimal look */
+  cursor: pointer;
+  padding: 0.25rem;
+  background-color: transparent;
+  transition: opacity 0.2s ease;
+}
+
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+  filter: invert(1) opacity(0.9);
+}
+
+@media (max-width: 899px) {
+  .vyb-event-host-form-card {
+    padding: 1.5rem 1.25rem !important;
+    border-radius: 1rem !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+}
+
+/* --- ULTRA COMPACT TABS FIX --- */
+.vyb-events-toolbar,
+.vyb-reels-toolbar {
+  padding: 0.5rem 0 0.5rem 0 !important;
+}
+
+@media (max-width: 899px) {
+  .vyb-events-toolbar,
+  .vyb-reels-toolbar {
+    padding: 0.25rem 0 0.25rem 0 !important;
+  }
+}
+
+.vyb-events-scope-row-scroll {
+  margin-bottom: 0.75rem !important; /* Reduced gap to chips */
+}
+
+.vyb-events-scope-pill {
+  padding: 0 0 0.4rem 0 !important; /* Reduced distance from text to underline */
+  font-size: 0.8rem !important; /* Smaller, thinner looking font */
+}
+
+/* --- BULLETPROOF COMPACT TABS OVERRIDE --- */
+.vyb-events-scope-row-scroll {
+  border-bottom: 1px solid rgba(255,255,255,0.08) !important;
+  padding-bottom: 0 !important;
+  margin-bottom: 0.8rem !important;
+  gap: 1.5rem !important;
+}
+.vyb-events-scope-pill {
+  border: none !important;
+  background: transparent !important;
+  padding: 0 0 0.35rem 0 !important;
+  border-radius: 0 !important;
+  position: relative !important;
+  font-weight: 500 !important;
+  color: rgba(255, 255, 255, 0.4) !important;
+  border-bottom: 2px solid transparent !important;
+  margin-bottom: -1px !important; 
+}
+.vyb-events-scope-pill.is-active {
+  color: white !important;
+  font-weight: 600 !important;
+  background: transparent !important;
+  border-bottom: 2px solid white !important;
+}
+.vyb-events-scope-pill.is-active::after {
+  display: none !important; /* Disable broken pseudo */
+}
+.vyb-events-toolbar,
+.vyb-reels-toolbar {
+  padding: 0.2rem 0 0.2rem 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* --- DEFINITIVE TABS FIX FOR INSTATABS CLASSES --- */
+
+/* Fix the generic grey box around the tabs header container */
+.vyb-events-toolbar,
+.vyb-reels-toolbar {
+  padding: 0.4rem 0 0.5rem 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Base line under all tabs */
+.vyb-events-toolbar .vyb-insta-tabs,
+.vyb-events-toolbar .vyb-events-scope-row-scroll {
+  border-bottom: 2px solid rgba(255, 255, 255, 0.08) !important;
+  margin-bottom: 0.8rem !important; /* Bring chips closer */
+  padding-bottom: 0 !important;
+  gap: 1.5rem !important; /* Better horizontal tightness */
+}
+
+/* Individual Tab formatting */
+.vyb-events-toolbar .vyb-insta-tab {
+  font-size: 0.8rem !important;
+  font-weight: 500 !important;
+  color: rgba(255, 255, 255, 0.45) !important;
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
+  margin-bottom: -2px !important; /* Pull line down to merge with base line */
+  padding: 0 0.1rem 0.4rem 0.1rem !important; /* Vertical compaction */
+  border-radius: 0 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 1px !important;
+  position: relative !important;
+}
+
+/* Active Tab Slider Indicator */
+.vyb-events-toolbar .vyb-insta-tab.active {
+  color: #fff !important;
+  font-weight: 700 !important;
+  border-bottom: 2px solid #fff !important; /* The white slider line */
+  background: transparent !important;
+}
+
+/* Kill generic pseudo elements that might be lingering and messing rendering */
+.vyb-events-toolbar .vyb-insta-tab::after {
+  display: none !important;
 }

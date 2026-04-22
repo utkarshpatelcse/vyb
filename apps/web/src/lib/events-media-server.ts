@@ -8,6 +8,8 @@ import { loadWorkspaceRootEnv } from "./server-env";
 const MAX_EVENT_MEDIA_ITEMS = 4;
 const MAX_EVENT_IMAGE_BYTES = 12 * 1024 * 1024;
 const MAX_EVENT_VIDEO_BYTES = 60 * 1024 * 1024;
+const MAX_REGISTRATION_MEDIA_ITEMS = 3;
+const MAX_REGISTRATION_IMAGE_BYTES = 10 * 1024 * 1024;
 
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"]);
 const VIDEO_MIME_TYPES = new Set(["video/mp4", "video/webm", "video/quicktime", "video/x-matroska"]);
@@ -93,31 +95,38 @@ function validateFile(file: File) {
   };
 }
 
-export async function deleteEventMediaAssets(assets: CampusEventMediaAsset[]) {
-  const removable = assets.filter((asset) => typeof asset.storagePath === "string" && asset.storagePath.length > 0);
+function validateRegistrationFile(file: File) {
+  const mimeType = normalizeMimeType(file.type || "application/octet-stream");
+  const kind = getEventMediaKind(mimeType);
 
-  if (removable.length === 0) {
-    return;
+  if (kind !== "image") {
+    throw new Error(`"${file.name}" is not a supported registration image format.`);
   }
 
-  ensureStorageConfigured();
+  if (file.size > MAX_REGISTRATION_IMAGE_BYTES) {
+    throw new Error(`"${file.name}" is too large. Keep each registration image under 10 MB.`);
+  }
 
-  const bucket = getFirebaseAdminStorageBucket();
-  await Promise.allSettled(removable.map((asset) => bucket.file(asset.storagePath as string).delete({ ignoreNotFound: true })));
+  return {
+    kind,
+    mimeType
+  };
 }
 
-export async function persistEventMediaAssets(input: {
+async function persistAssets(input: {
   tenantId: string;
   userId: string;
-  eventId: string;
+  scope: string;
   files: File[];
+  maxItems: number;
+  validate: (file: File) => { kind: "image" | "video"; mimeType: string };
 }): Promise<CampusEventMediaAsset[]> {
   if (input.files.length === 0) {
     return [];
   }
 
-  if (input.files.length > MAX_EVENT_MEDIA_ITEMS) {
-    throw new Error(`You can upload up to ${MAX_EVENT_MEDIA_ITEMS} files for one event.`);
+  if (input.files.length > input.maxItems) {
+    throw new Error(`You can upload up to ${input.maxItems} files here.`);
   }
 
   ensureStorageConfigured();
@@ -126,13 +135,13 @@ export async function persistEventMediaAssets(input: {
 
   return Promise.all(
     input.files.map(async (file) => {
-      const { kind, mimeType } = validateFile(file);
+      const { kind, mimeType } = input.validate(file);
       const assetId = randomUUID();
       const token = randomUUID();
       const buffer = Buffer.from(await file.arrayBuffer());
       const fileName = sanitizeFileName(file.name || `${kind}.${extensionFromMimeType(mimeType, kind === "video" ? "mp4" : "jpg")}`);
       const extension = extensionFromMimeType(mimeType, kind === "video" ? "mp4" : "jpg");
-      const storagePath = `events/${input.tenantId}/${input.userId}/${input.eventId}/${assetId}.${extension}`;
+      const storagePath = `${input.scope}/${assetId}.${extension}`;
 
       await bucket.file(storagePath).save(buffer, {
         resumable: false,
@@ -157,4 +166,50 @@ export async function persistEventMediaAssets(input: {
       } satisfies CampusEventMediaAsset;
     })
   );
+}
+
+export async function deleteEventMediaAssets(assets: CampusEventMediaAsset[]) {
+  const removable = assets.filter((asset) => typeof asset.storagePath === "string" && asset.storagePath.length > 0);
+
+  if (removable.length === 0) {
+    return;
+  }
+
+  ensureStorageConfigured();
+
+  const bucket = getFirebaseAdminStorageBucket();
+  await Promise.allSettled(removable.map((asset) => bucket.file(asset.storagePath as string).delete({ ignoreNotFound: true })));
+}
+
+export async function persistEventMediaAssets(input: {
+  tenantId: string;
+  userId: string;
+  eventId: string;
+  files: File[];
+}): Promise<CampusEventMediaAsset[]> {
+  return persistAssets({
+    tenantId: input.tenantId,
+    userId: input.userId,
+    scope: `events/${input.tenantId}/${input.userId}/${input.eventId}`,
+    files: input.files,
+    maxItems: MAX_EVENT_MEDIA_ITEMS,
+    validate: validateFile
+  });
+}
+
+export async function persistEventRegistrationAssets(input: {
+  tenantId: string;
+  userId: string;
+  eventId: string;
+  registrationId: string;
+  files: File[];
+}): Promise<CampusEventMediaAsset[]> {
+  return persistAssets({
+    tenantId: input.tenantId,
+    userId: input.userId,
+    scope: `events/${input.tenantId}/${input.userId}/${input.eventId}/registrations/${input.registrationId}`,
+    files: input.files,
+    maxItems: MAX_REGISTRATION_MEDIA_ITEMS,
+    validate: validateRegistrationFile
+  });
 }

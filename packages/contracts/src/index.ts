@@ -632,6 +632,10 @@ export interface ContactMarketPostResponse {
 export type CampusEventStatus = "published" | "ended" | "cancelled" | "deleted";
 export type CampusEventPassKind = "free" | "rsvp" | "paid";
 export type CampusEventScope = "for-you" | "week" | "saved" | "ended";
+export type CampusEventResponseMode = "interest" | "register" | "apply";
+export type CampusEventEntryMode = "individual" | "team";
+export type CampusEventRegistrationStatus = "submitted" | "approved" | "waitlisted" | "rejected" | "cancelled";
+export type CampusEventFormFieldType = "short_text" | "long_text" | "select" | "email" | "phone" | "number";
 
 export interface CampusEventActorSummary {
   userId: string;
@@ -650,6 +654,79 @@ export interface CampusEventMediaAsset {
   storagePath: string | null;
 }
 
+export interface CampusEventFormField {
+  id: string;
+  label: string;
+  type: CampusEventFormFieldType;
+  required: boolean;
+  placeholder?: string | null;
+  helpText?: string | null;
+  options?: string[];
+}
+
+export interface CampusEventRegistrationConfig {
+  mode: CampusEventResponseMode;
+  entryMode: CampusEventEntryMode;
+  closesAt: string | null;
+  requiresApproval: boolean;
+  teamSizeMin: number | null;
+  teamSizeMax: number | null;
+  allowAttachments: boolean;
+  attachmentLabel?: string | null;
+  formFields: CampusEventFormField[];
+}
+
+export interface CampusEventRegistrationSummary {
+  total: number;
+  submitted: number;
+  approved: number;
+  waitlisted: number;
+  rejected: number;
+}
+
+export interface CampusEventRegistrationAnswer {
+  fieldId: string;
+  label: string;
+  value: string;
+}
+
+export interface CampusEventTeamMember {
+  id: string;
+  name: string;
+  email?: string | null;
+  username?: string | null;
+  phone?: string | null;
+  role?: string | null;
+}
+
+export interface CampusEventViewerRegistrationSummary {
+  id: string;
+  status: CampusEventRegistrationStatus;
+  submittedAt: string;
+  updatedAt: string;
+  teamName?: string | null;
+  teamSize: number;
+  note?: string | null;
+  reviewNote?: string | null;
+  attachmentCount: number;
+}
+
+export interface CampusEventRegistration {
+  id: string;
+  eventId: string;
+  attendee: CampusEventActorSummary;
+  status: CampusEventRegistrationStatus;
+  submittedAt: string;
+  updatedAt: string;
+  teamName?: string | null;
+  teamSize: number;
+  teamMembers: CampusEventTeamMember[];
+  answers: CampusEventRegistrationAnswer[];
+  attachments: CampusEventMediaAsset[];
+  note?: string | null;
+  reviewNote?: string | null;
+}
+
 export interface CampusEvent {
   id: string;
   tenantId: string;
@@ -665,11 +742,17 @@ export interface CampusEvent {
   passKind: CampusEventPassKind;
   passLabel: string;
   capacity: number | null;
+  spotsLeft: number | null;
+  isRegistrationOpen: boolean;
   commentCount: number;
   status: CampusEventStatus;
   createdAt: string;
   savedCount: number;
   interestCount: number;
+  responseMode: CampusEventResponseMode;
+  registrationConfig: CampusEventRegistrationConfig;
+  registrationSummary: CampusEventRegistrationSummary;
+  viewerRegistration: CampusEventViewerRegistrationSummary | null;
   isSaved: boolean;
   isInterested: boolean;
   isHostedByViewer: boolean;
@@ -681,6 +764,8 @@ export interface CampusEventsViewerSummary {
   savedCount: number;
   interestedCount: number;
   hostedCount: number;
+  hostedPendingCount: number;
+  hostedRegistrationCount: number;
 }
 
 export interface CampusEventsDashboardResponse {
@@ -702,6 +787,14 @@ export interface CreateCampusEventRequest {
   passKind: CampusEventPassKind;
   passLabel?: string | null;
   capacity?: number | null;
+  responseMode: CampusEventResponseMode;
+  registrationClosesAt?: string | null;
+  entryMode?: CampusEventEntryMode | null;
+  teamSizeMin?: number | null;
+  teamSizeMax?: number | null;
+  allowAttachments?: boolean;
+  attachmentLabel?: string | null;
+  formFields?: CampusEventFormField[];
   media?: CampusEventMediaAsset[];
 }
 
@@ -722,6 +815,14 @@ export interface UpdateCampusEventRequest {
   passKind: CampusEventPassKind;
   passLabel?: string | null;
   capacity?: number | null;
+  responseMode: CampusEventResponseMode;
+  registrationClosesAt?: string | null;
+  entryMode?: CampusEventEntryMode | null;
+  teamSizeMin?: number | null;
+  teamSizeMax?: number | null;
+  allowAttachments?: boolean;
+  attachmentLabel?: string | null;
+  formFields?: CampusEventFormField[];
   keepMediaIds?: string[];
   media?: CampusEventMediaAsset[];
 }
@@ -749,6 +850,45 @@ export interface ToggleCampusEventInterestResponse {
   dashboard: CampusEventsDashboardResponse;
   eventId: string;
   isInterested: boolean;
+}
+
+export interface UpsertCampusEventRegistrationRequest {
+  eventId: string;
+  teamName?: string | null;
+  note?: string | null;
+  teamMembers?: CampusEventTeamMember[];
+  answers?: CampusEventRegistrationAnswer[];
+  keepAttachmentIds?: string[];
+  attachments?: CampusEventMediaAsset[];
+}
+
+export interface UpsertCampusEventRegistrationResponse {
+  dashboard: CampusEventsDashboardResponse;
+  event: CampusEvent;
+  registration: CampusEventViewerRegistrationSummary;
+}
+
+export interface CampusEventViewerRegistrationResponse {
+  event: CampusEvent;
+  registration: CampusEventRegistration | null;
+}
+
+export interface CampusEventRegistrationListResponse {
+  event: CampusEvent;
+  registrations: CampusEventRegistration[];
+}
+
+export interface ManageCampusEventRegistrationRequest {
+  status: Extract<CampusEventRegistrationStatus, "approved" | "waitlisted" | "rejected">;
+  reviewNote?: string | null;
+}
+
+export interface ManageCampusEventRegistrationResponse {
+  dashboard: CampusEventsDashboardResponse;
+  event: CampusEvent;
+  registrations: CampusEventRegistration[];
+  registrationId: string;
+  status: CampusEventRegistrationStatus;
 }
 
 export interface ManageCampusEventResponse {

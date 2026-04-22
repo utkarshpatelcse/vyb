@@ -1,14 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import type { CampusEventPassKind, CreateCampusEventRequest } from "@vyb/contracts";
+import type { CampusEventEntryMode, CampusEventFormField, CampusEventPassKind, CampusEventResponseMode, CreateCampusEventRequest } from "@vyb/contracts";
 import { getViewerProfile } from "../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../src/lib/dev-session";
 import { createCampusEvent, getEventsDashboard } from "../../../src/lib/events-data";
 import { deleteEventMediaAssets, persistEventMediaAssets } from "../../../src/lib/events-media-server";
 
-type ParsedCreatePayload = Omit<Partial<CreateCampusEventRequest>, "capacity"> & {
+type ParsedCreatePayload = Omit<Partial<CreateCampusEventRequest>, "capacity" | "teamSizeMin" | "teamSizeMax" | "formFields"> & {
   capacity?: string | number | null;
+  teamSizeMin?: string | number | null;
+  teamSizeMax?: string | number | null;
+  formFields?: CampusEventFormField[];
 };
 
 type ParsedCreateBody = {
@@ -29,6 +32,20 @@ function readOptionalStringFromForm(formData: FormData, key: string) {
   return typeof value === "string" ? value : null;
 }
 
+function readOptionalJsonFromForm<T>(formData: FormData, key: string) {
+  const value = readOptionalStringFromForm(formData, key);
+
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
+
 function buildParsedCreateBodyFromFormData(formData: FormData): ParsedCreateBody {
   return {
     payload: {
@@ -41,7 +58,15 @@ function buildParsedCreateBodyFromFormData(formData: FormData): ParsedCreateBody
       endsAt: readOptionalStringFromForm(formData, "endsAt"),
       passKind: readOptionalStringFromForm(formData, "passKind") as CampusEventPassKind,
       passLabel: readOptionalStringFromForm(formData, "passLabel"),
-      capacity: readOptionalStringFromForm(formData, "capacity")
+      capacity: readOptionalStringFromForm(formData, "capacity"),
+      responseMode: readOptionalStringFromForm(formData, "responseMode") as CampusEventResponseMode,
+      registrationClosesAt: readOptionalStringFromForm(formData, "registrationClosesAt"),
+      entryMode: readOptionalStringFromForm(formData, "entryMode") as CampusEventEntryMode,
+      teamSizeMin: readOptionalStringFromForm(formData, "teamSizeMin"),
+      teamSizeMax: readOptionalStringFromForm(formData, "teamSizeMax"),
+      allowAttachments: readOptionalStringFromForm(formData, "allowAttachments") === "true",
+      attachmentLabel: readOptionalStringFromForm(formData, "attachmentLabel"),
+      formFields: readOptionalJsonFromForm<CampusEventFormField[]>(formData, "formFields") ?? undefined
     },
     files: formData.getAll("media").filter(isFileEntry).filter((file) => file.size > 0)
   };
@@ -76,6 +101,14 @@ function parsePassKind(value: unknown): CampusEventPassKind | null {
   return value === "free" || value === "rsvp" || value === "paid" ? value : null;
 }
 
+function parseResponseMode(value: unknown): CampusEventResponseMode | null {
+  return value === "interest" || value === "register" || value === "apply" ? value : null;
+}
+
+function parseEntryMode(value: unknown): CampusEventEntryMode | null {
+  return value === "individual" || value === "team" ? value : null;
+}
+
 function parseCapacity(value: unknown) {
   if (value === null || value === undefined || value === "") {
     return null;
@@ -87,6 +120,24 @@ function parseCapacity(value: unknown) {
 
 function isValidDateTime(value: string) {
   return Number.isFinite(new Date(value).getTime());
+}
+
+function validateFormFields(fields: CampusEventFormField[] | undefined, responseMode: CampusEventResponseMode | null) {
+  if (!fields || responseMode === "interest") {
+    return null;
+  }
+
+  for (const field of fields) {
+    if (!field.label?.trim()) {
+      return "Each registration question needs a label.";
+    }
+
+    if (field.type === "select" && (field.options?.filter((option) => option.trim()).length ?? 0) < 2) {
+      return `Add at least 2 options for "${field.label.trim()}" before publishing.`;
+    }
+  }
+
+  return null;
 }
 
 export async function GET() {
@@ -121,7 +172,12 @@ export async function POST(request: Request) {
   const startsAt = payload.startsAt?.trim() ?? "";
   const endsAt = payload.endsAt?.trim() ?? "";
   const passKind = parsePassKind(payload.passKind);
+  const responseMode = parseResponseMode(payload.responseMode);
+  const entryMode = parseEntryMode(payload.entryMode);
   const capacity = parseCapacity(payload.capacity);
+  const teamSizeMin = parseCapacity(payload.teamSizeMin);
+  const teamSizeMax = parseCapacity(payload.teamSizeMax);
+  const registrationClosesAt = payload.registrationClosesAt?.trim() ?? "";
 
   if (!title) {
     return buildError(400, "INVALID_TITLE", "Add an event title.");
@@ -147,6 +203,10 @@ export async function POST(request: Request) {
     return buildError(400, "INVALID_STARTS_AT", "Choose a valid start date and time.");
   }
 
+  if (new Date(startsAt).getTime() <= Date.now()) {
+    return buildError(400, "START_IN_PAST", "Choose a future start date and time.");
+  }
+
   if (endsAt && !isValidDateTime(endsAt)) {
     return buildError(400, "INVALID_ENDS_AT", "Choose a valid end date and time.");
   }
@@ -159,8 +219,50 @@ export async function POST(request: Request) {
     return buildError(400, "INVALID_PASS_KIND", "Choose whether the event is free, RSVP, or paid.");
   }
 
+  if (!responseMode) {
+    return buildError(400, "INVALID_RESPONSE_MODE", "Choose whether students should show interest, register, or apply.");
+  }
+
   if (capacity !== null && Number.isNaN(capacity)) {
     return buildError(400, "INVALID_CAPACITY", "Capacity must be a positive whole number.");
+  }
+
+  if (teamSizeMin !== null && Number.isNaN(teamSizeMin)) {
+    return buildError(400, "INVALID_TEAM_SIZE_MIN", "Minimum team size must be a positive whole number.");
+  }
+
+  if (teamSizeMax !== null && Number.isNaN(teamSizeMax)) {
+    return buildError(400, "INVALID_TEAM_SIZE_MAX", "Maximum team size must be a positive whole number.");
+  }
+
+  if (registrationClosesAt && !isValidDateTime(registrationClosesAt)) {
+    return buildError(400, "INVALID_REGISTRATION_CLOSES_AT", "Choose a valid registration close time.");
+  }
+
+  if (registrationClosesAt && new Date(registrationClosesAt).getTime() > new Date(startsAt).getTime()) {
+    return buildError(400, "INVALID_REGISTRATION_CLOSE_WINDOW", "Registration should close on or before the event start time.");
+  }
+
+  const formFieldError = validateFormFields(payload.formFields, responseMode);
+  if (formFieldError) {
+    return buildError(400, "INVALID_FORM_FIELDS", formFieldError);
+  }
+
+  if (responseMode !== "interest" && !entryMode) {
+    return buildError(400, "INVALID_ENTRY_MODE", "Choose whether this is an individual or team entry event.");
+  }
+
+  if (responseMode !== "interest" && entryMode === "team") {
+    const minSize = teamSizeMin ?? 2;
+    const maxSize = teamSizeMax ?? Math.max(minSize, 4);
+
+    if (minSize < 2 || maxSize < minSize) {
+      return buildError(400, "INVALID_TEAM_SIZE_RANGE", "Team size settings must be valid and at least 2 people.");
+    }
+  }
+
+  if (responseMode !== "interest" && payload.allowAttachments === true && !payload.attachmentLabel?.trim()) {
+    return buildError(400, "INVALID_ATTACHMENT_LABEL", "Add a short attachment label so students know what to upload.");
   }
 
   if (files.length === 0) {
@@ -203,6 +305,14 @@ export async function POST(request: Request) {
         passKind,
         passLabel: payload.passLabel?.trim() || null,
         capacity,
+        responseMode,
+        registrationClosesAt: registrationClosesAt ? new Date(registrationClosesAt).toISOString() : null,
+        entryMode: responseMode === "interest" ? "individual" : entryMode,
+        teamSizeMin: responseMode === "interest" ? null : teamSizeMin,
+        teamSizeMax: responseMode === "interest" ? null : teamSizeMax,
+        allowAttachments: responseMode === "interest" ? false : payload.allowAttachments === true,
+        attachmentLabel: responseMode === "interest" ? null : payload.attachmentLabel?.trim() || null,
+        formFields: payload.formFields ?? [],
         media: uploadedMedia
       }
     );

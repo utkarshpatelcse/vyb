@@ -2,7 +2,7 @@
 
 Owner: Product and Engineering
 Last Updated: 2026-04-22
-Change Summary: Added the first-college professional web entry flow, backend-verified session bootstrap, mandatory profile completion gating, the authenticated `/home` feed landing surface, the Phase 1 Cloud Run plus Vercel hosting preparation, the first live campus-social flow for posts, stories, vibes, search, follows, and user IDs, the market dashboard move to live-only Data Connect reads, and the richer social engagement layer for likers, reposts, story viewing, immersive vibes, and responsive comment threads.
+Change Summary: Added the first-college professional web entry flow, backend-verified session bootstrap, mandatory profile completion gating, the authenticated `/home` feed landing surface, the Phase 1 Cloud Run plus Vercel hosting preparation, the first live campus-social flow for posts, stories, vibes, search, follows, and user IDs, the market dashboard move to live-only Data Connect reads, the richer social engagement layer for likers, reposts, story viewing, immersive vibes, and responsive comment threads, plus the campus events hosting and registration flow with team entry, host review, and CSV export.
 
 ## 1. Why We Are Building This
 
@@ -173,6 +173,7 @@ After implementation:
 - comment threads now support replies, comment likes, GIF/sticker attachments, a desktop side-panel treatment, and a mobile bottom-sheet composer
 - JSON-backed mutation fallbacks have been removed from the active identity, resources, social, and market write paths
 - the market dashboard now reads directly from Data Connect without seeding or rendering JSON-backed preview inventory
+- the campus events surface now supports dynamic category discovery, host-configurable interest versus registration versus application flows, team-entry forms, host-side review decisions, and CSV export of registrations in the current fallback-backed web implementation
 
 ## 7. Current Next Actions
 
