@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import type {
@@ -18,6 +19,14 @@ import {
   prepareSocialUploadFile,
   uploadSocialMediaAsset,
 } from "../lib/social-media-client";
+import {
+  STORY_MUSIC_CLIP_OPTIONS,
+  STORY_MUSIC_DEFAULT_CLIP_SECONDS,
+  composeStoryMusicVideo,
+  searchStoryMusicTracks,
+  type StoryMusicStickerPosition,
+  type StoryMusicTrack,
+} from "../lib/story-music";
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 type CampusUploadShellProps = {
@@ -28,6 +37,14 @@ type CampusUploadShellProps = {
 };
 
 type CreationMode = "choice" | "story" | "vibe" | "moment";
+
+type StoryComposerAsset = {
+  id: string;
+  url: string;
+  file: File;
+  kind: "image" | "video";
+  durationSeconds: number | null;
+};
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -125,6 +142,36 @@ function IcoSpark() {
   );
 }
 
+function IcoMusic() {
+  return (
+    <Ico>
+      <path
+        d="M15 5v9.2a2.8 2.8 0 1 1-1.8-2.63V7.3L8 8.5V16a2.8 2.8 0 1 1-1.8-2.63V6.9z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Ico>
+  );
+}
+
+function IcoSearch() {
+  return (
+    <Ico>
+      <path
+        d="m21 21-4.35-4.35M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Ico>
+  );
+}
+
 function IcoUpload() {
   return (
     <Ico>
@@ -195,6 +242,10 @@ function getInitials(name: string, username: string) {
   return source.slice(0, 2).toUpperCase();
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
 function formatDuration(seconds: number) {
   const total = Math.max(1, Math.round(seconds));
   const m = Math.floor(total / 60);
@@ -226,6 +277,14 @@ function loadVideoMetadata(file: File) {
 function parseKind(value: string | null): CampusUploadKind {
   if (value === "story" || value === "vibe") return value;
   return "post";
+}
+
+function makeComposerAssetId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `asset-${Date.now()}-${Math.round(Math.random() * 1_000_000)}`;
 }
 
 /* ─── Shimmer skeleton ───────────────────────────────────────────────────── */
@@ -290,9 +349,32 @@ export function CampusUploadShell({
   const vibeInputRef = useRef<HTMLInputElement | null>(null);
   const vibeVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  /* ── Moment (text + multi-images) ────────────────────────────────────── */
-  const [momentImages, setMomentImages] = useState<{ url: string; file: File }[]>([]);
+  /* ── Story / Moment media ────────────────────────────────────────────── */
+  const [storyAssets, setStoryAssets] = useState<StoryComposerAsset[]>([]);
+  const [activeStoryAssetId, setActiveStoryAssetId] = useState<string | null>(null);
+  const [momentImages, setMomentImages] = useState<{ id: string; url: string; file: File }[]>([]);
+  const [isStoryMusicLibraryOpen, setIsStoryMusicLibraryOpen] = useState(false);
+  const [storyMusicQuery, setStoryMusicQuery] = useState("");
+  const [storyMusicTracks, setStoryMusicTracks] = useState<StoryMusicTrack[]>([]);
+  const [isStoryMusicLoading, setIsStoryMusicLoading] = useState(false);
+  const [storyMusicTrack, setStoryMusicTrack] = useState<StoryMusicTrack | null>(null);
+  const [storyMusicClipDurationSeconds, setStoryMusicClipDurationSeconds] = useState(
+    STORY_MUSIC_DEFAULT_CLIP_SECONDS
+  );
+  const [storyMusicTrimSeconds, setStoryMusicTrimSeconds] = useState(0);
+  const [storyMusicStatus, setStoryMusicStatus] = useState<string | null>(null);
+  const [storyMusicStickerPosition, setStoryMusicStickerPosition] = useState<StoryMusicStickerPosition>({
+    x: 0.18,
+    y: 0.72
+  });
+  const [isDraggingMusicSticker, setIsDraggingMusicSticker] = useState(false);
+  const [isStoryMusicPreviewPlaying, setIsStoryMusicPreviewPlaying] = useState(false);
+  const [storyMusicPreviewCurrentTime, setStoryMusicPreviewCurrentTime] = useState(0);
   const momentInputRef = useRef<HTMLInputElement | null>(null);
+  const storyPreviewRef = useRef<HTMLDivElement | null>(null);
+  const storyMusicPreviewRef = useRef<HTMLAudioElement | null>(null);
+  const storyMusicPreviewTimeoutRef = useRef<number | null>(null);
+  const stickerDragOffsetRef = useRef({ x: 0, y: 0 });
 
   /* ── Derived ─────────────────────────────────────────────────────────── */
   const avatarInitials = useMemo(
@@ -300,18 +382,36 @@ export function CampusUploadShell({
     [viewerName, viewerUsername]
   );
 
+  const activeStoryAsset = useMemo(
+    () => storyAssets.find((asset) => asset.id === activeStoryAssetId) ?? storyAssets[0] ?? null,
+    [activeStoryAssetId, storyAssets]
+  );
+
+  const canAddStoryMusic = mode === "story" && storyAssets.length === 1;
+  const storyMusicTrimMax = useMemo(() => {
+    if (!storyMusicTrack) {
+      return 0;
+    }
+
+    return Math.max(0, Math.floor(storyMusicTrack.durationSeconds - storyMusicClipDurationSeconds));
+  }, [storyMusicClipDurationSeconds, storyMusicTrack]);
+
+  const storyMusicPreviewEndSeconds = useMemo(() => {
+    return storyMusicTrimSeconds + storyMusicClipDurationSeconds;
+  }, [storyMusicClipDurationSeconds, storyMusicTrimSeconds]);
+
   const canPublish = useMemo(() => {
     if (mode === "vibe") {
       return Boolean(vibeVideoUrl && vibeIsPortrait !== false);
     }
     if (mode === "story") {
-      return momentImages.length > 0;
+      return storyAssets.length > 0;
     }
     if (mode === "moment") {
       return Boolean(caption.trim() || momentImages.length > 0);
     }
     return false;
-  }, [mode, vibeVideoUrl, vibeIsPortrait, caption, momentImages]);
+  }, [mode, vibeVideoUrl, vibeIsPortrait, caption, momentImages, storyAssets]);
 
   /* ── progress simulator for demo (real upload doesn't expose events) ─── */
   useEffect(() => {
@@ -328,6 +428,96 @@ export function CampusUploadShell({
     }, 220);
     return () => clearInterval(id);
   }, [isPreparingMedia]);
+
+  useEffect(() => {
+    if (storyAssets.length === 0) {
+      setActiveStoryAssetId(null);
+      if (storyMusicTrack) {
+        setStoryMusicTrack(null);
+        setStoryMusicClipDurationSeconds(STORY_MUSIC_DEFAULT_CLIP_SECONDS);
+        setStoryMusicTrimSeconds(0);
+        setStoryMusicStatus(null);
+      }
+      return;
+    }
+
+    if (!storyAssets.some((asset) => asset.id === activeStoryAssetId)) {
+      setActiveStoryAssetId(storyAssets[0]?.id ?? null);
+    }
+
+    if (storyAssets.length > 1 && storyMusicTrack) {
+      setStoryMusicTrack(null);
+      setStoryMusicClipDurationSeconds(STORY_MUSIC_DEFAULT_CLIP_SECONDS);
+      setStoryMusicTrimSeconds(0);
+      setStoryMusicStatus("Music export works with one story item at a time right now.");
+    }
+  }, [activeStoryAssetId, storyAssets, storyMusicTrack]);
+
+  useEffect(() => {
+    setStoryMusicTrimSeconds((current) => clamp(current, 0, storyMusicTrimMax));
+  }, [storyMusicTrimMax]);
+
+  useEffect(() => {
+    return () => {
+      if (storyMusicPreviewTimeoutRef.current !== null) {
+        window.clearTimeout(storyMusicPreviewTimeoutRef.current);
+      }
+      storyMusicPreviewRef.current?.pause();
+    };
+  }, []);
+
+  useEffect(() => {
+    let ignore = false;
+    const controller = new AbortController();
+    const id = window.setTimeout(async () => {
+      if (!isStoryMusicLibraryOpen) {
+        return;
+      }
+
+      setIsStoryMusicLoading(true);
+      try {
+        const items = await searchStoryMusicTracks(storyMusicQuery);
+        if (!ignore) {
+          setStoryMusicTracks(items);
+        }
+      } catch (error) {
+        if (!ignore) {
+          setStoryMusicTracks([]);
+          setStoryMusicStatus(error instanceof Error ? error.message : "We could not load the music library.");
+        }
+      } finally {
+        if (!ignore) {
+          setIsStoryMusicLoading(false);
+        }
+      }
+    }, 220);
+
+    return () => {
+      ignore = true;
+      controller.abort();
+      window.clearTimeout(id);
+    };
+  }, [isStoryMusicLibraryOpen, storyMusicQuery]);
+
+  useEffect(() => {
+    return () => {
+      if (vibeVideoUrl?.startsWith("blob:")) {
+        URL.revokeObjectURL(vibeVideoUrl);
+      }
+
+      storyAssets.forEach((asset) => {
+        if (asset.url.startsWith("blob:")) {
+          URL.revokeObjectURL(asset.url);
+        }
+      });
+
+      momentImages.forEach((entry) => {
+        if (entry.url.startsWith("blob:")) {
+          URL.revokeObjectURL(entry.url);
+        }
+      });
+    };
+  }, [momentImages, storyAssets, vibeVideoUrl]);
 
   /* ── Helpers ─────────────────────────────────────────────────────────── */
   function handleClose() {
@@ -380,29 +570,114 @@ export function CampusUploadShell({
     if (file) void processVibeFile(file);
   }
 
-  /* ── Moment image pick ───────────────────────────────────────────────── */
+  /* ── Story / Moment media pick ──────────────────────────────────────── */
+  async function handleStoryInputChange(e: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+
+    const valid = files.filter(
+      (file) => file.type.startsWith("image/") || file.type.startsWith("video/")
+    );
+
+    if (valid.length === 0) {
+      setMessage("Stories support image and video files only.");
+      return;
+    }
+
+    const videoFile = valid.find((file) => file.type.startsWith("video/"));
+    if (videoFile) {
+      if (valid.length > 1 || storyAssets.length > 0) {
+        setMessage("Story video works one clip at a time. Remove other media first.");
+        return;
+      }
+
+      setIsPreparingMedia(true);
+      setUploadLabel("Preparing story clip...");
+      setMessage(null);
+
+      try {
+        const prepared = await prepareSocialUploadFile(videoFile, {
+          maxVideoBytes: MAX_VIDEO_BYTES,
+          targetVideoBytes: TARGET_VIDEO_BYTES
+        });
+        const meta = await loadVideoMetadata(prepared.file);
+        const entry: StoryComposerAsset = {
+          id: makeComposerAssetId(),
+          url: URL.createObjectURL(prepared.file),
+          file: prepared.file,
+          kind: "video",
+          durationSeconds: meta.duration
+        };
+
+        setStoryAssets([entry]);
+        setActiveStoryAssetId(entry.id);
+        setStoryMusicStatus(
+          prepared.optimizationSummary ?? "Music stories export a 15-second MP4 clip."
+        );
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "We could not prepare this story video.");
+      } finally {
+        setIsPreparingMedia(false);
+      }
+      return;
+    }
+
+    const imageFiles = valid.filter((file) => file.type.startsWith("image/"));
+    const hasVideoStory = storyAssets.some((asset) => asset.kind === "video");
+    if (hasVideoStory) {
+      setMessage("Remove the current story video before adding photos.");
+      return;
+    }
+
+    const availableSlots = Math.max(0, STORY_MAX_IMAGES - storyAssets.length);
+    const nextFiles = imageFiles.slice(0, availableSlots);
+    const entries = nextFiles.map((file) => ({
+      id: makeComposerAssetId(),
+      url: URL.createObjectURL(file),
+      file,
+      kind: "image" as const,
+      durationSeconds: STORY_IMAGE_DURATION_SECONDS
+    }));
+
+    setStoryAssets((prev) => [...prev, ...entries]);
+    setActiveStoryAssetId((current) => current ?? entries[0]?.id ?? null);
+    setMessage(
+      imageFiles.length > availableSlots
+        ? `Stories support up to ${STORY_MAX_IMAGES} photos so the full sequence stays within ${STORY_MAX_TOTAL_SECONDS} seconds.`
+        : null
+    );
+  }
+
   function handleMomentInputChange(e: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     e.target.value = "";
-    const valid = files.filter((f) => f.type.startsWith("image/"));
+    const valid = files.filter((file) => file.type.startsWith("image/"));
     if (valid.length === 0) {
-      setMessage(mode === "story" ? "Only image files are supported for Stories." : "Only image files are supported for Moments.");
+      setMessage("Only image files are supported for Moments.");
       return;
     }
-    setMessage(null);
 
-    const mediaLimit = mode === "story" ? STORY_MAX_IMAGES : 6;
-    const availableSlots = Math.max(0, mediaLimit - momentImages.length);
+    const availableSlots = Math.max(0, 6 - momentImages.length);
     const nextFiles = valid.slice(0, availableSlots);
-    const entries = nextFiles.map((f) => ({
-      url: URL.createObjectURL(f),
-      file: f,
+    const entries = nextFiles.map((file) => ({
+      id: makeComposerAssetId(),
+      url: URL.createObjectURL(file),
+      file
     }));
-    setMomentImages((prev) => [...prev, ...entries]);
 
-    if (mode === "story" && valid.length > availableSlots) {
-      setMessage(`Stories support up to ${STORY_MAX_IMAGES} photos so the full sequence stays within ${STORY_MAX_TOTAL_SECONDS} seconds.`);
-    }
+    setMomentImages((prev) => [...prev, ...entries]);
+    setMessage(valid.length > availableSlots ? "Moments support up to 6 photos." : null);
+  }
+
+  function removeStoryAsset(id: string) {
+    setStoryAssets((prev) => {
+      const next = prev.filter((asset) => asset.id !== id);
+      const removed = prev.find((asset) => asset.id === id);
+      if (removed?.url.startsWith("blob:")) {
+        URL.revokeObjectURL(removed.url);
+      }
+      return next;
+    });
   }
 
   function removeMomentImage(index: number) {
@@ -412,6 +687,101 @@ export function CampusUploadShell({
       if (removed?.url.startsWith("blob:")) URL.revokeObjectURL(removed.url);
       return next;
     });
+  }
+
+  function openStoryMusicLibrary() {
+    if (storyAssets.length === 0) {
+      setMessage("Pick one story photo or video before adding music.");
+      return;
+    }
+
+    if (storyAssets.length !== 1) {
+      setMessage("Music export currently works with one story photo or video at a time.");
+      return;
+    }
+
+    setStoryMusicStatus(null);
+    setIsStoryMusicLibraryOpen(true);
+  }
+
+  function stopStoryMusicPreview() {
+    if (storyMusicPreviewTimeoutRef.current !== null) {
+      window.clearTimeout(storyMusicPreviewTimeoutRef.current);
+      storyMusicPreviewTimeoutRef.current = null;
+    }
+    if (storyMusicPreviewRef.current) {
+      storyMusicPreviewRef.current.pause();
+    }
+    setIsStoryMusicPreviewPlaying(false);
+  }
+
+  async function playSelectedStoryMusicClip() {
+    if (!storyMusicTrack || !storyMusicPreviewRef.current) {
+      return;
+    }
+
+    stopStoryMusicPreview();
+    const audio = storyMusicPreviewRef.current;
+    audio.currentTime = storyMusicTrimSeconds;
+
+    try {
+      await audio.play();
+      setIsStoryMusicPreviewPlaying(true);
+      storyMusicPreviewTimeoutRef.current = window.setTimeout(() => {
+        stopStoryMusicPreview();
+      }, storyMusicClipDurationSeconds * 1000);
+    } catch (error) {
+      setStoryMusicStatus(
+        error instanceof Error ? error.message : "We could not play this song preview right now."
+      );
+    }
+  }
+
+  function selectStoryMusicTrack(track: StoryMusicTrack) {
+    stopStoryMusicPreview();
+    setStoryMusicTrack(track);
+    setStoryMusicClipDurationSeconds(STORY_MUSIC_DEFAULT_CLIP_SECONDS);
+    setStoryMusicTrimSeconds(0);
+    setStoryMusicPreviewCurrentTime(0);
+    setStoryMusicStatus(`Selected ${track.title} by ${track.artistName}.`);
+    setIsStoryMusicLibraryOpen(false);
+  }
+
+  function handleStoryStickerPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!storyPreviewRef.current) {
+      return;
+    }
+
+    const previewRect = storyPreviewRef.current.getBoundingClientRect();
+    const currentX = storyMusicStickerPosition.x * previewRect.width;
+    const currentY = storyMusicStickerPosition.y * previewRect.height;
+    stickerDragOffsetRef.current = {
+      x: event.clientX - currentX,
+      y: event.clientY - currentY
+    };
+    setIsDraggingMusicSticker(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleStoryStickerPointerMove(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!isDraggingMusicSticker || !storyPreviewRef.current) {
+      return;
+    }
+
+    const previewRect = storyPreviewRef.current.getBoundingClientRect();
+    const nextX = (event.clientX - previewRect.left - stickerDragOffsetRef.current.x) / previewRect.width;
+    const nextY = (event.clientY - previewRect.top - stickerDragOffsetRef.current.y) / previewRect.height;
+    setStoryMusicStickerPosition({
+      x: clamp(nextX, 0.05, 0.78),
+      y: clamp(nextY, 0.08, 0.82)
+    });
+  }
+
+  function handleStoryStickerPointerUp(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setIsDraggingMusicSticker(false);
   }
 
   /* ── Publish ────────────────────────────────────────────────────────── */
@@ -427,8 +797,8 @@ export function CampusUploadShell({
       setMessage("Add a caption or photo before posting.");
       return;
     }
-    if (mode === "story" && momentImages.length === 0) {
-      setMessage("Add at least one photo before posting your Story.");
+    if (mode === "story" && storyAssets.length === 0) {
+      setMessage("Add at least one photo or video before posting your Story.");
       return;
     }
 
@@ -454,8 +824,75 @@ export function CampusUploadShell({
         });
         const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
         if (!response.ok) { setMessage(payload?.error?.message ?? "Could not publish Vibe."); return; }
+      } else if (mode === "story") {
+        const trimmedCaption = caption.trim();
+
+        let normalizedStoryAssets = storyAssets.map((asset) => ({
+          file: asset.file,
+          mediaType: asset.kind,
+          mimeType: asset.file.type || null
+        }));
+
+        if (storyMusicTrack && activeStoryAsset) {
+          const composed = await composeStoryMusicVideo({
+            visualFile: activeStoryAsset.file,
+            visualKind: activeStoryAsset.kind,
+            track: storyMusicTrack,
+            clipDurationSeconds: storyMusicClipDurationSeconds,
+            trimStartSeconds: storyMusicTrimSeconds,
+            stickerPosition: storyMusicStickerPosition,
+            onStatus: setMessage
+          });
+
+          normalizedStoryAssets = [
+            {
+              file: composed.file,
+              mediaType: "video" as const,
+              mimeType: composed.file.type || "video/mp4"
+            }
+          ];
+        }
+
+        let completed = 0;
+        const total = normalizedStoryAssets.length;
+        const uploadedMediaAssets = await Promise.all(
+          normalizedStoryAssets.map(async (asset) => {
+            const uploaded = await uploadSocialMediaAsset(asset.file, "story");
+            completed += 1;
+            setMessage(`Uploading ${completed}/${total}...`);
+            return {
+              mediaType: asset.mediaType,
+              mediaUrl: uploaded?.url ?? "",
+              mediaStoragePath: uploaded?.storagePath ?? null,
+              mediaMimeType: uploaded?.mimeType ?? asset.mimeType ?? null,
+              mediaSizeBytes: uploaded?.sizeBytes ?? null
+            };
+          })
+        );
+
+        for (let index = 0; index < uploadedMediaAssets.length; index += 1) {
+          setMessage(`Publishing ${index + 1}/${uploadedMediaAssets.length} stories...`);
+          const asset = uploadedMediaAssets[index];
+          const response = await fetch("/api/stories", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              mediaType: asset.mediaType,
+              mediaUrl: asset.mediaUrl,
+              mediaStoragePath: asset.mediaStoragePath ?? null,
+              mediaMimeType: asset.mediaMimeType ?? null,
+              mediaSizeBytes: asset.mediaSizeBytes ?? null,
+              caption: trimmedCaption || null
+            })
+          });
+          const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+          if (!response.ok) {
+            setMessage(payload?.error?.message ?? "Could not publish Story.");
+            return;
+          }
+        }
       } else {
-        // story / moment — upload all images if present
+        // moment — upload all images if present
         let completed = 0;
         const total = momentImages.length;
         let uploadedMediaAssets: any[] = [];
@@ -463,7 +900,7 @@ export function CampusUploadShell({
         if (total > 0) {
           setMessage(`Uploading 0/${total}...`);
           const uploadPromises = momentImages.map(async (img) => {
-            const uploaded = await uploadSocialMediaAsset(img.file, mode === "story" ? "story" : "post");
+            const uploaded = await uploadSocialMediaAsset(img.file, "post");
             completed++;
             setMessage(`Uploading ${completed}/${total}...`);
             return {
@@ -480,40 +917,19 @@ export function CampusUploadShell({
         }
 
         const trimmedCaption = caption.trim();
-        if (mode === "story") {
-          for (let index = 0; index < uploadedMediaAssets.length; index += 1) {
-            setMessage(`Publishing ${index + 1}/${uploadedMediaAssets.length} stories...`);
-            const asset = uploadedMediaAssets[index];
-            const response = await fetch("/api/stories", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                mediaType: "image",
-                mediaUrl: asset.url,
-                mediaStoragePath: asset.storagePath ?? null,
-                mediaMimeType: asset.mimeType ?? null,
-                mediaSizeBytes: asset.sizeBytes ?? null,
-                caption: trimmedCaption || null,
-              }),
-            });
-            const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
-            if (!response.ok) { setMessage(payload?.error?.message ?? "Could not publish Story."); return; }
-          }
-        } else {
-          const response = await fetch("/api/posts", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              title: trimmedCaption ? trimmedCaption.slice(0, 72) : "",
-              body: trimmedCaption || "",
-              kind: total > 0 ? "image" : "text",
-              mediaAssets: uploadedMediaAssets.length > 0 ? uploadedMediaAssets : undefined,
-              location: collegeName,
-            }),
-          });
-          const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
-          if (!response.ok) { setMessage(payload?.error?.message ?? "Could not publish Moment."); return; }
-        }
+        const response = await fetch("/api/posts", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            title: trimmedCaption ? trimmedCaption.slice(0, 72) : "",
+            body: trimmedCaption || "",
+            kind: total > 0 ? "image" : "text",
+            mediaAssets: uploadedMediaAssets.length > 0 ? uploadedMediaAssets : undefined,
+            location: collegeName,
+          }),
+        });
+        const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+        if (!response.ok) { setMessage(payload?.error?.message ?? "Could not publish Moment."); return; }
       }
 
       router.push(returnTo);
@@ -765,7 +1181,6 @@ export function CampusUploadShell({
         {/* ─── STORY / MOMENT SCREEN ─────────────────────────────────── */}
         {(mode === "story" || mode === "moment") && (
           <div className="cs-moment-screen">
-            {/* User row */}
             <div className="cs-user-row cs-user-row--moment">
               <div className="cs-avatar" aria-hidden="true">{avatarInitials}</div>
               <div className="cs-user-info">
@@ -775,47 +1190,308 @@ export function CampusUploadShell({
               <span className="cs-user-pill cs-user-pill--moment">{mode === "story" ? "Story" : "Moment"}</span>
             </div>
 
-            {/* Caption area */}
-            <div className="cs-moment-caption-wrap">
-              <textarea
-                className="cs-moment-caption"
-                value={caption}
-                onChange={(e) => setCaption(e.target.value)}
-                placeholder={mode === "story" ? "Add a caption for your story..." : "What's on your mind? #hashtag @mention"}
-                rows={5}
-                disabled={isPublishing}
-              />
-            </div>
+            {mode === "story" ? (
+              <>
+                <div className="cs-story-editor">
+                  <div className="cs-story-preview-shell">
+                    <div className="cs-story-preview-stage" ref={storyPreviewRef}>
+                      {activeStoryAsset ? (
+                        <>
+                          {activeStoryAsset.kind === "video" ? (
+                            <video
+                              src={activeStoryAsset.url}
+                              className="cs-story-preview-media"
+                              autoPlay
+                              loop
+                              muted
+                              playsInline
+                            />
+                          ) : (
+                            <img
+                              src={activeStoryAsset.url}
+                              alt="Story preview"
+                              className="cs-story-preview-media"
+                            />
+                          )}
+                          <div className="cs-story-preview-gradient" />
+                          <div className="cs-story-preview-meta">
+                            <span>{activeStoryAsset.kind === "video" ? "Story clip" : "Story photo"}</span>
+                            <strong>
+                              {activeStoryAsset.kind === "video"
+                                ? `${Math.min(
+                                    storyMusicTrack
+                                      ? storyMusicClipDurationSeconds
+                                      : Math.max(
+                                          1,
+                                          Math.round(
+                                            activeStoryAsset.durationSeconds ?? STORY_MUSIC_DEFAULT_CLIP_SECONDS
+                                          )
+                                        ),
+                                    Math.max(
+                                      1,
+                                      Math.round(
+                                        activeStoryAsset.durationSeconds ?? STORY_MUSIC_DEFAULT_CLIP_SECONDS
+                                      )
+                                    )
+                                  )}s`
+                                : `${storyMusicTrack ? storyMusicClipDurationSeconds : STORY_IMAGE_DURATION_SECONDS}s`}
+                            </strong>
+                          </div>
+                          <button
+                            type="button"
+                            className="cs-story-music-trigger"
+                            onClick={openStoryMusicLibrary}
+                            disabled={isPublishing || isPreparingMedia}
+                          >
+                            <IcoMusic />
+                            <span>{storyMusicTrack ? "Change music" : "Add music"}</span>
+                          </button>
+                          {storyMusicTrack && (
+                            <button
+                              type="button"
+                              className={`cs-story-music-sticker${isDraggingMusicSticker ? " cs-story-music-sticker--dragging" : ""}`}
+                              style={{
+                                left: `${storyMusicStickerPosition.x * 100}%`,
+                                top: `${storyMusicStickerPosition.y * 100}%`
+                              }}
+                              onPointerDown={handleStoryStickerPointerDown}
+                              onPointerMove={handleStoryStickerPointerMove}
+                              onPointerUp={handleStoryStickerPointerUp}
+                              onPointerCancel={handleStoryStickerPointerUp}
+                            >
+                              <IcoMusic />
+                              <span>{storyMusicTrack.title}</span>
+                              <small>{storyMusicTrack.artistName}</small>
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="cs-story-preview-empty"
+                          onClick={() => momentInputRef.current?.click()}
+                        >
+                          <div className="cs-story-preview-empty-icon">
+                            <IcoPlus />
+                          </div>
+                          <strong>Build your story scene</strong>
+                          <span>Add a photo or a short video, then layer music on top.</span>
+                        </button>
+                      )}
+                    </div>
 
-            {/* Image strip */}
-            <div className="cs-moment-images">
-              {momentImages.map((img, i) => (
-                <div key={img.url} className="cs-moment-img-thumb">
-                  <img src={img.url} alt={`Upload ${i + 1}`} />
-                  <button
-                    type="button"
-                    className="cs-moment-img-remove"
-                    onClick={() => removeMomentImage(i)}
-                    aria-label="Remove image"
-                  >
-                    <IcoTrash />
-                  </button>
+                    {storyMusicTrack && (
+                        <div className="cs-story-music-panel">
+                        <audio
+                          ref={storyMusicPreviewRef}
+                          className="cs-story-music-audio"
+                          src={storyMusicTrack.streamUrl}
+                          preload="metadata"
+                          controls
+                          onPlay={() => setIsStoryMusicPreviewPlaying(true)}
+                          onPause={() => setIsStoryMusicPreviewPlaying(false)}
+                          onEnded={stopStoryMusicPreview}
+                          onTimeUpdate={(event) => {
+                            setStoryMusicPreviewCurrentTime(event.currentTarget.currentTime);
+                          }}
+                        />
+                        <div className="cs-story-music-panel-head">
+                          <div>
+                            <strong>{storyMusicTrack.title}</strong>
+                            <span>{storyMusicTrack.artistName}</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="cs-story-music-reset"
+                            onClick={() => {
+                              stopStoryMusicPreview();
+                              setStoryMusicTrack(null);
+                              setStoryMusicClipDurationSeconds(STORY_MUSIC_DEFAULT_CLIP_SECONDS);
+                              setStoryMusicTrimSeconds(0);
+                              setStoryMusicStatus("Music removed from this story.");
+                            }}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                        <div className="cs-story-music-clip-options" role="group" aria-label="Choose clip duration">
+                          {STORY_MUSIC_CLIP_OPTIONS.filter((seconds) => seconds <= storyMusicTrack.durationSeconds).map((seconds) => (
+                            <button
+                              key={seconds}
+                              type="button"
+                              className={`cs-story-music-clip-chip${storyMusicClipDurationSeconds === seconds ? " is-active" : ""}`}
+                              onClick={() => {
+                                stopStoryMusicPreview();
+                                setStoryMusicClipDurationSeconds(seconds);
+                              }}
+                            >
+                              {seconds}s
+                            </button>
+                          ))}
+                        </div>
+                        <div className="cs-story-music-preview-actions">
+                          <button
+                            type="button"
+                            className={`cs-story-music-preview-btn${isStoryMusicPreviewPlaying ? " is-active" : ""}`}
+                            onClick={() => {
+                              if (isStoryMusicPreviewPlaying) {
+                                stopStoryMusicPreview();
+                                return;
+                              }
+                              void playSelectedStoryMusicClip();
+                            }}
+                          >
+                            {isStoryMusicPreviewPlaying ? "Stop selected clip" : "Play selected clip"}
+                          </button>
+                          <span className="cs-story-music-preview-meta">
+                            {formatDuration(storyMusicTrimSeconds)} to {formatDuration(storyMusicPreviewEndSeconds)}
+                          </span>
+                        </div>
+                        <label className="cs-story-trim-wrap">
+                          <span>Pick the {storyMusicClipDurationSeconds}s song window</span>
+                          <input
+                            type="range"
+                            min={0}
+                            max={storyMusicTrimMax}
+                            step={1}
+                            value={storyMusicTrimSeconds}
+                            onChange={(event) => {
+                              stopStoryMusicPreview();
+                              setStoryMusicTrimSeconds(Number(event.target.value));
+                            }}
+                            className="cs-story-trim-slider"
+                          />
+                          <div className="cs-story-trim-meta">
+                            <span>Start at {formatDuration(storyMusicTrimSeconds)}</span>
+                            <span>{storyMusicClipDurationSeconds}s clip</span>
+                          </div>
+                        </label>
+                        <span className="cs-story-music-playback-readout">
+                          Live preview: {formatDuration(Math.floor(storyMusicPreviewCurrentTime))} / {formatDuration(storyMusicTrack.durationSeconds)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="cs-story-editor-side">
+                    <div className="cs-moment-caption-wrap">
+                      <textarea
+                        className="cs-moment-caption"
+                        value={caption}
+                        onChange={(e) => setCaption(e.target.value)}
+                        placeholder="Add a caption for your story..."
+                        rows={5}
+                        disabled={isPublishing}
+                      />
+                    </div>
+
+                    <div className="cs-moment-images cs-moment-images--story">
+                      {storyAssets.map((asset) => (
+                        <div
+                          key={asset.id}
+                          className={`cs-moment-img-thumb cs-moment-img-thumb--story${activeStoryAsset?.id === asset.id ? " cs-moment-img-thumb--active" : ""}`}
+                        >
+                          <button
+                            type="button"
+                            className="cs-story-thumb-select"
+                            onClick={() => setActiveStoryAssetId(asset.id)}
+                          >
+                            {asset.kind === "video" ? (
+                              <video src={asset.url} muted playsInline />
+                            ) : (
+                              <img src={asset.url} alt="Story asset" />
+                            )}
+                            <span className="cs-story-thumb-badge">{asset.kind === "video" ? "Video" : "Photo"}</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="cs-moment-img-remove"
+                            onClick={() => removeStoryAsset(asset.id)}
+                            aria-label="Remove story media"
+                          >
+                            <IcoTrash />
+                          </button>
+                        </div>
+                      ))}
+                      {storyAssets.length > 0 && storyAssets.length < STORY_MAX_IMAGES && !storyAssets.some((asset) => asset.kind === "video") && (
+                        <button
+                          type="button"
+                          className="cs-moment-img-add"
+                          onClick={() => momentInputRef.current?.click()}
+                          aria-label="Add story media"
+                        >
+                          <IcoPlus />
+                          <span>{storyAssets.length === 0 ? "Add story" : "More"}</span>
+                        </button>
+                      )}
+                      {storyAssets.length === 0 && (
+                        <button
+                          type="button"
+                          className="cs-moment-img-add"
+                          onClick={() => momentInputRef.current?.click()}
+                          aria-label="Add story media"
+                        >
+                          <IcoPlus />
+                          <span>Add story</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              ))}
-              {momentImages.length < (mode === "story" ? STORY_MAX_IMAGES : 6) && (
-                <button
-                  type="button"
-                  className="cs-moment-img-add"
-                  onClick={() => momentInputRef.current?.click()}
-                    aria-label={mode === "story" ? "Add story photo" : "Add photo"}
-                  >
-                    <IcoPlus />
-                    <span>{momentImages.length === 0 ? (mode === "story" ? "Add story photo" : "Add photo") : "More"}</span>
-                  </button>
-              )}
-            </div>
 
-            {mode === "moment" && (
+                {storyMusicStatus && <p className="cs-story-music-status">{storyMusicStatus}</p>}
+                {message && <p className="cs-message">{message}</p>}
+
+                <input
+                  ref={momentInputRef}
+                  type="file"
+                  accept="image/*,video/*"
+                  multiple
+                  className="cs-file-input"
+                  disabled={isPublishing || isPreparingMedia}
+                  onChange={handleStoryInputChange}
+                />
+              </>
+            ) : (
+              <>
+                <div className="cs-moment-caption-wrap">
+                  <textarea
+                    className="cs-moment-caption"
+                    value={caption}
+                    onChange={(e) => setCaption(e.target.value)}
+                    placeholder="What's on your mind? #hashtag @mention"
+                    rows={5}
+                    disabled={isPublishing}
+                  />
+                </div>
+
+                <div className="cs-moment-images">
+                  {momentImages.map((img, i) => (
+                    <div key={img.id} className="cs-moment-img-thumb">
+                      <img src={img.url} alt={`Upload ${i + 1}`} />
+                      <button
+                        type="button"
+                        className="cs-moment-img-remove"
+                        onClick={() => removeMomentImage(i)}
+                        aria-label="Remove image"
+                      >
+                        <IcoTrash />
+                      </button>
+                    </div>
+                  ))}
+                  {momentImages.length < 6 && (
+                    <button
+                      type="button"
+                      className="cs-moment-img-add"
+                      onClick={() => momentInputRef.current?.click()}
+                      aria-label="Add photo"
+                    >
+                      <IcoPlus />
+                      <span>{momentImages.length === 0 ? "Add photo" : "More"}</span>
+                    </button>
+                  )}
+                </div>
+
               <div className="cs-community-select-wrap cs-community-select-wrap--moment">
                 <label className="cs-community-label" htmlFor="cs-community-moment">
                   <IcoSpark />
@@ -836,19 +1512,89 @@ export function CampusUploadShell({
                   <span className="cs-select-chevron"><IcoChevronDown /></span>
                 </div>
               </div>
+
+                {message && <p className="cs-message">{message}</p>}
+
+                <input
+                  ref={momentInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="cs-file-input"
+                  disabled={isPublishing}
+                  onChange={handleMomentInputChange}
+                />
+              </>
             )}
+          </div>
+        )}
 
-            {message && <p className="cs-message">{message}</p>}
-
-            <input
-              ref={momentInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="cs-file-input"
-              disabled={isPublishing}
-              onChange={handleMomentInputChange}
+        {mode === "story" && isStoryMusicLibraryOpen && (
+          <div className="cs-story-music-modal" role="dialog" aria-modal="true" aria-label="Music library">
+            <button
+              type="button"
+              className="cs-story-music-backdrop"
+              onClick={() => setIsStoryMusicLibraryOpen(false)}
+              aria-label="Close music library"
             />
+            <div className="cs-story-music-dialog">
+              <div className="cs-story-music-dialog-head">
+                <div>
+                  <strong>Music library</strong>
+                  <span>Royalty-free tracks for your next story drop.</span>
+                </div>
+                <button
+                  type="button"
+                  className="cs-story-music-close"
+                  onClick={() => setIsStoryMusicLibraryOpen(false)}
+                  aria-label="Close music library"
+                >
+                  <IcoClose />
+                </button>
+              </div>
+
+              <label className="cs-story-music-search">
+                <IcoSearch />
+                <input
+                  type="search"
+                  value={storyMusicQuery}
+                  onChange={(event) => setStoryMusicQuery(event.target.value)}
+                  placeholder="Search by song or artist"
+                />
+              </label>
+
+              <div className="cs-story-music-results">
+                {isStoryMusicLoading ? (
+                  <p className="cs-story-music-empty">Loading tracks...</p>
+                ) : storyMusicTracks.length === 0 ? (
+                  <p className="cs-story-music-empty">No tracks found yet. Try another search.</p>
+                ) : (
+                  storyMusicTracks.map((track) => (
+                    <button
+                      type="button"
+                      key={track.id}
+                      className="cs-story-music-item"
+                      onClick={() => selectStoryMusicTrack(track)}
+                    >
+                      <div className="cs-story-music-item-art">
+                        {track.artworkUrl ? (
+                          <img src={track.artworkUrl} alt="" />
+                        ) : (
+                          <IcoMusic />
+                        )}
+                      </div>
+                      <div className="cs-story-music-item-copy">
+                        <strong>{track.title}</strong>
+                        <span>{track.artistName}</span>
+                      </div>
+                      <span className="cs-story-music-item-duration">
+                        {formatDuration(track.durationSeconds)}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
         )}
 
@@ -859,7 +1605,7 @@ export function CampusUploadShell({
                 {mode === "vibe"
                   ? "Portrait 9:16 clip fills the Vibes feed perfectly"
                 : mode === "story"
-                  ? `Each selected photo stays for ${STORY_IMAGE_DURATION_SECONDS} seconds · up to ${STORY_MAX_IMAGES} photos (${STORY_MAX_TOTAL_SECONDS}s max)`
+                  ? "Stories support photos or one video · music clips can export at 15s, 30s, 45s, or 60s"
                   : "Up to 6 photos · Text-only posts are fine too"}
             </div>
             <div className="cs-footer-actions">

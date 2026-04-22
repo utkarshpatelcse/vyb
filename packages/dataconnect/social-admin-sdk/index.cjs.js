@@ -259,3 +259,10 @@ function softDeletePost(dcOrVarsOrOptions, varsOrOptions, options) {
 }
 exports.softDeletePost = softDeletePost;
 
+function softDeleteReaction(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('SoftDeleteReaction', inputVars, inputOpts);
+}
+exports.softDeleteReaction = softDeleteReaction;
+

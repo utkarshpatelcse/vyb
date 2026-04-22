@@ -680,6 +680,14 @@ export interface SoftDeletePostVariables {
   id: UUIDString;
 }
 
+export interface SoftDeleteReactionData {
+  reaction_update?: Reaction_Key | null;
+}
+
+export interface SoftDeleteReactionVariables {
+  id: UUIDString;
+}
+
 export interface StoryReaction_Key {
   id: UUIDString;
   __typename?: 'StoryReaction_Key';
@@ -937,4 +945,9 @@ export function softDeleteFollow(vars: SoftDeleteFollowVariables, options?: Oper
 export function softDeletePost(dc: DataConnect, vars: SoftDeletePostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeletePostData>>;
 /** Generated Node Admin SDK operation action function for the 'SoftDeletePost' Mutation. Allow users to pass in custom DataConnect instances. */
 export function softDeletePost(vars: SoftDeletePostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeletePostData>>;
+
+/** Generated Node Admin SDK operation action function for the 'SoftDeleteReaction' Mutation. Allow users to execute without passing in DataConnect. */
+export function softDeleteReaction(dc: DataConnect, vars: SoftDeleteReactionVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeleteReactionData>>;
+/** Generated Node Admin SDK operation action function for the 'SoftDeleteReaction' Mutation. Allow users to pass in custom DataConnect instances. */
+export function softDeleteReaction(vars: SoftDeleteReactionVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeleteReactionData>>;
 

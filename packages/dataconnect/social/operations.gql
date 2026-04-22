@@ -702,3 +702,13 @@ mutation SoftDeletePost($id: UUID!) @auth(level: NO_ACCESS) @transaction {
     }
   )
 }
+
+mutation SoftDeleteReaction($id: UUID!) @auth(level: NO_ACCESS) @transaction {
+  reaction_update(
+    key: { id: $id }
+    data: {
+      deletedAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}

@@ -28,6 +28,7 @@ import {
   listStoryReactionsByTenant as listStoryReactionsByTenantQuery,
   softDeleteFollow as softDeleteFollowMutation,
   softDeletePost as softDeletePostMutation,
+  softDeleteReaction as softDeleteReactionMutation,
   updateReaction as updateReactionMutation,
   updateStoryReaction as updateStoryReactionMutation
 } from "../../../../../packages/dataconnect/social-admin-sdk/esm/index.esm.js";
@@ -919,6 +920,20 @@ export async function upsertReaction(payload) {
   const existing = await getReactionByKeyQuery(getSocialDc(), { reactionKey });
   const current = existing.data.reactions[0] ?? null;
 
+  // Toggle: if same reaction already exists → unlike (soft-delete it)
+  if (current && current.reactionType === payload.reactionType) {
+    await softDeleteReactionMutation(getSocialDc(), { id: current.id });
+    return {
+      postId: payload.postId,
+      membershipId: payload.membershipId,
+      reactionType: payload.reactionType,
+      aggregateCount: await countReactionsByPost(payload.postId),
+      active: false,
+      viewerReactionType: null
+    };
+  }
+
+  // Different reaction type already exists → update it
   if (current) {
     await updateReactionMutation(getSocialDc(), {
       id: current.id,

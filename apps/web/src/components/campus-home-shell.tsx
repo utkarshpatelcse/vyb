@@ -325,6 +325,52 @@ function CloseIcon() {
   );
 }
 
+function VolumeOnIcon() {
+  return (
+    <IconBase>
+      <path
+        d="M5 9.5h3.1L12.8 6v12l-4.7-3.5H5z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M16 9.2a4 4 0 0 1 0 5.6M18.7 6.4a8 8 0 0 1 0 11.2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </IconBase>
+  );
+}
+
+function VolumeOffIcon() {
+  return (
+    <IconBase>
+      <path
+        d="M5 9.5h3.1L12.8 6v12l-4.7-3.5H5z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="m16.2 8.5 4.3 7M20.5 8.5l-4.3 7"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </IconBase>
+  );
+}
+
 function getProfileHref(username: string, viewerUsername: string) {
   return username === viewerUsername ? "/dashboard" : `/u/${encodeURIComponent(username)}`;
 }
@@ -350,6 +396,7 @@ export function CampusHomeShell({
   const [selectedStoryIndex, setSelectedStoryIndex] = useState<number | null>(null);
   const [storyProgress, setStoryProgress] = useState(0);
   const [isStoryPaused, setIsStoryPaused] = useState(false);
+  const [isStoryMuted, setIsStoryMuted] = useState(false);
   const [storyMessageDraft, setStoryMessageDraft] = useState("");
   const [seenStoryIds, setSeenStoryIds] = useState<Record<string, true>>({});
   const [draftBody, setDraftBody] = useState("");
@@ -398,6 +445,7 @@ export function CampusHomeShell({
   useEffect(() => {
     setStoryMessageDraft("");
     setIsStoryPaused(false);
+    setIsStoryMuted(false);
     setStoryProgress(0);
   }, [selectedStory?.id]);
 
@@ -510,13 +558,28 @@ export function CampusHomeShell({
       return;
     }
 
+    const storyVideo = storyVideoRef.current;
+    storyVideo.muted = isStoryMuted;
+
     if (isStoryPaused) {
-      storyVideoRef.current.pause();
+      storyVideo.pause();
       return;
     }
 
-    void storyVideoRef.current.play().catch(() => null);
-  }, [selectedStory, isStoryPaused]);
+    const playStoryVideo = async () => {
+      try {
+        await storyVideo.play();
+      } catch {
+        if (!storyVideo.muted) {
+          storyVideo.muted = true;
+          setIsStoryMuted(true);
+          await storyVideo.play().catch(() => null);
+        }
+      }
+    };
+
+    void playStoryVideo();
+  }, [selectedStory, isStoryPaused, isStoryMuted]);
 
   const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
   const navItems = useMemo(
@@ -846,6 +909,21 @@ export function CampusHomeShell({
     setIsStoryPaused(false);
   }
 
+  function handleStorySoundToggle() {
+    const nextMuted = !isStoryMuted;
+    setIsStoryMuted(nextMuted);
+
+    if (!storyVideoRef.current) {
+      return;
+    }
+
+    storyVideoRef.current.muted = nextMuted;
+
+    if (!nextMuted) {
+      void storyVideoRef.current.play().catch(() => null);
+    }
+  }
+
   async function handleQuickPostPublish() {
     const body = draftBody.trim();
 
@@ -1088,22 +1166,32 @@ export function CampusHomeShell({
         <div className="vyb-campus-feed-stack">
           <div className="vyb-campus-stories">
             {ownStoryGroup ? (
-              <button
-                type="button"
-                className={`vyb-campus-story vyb-campus-story-own${ownStoryGroup.allSeen ? " is-seen" : ""}`}
-                onClick={() => openStoryGroup(ownStoryGroup)}
-              >
-                <span
-                  className={`vyb-campus-story-ring${selectedStoryGroup?.userId === ownStoryGroup.userId ? " is-active" : ""}`}
+              <div className="vyb-campus-story-wrap">
+                <button
+                  type="button"
+                  className={`vyb-campus-story vyb-campus-story-own${ownStoryGroup.allSeen ? " is-seen" : ""}`}
+                  onClick={() => openStoryGroup(ownStoryGroup)}
                 >
-                  {ownStoryGroup.preview.mediaType === "video" ? (
-                    <video src={ownStoryGroup.preview.mediaUrl} muted playsInline autoPlay loop />
-                  ) : (
-                    <img src={ownStoryGroup.preview.mediaUrl} alt="Your story" />
-                  )}
-                </span>
-                <span>Your story</span>
-              </button>
+                  <span
+                    className={`vyb-campus-story-ring${selectedStoryGroup?.userId === ownStoryGroup.userId ? " is-active" : ""}`}
+                  >
+                    {ownStoryGroup.preview.mediaType === "video" ? (
+                      <video src={ownStoryGroup.preview.mediaUrl} muted playsInline autoPlay loop />
+                    ) : (
+                      <img src={ownStoryGroup.preview.mediaUrl} alt="Your story" />
+                    )}
+                  </span>
+                  <span>Your story</span>
+                </button>
+                <button
+                  type="button"
+                  className="vyb-campus-story-plus"
+                  aria-label="Add a new story"
+                  onClick={() => router.push("/create?kind=story&from=%2Fhome")}
+                >
+                  <AddPostIcon />
+                </button>
+              </div>
             ) : (
               <button type="button" className="vyb-campus-story vyb-campus-story-add" onClick={() => router.push("/create?kind=story&from=%2Fhome")}>
                 <span className="vyb-campus-story-ring vyb-campus-story-ring-add">
@@ -1511,14 +1599,26 @@ export function CampusHomeShell({
                   </span>
                 </div>
               </div>
-              <button
-                type="button"
-                className="vyb-story-viewer-close"
-                aria-label="Close story viewer"
-                onClick={() => setSelectedStoryIndex(null)}
-              >
-                <CloseIcon />
-              </button>
+              <div className="vyb-story-viewer-head-actions">
+                {selectedStory.mediaType === "video" ? (
+                  <button
+                    type="button"
+                    className={`vyb-story-viewer-sound${isStoryMuted ? "" : " is-active"}`}
+                    aria-label={isStoryMuted ? "Unmute story audio" : "Mute story audio"}
+                    onClick={handleStorySoundToggle}
+                  >
+                    {isStoryMuted ? <VolumeOffIcon /> : <VolumeOnIcon />}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="vyb-story-viewer-close"
+                  aria-label="Close story viewer"
+                  onClick={() => setSelectedStoryIndex(null)}
+                >
+                  <CloseIcon />
+                </button>
+              </div>
             </div>
 
             <div className="vyb-story-viewer-media-wrap">
@@ -1529,9 +1629,10 @@ export function CampusHomeShell({
                     ref={storyVideoRef}
                     src={selectedStory.mediaUrl}
                     autoPlay
-                    muted
+                    muted={isStoryMuted}
                     playsInline
                     loop={false}
+                    preload="metadata"
                   />
                 ) : (
                   <img className="vyb-story-viewer-image" src={selectedStory.mediaUrl} alt={selectedStory.username} />

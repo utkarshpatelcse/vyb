@@ -267,7 +267,11 @@ export function CampusReelsShell({
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
   const scrollRafRef = useRef<number | null>(null);
   const snapAnimationRef = useRef<ReturnType<typeof animate> | null>(null);
+  const tapTimeoutRef = useRef<number | null>(null);
+  const holdTimeoutRef = useRef<number | null>(null);
   const snappingRef = useRef(false);
+  const holdTriggeredRef = useRef(false);
+  const holdPostIdRef = useRef<string | null>(null);
   const lastTapRef = useRef<{
     postId: string | null;
     timestamp: number;
@@ -288,7 +292,9 @@ export function CampusReelsShell({
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [isDesktop, setIsDesktop] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isPlaybackPaused, setIsPlaybackPaused] = useState(false);
+  const [speedBoostPostId, setSpeedBoostPostId] = useState<string | null>(null);
   const [progressByPost, setProgressByPost] = useState<Record<string, number>>({});
 
   const navItems = useMemo(
@@ -350,6 +356,11 @@ export function CampusReelsShell({
 
     setActiveIndex((current) => clamp(current, 0, engagement.posts.length - 1));
   }, [engagement.posts.length]);
+
+  useEffect(() => {
+    setIsPlaybackPaused(false);
+    setSpeedBoostPostId(null);
+  }, [activePost?.id]);
 
   useEffect(() => {
     const feed = feedRef.current;
@@ -439,17 +450,38 @@ export function CampusReelsShell({
 
       const isActive = activePost?.id === post.id;
       video.muted = isMuted || !isActive;
+      video.playbackRate = isActive && speedBoostPostId === post.id ? 2 : 1;
 
-      if (isActive) {
+      if (isActive && !isPlaybackPaused) {
         const playPromise = video.play();
         if (playPromise && typeof playPromise.catch === "function") {
-          playPromise.catch(() => null);
+          playPromise.catch(() => {
+            if (video.muted) {
+              return null;
+            }
+
+            video.muted = true;
+            setIsMuted(true);
+            return video.play().catch(() => null);
+          });
         }
       } else {
         video.pause();
       }
     }
-  }, [activePost?.id, engagement.posts, isMuted]);
+  }, [activePost?.id, engagement.posts, isMuted, isPlaybackPaused, speedBoostPostId]);
+
+  useEffect(() => {
+    return () => {
+      if (tapTimeoutRef.current !== null) {
+        window.clearTimeout(tapTimeoutRef.current);
+      }
+
+      if (holdTimeoutRef.current !== null) {
+        window.clearTimeout(holdTimeoutRef.current);
+      }
+    };
+  }, []);
 
   function syncMirroredPost(postId: string, updater: (post: FeedCard) => FeedCard) {
     setLightboxPost((current) => (current?.id === postId ? updater(current) : current));
@@ -479,7 +511,13 @@ export function CampusReelsShell({
 
   function handleMediaTap(post: FeedCard) {
     const now = Date.now();
+
     if (lastTapRef.current.postId === post.id && now - lastTapRef.current.timestamp < 260) {
+      if (tapTimeoutRef.current !== null) {
+        window.clearTimeout(tapTimeoutRef.current);
+        tapTimeoutRef.current = null;
+      }
+
       void handlePostLike(post, true);
       lastTapRef.current = {
         postId: null,
@@ -492,6 +530,87 @@ export function CampusReelsShell({
       postId: post.id,
       timestamp: now
     };
+
+    if (tapTimeoutRef.current !== null) {
+      window.clearTimeout(tapTimeoutRef.current);
+    }
+
+    tapTimeoutRef.current = window.setTimeout(() => {
+      if (activePost?.id === post.id && post.kind === "video") {
+        setIsPlaybackPaused((current) => !current);
+      }
+
+      tapTimeoutRef.current = null;
+    }, 260);
+  }
+
+  function clearHoldTimer() {
+    if (holdTimeoutRef.current !== null) {
+      window.clearTimeout(holdTimeoutRef.current);
+      holdTimeoutRef.current = null;
+    }
+  }
+
+  function releaseSpeedBoost() {
+    clearHoldTimer();
+    holdTriggeredRef.current = false;
+    holdPostIdRef.current = null;
+    setSpeedBoostPostId(null);
+  }
+
+  function handleMediaPointerDown(post: FeedCard) {
+    if (post.kind !== "video" || activePost?.id !== post.id) {
+      holdTriggeredRef.current = false;
+      holdPostIdRef.current = null;
+      clearHoldTimer();
+      return;
+    }
+
+    holdTriggeredRef.current = false;
+    holdPostIdRef.current = post.id;
+    clearHoldTimer();
+    holdTimeoutRef.current = window.setTimeout(() => {
+      holdTriggeredRef.current = true;
+      setSpeedBoostPostId(post.id);
+
+      if (isPlaybackPaused) {
+        setIsPlaybackPaused(false);
+      }
+
+      const video = videoRefs.current[post.id];
+      if (!video) {
+        return;
+      }
+
+      video.playbackRate = 2;
+      const playPromise = video.play();
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(() => null);
+      }
+    }, 180);
+  }
+
+  function handleMediaPointerUp(post: FeedCard) {
+    const didTriggerHold = holdTriggeredRef.current && holdPostIdRef.current === post.id;
+    releaseSpeedBoost();
+
+    if (didTriggerHold) {
+      lastTapRef.current = {
+        postId: null,
+        timestamp: 0
+      };
+      if (tapTimeoutRef.current !== null) {
+        window.clearTimeout(tapTimeoutRef.current);
+        tapTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    handleMediaTap(post);
+  }
+
+  function handleMediaPointerCancel() {
+    releaseSpeedBoost();
   }
 
   async function handlePostLike(post: FeedCard, triggerBurst = false) {
@@ -853,8 +972,6 @@ export function CampusReelsShell({
                   >
                     <div
                       className="vyb-vibes-stage-media-shell"
-                      onClick={() => handleMediaTap(item)}
-                      onDoubleClick={() => void handlePostLike(item, true)}
                       role="presentation"
                     >
                       {item.mediaUrl ? (
@@ -884,6 +1001,16 @@ export function CampusReelsShell({
 
                       <div className="vyb-vibes-stage-gradient" />
 
+                      <div
+                        className="vyb-vibes-press-surface"
+                        aria-hidden="true"
+                        onPointerDown={() => handleMediaPointerDown(item)}
+                        onPointerUp={() => handleMediaPointerUp(item)}
+                        onPointerCancel={handleMediaPointerCancel}
+                        onPointerLeave={handleMediaPointerCancel}
+                        onContextMenu={(event) => event.preventDefault()}
+                      />
+
                       {item.kind === "video" ? (
                         <button
                           type="button"
@@ -892,10 +1019,20 @@ export function CampusReelsShell({
                           onClick={(event) => {
                             event.stopPropagation();
                             setIsMuted((current) => !current);
+
+                            if (isPlaybackPaused) {
+                              setIsPlaybackPaused(false);
+                            }
                           }}
                         >
                           {isMuted ? <VolumeMutedIcon /> : <VolumeOnIcon />}
                         </button>
+                      ) : null}
+
+                      {item.kind === "video" && speedBoostPostId === item.id ? (
+                        <span className="vyb-vibes-speed-badge" aria-hidden="true">
+                          2x
+                        </span>
                       ) : null}
 
                       {heartBurstPostId === item.id ? (

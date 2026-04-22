@@ -82,17 +82,9 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
       return null;
     }
 
-    if (currentPost.viewerReactionType === "like") {
-      return {
-        postId,
-        membershipId: "",
-        reactionType: "like",
-        aggregateCount: currentPost.reactions,
-        active: true,
-        viewerReactionType: "like"
-      };
-    }
+    const isAlreadyLiked = currentPost.viewerReactionType === "like";
 
+    // Optimistic toggle immediately
     setLoadingPostId(postId);
     setThreadMessage(null);
     setPosts((current) =>
@@ -100,8 +92,10 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
         post.id === postId
           ? {
               ...post,
-              reactions: post.reactions + 1,
-              viewerReactionType: "like"
+              reactions: isAlreadyLiked
+                ? Math.max(0, post.reactions - 1)
+                : post.reactions + 1,
+              viewerReactionType: isAlreadyLiked ? null : "like"
             }
           : post
       )
