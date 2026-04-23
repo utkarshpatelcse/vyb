@@ -12,12 +12,15 @@ import type {
   CreateReportResponse,
   ContactMarketPostRequest,
   ContactMarketPostResponse,
+  DeleteChatMessageRequest,
+  DeleteChatMessageResponse,
   CreateCommentResponse,
   CreateMarketPostRequest,
   CreateMarketPostResponse,
   CreateStoryResponse,
   DeletePostResponse,
   FeedListResponse,
+  GetChatKeyBackupResponse,
   ListCoursesResponse,
   ListResourcesResponse,
   MarkChatReadResponse,
@@ -48,6 +51,8 @@ import type {
   UpdateMarketListingResponse,
   UpdatePostRequest,
   UpdatePostResponse,
+  UpsertChatKeyBackupRequest,
+  UpsertChatKeyBackupResponse,
   UpsertChatIdentityRequest,
   UpsertChatIdentityResponse,
   UpdateUsernameRequest,
@@ -591,6 +596,14 @@ export async function migrateChatMessageEncryption(
   );
 }
 
+export async function getChatKeyBackup(viewer: DevSession) {
+  return fetchBackendJson<GetChatKeyBackupResponse>("/v1/chats/key-backup", viewer);
+}
+
+export async function upsertChatKeyBackup(viewer: DevSession, payload: UpsertChatKeyBackupRequest) {
+  return mutateBackendJson<UpsertChatKeyBackupResponse>("/v1/chats/key-backup", "PUT", payload, viewer);
+}
+
 export async function markChatRead(viewer: DevSession, conversationId: string, messageId: string) {
   return mutateBackendJson<MarkChatReadResponse>(
     `/v1/chats/${encodeURIComponent(conversationId)}/read`,
@@ -605,6 +618,15 @@ export async function reactToChatMessage(viewer: DevSession, messageId: string, 
     `/v1/chats/messages/${encodeURIComponent(messageId)}/reactions`,
     "PUT",
     { emoji },
+    viewer
+  );
+}
+
+export async function deleteChatMessage(viewer: DevSession, messageId: string, payload: DeleteChatMessageRequest) {
+  return mutateBackendJson<DeleteChatMessageResponse>(
+    `/v1/chats/messages/${encodeURIComponent(messageId)}`,
+    "DELETE",
+    payload,
     viewer
   );
 }

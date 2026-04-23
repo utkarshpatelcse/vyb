@@ -14,6 +14,23 @@ const CHAT_CONNECTOR_CONFIG = {
 const CHAT_INBOX_LIMIT = 60;
 const CHAT_MESSAGE_LIMIT = 120;
 const END_TO_END_CHAT_ALGORITHM = "ECDH-P256/AES-GCM";
+const CHAT_KEY_BACKUP_WRAPPING_ALGORITHM = "PBKDF2-SHA-256/AES-GCM";
+const CHAT_DELETE_FOR_EVERYONE_WINDOW_MS = 30 * 60 * 1000;
+const CHAT_HIDDEN_MESSAGE_LIMIT = 2000;
+const CHAT_ALLOWED_REACTION_EMOJIS = new Set([
+  "\u2764\uFE0F",
+  "\uD83D\uDD25",
+  "\uD83D\uDE02",
+  "\uD83D\uDE0D",
+  "\uD83D\uDC4D",
+  "\uD83D\uDE2E",
+  "\uD83D\uDE22",
+  "\uD83D\uDC4F",
+  "\uD83D\uDE2D",
+  "\uD83D\uDE21",
+  "\uD83C\uDF89",
+  "\uD83D\uDE0E"
+]);
 const CHAT_REACTION_EMOJIS = new Set(["❤️", "🔥", "😂", "😍", "👍", "😮", "😢", "👏"]);
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
 const MAX_ENCRYPTED_CHAT_IMAGE_BYTES = 12 * 1024 * 1024;
@@ -26,6 +43,7 @@ const GET_CHAT_IDENTITY_BY_USER_QUERY = `
         userId: { eq: $userId }
         deletedAt: { isNull: true }
       }
+      orderBy: [{ updatedAt: DESC }]
       limit: 1
     ) {
       id
@@ -415,6 +433,20 @@ const UPDATE_CHAT_MESSAGE_ENCRYPTION_MUTATION = `
   }
 `;
 
+const SOFT_DELETE_CHAT_MESSAGE_MUTATION = `
+  mutation SoftDeleteChatMessage($id: UUID!) {
+    chatMessage_update(
+      key: { id: $id }
+      data: {
+        deletedAt_expr: "request.time"
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
+
 const UPDATE_CHAT_PARTICIPANT_READ_MUTATION = `
   mutation UpdateChatParticipantRead($id: UUID!, $lastReadMessageId: UUID!) {
     chatParticipant_update(
@@ -483,6 +515,21 @@ const SOFT_DELETE_CHAT_MESSAGE_REACTION_MUTATION = `
   }
 `;
 
+const UPDATE_CHAT_CONVERSATION_LAST_MESSAGE_CLEAR_MUTATION = `
+  mutation ClearChatConversationLastMessage($id: UUID!) {
+    chatConversation_update(
+      key: { id: $id }
+      data: {
+        lastMessageId: null
+        lastMessageAt: null
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
+
 function getChatDc() {
   return getFirebaseDataConnect(CHAT_CONNECTOR_CONFIG);
 }
@@ -516,13 +563,72 @@ function buildChatMessageReactionKey(messageId, membershipId) {
   return `${messageId}:${membershipId}`;
 }
 
+function buildChatKeyBackupStoragePath(tenantId, userId) {
+  return `chat/${tenantId}/users/${userId}/e2ee-key-backup.json`;
+}
+
+function buildChatHiddenMessageStoragePath(tenantId, userId) {
+  return `chat/${tenantId}/users/${userId}/hidden-messages.json`;
+}
+
 function buildEncryptedAttachmentDownloadUrl(bucketName, storagePath, token) {
   return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
 }
 
 function normalizeEmoji(value) {
   const emoji = normalizeString(value);
-  return emoji && CHAT_REACTION_EMOJIS.has(emoji) ? emoji : null;
+  return emoji && CHAT_ALLOWED_REACTION_EMOJIS.has(emoji) ? emoji : null;
+}
+
+function normalizeHiddenMessageState(payload) {
+  if (!payload || typeof payload !== "object") {
+    return {
+      hiddenMessageIds: [],
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  const hiddenMessageIds = Array.isArray(payload.hiddenMessageIds)
+    ? [...new Set(payload.hiddenMessageIds.map((value) => normalizeString(value)).filter(Boolean))].slice(-CHAT_HIDDEN_MESSAGE_LIMIT)
+    : [];
+
+  return {
+    hiddenMessageIds,
+    updatedAt: toIsoString(payload.updatedAt)
+  };
+}
+
+function normalizeChatKeyBackup(payload) {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const version = Number.isInteger(payload.version) && payload.version > 0 ? payload.version : 1;
+  const publicKey = normalizeString(payload.publicKey);
+  const algorithm = normalizeString(payload.algorithm) ?? "ECDH-P256";
+  const keyVersion = Number.isInteger(payload.keyVersion) && payload.keyVersion > 0 ? payload.keyVersion : 1;
+  const wrappingAlgorithm = normalizeString(payload.wrappingAlgorithm) ?? CHAT_KEY_BACKUP_WRAPPING_ALGORITHM;
+  const wrappedPrivateKey = normalizeString(payload.wrappedPrivateKey);
+  const salt = normalizeString(payload.salt);
+  const iv = normalizeString(payload.iv);
+  const iterations = Number.isFinite(Number(payload.iterations)) ? Math.max(100000, Math.round(Number(payload.iterations))) : 250000;
+
+  if (!publicKey || !wrappedPrivateKey || !salt || !iv) {
+    return null;
+  }
+
+  return {
+    version,
+    publicKey,
+    algorithm,
+    keyVersion,
+    wrappingAlgorithm,
+    wrappedPrivateKey,
+    salt,
+    iv,
+    iterations,
+    updatedAt: toIsoString(payload.updatedAt)
+  };
 }
 
 function mapChatIdentity(item) {
@@ -721,7 +827,7 @@ function buildReactionsMap(items) {
   return reactionsByMessageId;
 }
 
-async function buildConversationPreview(viewer, conversation, viewerParticipant, peerParticipant) {
+async function buildConversationPreview(viewer, conversation, viewerParticipant, peerParticipant, hiddenMessageIds = new Set()) {
   const [peerProfile, peerIdentity, lastMessageRaw] = await Promise.all([
     getProfileByUserId({
       tenantId: viewer.tenantId,
@@ -731,11 +837,11 @@ async function buildConversationPreview(viewer, conversation, viewerParticipant,
       tenantId: viewer.tenantId,
       userId: peerParticipant.userId
     }),
-    getChatMessageById(conversation.lastMessageId ?? null)
+    getLastVisibleMessageRaw(conversation.id, hiddenMessageIds)
   ]);
 
   const lastMessage = mapChatMessage(lastMessageRaw);
-  const lastMessageAt = conversation.lastMessageAt ? toIsoString(conversation.lastMessageAt) : lastMessage?.createdAt ?? toIsoString(conversation.updatedAt);
+  const lastMessageAt = lastMessage?.createdAt ?? toIsoString(conversation.updatedAt);
   const viewerLastReadAt = viewerParticipant.lastReadAt ? new Date(viewerParticipant.lastReadAt).getTime() : 0;
   const messageTimestamp = lastMessage?.createdAt ? new Date(lastMessage.createdAt).getTime() : 0;
   const unreadCount = lastMessage && lastMessage.senderUserId !== viewer.userId && messageTimestamp > viewerLastReadAt ? 1 : 0;
@@ -795,6 +901,10 @@ export async function upsertChatIdentity(viewer, payload) {
   });
 
   if (existing) {
+    if (existing.publicKey !== publicKey) {
+      throw new Error("This account already has an encrypted chat key. Restore the original private key on this device instead of creating a new one.");
+    }
+
     await getChatDc().executeGraphql(UPDATE_CHAT_IDENTITY_MUTATION, {
       operationName: "UpdateChatIdentity",
       variables: {
@@ -829,14 +939,137 @@ export async function upsertChatIdentity(viewer, payload) {
   };
 }
 
+export async function getChatKeyBackup(viewer) {
+  const storagePath = buildChatKeyBackupStoragePath(viewer.tenantId, viewer.userId);
+  const file = getChatBucket().file(storagePath);
+  const [exists] = await file.exists();
+
+  if (!exists) {
+    return {
+      backup: null
+    };
+  }
+
+  const [buffer] = await file.download();
+  const raw = JSON.parse(buffer.toString("utf8"));
+  const backup = normalizeChatKeyBackup(raw);
+
+  return {
+    backup
+  };
+}
+
+export async function upsertChatKeyBackup(viewer, payload) {
+  const backup = normalizeChatKeyBackup(payload);
+  if (!backup) {
+    throw new Error("Encrypted key backup payload is incomplete.");
+  }
+
+  const viewerIdentity = await getChatIdentityByUser({
+    tenantId: viewer.tenantId,
+    userId: viewer.userId
+  });
+  if (!viewerIdentity) {
+    throw new Error("Set up end-to-end encrypted chat before backing up keys.");
+  }
+
+  if (backup.publicKey !== viewerIdentity.publicKey) {
+    throw new Error("Encrypted key backup does not match your active E2EE identity.");
+  }
+
+  const storagePath = buildChatKeyBackupStoragePath(viewer.tenantId, viewer.userId);
+  await getChatBucket().file(storagePath).save(Buffer.from(JSON.stringify(backup), "utf8"), {
+    resumable: false,
+    metadata: {
+      contentType: "application/json; charset=utf-8",
+      cacheControl: "private, max-age=0, no-cache"
+    }
+  });
+
+  return {
+    backup
+  };
+}
+
+async function getHiddenChatMessageState(viewer) {
+  const storagePath = buildChatHiddenMessageStoragePath(viewer.tenantId, viewer.userId);
+  const file = getChatBucket().file(storagePath);
+  const [exists] = await file.exists();
+
+  if (!exists) {
+    return normalizeHiddenMessageState(null);
+  }
+
+  try {
+    const [buffer] = await file.download();
+    return normalizeHiddenMessageState(JSON.parse(buffer.toString("utf8")));
+  } catch {
+    return normalizeHiddenMessageState(null);
+  }
+}
+
+async function saveHiddenChatMessageState(viewer, state) {
+  const nextState = normalizeHiddenMessageState(state);
+  const storagePath = buildChatHiddenMessageStoragePath(viewer.tenantId, viewer.userId);
+  await getChatBucket().file(storagePath).save(Buffer.from(JSON.stringify(nextState), "utf8"), {
+    resumable: false,
+    metadata: {
+      contentType: "application/json; charset=utf-8",
+      cacheControl: "private, max-age=0, no-cache"
+    }
+  });
+
+  return nextState;
+}
+
+function applyViewerHiddenMessageFilter(rawMessages, hiddenMessageIds) {
+  if (!hiddenMessageIds?.size) {
+    return rawMessages;
+  }
+
+  return rawMessages.filter((message) => !hiddenMessageIds.has(message.id));
+}
+
+async function getLastVisibleMessageRaw(conversationId, hiddenMessageIds) {
+  const rawMessages = await listChatMessagesByConversation(conversationId);
+  const visibleMessages = applyViewerHiddenMessageFilter(rawMessages, hiddenMessageIds);
+  return visibleMessages[visibleMessages.length - 1] ?? null;
+}
+
+async function syncConversationLastMessage(conversationId) {
+  const lastVisibleMessage = await getLastVisibleMessageRaw(conversationId, new Set());
+
+  if (!lastVisibleMessage) {
+    await getChatDc().executeGraphql(UPDATE_CHAT_CONVERSATION_LAST_MESSAGE_CLEAR_MUTATION, {
+      operationName: "ClearChatConversationLastMessage",
+      variables: {
+        id: conversationId
+      }
+    });
+    return null;
+  }
+
+  await getChatDc().executeGraphql(UPDATE_CHAT_CONVERSATION_LAST_MESSAGE_MUTATION, {
+    operationName: "UpdateChatConversationLastMessage",
+    variables: {
+      id: conversationId,
+      lastMessageId: lastVisibleMessage.id
+    }
+  });
+
+  return lastVisibleMessage;
+}
+
 export async function listChatInbox(viewer) {
-  const [viewerIdentity, viewerParticipants] = await Promise.all([
+  const [viewerIdentity, viewerParticipants, hiddenState] = await Promise.all([
     getChatIdentityByUser({
       tenantId: viewer.tenantId,
       userId: viewer.userId
     }),
-    listChatParticipantsByMembership(viewer.membershipId)
+    listChatParticipantsByMembership(viewer.membershipId),
+    getHiddenChatMessageState(viewer)
   ]);
+  const hiddenMessageIds = new Set(hiddenState.hiddenMessageIds);
 
   const previews = await Promise.all(
     viewerParticipants.map(async (viewerParticipant) => {
@@ -845,7 +1078,7 @@ export async function listChatInbox(viewer) {
         return null;
       }
 
-      return buildConversationPreview(viewer, access.conversation, access.viewerParticipant, access.peerParticipant);
+      return buildConversationPreview(viewer, access.conversation, access.viewerParticipant, access.peerParticipant, hiddenMessageIds);
     })
   );
 
@@ -964,7 +1197,7 @@ export async function getChatConversation(viewer, conversationId) {
     return null;
   }
 
-  const [viewerIdentity, peerProfile, peerIdentity, rawMessages, rawReactions] = await Promise.all([
+  const [viewerIdentity, peerProfile, peerIdentity, rawMessages, rawReactions, hiddenState] = await Promise.all([
     getChatIdentityByUser({
       tenantId: viewer.tenantId,
       userId: viewer.userId
@@ -978,10 +1211,13 @@ export async function getChatConversation(viewer, conversationId) {
       userId: access.peerParticipant.userId
     }),
     listChatMessagesByConversation(conversationId),
-    listChatMessageReactionsByConversation(conversationId)
+    listChatMessageReactionsByConversation(conversationId),
+    getHiddenChatMessageState(viewer)
   ]);
 
   const reactionsByMessageId = buildReactionsMap(rawReactions);
+  const hiddenMessageIds = new Set(hiddenState.hiddenMessageIds);
+  const visibleMessages = applyViewerHiddenMessageFilter(rawMessages, hiddenMessageIds);
 
   return {
     viewer: buildViewerSummary(viewer, viewerIdentity),
@@ -990,7 +1226,7 @@ export async function getChatConversation(viewer, conversationId) {
       tenantId: access.conversation.tenantId,
       kind: "direct",
       peer: buildPeerSummary(peerProfile, peerIdentity),
-      messages: rawMessages.map((item) => mapChatMessage(item, reactionsByMessageId)).filter(Boolean),
+      messages: visibleMessages.map((item) => mapChatMessage(item, reactionsByMessageId)).filter(Boolean),
       lastReadMessageId: access.viewerParticipant.lastReadMessageId ?? null,
       lastReadAt: access.viewerParticipant.lastReadAt ? toIsoString(access.viewerParticipant.lastReadAt) : null
     }
@@ -1019,9 +1255,17 @@ export async function sendChatMessage(viewer, conversationId, payload) {
   const cipherText = normalizeString(payload.cipherText);
   const cipherIv = normalizeString(payload.cipherIv);
   const cipherAlgorithm = normalizeString(payload.cipherAlgorithm) ?? END_TO_END_CHAT_ALGORITHM;
+  const replyToMessageId = normalizeString(payload.replyToMessageId) ?? null;
 
   if (!cipherText || !cipherIv) {
     throw new Error("Message payload is incomplete.");
+  }
+
+  if (replyToMessageId) {
+    const replyTarget = await getChatMessageById(replyToMessageId);
+    if (!replyTarget || replyTarget.conversationId !== conversationId) {
+      throw new Error("You can only reply to a message from this chat.");
+    }
   }
 
   const messageId = randomUUID();
@@ -1040,7 +1284,7 @@ export async function sendChatMessage(viewer, conversationId, payload) {
       cipherText,
       cipherIv,
       cipherAlgorithm,
-      replyToMessageId: normalizeString(payload.replyToMessageId) ?? null,
+      replyToMessageId,
       attachmentUrl: attachment?.url ?? null,
       attachmentStoragePath: attachment?.storagePath ?? null,
       attachmentMimeType: attachment?.mimeType ?? null,
@@ -1256,11 +1500,84 @@ export async function reactToChatMessage(viewer, messageId, emoji) {
 
   const aggregate = buildReactionsMap(await listChatMessageReactionsByConversation(message.conversationId)).get(messageId) ?? [];
 
+  emitChatRealtimeEvent({
+    conversationId: message.conversationId,
+    type: "chat.sync",
+    payload: {
+      conversationId: message.conversationId,
+      messageId
+    }
+  });
+
   return {
     messageId,
     membershipId: viewer.membershipId,
     emoji: aggregate.find((item) => item.membershipId === viewer.membershipId)?.emoji ?? null,
     aggregate
+  };
+}
+
+export async function deleteChatMessage(viewer, messageId, scope) {
+  const message = await getChatMessageById(messageId);
+  if (!message || message.tenantId !== viewer.tenantId) {
+    throw new Error("We could not find that message.");
+  }
+
+  const access = await resolveConversationAccess(viewer, message.conversationId);
+  if (!access) {
+    throw new Error("You can only delete messages from your own conversations.");
+  }
+
+  const deletedAt = new Date().toISOString();
+  const isOwner = message.senderMembershipId === viewer.membershipId;
+
+  if (scope === "everyone") {
+    if (!isOwner) {
+      throw new Error("Only the sender can delete this message for everyone.");
+    }
+
+    const messageAgeMs = Date.now() - new Date(message.createdAt).getTime();
+    if (messageAgeMs > CHAT_DELETE_FOR_EVERYONE_WINDOW_MS) {
+      throw new Error("Delete for everyone is only available for 30 minutes after sending.");
+    }
+
+    await getChatDc().executeGraphql(SOFT_DELETE_CHAT_MESSAGE_MUTATION, {
+      operationName: "SoftDeleteChatMessage",
+      variables: {
+        id: messageId
+      }
+    });
+
+    await syncConversationLastMessage(message.conversationId);
+  } else {
+    const hiddenState = await getHiddenChatMessageState(viewer);
+    const nextHiddenIds = [...new Set([...hiddenState.hiddenMessageIds, messageId])].slice(-CHAT_HIDDEN_MESSAGE_LIMIT);
+    await saveHiddenChatMessageState(viewer, {
+      hiddenMessageIds: nextHiddenIds,
+      updatedAt: deletedAt
+    });
+  }
+
+  const preview = await buildConversationPreview(viewer, access.conversation, access.viewerParticipant, access.peerParticipant, new Set(
+    (await getHiddenChatMessageState(viewer)).hiddenMessageIds
+  ));
+
+  emitChatRealtimeEvent({
+    conversationId: message.conversationId,
+    type: "chat.sync",
+    payload: {
+      conversationId: message.conversationId,
+      messageId,
+      scope
+    }
+  });
+
+  return {
+    conversationId: message.conversationId,
+    messageId,
+    scope,
+    deletedAt,
+    conversationPreview: preview
   };
 }
 

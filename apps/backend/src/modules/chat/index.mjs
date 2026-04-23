@@ -2,15 +2,18 @@ import { readJson, sendError, sendJson } from "../../lib/http.mjs";
 import { getProfileByUserId } from "../identity/profile-repository.mjs";
 import { resolveLiveContext } from "../shared/viewer-context.mjs";
 import {
+  deleteChatMessage,
   canAccessChatConversation,
   createOrGetDirectConversation,
   getChatConversation,
+  getChatKeyBackup,
   listChatInbox,
   markChatConversationRead,
   migrateChatConversationEncryption,
   reactToChatMessage,
   sendChatMessage,
   uploadEncryptedChatAttachment,
+  upsertChatKeyBackup,
   upsertChatIdentity
 } from "./repository.mjs";
 
@@ -137,6 +140,30 @@ export async function handleChatRoute({ request, response, url, context }) {
     return true;
   }
 
+  if (request.method === "GET" && url.pathname === "/v1/chats/key-backup") {
+    try {
+      sendJson(response, 200, await getChatKeyBackup(viewer));
+    } catch (error) {
+      sendChatFailure(response, "chat_key_backup_fetch", resolved, error);
+    }
+    return true;
+  }
+
+  if (request.method === "PUT" && url.pathname === "/v1/chats/key-backup") {
+    const payload = await readJson(request);
+    if (!payload || typeof payload !== "object") {
+      sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+      return true;
+    }
+
+    try {
+      sendJson(response, 200, await upsertChatKeyBackup(viewer, payload));
+    } catch (error) {
+      sendChatFailure(response, "chat_key_backup_save", resolved, error);
+    }
+    return true;
+  }
+
   if (request.method === "POST" && url.pathname === "/v1/chats/media/upload") {
     const payload = await readJson(request);
     if (!payload || typeof payload !== "object") {
@@ -247,6 +274,24 @@ export async function handleChatRoute({ request, response, url, context }) {
       sendJson(response, 200, await reactToChatMessage(viewer, reactionMatch[1], emoji));
     } catch (error) {
       sendChatFailure(response, "chat_reaction", resolved, error);
+    }
+    return true;
+  }
+
+  const deleteMessageMatch = url.pathname.match(/^\/v1\/chats\/messages\/([^/]+)$/);
+  if (request.method === "DELETE" && deleteMessageMatch) {
+    const payload = await readJson(request);
+    const scope = requireNonEmptyString(payload?.scope) ? payload.scope.trim() : null;
+
+    if (scope !== "self" && scope !== "everyone") {
+      sendError(response, 400, "INVALID_DELETE_SCOPE", "Choose whether to delete the message just for you or for everyone.");
+      return true;
+    }
+
+    try {
+      sendJson(response, 200, await deleteChatMessage(viewer, deleteMessageMatch[1], scope));
+    } catch (error) {
+      sendChatFailure(response, "chat_delete", resolved, error);
     }
     return true;
   }

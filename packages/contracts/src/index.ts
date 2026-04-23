@@ -658,6 +658,20 @@ export interface ReactToChatMessageResponse {
   aggregate: ChatMessageReactionItem[];
 }
 
+export type DeleteChatMessageScope = "self" | "everyone";
+
+export interface DeleteChatMessageRequest {
+  scope: DeleteChatMessageScope;
+}
+
+export interface DeleteChatMessageResponse {
+  conversationId: string;
+  messageId: string;
+  scope: DeleteChatMessageScope;
+  deletedAt: string;
+  conversationPreview: ChatConversationPreview;
+}
+
 export interface UpsertChatIdentityRequest {
   publicKey: string;
   algorithm: string;
@@ -666,6 +680,29 @@ export interface UpsertChatIdentityRequest {
 
 export interface UpsertChatIdentityResponse {
   identity: ChatIdentitySummary;
+}
+
+export interface ChatKeyBackupRecord {
+  version: number;
+  publicKey: string;
+  algorithm: string;
+  keyVersion: number;
+  wrappingAlgorithm: string;
+  wrappedPrivateKey: string;
+  salt: string;
+  iv: string;
+  iterations: number;
+  updatedAt: string;
+}
+
+export interface GetChatKeyBackupResponse {
+  backup: ChatKeyBackupRecord | null;
+}
+
+export interface UpsertChatKeyBackupRequest extends ChatKeyBackupRecord {}
+
+export interface UpsertChatKeyBackupResponse {
+  backup: ChatKeyBackupRecord;
 }
 
 export interface UploadEncryptedChatAttachmentRequest {
