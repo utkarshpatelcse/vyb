@@ -14,10 +14,7 @@ import type {
   CampusUploadKind,
   CampusUploadMediaKind,
 } from "../lib/campus-upload-store";
-import {
-  formatBytes,
-  prepareSocialUploadFile,
-} from "../lib/social-media-client";
+import { formatBytes } from "../lib/social-media-client";
 import { enqueueBackgroundPublish } from "../lib/background-publish";
 import {
   STORY_MUSIC_CLIP_OPTIONS,
@@ -48,7 +45,6 @@ type StoryComposerAsset = {
 /* ─── Constants ─────────────────────────────────────────────────────────── */
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 10 * 1024 * 1024;
-const TARGET_VIDEO_BYTES = 8 * 1024 * 1024;
 const STORY_IMAGE_DURATION_SECONDS = 15;
 const STORY_MAX_TOTAL_SECONDS = 60;
 const STORY_MAX_IMAGES = STORY_MAX_TOTAL_SECONDS / STORY_IMAGE_DURATION_SECONDS;
@@ -287,23 +283,7 @@ function makeComposerAssetId() {
 }
 
 /* ─── Shimmer skeleton ───────────────────────────────────────────────────── */
-function ShimmerBlock({ className }: { className?: string }) {
-  return <div className={`cs-shimmer ${className ?? ""}`} />;
-}
-
 /* ─── Progress bar ───────────────────────────────────────────────────────── */
-function UploadProgress({ progress, label }: { progress: number; label: string }) {
-  return (
-    <div className="cs-progress-wrap">
-      <span className="cs-progress-label">{label}</span>
-      <div className="cs-progress-track">
-        <div className="cs-progress-fill" style={{ width: `${Math.round(progress * 100)}%` }} />
-      </div>
-      <span className="cs-progress-pct">{Math.round(progress * 100)}%</span>
-    </div>
-  );
-}
-
 /* ══════════════════════════════════════════════════════════════════════════
    CampusUploadShell — main export
    ══════════════════════════════════════════════════════════════════════════ */
@@ -334,10 +314,7 @@ export function CampusUploadShell({
   const [caption, setCaption] = useState("");
   const [communityTag, setCommunityTag] = useState(COMMUNITY_TAGS[0]);
   const [message, setMessage] = useState<string | null>(null);
-  const [isPreparingMedia, setIsPreparingMedia] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadLabel, setUploadLabel] = useState("Optimizing video for campus feed...");
 
   /* ── Vibe (single video) ─────────────────────────────────────────────── */
   const [vibeVideoUrl, setVibeVideoUrl] = useState<string | null>(null);
@@ -413,21 +390,6 @@ export function CampusUploadShell({
   }, [mode, vibeVideoUrl, vibeIsPortrait, caption, momentImages, storyAssets]);
 
   /* ── progress simulator for demo (real upload doesn't expose events) ─── */
-  useEffect(() => {
-    if (!isPreparingMedia) {
-      setUploadProgress(0);
-      return;
-    }
-    setUploadProgress(0.05);
-    const id = window.setInterval(() => {
-      setUploadProgress((p) => {
-        if (p >= 0.9) { clearInterval(id); return 0.9; }
-        return p + 0.07;
-      });
-    }, 220);
-    return () => clearInterval(id);
-  }, [isPreparingMedia]);
-
   useEffect(() => {
     if (storyAssets.length === 0) {
       setActiveStoryAssetId(null);
@@ -529,30 +491,24 @@ export function CampusUploadShell({
       setMessage("Vibes only accept video files.");
       return;
     }
-    setIsPreparingMedia(true);
-    setUploadLabel("Optimizing video for campus feed...");
     setMessage(null);
 
     try {
-      const prepared = await prepareSocialUploadFile(file, {
-        maxVideoBytes: MAX_VIDEO_BYTES,
-        targetVideoBytes: TARGET_VIDEO_BYTES,
-      });
-      const pf = prepared.file;
-      const objectUrl = URL.createObjectURL(pf);
+      const objectUrl = URL.createObjectURL(file);
       if (vibeVideoUrl?.startsWith("blob:")) URL.revokeObjectURL(vibeVideoUrl);
       setVibeVideoUrl(objectUrl);
-      setVibeVideoFile(pf);
-      setMessage(prepared.optimizationSummary);
+      setVibeVideoFile(file);
 
-      const meta = await loadVideoMetadata(pf);
+      const meta = await loadVideoMetadata(file);
       setVibeDuration(meta.duration);
       setVibeIsPortrait(meta.height > meta.width);
-      setUploadProgress(1);
+      setMessage(
+        file.size > MAX_VIDEO_BYTES
+          ? `Large video detected (${formatBytes(file.size)}). We'll optimize it in background after you post.`
+          : null
+      );
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Could not prepare video.");
-    } finally {
-      setIsPreparingMedia(false);
+      setMessage(err instanceof Error ? err.message : "Could not load video preview.");
     }
   }
 
@@ -590,20 +546,14 @@ export function CampusUploadShell({
         return;
       }
 
-      setIsPreparingMedia(true);
-      setUploadLabel("Preparing story clip...");
       setMessage(null);
 
       try {
-        const prepared = await prepareSocialUploadFile(videoFile, {
-          maxVideoBytes: MAX_VIDEO_BYTES,
-          targetVideoBytes: TARGET_VIDEO_BYTES
-        });
-        const meta = await loadVideoMetadata(prepared.file);
+        const meta = await loadVideoMetadata(videoFile);
         const entry: StoryComposerAsset = {
           id: makeComposerAssetId(),
-          url: URL.createObjectURL(prepared.file),
-          file: prepared.file,
+          url: URL.createObjectURL(videoFile),
+          file: videoFile,
           kind: "video",
           durationSeconds: meta.duration
         };
@@ -611,12 +561,12 @@ export function CampusUploadShell({
         setStoryAssets([entry]);
         setActiveStoryAssetId(entry.id);
         setStoryMusicStatus(
-          prepared.optimizationSummary ?? "Music stories export a 15-second MP4 clip."
+          videoFile.size > MAX_VIDEO_BYTES
+            ? `Large story video detected (${formatBytes(videoFile.size)}). We'll optimize it in background after you post.`
+            : "Music stories export a 15-second MP4 clip."
         );
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : "We could not prepare this story video.");
-      } finally {
-        setIsPreparingMedia(false);
+        setMessage(error instanceof Error ? error.message : "We could not load this story video.");
       }
       return;
     }
@@ -785,11 +735,6 @@ export function CampusUploadShell({
 
   /* ── Publish ────────────────────────────────────────────────────────── */
   async function handlePublish() {
-    if (isPreparingMedia) {
-      setMessage("Please wait until optimization finishes.");
-      return;
-    }
-
     if (mode === "vibe") {
       if (!vibeVideoFile) {
         setMessage("Add a portrait video before posting.");
@@ -898,7 +843,7 @@ export function CampusUploadShell({
                 type="button"
                 className={`cs-publish-top${canPublish ? " cs-publish-top--active" : ""}`}
                 onClick={handlePublish}
-                disabled={!canPublish || isPublishing || isPreparingMedia}
+                disabled={!canPublish || isPublishing}
               >
                 {isPublishing ? "Queueing..." : mode === "vibe" ? "Post Vibe" : mode === "story" ? "Post Story" : "Post Moment"}
               </button>
@@ -975,15 +920,7 @@ export function CampusUploadShell({
                 onDrop={handleVibeDrop}
                 onClick={() => !vibeVideoUrl && vibeInputRef.current?.click()}
               >
-                {isPreparingMedia ? (
-                  <div className="cs-vibe-shimmer-wrap">
-                    <ShimmerBlock className="cs-vibe-shimmer-full" />
-                    <div className="cs-vibe-shimmer-overlay">
-                      <div className="cs-vibe-shimmer-spinner" />
-                      <UploadProgress progress={uploadProgress} label={uploadLabel} />
-                    </div>
-                  </div>
-                ) : vibeVideoUrl ? (
+                {vibeVideoUrl ? (
                   <>
                     <video
                       ref={vibeVideoRef}
@@ -1028,7 +965,7 @@ export function CampusUploadShell({
                 type="file"
                 accept="video/*"
                 className="cs-file-input"
-                disabled={isPreparingMedia || isPublishing}
+                disabled={isPublishing}
                 onChange={handleVibeInputChange}
               />
             </div>
@@ -1158,7 +1095,7 @@ export function CampusUploadShell({
                             type="button"
                             className="cs-story-music-trigger"
                             onClick={openStoryMusicLibrary}
-                            disabled={isPublishing || isPreparingMedia}
+                            disabled={isPublishing}
                           >
                             <IcoMusic />
                             <span>{storyMusicTrack ? "Change music" : "Add music"}</span>
@@ -1365,7 +1302,7 @@ export function CampusUploadShell({
                   accept="image/*,video/*"
                   multiple
                   className="cs-file-input"
-                  disabled={isPublishing || isPreparingMedia}
+                  disabled={isPublishing}
                   onChange={handleStoryInputChange}
                 />
               </>
@@ -1530,7 +1467,7 @@ export function CampusUploadShell({
                 type="button"
                 className="cs-cancel-btn"
                 onClick={handleClose}
-                disabled={isPublishing || isPreparingMedia}
+                disabled={isPublishing}
               >
                 Cancel
               </button>
@@ -1538,13 +1475,11 @@ export function CampusUploadShell({
                 type="button"
                 className={`cs-post-btn${canPublish ? " cs-post-btn--active" : ""}`}
                 onClick={handlePublish}
-                disabled={!canPublish || isPublishing || isPreparingMedia}
+                disabled={!canPublish || isPublishing}
               >
                 {isPublishing
                   ? "Queueing..."
-                  : isPreparingMedia
-                    ? "Preparing..."
-                    : mode === "vibe"
+                  : mode === "vibe"
                       ? "Post Vibe ✦"
                       : mode === "story"
                         ? "Post Story ✦"

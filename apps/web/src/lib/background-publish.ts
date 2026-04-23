@@ -1,7 +1,7 @@
 "use client";
 
 import type { CampusUploadKind } from "./campus-upload-store";
-import { uploadSocialMediaAsset } from "./social-media-client";
+import { prepareSocialUploadFile, uploadSocialMediaAsset } from "./social-media-client";
 import {
   composeStoryMusicVideo,
   type StoryMusicStickerPosition,
@@ -111,6 +111,10 @@ function buildTaskQueuedDetail(input: BackgroundPublishRequest) {
     return "Queued. Music story render will continue in background.";
   }
 
+  if (input.kind === "vibe" || input.kind === "story") {
+    return "Queued. Optimization and upload will continue in background.";
+  }
+
   return "Queued. Upload will continue in background.";
 }
 
@@ -208,12 +212,20 @@ async function postJson(path: string, payload: unknown, fallbackMessage: string)
 
 async function runVibePublish(taskId: string, input: Extract<BackgroundPublishRequest, { kind: "vibe" }>) {
   updateTask(taskId, {
-    status: "uploading",
-    detail: "Uploading vibe video...",
-    progress: 0.2
+    status: "preparing",
+    detail: "Optimizing vibe video in background...",
+    progress: 0.14
   });
 
-  const uploadedMedia = await uploadSocialMediaAsset(input.videoFile, "vibe");
+  const preparedVideo = await prepareSocialUploadFile(input.videoFile);
+
+  updateTask(taskId, {
+    status: "uploading",
+    detail: "Uploading vibe video...",
+    progress: 0.34
+  });
+
+  const uploadedMedia = await uploadSocialMediaAsset(preparedVideo.file, "vibe");
   const trimmedCaption = input.caption.trim();
 
   updateTask(taskId, {
@@ -267,13 +279,48 @@ async function runStoryPublish(taskId: string, input: Extract<BackgroundPublishR
     ];
   }
 
+  if (normalizedStoryAssets.some((asset) => asset.mediaType === "video")) {
+    updateTask(taskId, {
+      status: "preparing",
+      detail:
+        normalizedStoryAssets.length === 1
+          ? "Optimizing story video in background..."
+          : "Optimizing story videos in background...",
+      progress: input.storyMusic ? 0.28 : 0.14
+    });
+
+    normalizedStoryAssets = await Promise.all(
+      normalizedStoryAssets.map(async (asset, index) => {
+        if (asset.mediaType !== "video") {
+          return asset;
+        }
+
+        updateTask(taskId, {
+          status: "preparing",
+          detail:
+            normalizedStoryAssets.length === 1
+              ? "Optimizing story video in background..."
+              : `Optimizing story video ${index + 1}/${normalizedStoryAssets.length}...`,
+          progress: input.storyMusic ? 0.28 : 0.14
+        });
+
+        const prepared = await prepareSocialUploadFile(asset.file);
+        return {
+          ...asset,
+          file: prepared.file,
+          mimeType: prepared.file.type || asset.mimeType
+        };
+      })
+    );
+  }
+
   const totalUploads = normalizedStoryAssets.length;
   let completedUploads = 0;
 
   updateTask(taskId, {
     status: "uploading",
     detail: `Uploading 0/${totalUploads} ${pluralize(totalUploads, "story item")}...`,
-    progress: 0.24
+    progress: 0.34
   });
 
   const uploadedMediaAssets = await Promise.all(
@@ -285,7 +332,7 @@ async function runStoryPublish(taskId: string, input: Extract<BackgroundPublishR
       updateTask(taskId, {
         status: "uploading",
         detail: `Uploading ${completedUploads}/${totalUploads} ${pluralize(totalUploads, "story item")}...`,
-        progress: 0.24 + uploadProgress * 0.46
+        progress: 0.34 + uploadProgress * 0.36
       });
 
       return {
@@ -308,7 +355,7 @@ async function runStoryPublish(taskId: string, input: Extract<BackgroundPublishR
     updateTask(taskId, {
       status: "publishing",
       detail: `Publishing story ${index + 1}/${uploadedMediaAssets.length}...`,
-      progress: 0.74 + publishProgress * 0.22
+      progress: 0.76 + publishProgress * 0.2
     });
 
     await postJson(

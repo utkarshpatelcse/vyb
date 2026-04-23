@@ -16,11 +16,11 @@ type VideoFrameRequester = HTMLVideoElement & {
 };
 
 const DEFAULT_MAX_VIDEO_BYTES = 10 * 1024 * 1024;
-const DEFAULT_TARGET_VIDEO_BYTES = 8 * 1024 * 1024;
+const DEFAULT_TARGET_VIDEO_BYTES = Math.floor(DEFAULT_MAX_VIDEO_BYTES * 0.96);
 const VIDEO_COMPRESSION_FRAME_RATE = 30;
-const VIDEO_AUDIO_BITRATE = 96_000;
-const MIN_VIDEO_BITRATE = 350_000;
-const MAX_VIDEO_BITRATE = 2_500_000;
+const VIDEO_AUDIO_BITRATE = 128_000;
+const MIN_VIDEO_BITRATE = 500_000;
+const MAX_VIDEO_BITRATE = 6_000_000;
 
 function getMediaType(file: File) {
   if (file.type.startsWith("video/")) {
@@ -193,8 +193,10 @@ async function transcodeVideo(file: File, options: { maxDimension: number; targe
 
 async function compressVideoToTarget(file: File, targetBytes: number) {
   const attempts = [
-    { maxDimension: 1280, bitrateScale: 1 },
-    { maxDimension: 960, bitrateScale: 0.78 },
+    { maxDimension: 1920, bitrateScale: 1 },
+    { maxDimension: 1600, bitrateScale: 0.92 },
+    { maxDimension: 1280, bitrateScale: 0.82 },
+    { maxDimension: 960, bitrateScale: 0.72 },
     { maxDimension: 720, bitrateScale: 0.62 }
   ];
 
@@ -254,7 +256,7 @@ export async function prepareSocialUploadFile(
   const maxVideoBytes = options?.maxVideoBytes ?? DEFAULT_MAX_VIDEO_BYTES;
   const targetVideoBytes = Math.min(options?.targetVideoBytes ?? DEFAULT_TARGET_VIDEO_BYTES, maxVideoBytes);
 
-  if (file.size <= targetVideoBytes) {
+  if (file.size <= maxVideoBytes) {
     return {
       file,
       mediaType,
