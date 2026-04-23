@@ -31,6 +31,7 @@ import {
   syncStoredChatKeyIdentity,
   type StoredChatKeyMaterial
 } from "../lib/chat-e2ee";
+import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
 
 type ActiveConversation = ChatConversationResponse["conversation"];
 type RealtimeState = "idle" | "offline" | "connecting" | "reconnecting" | "live";
@@ -2096,17 +2097,7 @@ export function CampusMessagesShell({
             ? "Syncing"
             : "Paused";
 
-  const navLinks = (
-    <div className="spm-nav-items">
-      <Link href="/home" className="spm-nav-icon" title="Home"><IconHome /></Link>
-      <button type="button" className="spm-nav-icon spm-nav-icon-active" title="Messages">
-        <IconMessages />
-        {unreadCount > 0 && <span className="spm-nav-badge">{unreadCount}</span>}
-      </button>
-      <Link href="/vibes" className="spm-nav-icon" title="Vibes"><IconVibes /></Link>
-      <Link href="/market" className="spm-nav-icon" title="Market"><IconMarket /></Link>
-    </div>
-  );
+  const navItems = buildPrimaryCampusNav("messages", { unreadCount });
 
   return (
     <main className="spm-page">
@@ -2115,17 +2106,7 @@ export function CampusMessagesShell({
       <div className="spm-blob spm-blob-three" aria-hidden="true" />
 
       <div className={`spm-shell${activeConversationId ? " spm-shell-chat-open" : ""}`}>
-        <nav className="spm-nav" aria-label="Global navigation">
-          <div className="spm-nav-brand">
-            <span className="spm-nav-logo">V</span>
-          </div>
-          {navLinks}
-          <div className="spm-nav-viewer">
-            <div className="spm-viewer-avatar" title={viewerName}>
-              {getInitials(viewerName)}
-            </div>
-          </div>
-        </nav>
+        <CampusDesktopNavigation navItems={navItems} viewerName={viewerName} viewerUsername={viewerUsername} />
 
         <section className="spm-list-pane" aria-label="Conversations">
           <div className="spm-list-header">
@@ -2884,31 +2865,7 @@ export function CampusMessagesShell({
         </section>
       </div>
 
-      <nav className="spm-mobile-nav" aria-label="Mobile navigation">
-        <Link href="/home" className="spm-mobile-nav-item" title="Home">
-          <IconHome />
-          <span>Home</span>
-        </Link>
-        <button type="button" className="spm-mobile-nav-item spm-mobile-nav-active" title="Messages">
-          <span className="spm-mobile-nav-icon-wrap">
-            <IconMessages />
-            {unreadCount > 0 && <span className="spm-nav-badge">{unreadCount}</span>}
-          </span>
-          <span>Chats</span>
-        </button>
-        <Link href="/vibes" className="spm-mobile-nav-item" title="Vibes">
-          <IconVibes />
-          <span>Vibes</span>
-        </Link>
-        <Link href="/market" className="spm-mobile-nav-item" title="Market">
-          <IconMarket />
-          <span>Market</span>
-        </Link>
-        <Link href={`/u/${viewerUsername}`} className="spm-mobile-nav-item" title="Profile">
-          <div className="spm-mobile-nav-avatar">{getInitials(viewerName)}</div>
-          <span>You</span>
-        </Link>
-      </nav>
+      <CampusMobileNavigation navItems={navItems} />
     </main>
   );
 }

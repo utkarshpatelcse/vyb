@@ -5,6 +5,7 @@ import {
   getCampusFeed,
   getCampusVibes,
   getCampusStories,
+  getChatInbox,
   getSuggestedCampusUsers,
   getViewerMe,
   getViewerProfile
@@ -19,13 +20,14 @@ export default async function AuthenticatedHomePage() {
     redirect("/login");
   }
 
-  const [profile, me, storyResponse, feedResponse, vibesResponse, suggestedResponse] = await Promise.all([
+  const [profile, me, storyResponse, feedResponse, vibesResponse, suggestedResponse, chatInbox] = await Promise.all([
     getViewerProfile(viewer).catch(() => null),
     getViewerMe(viewer).catch(() => null),
     getCampusStories(viewer).catch(() => ({ items: [] })),
     getCampusFeed(viewer).catch(() => ({ tenantId: viewer.tenantId, communityId: null, items: [], nextCursor: null })),
     getCampusVibes(viewer, 10).catch(() => ({ tenantId: viewer.tenantId, communityId: null, items: [], nextCursor: null })),
-    getSuggestedCampusUsers(viewer, 5).catch(() => ({ query: "", items: [] }))
+    getSuggestedCampusUsers(viewer, 5).catch(() => ({ query: "", items: [] })),
+    getChatInbox(viewer).catch(() => ({ items: [] }))
   ]);
 
   if (!profile?.profileCompleted) {
@@ -34,6 +36,7 @@ export default async function AuthenticatedHomePage() {
 
   const viewerName = profile.profile?.fullName ?? viewer.displayName;
   const displayCollegeName = getDisplayCollegeName(profile.collegeName);
+  const unreadChatCount = chatInbox.items.reduce((sum, item) => sum + item.unreadCount, 0);
 
   return (
     <CampusHomeShell
@@ -48,6 +51,7 @@ export default async function AuthenticatedHomePage() {
       initialPosts={feedResponse.items}
       trendingVibes={vibesResponse.items}
       suggestedUsers={suggestedResponse.items}
+      unreadChatCount={unreadChatCount}
     />
   );
 }

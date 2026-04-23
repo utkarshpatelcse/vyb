@@ -8,6 +8,7 @@ import { SocialPostActionSheet } from "./social-post-action-sheet";
 import { SocialPostLightbox } from "./social-post-lightbox";
 import { SocialPostLikersSheet } from "./social-post-likers-sheet";
 import { SocialThreadSheet } from "./social-thread-sheet";
+import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
 import { SignOutButton } from "./sign-out-button";
 import { useSocialPostEngagement } from "./use-social-post-engagement";
 import { VybLogoLockup, VybLogoMark } from "./vyb-logo";
@@ -65,6 +66,7 @@ type CampusHomeShellProps = {
   initialPosts: FeedCard[];
   trendingVibes: FeedCard[];
   suggestedUsers: UserSearchItem[];
+  unreadChatCount: number;
 };
 
 function formatMetric(value: number) {
@@ -386,7 +388,8 @@ export function CampusHomeShell({
   stories,
   initialPosts,
   trendingVibes,
-  suggestedUsers
+  suggestedUsers,
+  unreadChatCount
 }: CampusHomeShellProps) {
   const router = useRouter();
   const engagement = useSocialPostEngagement(initialPosts);
@@ -582,16 +585,7 @@ export function CampusHomeShell({
   }, [selectedStory, isStoryPaused, isStoryMuted]);
 
   const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
-  const navItems = useMemo(
-    () => [
-      { label: "Home", href: "/home", icon: <HomeIcon />, active: true },
-      { label: "Events", href: "/events", icon: <EventsIcon /> },
-      { label: "Vibes", href: "/vibes", icon: <VibesIcon /> },
-      { label: "Market", href: "/market", icon: <MarketIcon /> },
-      { label: "Profile", href: "/dashboard", icon: <ProfileIcon /> }
-    ],
-    []
-  );
+  const navItems = useMemo(() => buildPrimaryCampusNav("home", { unreadCount: unreadChatCount }), [unreadChatCount]);
 
   function syncMirroredPost(postId: string, updater: (post: FeedCard) => FeedCard) {
     setVibeStrip((current) => current.map((post) => (post.id === postId ? updater(post) : post)));
@@ -1099,28 +1093,7 @@ export function CampusHomeShell({
 
   return (
     <main className="vyb-campus-home" style={layoutStyle()}>
-        <aside className="vyb-campus-sidebar vyb-campus-rail">
-          <Link href="/home" className="vyb-campus-branding">
-            <VybLogoLockup priority />
-          </Link>
-
-        <nav className="vyb-campus-nav">
-          {navItems.map((item) => (
-            <Link key={item.label} href={item.href} className={`vyb-campus-nav-item${item.active ? " is-active" : ""}`}>
-              {item.icon}
-              <span>{item.label}</span>
-            </Link>
-          ))}
-        </nav>
-
-        <div className="vyb-campus-sidebar-footer">
-          <div className="vyb-campus-sidebar-user">
-            <strong>{viewerName}</strong>
-            <span>@{viewerUsername}</span>
-          </div>
-          <SignOutButton className="vyb-campus-signout" />
-        </div>
-      </aside>
+      <CampusDesktopNavigation navItems={navItems} viewerName={viewerName} viewerUsername={viewerUsername} />
 
       <section className="vyb-campus-main">
         <header className="vyb-campus-topbar">
@@ -1142,6 +1115,9 @@ export function CampusHomeShell({
             </button>
             <Link href="/messages" className="vyb-campus-top-icon vyb-campus-top-link" aria-label="Open campus messages">
               <SendIcon />
+              {unreadChatCount > 0 ? (
+                <span className="vyb-campus-top-badge">{unreadChatCount > 9 ? "9+" : unreadChatCount}</span>
+              ) : null}
             </Link>
           </div>
         </header>
@@ -1160,6 +1136,9 @@ export function CampusHomeShell({
             </button>
             <Link href="/messages" className="vyb-campus-top-icon vyb-campus-top-link" aria-label="Open campus messages">
               <SendIcon />
+              {unreadChatCount > 0 ? (
+                <span className="vyb-campus-top-badge">{unreadChatCount > 9 ? "9+" : unreadChatCount}</span>
+              ) : null}
             </Link>
           </div>
         </header>
@@ -1434,14 +1413,7 @@ export function CampusHomeShell({
         </div>
       </aside>
 
-      <nav className="vyb-campus-bottom-nav">
-        {navItems.map((item) => (
-          <Link key={item.label} href={item.href} className={`vyb-campus-bottom-item${item.active ? " is-active" : ""}`}>
-            {item.icon}
-            <span>{item.label}</span>
-          </Link>
-        ))}
-      </nav>
+      <CampusMobileNavigation navItems={navItems} />
 
       {isComposerOpen ? (
         <div className="vyb-campus-compose-backdrop" role="presentation" onClick={() => setIsComposerOpen(false)}>

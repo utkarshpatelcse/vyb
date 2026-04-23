@@ -8,6 +8,7 @@ import { SocialPostActionSheet } from "./social-post-action-sheet";
 import { SocialPostLightbox } from "./social-post-lightbox";
 import { SocialPostLikersSheet } from "./social-post-likers-sheet";
 import { SocialThreadSheet } from "./social-thread-sheet";
+import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
 import { SignOutButton } from "./sign-out-button";
 import { useSocialPostEngagement } from "./use-social-post-engagement";
 import { VybLogoLockup } from "./vyb-logo";
@@ -299,16 +300,7 @@ export function CampusReelsShell({
   const [speedBoostPostId, setSpeedBoostPostId] = useState<string | null>(null);
   const [progressByPost, setProgressByPost] = useState<Record<string, number>>({});
 
-  const navItems = useMemo(
-    () => [
-      { label: "Home", href: "/home", icon: <HomeIcon /> },
-      { label: "Events", href: "/events", icon: <EventsIcon /> },
-      { label: "Vibes", href: "/vibes", icon: <ReelsIcon />, active: true },
-      { label: "Market", href: "/market", icon: <MarketIcon /> },
-      { label: "Profile", href: "/dashboard", icon: <ProfileIcon /> }
-    ],
-    []
-  );
+  const navItems = useMemo(() => buildPrimaryCampusNav("vibes"), []);
 
   const identityLine = [course, stream].filter(Boolean).join(" / ") || `${collegeName} • ${role}`;
   const activePost = engagement.posts[clamp(activeIndex, 0, Math.max(engagement.posts.length - 1, 0))] ?? null;
@@ -908,28 +900,7 @@ export function CampusReelsShell({
         <div className="vyb-vibes-theater-backdrop-wash" />
       </div>
 
-      <aside className="vyb-campus-sidebar vyb-campus-rail">
-        <Link href="/home" className="vyb-campus-branding">
-          <VybLogoLockup priority />
-        </Link>
-
-        <nav className="vyb-campus-nav">
-          {navItems.map((item) => (
-            <Link key={item.label} href={item.href} className={`vyb-campus-nav-item${item.active ? " is-active" : ""}`}>
-              {item.icon}
-              <span>{item.label}</span>
-            </Link>
-          ))}
-        </nav>
-
-        <div className="vyb-campus-sidebar-footer">
-          <div className="vyb-campus-sidebar-user">
-            <strong>{viewerName}</strong>
-            <span>@{viewerUsername}</span>
-          </div>
-          <SignOutButton className="vyb-campus-signout" />
-        </div>
-      </aside>
+      <CampusDesktopNavigation navItems={navItems} viewerName={viewerName} viewerUsername={viewerUsername} />
 
       <section className="vyb-campus-main vyb-vibes-main">
         <header className="vyb-vibes-topbar">
@@ -1177,14 +1148,7 @@ export function CampusReelsShell({
         </section>
       </section>
 
-      <nav className="vyb-campus-bottom-nav">
-        {navItems.map((item) => (
-          <Link key={item.label} href={item.href} className={`vyb-campus-bottom-item${item.active ? " is-active" : ""}`}>
-            {item.icon}
-            <span>{item.label}</span>
-          </Link>
-        ))}
-      </nav>
+      <CampusMobileNavigation navItems={navItems} />
 
       <SocialThreadSheet
         desktopInsetLeft="var(--vyb-campus-left-width)"

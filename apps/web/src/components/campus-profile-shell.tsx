@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { courseOptions, defaultCourse, getStreamOptions, getYearOptionsForCourse, splitDisplayName } from "../lib/college-access";
 import { getFirebaseClientAuth, isFirebaseClientConfigured } from "../lib/firebase-client";
+import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
 import { SignOutButton } from "./sign-out-button";
 import { VybLogoLockup, VybLogoMark } from "./vyb-logo";
 
@@ -1113,13 +1114,7 @@ export function CampusProfileShell({
     }
   }
 
-  const navItems = [
-    { label: "Home", href: "/home", icon: <HomeIcon /> },
-    { label: "Events", href: "/events", icon: <EventsIcon /> },
-    { label: "Vibes", href: "/vibes", icon: <VibesIcon /> },
-    { label: "Market", href: "/market", icon: <MarketIcon /> },
-    { label: "Profile", href: "/dashboard", icon: <ProfileIcon />, active: true }
-  ];
+  const navItems = buildPrimaryCampusNav("profile");
 
   const tabs = [
     { id: "posts" as const, label: "Posts", icon: <GridIcon /> },
@@ -1182,28 +1177,7 @@ export function CampusProfileShell({
 
   return (
     <main className="vyb-campus-home vyb-profile-layout" style={layoutStyle}>
-      <aside className="vyb-campus-sidebar vyb-campus-rail">
-        <Link href="/home" className="vyb-campus-branding">
-          <VybLogoLockup priority />
-        </Link>
-
-        <nav className="vyb-campus-nav">
-          {navItems.map((item) => (
-            <Link key={item.label} href={item.href} className={`vyb-campus-nav-item${item.active ? " is-active" : ""}`}>
-              {item.icon}
-              <span>{item.label}</span>
-            </Link>
-          ))}
-        </nav>
-
-        <div className="vyb-campus-sidebar-footer">
-          <div className="vyb-campus-sidebar-user">
-            <strong>{viewerName}</strong>
-            <span>@{username}</span>
-          </div>
-          <SignOutButton className="vyb-campus-signout" />
-        </div>
-      </aside>
+      <CampusDesktopNavigation navItems={navItems} viewerName={viewerName} viewerUsername={username} />
 
       <section className="vyb-campus-main vyb-profile-main">
         <header className="vyb-campus-topbar">
@@ -1723,14 +1697,7 @@ export function CampusProfileShell({
         ))}
       </aside>
 
-      <nav className="vyb-campus-bottom-nav">
-        {navItems.map((item) => (
-          <Link key={item.label} href={item.href} className={`vyb-campus-bottom-item${item.active ? " is-active" : ""}`}>
-            {item.icon}
-            <span>{item.label}</span>
-          </Link>
-        ))}
-      </nav>      
-</main>
+      <CampusMobileNavigation navItems={navItems} />
+    </main>
   );
 }

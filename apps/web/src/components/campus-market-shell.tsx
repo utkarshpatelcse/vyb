@@ -19,6 +19,7 @@ import {
   hasExplicitMarketCampusSpot,
   hasExplicitMarketLocation
 } from "../lib/market-defaults";
+import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
 import { SignOutButton } from "./sign-out-button";
 import { VybLogoLockup } from "./vyb-logo";
 
@@ -730,13 +731,7 @@ export function CampusMarketShell({
     openDetailSheet({ type: "listing", id: listingId }, mediaIndex);
   }
 
-  const navItems = [
-    { label: "Home", href: "/home", icon: <HomeIcon /> },
-    { label: "Events", href: "/events", icon: <EventsIcon /> },
-    { label: "Vibes", href: "/vibes", icon: <VibesIcon /> },
-    { label: "Market", href: "/market", icon: <MarketIcon />, active: true },
-    { label: "Profile", href: "/dashboard", icon: <ProfileIcon /> }
-  ];
+  const navItems = buildPrimaryCampusNav("market");
 
   const saleCategories = ["All", ...new Set(dashboard.listings.map((item) => item.category))];
   const requestCategories = [
@@ -1314,28 +1309,7 @@ export function CampusMarketShell({
 
   return (
     <main className="vyb-campus-home" style={layoutStyle}>
-      <aside className="vyb-campus-sidebar vyb-campus-rail">
-        <Link href="/home" className="vyb-campus-branding">
-          <VybLogoLockup priority />
-        </Link>
-
-        <nav className="vyb-campus-nav">
-          {navItems.map((item) => (
-            <Link key={item.label} href={item.href} className={`vyb-campus-nav-item${item.active ? " is-active" : ""}`}>
-              {item.icon}
-              <span>{item.label}</span>
-            </Link>
-          ))}
-        </nav>
-
-        <div className="vyb-campus-sidebar-footer">
-          <div className="vyb-campus-sidebar-user">
-            <strong>{viewerName}</strong>
-            <span>@{viewerUsername}</span>
-          </div>
-          <SignOutButton className="vyb-campus-signout" />
-        </div>
-      </aside>
+      <CampusDesktopNavigation navItems={navItems} viewerName={viewerName} viewerUsername={viewerUsername} />
 
       <button
         type="button"
@@ -1667,14 +1641,7 @@ export function CampusMarketShell({
         <SignOutButton className="vyb-campus-signout vyb-campus-signout-wide" />
       </aside>
 
-      <nav className="vyb-campus-bottom-nav">
-        {navItems.map((item) => (
-          <Link key={item.label} href={item.href} className={`vyb-campus-bottom-item${item.active ? " is-active" : ""}`}>
-            {item.icon}
-            <span>{item.label}</span>
-          </Link>
-        ))}
-      </nav>
+      <CampusMobileNavigation navItems={navItems} />
 
       {isComposerOpen ? (
         <div className="vyb-campus-compose-backdrop" role="presentation" onClick={closeComposer}>

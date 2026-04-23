@@ -4,6 +4,14 @@ import "./globals.css";
 import "./feed-enhancements.css";
 import { ServiceWorkerRegister } from "../src/components/service-worker-register";
 
+const themeBootScript = `
+  try {
+    var savedTheme = window.localStorage.getItem("vyb-theme");
+    document.documentElement.dataset.theme = savedTheme === "light" ? "light" : "dark";
+  } catch (error) {
+    document.documentElement.dataset.theme = "dark";
+  }
+`;
 
 export const metadata: Metadata = {
   title: "Vyb",
@@ -30,7 +38,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" data-theme="dark" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
+      </head>
       <body>
         <ServiceWorkerRegister />
         {children}
