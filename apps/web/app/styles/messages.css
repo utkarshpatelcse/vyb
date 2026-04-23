@@ -1807,6 +1807,10 @@
   gap: 0.65rem;
 }
 
+.cs-mode-switch {
+  position: relative;
+}
+
 .cs-back-btn,
 .cs-close-btn {
   display: inline-flex;
@@ -1834,18 +1838,19 @@
   transform: scale(1.07);
 }
 
-.cs-publish-top {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.5rem 1.1rem;
+.cs-mode-select {
+  appearance: none;
+  -webkit-appearance: none;
+  min-width: 118px;
+  padding: 0.5rem 2.2rem 0.5rem 0.95rem;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.10);
   background: rgba(255, 255, 255, 0.06);
-  color: rgba(203, 213, 225, 0.45);
+  color: rgba(241, 245, 249, 0.92);
   font: inherit;
   font-size: 0.88rem;
   font-weight: 600;
-  cursor: not-allowed;
+  cursor: pointer;
   transition:
     background 0.2s ease,
     border-color 0.2s ease,
@@ -1854,17 +1859,39 @@
     transform 0.15s ease;
 }
 
-.cs-publish-top--active {
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  border-color: rgba(139, 92, 246, 0.5);
-  color: #fff;
-  cursor: pointer;
-  box-shadow: 0 0 22px rgba(99, 102, 241, 0.42);
+.cs-mode-select:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.16);
 }
 
-.cs-publish-top--active:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 0 32px rgba(99, 102, 241, 0.60);
+.cs-mode-select:focus {
+  outline: none;
+  border-color: rgba(139, 92, 246, 0.48);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16);
+}
+
+.cs-mode-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.cs-mode-select option {
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+.cs-mode-select-chevron {
+  position: absolute;
+  right: 0.8rem;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: rgba(203, 213, 225, 0.68);
+}
+
+.cs-mode-select-chevron .cs-icon {
+  width: 16px;
+  height: 16px;
 }
 
 /* -- Choice screen ---------------------------------------------------------- */
@@ -2344,63 +2371,6 @@
 .cs-caption-area::placeholder,
 .cs-moment-caption::placeholder { color: rgba(148,163,184,0.45); }
 
-/* -- Community select ------------------------------------------------------- */
-.cs-community-select-wrap {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.cs-community-label {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: rgba(203,213,225,0.7);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.cs-community-label .cs-icon { width: 14px; height: 14px; color: #a78bfa; }
-
-.cs-select-wrap { position: relative; flex: 1; min-width: 140px; }
-
-.cs-select {
-  width: 100%;
-  appearance: none;
-  -webkit-appearance: none;
-  padding: 0.55rem 2.2rem 0.55rem 0.85rem;
-  border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.10);
-  background: rgba(255,255,255,0.05);
-  color: #f1f5f9;
-  font: inherit;
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: border-color 0.18s ease, background 0.18s ease;
-}
-
-.cs-select:focus {
-  outline: none;
-  border-color: rgba(139,92,246,0.40);
-  background: rgba(99,102,241,0.07);
-}
-
-.cs-select option { background: #0f172a; color: #f1f5f9; }
-
-.cs-select-chevron {
-  position: absolute;
-  right: 0.6rem;
-  top: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
-  color: rgba(148,163,184,0.6);
-}
-
-.cs-select-chevron .cs-icon { width: 16px; height: 16px; }
-
 /* -- Vibe meta row ---------------------------------------------------------- */
 .cs-vibe-meta {
   display: flex;
@@ -2533,11 +2503,6 @@
 
 .cs-moment-img-add .cs-icon { width: 22px; height: 22px; }
 .cs-moment-img-add span     { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.02em; }
-
-.cs-community-select-wrap--moment {
-  padding-top: 0.25rem;
-  border-top: 1px solid rgba(255,255,255,0.06);
-}
 
 .cs-story-editor {
   display: grid;
@@ -3170,6 +3135,15 @@
     max-width: 100%;
     max-height: 92dvh;
     border-bottom: none;
+  }
+
+  .cs-header-actions {
+    margin-left: auto;
+  }
+
+  .cs-mode-select {
+    min-width: 104px;
+    max-width: 128px;
   }
 
   .cs-vibe-screen { grid-template-columns: 1fr; overflow-y: auto; }

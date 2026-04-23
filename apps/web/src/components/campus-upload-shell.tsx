@@ -34,6 +34,7 @@ type CampusUploadShellProps = {
 };
 
 type CreationMode = "choice" | "story" | "vibe" | "moment";
+type PublishableCreationMode = Exclude<CreationMode, "choice">;
 
 type StoryComposerAsset = {
   id: string;
@@ -50,22 +51,10 @@ const STORY_IMAGE_DURATION_SECONDS = 15;
 const STORY_MAX_TOTAL_SECONDS = 60;
 const STORY_MAX_IMAGES = STORY_MAX_TOTAL_SECONDS / STORY_IMAGE_DURATION_SECONDS;
 
-const COMMUNITY_TAGS = [
-  "Campus-wide",
-  "CSE-A",
-  "CSE-B",
-  "CSE-C",
-  "ECE",
-  "MECH",
-  "Civil",
-  "MBA",
-  "Music Club",
-  "Drama Club",
-  "Sports Club",
-  "Photography Club",
-  "Coding Club",
-  "E-Cell",
-  "NSS",
+const CREATION_MODE_OPTIONS: Array<{ value: PublishableCreationMode; label: string }> = [
+  { value: "story", label: "Story" },
+  { value: "moment", label: "Post" },
+  { value: "vibe", label: "Vibe" }
 ];
 
 /* ─── Icon components ────────────────────────────────────────────────────── */
@@ -119,21 +108,6 @@ function IcoImage() {
         strokeLinejoin="round"
       />
       <circle cx="9" cy="9" r="1.6" fill="currentColor" />
-    </Ico>
-  );
-}
-
-function IcoSpark() {
-  return (
-    <Ico>
-      <path
-        d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
     </Ico>
   );
 }
@@ -283,6 +257,26 @@ function makeComposerAssetId() {
   return `asset-${Date.now()}-${Math.round(Math.random() * 1_000_000)}`;
 }
 
+function getModeLabel(mode: CreationMode) {
+  if (mode === "choice") {
+    return "Creation Studio";
+  }
+
+  return CREATION_MODE_OPTIONS.find((option) => option.value === mode)?.label ?? "Post";
+}
+
+function getPublishLabel(mode: PublishableCreationMode) {
+  if (mode === "vibe") {
+    return "Publish Vibe";
+  }
+
+  if (mode === "story") {
+    return "Publish Story";
+  }
+
+  return "Publish Post";
+}
+
 /* ─── Shimmer skeleton ───────────────────────────────────────────────────── */
 /* ─── Progress bar ───────────────────────────────────────────────────────── */
 /* ══════════════════════════════════════════════════════════════════════════
@@ -313,7 +307,6 @@ export function CampusUploadShell({
 
   /* ── Form state ──────────────────────────────────────────────────────── */
   const [caption, setCaption] = useState("");
-  const [communityTag, setCommunityTag] = useState(COMMUNITY_TAGS[0]);
   const [message, setMessage] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
 
@@ -486,6 +479,13 @@ export function CampusUploadShell({
     router.push(returnTo);
   }
 
+  function handleModeChange(nextMode: PublishableCreationMode) {
+    stopStoryMusicPreview();
+    setIsStoryMusicLibraryOpen(false);
+    setMessage(null);
+    setMode(nextMode);
+  }
+
   /* ── Vibe video pick ─────────────────────────────────────────────────── */
   async function processVibeFile(file: File) {
     if (!file.type.startsWith("video/")) {
@@ -603,7 +603,7 @@ export function CampusUploadShell({
     e.target.value = "";
     const valid = files.filter((file) => file.type.startsWith("image/"));
     if (valid.length === 0) {
-      setMessage("Only image files are supported for Moments.");
+      setMessage("Only image files are supported for posts.");
       return;
     }
 
@@ -616,7 +616,7 @@ export function CampusUploadShell({
     }));
 
     setMomentImages((prev) => [...prev, ...entries]);
-    setMessage(valid.length > availableSlots ? "Moments support up to 6 photos." : null);
+    setMessage(valid.length > availableSlots ? "Posts support up to 6 photos." : null);
   }
 
   function removeStoryAsset(id: string) {
@@ -833,21 +833,29 @@ export function CampusUploadShell({
                 </svg>
               </button>
             )}
-            <span className="cs-header-label">
-              {mode === "choice" ? "Creation Studio" : mode === "vibe" ? "Vibe" : mode === "story" ? "Story" : "Moment"}
-            </span>
+            <span className="cs-header-label">{getModeLabel(mode)}</span>
           </div>
 
           <div className="cs-header-actions">
             {mode !== "choice" && (
-              <button
-                type="button"
-                className={`cs-publish-top${canPublish ? " cs-publish-top--active" : ""}`}
-                onClick={handlePublish}
-                disabled={!canPublish || isPublishing}
-              >
-                {isPublishing ? "Queueing..." : mode === "vibe" ? "Post Vibe" : mode === "story" ? "Post Story" : "Post Moment"}
-              </button>
+              <div className="cs-mode-switch">
+                <select
+                  className="cs-mode-select"
+                  value={mode}
+                  onChange={(event) => handleModeChange(event.target.value as PublishableCreationMode)}
+                  disabled={isPublishing}
+                  aria-label="Choose what to create"
+                >
+                  {CREATION_MODE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="cs-mode-select-chevron" aria-hidden="true">
+                  <IcoChevronDown />
+                </span>
+              </div>
             )}
             <button type="button" className="cs-close-btn" onClick={handleClose} aria-label="Close">
               <IcoClose />
@@ -900,7 +908,7 @@ export function CampusUploadShell({
                 <div className="cs-choice-icon-wrap cs-choice-icon-wrap--moment">
                   <IcoImage />
                 </div>
-                <strong className="cs-choice-title">Moment</strong>
+                <strong className="cs-choice-title">Post</strong>
                 <span className="cs-choice-desc">Photo or text · Campus feed post</span>
                 <span className="cs-choice-badge cs-choice-badge--teal">Photo / Text</span>
               </button>
@@ -971,7 +979,7 @@ export function CampusUploadShell({
               />
             </div>
 
-            {/* Right: caption + community */}
+            {/* Right: caption + details */}
             <div className="cs-vibe-right">
               {/* User pill */}
               <div className="cs-user-row">
@@ -1001,28 +1009,6 @@ export function CampusUploadShell({
                   rows={6}
                   disabled={isPublishing}
                 />
-              </div>
-
-              {/* Community tag */}
-              <div className="cs-community-select-wrap">
-                <label className="cs-community-label" htmlFor="cs-community-vibe">
-                  <IcoSpark />
-                  Tag Community
-                </label>
-                <div className="cs-select-wrap">
-                  <select
-                    id="cs-community-vibe"
-                    className="cs-select"
-                    value={communityTag}
-                    onChange={(e) => setCommunityTag(e.target.value)}
-                    disabled={isPublishing}
-                  >
-                    {COMMUNITY_TAGS.map((t) => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
-                  <span className="cs-select-chevron"><IcoChevronDown /></span>
-                </div>
               </div>
 
               {/* Meta info */}
@@ -1058,7 +1044,7 @@ export function CampusUploadShell({
                 <strong>{viewerName}</strong>
                 <span>@{viewerUsername}</span>
               </div>
-              <span className="cs-user-pill cs-user-pill--moment">{mode === "story" ? "Story" : "Moment"}</span>
+              <span className="cs-user-pill cs-user-pill--moment">{mode === "story" ? "Story" : "Post"}</span>
             </div>
 
             {mode === "story" ? (
@@ -1363,27 +1349,6 @@ export function CampusUploadShell({
                   )}
                 </div>
 
-              <div className="cs-community-select-wrap cs-community-select-wrap--moment">
-                <label className="cs-community-label" htmlFor="cs-community-moment">
-                  <IcoSpark />
-                  Tag Community
-                </label>
-                <div className="cs-select-wrap">
-                  <select
-                    id="cs-community-moment"
-                    className="cs-select"
-                    value={communityTag}
-                    onChange={(e) => setCommunityTag(e.target.value)}
-                    disabled={isPublishing}
-                  >
-                    {COMMUNITY_TAGS.map((t) => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
-                  <span className="cs-select-chevron"><IcoChevronDown /></span>
-                </div>
-              </div>
-
                 {message && <p className="cs-message">{message}</p>}
 
                 <input
@@ -1494,13 +1459,7 @@ export function CampusUploadShell({
                 onClick={handlePublish}
                 disabled={!canPublish || isPublishing}
               >
-                {isPublishing
-                  ? "Queueing..."
-                  : mode === "vibe"
-                      ? "Post Vibe ✦"
-                      : mode === "story"
-                        ? "Post Story ✦"
-                        : "Post Moment ✦"}
+                {isPublishing ? "Queueing..." : `${getPublishLabel(mode)} ✦`}
               </button>
             </div>
           </div>

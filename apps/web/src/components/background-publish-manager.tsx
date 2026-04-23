@@ -193,6 +193,14 @@ export function BackgroundPublishManager() {
                       {task.status === "success" ? "Live on campus" : "Needs attention"}
                     </div>
                   )}
+
+                  {!isActive && task.status === "error" && task.logs.length > 0 ? (
+                    <div className="vyb-publish-task-logs">
+                      {task.logs.slice(-4).map((line) => (
+                        <code key={line}>{line}</code>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
 
                 {isActive ? (

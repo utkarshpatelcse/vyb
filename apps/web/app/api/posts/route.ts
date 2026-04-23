@@ -1,9 +1,12 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { readDevSessionFromCookieStore } from "../../../src/lib/dev-session";
 import { proxyBackendMutation } from "../../../src/lib/backend";
 
 export async function POST(request: Request) {
+  const requestId = request.headers.get("x-vyb-debug-task-id") ?? `post-${randomUUID()}`;
+  const debugStage = request.headers.get("x-vyb-debug-stage") ?? "publish";
   const viewer = readDevSessionFromCookieStore(await cookies());
 
   if (!viewer) {
@@ -11,7 +14,8 @@ export async function POST(request: Request) {
       {
         error: {
           code: "UNAUTHENTICATED",
-          message: "You must sign in before creating a post."
+          message: "You must sign in before creating a post.",
+          requestId
         }
       },
       { status: 401 }
@@ -45,15 +49,28 @@ export async function POST(request: Request) {
       {
         error: {
           code: "INVALID_JSON",
-          message: "Request body must be valid JSON."
+          message: "Request body must be valid JSON.",
+          requestId
         }
       },
       { status: 400 }
     );
   }
 
+  console.info("[web/posts] create-start", {
+    requestId,
+    debugStage,
+    tenantId: viewer.tenantId,
+    membershipId: viewer.membershipId,
+    kind: payload.kind ?? "text",
+    placement: payload.placement ?? "feed",
+    mediaAssetCount: Array.isArray(payload.mediaAssets) ? payload.mediaAssets.length : 0,
+    hasMediaUrl: Boolean(payload.mediaUrl),
+    bodyLength: (payload.body ?? "").length
+  });
+
   try {
-    return await proxyBackendMutation(
+    const upstream = await proxyBackendMutation(
       "/v1/posts",
       "POST",
       {
@@ -73,8 +90,38 @@ export async function POST(request: Request) {
       },
       viewer
     );
+
+    if (!upstream.ok) {
+      const responseText = await upstream.text();
+      console.error("[web/posts] create-failed-response", {
+        requestId,
+        debugStage,
+        tenantId: viewer.tenantId,
+        membershipId: viewer.membershipId,
+        status: upstream.status,
+        body: responseText
+      });
+
+      return new Response(responseText, {
+        status: upstream.status,
+        headers: {
+          "content-type": upstream.headers.get("content-type") ?? "application/json; charset=utf-8"
+        }
+      });
+    }
+
+    console.info("[web/posts] create-success", {
+      requestId,
+      debugStage,
+      tenantId: viewer.tenantId,
+      membershipId: viewer.membershipId,
+      status: upstream.status
+    });
+    return upstream;
   } catch (error) {
     console.error("[web/posts] create-failed", {
+      requestId,
+      debugStage,
       tenantId: viewer.tenantId,
       membershipId: viewer.membershipId,
       message: error instanceof Error ? error.message : "unknown"
@@ -83,7 +130,8 @@ export async function POST(request: Request) {
       {
         error: {
           code: "BACKEND_UNAVAILABLE",
-          message: "The backend is unavailable right now."
+          message: "The backend is unavailable right now.",
+          requestId
         }
       },
       { status: 502 }

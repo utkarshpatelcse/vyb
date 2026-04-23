@@ -284,13 +284,24 @@ export async function prepareSocialUploadFile(
   };
 }
 
-export async function uploadSocialMediaAsset(file: File, intent: "post" | "story" | "vibe") {
+export async function uploadSocialMediaAsset(
+  file: File,
+  intent: "post" | "story" | "vibe",
+  options?: {
+    debugTaskId?: string;
+    debugStage?: string;
+  }
+) {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("intent", intent);
 
   const response = await fetch("/api/social-media", {
     method: "POST",
+    headers: {
+      ...(options?.debugTaskId ? { "x-vyb-debug-task-id": options.debugTaskId } : {}),
+      ...(options?.debugStage ? { "x-vyb-debug-stage": options.debugStage } : {})
+    },
     body: formData
   });
 
@@ -298,13 +309,17 @@ export async function uploadSocialMediaAsset(file: File, intent: "post" | "story
     | {
         asset?: UploadedSocialMediaAsset;
         error?: {
+          code?: string;
           message?: string;
+          requestId?: string;
         };
       }
     | null;
 
   if (!response.ok || !payload?.asset) {
-    throw new Error(payload?.error?.message ?? "We could not upload this media right now.");
+    const message = payload?.error?.message ?? "We could not upload this media right now.";
+    const requestId = payload?.error?.requestId ? `, request: ${payload.error.requestId}` : "";
+    throw new Error(`${message} (stage: upload, status: ${response.status}${requestId})`);
   }
 
   return payload.asset;

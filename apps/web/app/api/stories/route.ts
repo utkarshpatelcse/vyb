@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { readDevSessionFromCookieStore } from "../../../src/lib/dev-session";
@@ -26,6 +27,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const requestId = request.headers.get("x-vyb-debug-task-id") ?? `story-${randomUUID()}`;
+  const debugStage = request.headers.get("x-vyb-debug-stage") ?? "publish";
   const viewer = readDevSessionFromCookieStore(await cookies());
 
   if (!viewer) {
@@ -33,7 +36,8 @@ export async function POST(request: Request) {
       {
         error: {
           code: "UNAUTHENTICATED",
-          message: "You must sign in before adding a story."
+          message: "You must sign in before adding a story.",
+          requestId
         }
       },
       { status: 401 }
@@ -56,27 +60,48 @@ export async function POST(request: Request) {
       {
         error: {
           code: "INVALID_STORY",
-          message: "Story media is required."
+          message: "Story media is required.",
+          requestId
         }
       },
       { status: 400 }
     );
   }
 
+  console.info("[web/stories] create-start", {
+    requestId,
+    debugStage,
+    tenantId: viewer.tenantId,
+    membershipId: viewer.membershipId,
+    mediaType: payload.mediaType,
+    mediaStoragePath: payload.mediaStoragePath ?? null,
+    mediaMimeType: payload.mediaMimeType ?? null,
+    mediaSizeBytes: payload.mediaSizeBytes ?? null
+  });
+
   try {
-    return NextResponse.json(
-      await createCampusStory(viewer, {
+    const item = await createCampusStory(viewer, {
         mediaType: payload.mediaType,
         mediaUrl: payload.mediaUrl,
         mediaStoragePath: payload.mediaStoragePath ?? null,
         mediaMimeType: payload.mediaMimeType ?? null,
         mediaSizeBytes: payload.mediaSizeBytes ?? null,
         caption: payload.caption ?? null
-      }),
-      { status: 201 }
-    );
+      });
+
+    console.info("[web/stories] create-success", {
+      requestId,
+      debugStage,
+      tenantId: viewer.tenantId,
+      membershipId: viewer.membershipId,
+      storyId: item.item.id
+    });
+
+    return NextResponse.json(item, { status: 201 });
   } catch (error) {
     console.error("[web/stories] create-failed", {
+      requestId,
+      debugStage,
       tenantId: viewer.tenantId,
       membershipId: viewer.membershipId,
       message: error instanceof Error ? error.message : "unknown"
@@ -85,7 +110,8 @@ export async function POST(request: Request) {
       {
         error: {
           code: "BACKEND_UNAVAILABLE",
-          message: "The story service is unavailable right now."
+          message: "The story service is unavailable right now.",
+          requestId
         }
       },
       { status: 502 }

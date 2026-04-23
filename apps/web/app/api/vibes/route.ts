@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getCampusVibes, proxyBackendMutation } from "../../../src/lib/backend";
@@ -26,6 +27,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const requestId = request.headers.get("x-vyb-debug-task-id") ?? `vibe-${randomUUID()}`;
+  const debugStage = request.headers.get("x-vyb-debug-stage") ?? "publish";
   const viewer = readDevSessionFromCookieStore(await cookies());
 
   if (!viewer) {
@@ -33,7 +36,8 @@ export async function POST(request: Request) {
       {
         error: {
           code: "UNAUTHENTICATED",
-          message: "You must sign in before uploading a vibe."
+          message: "You must sign in before uploading a vibe.",
+          requestId
         }
       },
       { status: 401 }
@@ -57,15 +61,27 @@ export async function POST(request: Request) {
       {
         error: {
           code: "INVALID_VIBE",
-          message: "Add a video before publishing your vibe."
+          message: "Add a video before publishing your vibe.",
+          requestId
         }
       },
       { status: 400 }
     );
   }
 
+  console.info("[web/vibes] create-start", {
+    requestId,
+    debugStage,
+    tenantId: viewer.tenantId,
+    membershipId: viewer.membershipId,
+    hasMediaUrl: Boolean(payload.mediaUrl),
+    mediaStoragePath: payload.mediaStoragePath ?? null,
+    mediaMimeType: payload.mediaMimeType ?? null,
+    mediaSizeBytes: payload.mediaSizeBytes ?? null
+  });
+
   try {
-    return await proxyBackendMutation(
+    const upstream = await proxyBackendMutation(
       "/v1/posts",
       "POST",
       {
@@ -84,8 +100,38 @@ export async function POST(request: Request) {
       },
       viewer
     );
+
+    if (!upstream.ok) {
+      const responseText = await upstream.text();
+      console.error("[web/vibes] create-failed-response", {
+        requestId,
+        debugStage,
+        tenantId: viewer.tenantId,
+        membershipId: viewer.membershipId,
+        status: upstream.status,
+        body: responseText
+      });
+
+      return new Response(responseText, {
+        status: upstream.status,
+        headers: {
+          "content-type": upstream.headers.get("content-type") ?? "application/json; charset=utf-8"
+        }
+      });
+    }
+
+    console.info("[web/vibes] create-success", {
+      requestId,
+      debugStage,
+      tenantId: viewer.tenantId,
+      membershipId: viewer.membershipId,
+      status: upstream.status
+    });
+    return upstream;
   } catch (error) {
     console.error("[web/vibes] create-failed", {
+      requestId,
+      debugStage,
       tenantId: viewer.tenantId,
       membershipId: viewer.membershipId,
       message: error instanceof Error ? error.message : "unknown"
@@ -94,7 +140,8 @@ export async function POST(request: Request) {
       {
         error: {
           code: "BACKEND_UNAVAILABLE",
-          message: "The vibe service is unavailable right now."
+          message: "The vibe service is unavailable right now.",
+          requestId
         }
       },
       { status: 502 }
