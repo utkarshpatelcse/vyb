@@ -1187,6 +1187,8 @@ export function CampusReelsShell({
       </nav>
 
       <SocialThreadSheet
+        desktopInsetLeft="var(--vyb-campus-left-width)"
+        desktopInsetRight="0px"
         post={engagement.selectedPost}
         comments={engagement.selectedComments}
         draft={engagement.threadDraft}

@@ -34,6 +34,7 @@ import {
 
 const TENANT_SCAN_LIMIT = 5000;
 const FEED_SCAN_MULTIPLIER = 4;
+const INACTIVE_COMMENT_REACTION_TYPE = "__inactive__";
 
 const EXTENDED_COMMENT_FIELDS = `
   id
@@ -511,6 +512,10 @@ async function buildCommentReactionMaps(tenantId, commentIds, viewerMembershipId
   const viewerReactions = new Map();
 
   for (const item of response.data.commentReactions ?? []) {
+    if ((item.reactionType ?? "like") === INACTIVE_COMMENT_REACTION_TYPE) {
+      continue;
+    }
+
     if (!idSet.has(item.commentId)) {
       continue;
     }
@@ -573,7 +578,9 @@ async function countCommentReactionsByComment(commentId) {
     }
   });
 
-  return response.data.commentReactions.length;
+  return response.data.commentReactions.filter(
+    (item) => (item.reactionType ?? "like") !== INACTIVE_COMMENT_REACTION_TYPE
+  ).length;
 }
 
 function mapPostRecord(item, counts = null) {
@@ -921,13 +928,19 @@ export async function upsertCommentReaction(payload) {
     }
   });
   const current = existing.data.commentReactions?.[0] ?? null;
+  const currentReactionType = current?.reactionType ?? null;
+  const isRemovingReaction =
+    currentReactionType !== null &&
+    currentReactionType !== INACTIVE_COMMENT_REACTION_TYPE &&
+    currentReactionType === payload.reactionType;
+  const nextReactionType = isRemovingReaction ? INACTIVE_COMMENT_REACTION_TYPE : payload.reactionType;
 
   if (current) {
     await getSocialDc().executeGraphql(UPDATE_COMMENT_REACTION_MUTATION, {
       operationName: "UpdateCommentReaction",
       variables: {
         id: current.id,
-        reactionType: payload.reactionType
+        reactionType: nextReactionType
       }
     });
   } else {
@@ -938,7 +951,7 @@ export async function upsertCommentReaction(payload) {
         commentReactionKey,
         commentId: payload.commentId,
         membershipId: payload.membershipId,
-        reactionType: payload.reactionType
+        reactionType: nextReactionType
       }
     });
   }
@@ -946,9 +959,9 @@ export async function upsertCommentReaction(payload) {
   return {
     commentId: payload.commentId,
     membershipId: payload.membershipId,
-    reactionType: payload.reactionType,
+    reactionType: nextReactionType,
     aggregateCount: await countCommentReactionsByComment(payload.commentId),
-    active: true
+    active: !isRemovingReaction
   };
 }
 
@@ -989,7 +1002,7 @@ export async function findCommentById(commentId, { tenantId = null, viewerMember
       }
     });
     const current = existing.data.commentReactions?.[0] ?? null;
-    if (current) {
+    if (current && (current.reactionType ?? "like") !== INACTIVE_COMMENT_REACTION_TYPE) {
       reactionMaps.viewerReactions.set(item.id, current.reactionType ?? "like");
     }
   }

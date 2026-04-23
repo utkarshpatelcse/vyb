@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { getDatabase } from "firebase-admin/database";
 import { getStorage } from "firebase-admin/storage";
 import { getFirebaseAdminApp, getFirebaseDataConnect } from "../../../../../packages/config/src/index.mjs";
 import { getProfileByUserId, getProfileByUsername } from "../identity/profile-repository.mjs";
 import { trackActivity } from "../moderation/repository.mjs";
+import { emitChatRealtimeEvent } from "./realtime-hub.mjs";
 
 const CHAT_CONNECTOR_CONFIG = {
   connector: "chat",
@@ -13,6 +13,7 @@ const CHAT_CONNECTOR_CONFIG = {
 
 const CHAT_INBOX_LIMIT = 60;
 const CHAT_MESSAGE_LIMIT = 120;
+const END_TO_END_CHAT_ALGORITHM = "ECDH-P256/AES-GCM";
 const CHAT_REACTION_EMOJIS = new Set(["❤️", "🔥", "😂", "😍", "👍", "😮", "😢", "👏"]);
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
 const MAX_ENCRYPTED_CHAT_IMAGE_BYTES = 12 * 1024 * 1024;
@@ -393,6 +394,27 @@ const UPDATE_CHAT_CONVERSATION_LAST_MESSAGE_MUTATION = `
   }
 `;
 
+const UPDATE_CHAT_MESSAGE_ENCRYPTION_MUTATION = `
+  mutation UpdateChatMessageEncryption(
+    $id: UUID!
+    $cipherText: String!
+    $cipherIv: String!
+    $cipherAlgorithm: String!
+  ) {
+    chatMessage_update(
+      key: { id: $id }
+      data: {
+        cipherText: $cipherText
+        cipherIv: $cipherIv
+        cipherAlgorithm: $cipherAlgorithm
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
+
 const UPDATE_CHAT_PARTICIPANT_READ_MUTATION = `
   mutation UpdateChatParticipantRead($id: UUID!, $lastReadMessageId: UUID!) {
     chatParticipant_update(
@@ -467,15 +489,6 @@ function getChatDc() {
 
 function getChatBucket() {
   return getStorage(getFirebaseAdminApp("backend-chat-storage")).bucket();
-}
-
-function getChatRealtimeDb() {
-  const databaseUrl = process.env.FIREBASE_DATABASE_URL ?? process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL;
-  if (!databaseUrl) {
-    return null;
-  }
-
-  return getDatabase(getFirebaseAdminApp("backend-chat-realtime"));
 }
 
 function toIsoString(value) {
@@ -708,24 +721,6 @@ function buildReactionsMap(items) {
   return reactionsByMessageId;
 }
 
-async function publishRealtimeEvent(path, payload) {
-  const db = getChatRealtimeDb();
-  if (!db) {
-    return false;
-  }
-
-  try {
-    await db.ref(path).set(payload);
-    return true;
-  } catch (error) {
-    console.warn("[chat] realtime-write-failed", {
-      path,
-      message: error instanceof Error ? error.message : "unknown"
-    });
-    return false;
-  }
-}
-
 async function buildConversationPreview(viewer, conversation, viewerParticipant, peerParticipant) {
   const [peerProfile, peerIdentity, lastMessageRaw] = await Promise.all([
     getProfileByUserId({
@@ -781,13 +776,17 @@ async function resolveConversationAccess(viewer, conversationId) {
   };
 }
 
+export async function canAccessChatConversation(viewer, conversationId) {
+  return Boolean(await resolveConversationAccess(viewer, conversationId));
+}
+
 export async function upsertChatIdentity(viewer, payload) {
   const publicKey = normalizeString(payload.publicKey);
   const algorithm = normalizeString(payload.algorithm) ?? "ECDH-P256";
   const keyVersion = Number.isInteger(payload.keyVersion) && payload.keyVersion > 0 ? payload.keyVersion : 1;
 
   if (!publicKey) {
-    throw new Error("A public key is required before chat can be encrypted.");
+    throw new Error("A public key is required to set up secure chat.");
   }
 
   const existing = await getChatIdentityByUser({
@@ -1010,7 +1009,7 @@ export async function sendChatMessage(viewer, conversationId, payload) {
   });
 
   if (!viewerIdentity) {
-    throw new Error("Publish your encrypted chat key before sending a message.");
+    throw new Error("Set up secure chat before sending a message.");
   }
 
   const messageKind =
@@ -1019,10 +1018,10 @@ export async function sendChatMessage(viewer, conversationId, payload) {
       : "text";
   const cipherText = normalizeString(payload.cipherText);
   const cipherIv = normalizeString(payload.cipherIv);
-  const cipherAlgorithm = normalizeString(payload.cipherAlgorithm) ?? "AES-GCM";
+  const cipherAlgorithm = normalizeString(payload.cipherAlgorithm) ?? END_TO_END_CHAT_ALGORITHM;
 
   if (!cipherText || !cipherIv) {
-    throw new Error("Encrypted message payload is incomplete.");
+    throw new Error("Message payload is incomplete.");
   }
 
   const messageId = randomUUID();
@@ -1077,21 +1076,87 @@ export async function sendChatMessage(viewer, conversationId, payload) {
     auditAction: "chat_message_sent"
   });
 
-  await publishRealtimeEvent(`/chatEvents/${viewer.tenantId}/${conversationId}/${messageId}`, {
-    messageId,
+  emitChatRealtimeEvent({
     conversationId,
-    senderUserId: viewer.userId,
-    messageKind,
-    cipherText,
-    cipherIv,
-    cipherAlgorithm,
-    attachment: attachment ?? null,
-    createdAt: storedMessage.createdAt
+    type: "chat.message",
+    payload: {
+      messageId,
+      conversationId,
+      senderUserId: viewer.userId,
+      senderMembershipId: viewer.membershipId,
+      createdAt: storedMessage.createdAt
+    }
   });
 
   return {
     item: storedMessage,
     conversationPreview: preview
+  };
+}
+
+export async function migrateChatConversationEncryption(viewer, conversationId, payload) {
+  const access = await resolveConversationAccess(viewer, conversationId);
+  if (!access) {
+    throw new Error("We could not find that conversation.");
+  }
+
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  if (items.length === 0) {
+    throw new Error("Choose at least one message to upgrade.");
+  }
+
+  const rawMessages = await listChatMessagesByConversation(conversationId);
+  const messagesById = new Map(rawMessages.map((message) => [message.id, message]));
+
+  const updates = items.map((item) => {
+    const messageId = normalizeString(item?.messageId);
+    const cipherText = normalizeString(item?.cipherText);
+    const cipherIv = normalizeString(item?.cipherIv);
+    const cipherAlgorithm = normalizeString(item?.cipherAlgorithm) ?? END_TO_END_CHAT_ALGORITHM;
+    const source = messageId ? messagesById.get(messageId) ?? null : null;
+
+    if (!messageId || !cipherText || !cipherIv || !source) {
+      throw new Error("One of the encryption updates is incomplete.");
+    }
+
+    return {
+      id: messageId,
+      cipherText,
+      cipherIv,
+      cipherAlgorithm
+    };
+  });
+
+  await Promise.all(
+    updates.map((item) =>
+      getChatDc().executeGraphql(UPDATE_CHAT_MESSAGE_ENCRYPTION_MUTATION, {
+        operationName: "UpdateChatMessageEncryption",
+        variables: item
+      })
+    )
+  );
+
+  const [refreshedMessages, refreshedReactions] = await Promise.all([
+    listChatMessagesByConversation(conversationId),
+    listChatMessageReactionsByConversation(conversationId)
+  ]);
+  const reactionsByMessageId = buildReactionsMap(refreshedReactions);
+  const updatedItems = refreshedMessages
+    .filter((message) => updates.some((update) => update.id === message.id))
+    .map((message) => mapChatMessage(message, reactionsByMessageId))
+    .filter(Boolean);
+
+  emitChatRealtimeEvent({
+    conversationId,
+    type: "chat.sync",
+    payload: {
+      conversationId,
+      count: updatedItems.length
+    }
+  });
+
+  return {
+    items: updatedItems
   };
 }
 
@@ -1116,11 +1181,16 @@ export async function markChatConversationRead(viewer, conversationId, messageId
 
   const readAt = new Date().toISOString();
 
-  await publishRealtimeEvent(`/chatReads/${viewer.tenantId}/${conversationId}/${viewer.userId}`, {
+  emitChatRealtimeEvent({
     conversationId,
-    userId: viewer.userId,
-    messageId,
-    readAt
+    type: "chat.read",
+    payload: {
+      conversationId,
+      userId: viewer.userId,
+      membershipId: viewer.membershipId,
+      messageId,
+      readAt
+    }
   });
 
   return {

@@ -4,7 +4,8 @@ import { buildCorsHeaders, sendError, sendJson } from "./lib/http.mjs";
 import { createRequestContext } from "./lib/request-context.mjs";
 import { launchCollege } from "./modules/identity/college-access.mjs";
 import { getCampusModuleHealth, handleCampusRoute } from "./modules/campus/index.mjs";
-import { getChatModuleHealth, handleChatRoute } from "./modules/chat/index.mjs";
+import { canOpenChatRealtimeConnection, getChatModuleHealth, handleChatRoute } from "./modules/chat/index.mjs";
+import { attachChatWebSocketServer } from "./modules/chat/realtime-hub.mjs";
 import { getIdentityModuleHealth, handleIdentityRoute } from "./modules/identity/index.mjs";
 import { getMarketModuleHealth, handleMarketRoute } from "./modules/market/index.mjs";
 import { getModerationModuleHealth, handleModerationRoute } from "./modules/moderation/index.mjs";
@@ -149,6 +150,10 @@ const server = createServer(async (request, response) => {
 
     response.end();
   }
+});
+
+attachChatWebSocketServer(server, {
+  authorizeConnection: canOpenChatRealtimeConnection
 });
 
 server.listen(port, () => {

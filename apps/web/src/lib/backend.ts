@@ -22,6 +22,8 @@ import type {
   ListResourcesResponse,
   MarkChatReadResponse,
   ManageMarketListingResponse,
+  MigrateChatMessageEncryptionRequest,
+  MigrateChatMessageEncryptionResponse,
   MarketDashboardResponse,
   MeResponse,
   PublicProfileResponse,
@@ -574,6 +576,19 @@ export async function getChatConversation(viewer: DevSession, conversationId: st
 
 export async function sendChatMessage(viewer: DevSession, conversationId: string, payload: SendChatMessageRequest) {
   return postBackendJson<SendChatMessageResponse>(`/v1/chats/${encodeURIComponent(conversationId)}/messages`, payload, viewer);
+}
+
+export async function migrateChatMessageEncryption(
+  viewer: DevSession,
+  conversationId: string,
+  payload: MigrateChatMessageEncryptionRequest
+) {
+  return mutateBackendJson<MigrateChatMessageEncryptionResponse>(
+    `/v1/chats/${encodeURIComponent(conversationId)}/messages/encryption`,
+    "PUT",
+    payload,
+    viewer
+  );
 }
 
 export async function markChatRead(viewer: DevSession, conversationId: string, messageId: string) {

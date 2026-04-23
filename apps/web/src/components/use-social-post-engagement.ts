@@ -81,17 +81,9 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
     if (!currentPost) {
       return null;
     }
-
-    if (currentPost.viewerReactionType === "like") {
-      return {
-        postId,
-        membershipId: "",
-        reactionType: "like",
-        aggregateCount: currentPost.reactions,
-        active: true,
-        viewerReactionType: "like"
-      };
-    }
+    const isRemovingLike = currentPost.viewerReactionType === "like";
+    const optimisticReactionCount = Math.max(0, currentPost.reactions + (isRemovingLike ? -1 : 1));
+    const optimisticViewerReaction = isRemovingLike ? null : "like";
 
     setLoadingPostId(postId);
     setThreadMessage(null);
@@ -100,8 +92,8 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
         post.id === postId
           ? {
             ...post,
-            reactions: post.reactions + 1,
-            viewerReactionType: "like"
+            reactions: optimisticReactionCount,
+            viewerReactionType: optimisticViewerReaction
           }
           : post
       )
@@ -150,7 +142,7 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
             ? {
               ...post,
               reactions: payload.aggregateCount,
-              viewerReactionType: payload.viewerReactionType
+              viewerReactionType: payload.active ? payload.viewerReactionType : null
             }
             : post
         )
@@ -255,16 +247,8 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
     if (!currentComment) {
       return null;
     }
-
-    if (currentComment.viewerHasLiked) {
-      return {
-        commentId,
-        membershipId: currentComment.membershipId,
-        reactionType: "like" as const,
-        aggregateCount: currentComment.reactions,
-        active: true
-      };
-    }
+    const isRemovingLike = currentComment.viewerHasLiked;
+    const optimisticReactionCount = Math.max(0, currentComment.reactions + (isRemovingLike ? -1 : 1));
 
     setCommentsByPost((current) => ({
       ...current,
@@ -272,8 +256,8 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
         item.id === commentId
           ? {
             ...item,
-            reactions: item.reactions + 1,
-            viewerHasLiked: true
+            reactions: optimisticReactionCount,
+            viewerHasLiked: !isRemovingLike
           }
           : item
       )
@@ -362,7 +346,10 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
   function beginReply(comment: CommentItem) {
     const replyPrefix = `@${comment.author?.username ?? "vyb_user"} `;
     setThreadReplyTarget(comment);
-    setThreadDraft((current) => (current.startsWith(replyPrefix) ? current : `${replyPrefix}${current}`.trimStart()));
+    setThreadDraft((current) => {
+      const nextBody = current.replace(/^@\S+\s+/, "");
+      return `${replyPrefix}${nextBody}`.trimStart();
+    });
   }
 
   function clearReplyTarget() {

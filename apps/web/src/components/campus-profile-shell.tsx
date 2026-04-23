@@ -4,7 +4,7 @@ import type { ActivityItem, CourseItem, FeedCard, ProfileRecord, ResourceItem } 
 import { sendPasswordResetEmail } from "firebase/auth";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { courseOptions, defaultCourse, getStreamOptions, getYearOptionsForCourse, splitDisplayName } from "../lib/college-access";
 import { getFirebaseClientAuth, isFirebaseClientConfigured } from "../lib/firebase-client";
 import { SignOutButton } from "./sign-out-button";
@@ -37,6 +37,15 @@ type ThemeMode = "dark" | "light";
 type ToastState = {
   text: string;
   tone: "success" | "error";
+};
+type AvatarCropDraft = {
+  fileName: string;
+  sourceUrl: string;
+  imageWidth: number;
+  imageHeight: number;
+  zoom: number;
+  offsetX: number;
+  offsetY: number;
 };
 type ProfileDraft = {
   username: string;
@@ -336,6 +345,11 @@ function buildStoredAvatarKey(username: string) {
   return `vyb-profile-avatar:${username}`;
 }
 
+const AVATAR_CROP_FRAME_SIZE = 320;
+const AVATAR_CROP_OUTPUT_SIZE = 512;
+const AVATAR_CROP_MIN_ZOOM = 1;
+const AVATAR_CROP_MAX_ZOOM = 3;
+
 function readStoredString(key: string) {
   if (typeof window === "undefined") {
     return null;
@@ -347,6 +361,130 @@ function readStoredString(key: string) {
   } catch {
     return null;
   }
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getAvatarCropMetrics(imageWidth: number, imageHeight: number, zoom: number) {
+  const scale = Math.max(AVATAR_CROP_FRAME_SIZE / imageWidth, AVATAR_CROP_FRAME_SIZE / imageHeight) * zoom;
+  const renderedWidth = imageWidth * scale;
+  const renderedHeight = imageHeight * scale;
+  return {
+    scale,
+    renderedWidth,
+    renderedHeight,
+    minOffsetX: Math.min(0, AVATAR_CROP_FRAME_SIZE - renderedWidth),
+    minOffsetY: Math.min(0, AVATAR_CROP_FRAME_SIZE - renderedHeight)
+  };
+}
+
+function getCenteredAvatarOffsets(imageWidth: number, imageHeight: number, zoom: number) {
+  const metrics = getAvatarCropMetrics(imageWidth, imageHeight, zoom);
+  return {
+    offsetX: (AVATAR_CROP_FRAME_SIZE - metrics.renderedWidth) / 2,
+    offsetY: (AVATAR_CROP_FRAME_SIZE - metrics.renderedHeight) / 2
+  };
+}
+
+function clampAvatarOffsets(offsetX: number, offsetY: number, imageWidth: number, imageHeight: number, zoom: number) {
+  const metrics = getAvatarCropMetrics(imageWidth, imageHeight, zoom);
+  return {
+    offsetX: clampNumber(offsetX, metrics.minOffsetX, 0),
+    offsetY: clampNumber(offsetY, metrics.minOffsetY, 0)
+  };
+}
+
+function revokeObjectUrl(value: string | null | undefined) {
+  if (value?.startsWith("blob:")) {
+    URL.revokeObjectURL(value);
+  }
+}
+
+async function readImageDimensions(sourceUrl: string) {
+  const image = new Image();
+  image.decoding = "async";
+  image.src = sourceUrl;
+
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error("We could not read that image."));
+  });
+
+  return {
+    width: image.naturalWidth || image.width,
+    height: image.naturalHeight || image.height
+  };
+}
+
+async function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality?: number) {
+  return await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(blob);
+        return;
+      }
+
+      reject(new Error("We could not prepare your cropped photo."));
+    }, type, quality);
+  });
+}
+
+async function blobToDataUrl(blob: Blob) {
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+
+      reject(new Error("We could not save your profile photo."));
+    };
+    reader.onerror = () => reject(new Error("We could not save your profile photo."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function exportAvatarCrop(draft: AvatarCropDraft) {
+  const image = new Image();
+  image.decoding = "async";
+  image.src = draft.sourceUrl;
+
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error("We could not load that photo for cropping."));
+  });
+
+  const metrics = getAvatarCropMetrics(draft.imageWidth, draft.imageHeight, draft.zoom);
+  const sourceX = clampNumber(-draft.offsetX / metrics.scale, 0, Math.max(0, draft.imageWidth - AVATAR_CROP_FRAME_SIZE / metrics.scale));
+  const sourceY = clampNumber(-draft.offsetY / metrics.scale, 0, Math.max(0, draft.imageHeight - AVATAR_CROP_FRAME_SIZE / metrics.scale));
+  const sourceSize = AVATAR_CROP_FRAME_SIZE / metrics.scale;
+  const canvas = document.createElement("canvas");
+  canvas.width = AVATAR_CROP_OUTPUT_SIZE;
+  canvas.height = AVATAR_CROP_OUTPUT_SIZE;
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    throw new Error("We could not prepare your cropped photo.");
+  }
+
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(
+    image,
+    sourceX,
+    sourceY,
+    sourceSize,
+    sourceSize,
+    0,
+    0,
+    AVATAR_CROP_OUTPUT_SIZE,
+    AVATAR_CROP_OUTPUT_SIZE
+  );
+
+  return canvasToBlob(canvas, "image/jpeg", 0.92);
 }
 
 function getPostMediaAssets(post: FeedCard) {
@@ -475,6 +613,13 @@ export function CampusProfileShell({
 }: CampusProfileShellProps) {
   const router = useRouter();
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const avatarCropDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
   const initialAvatarUrl = (initialProfile as (ProfileRecord & { avatarUrl?: string | null }) | null)?.avatarUrl ?? null;
   const [message, setMessage] = useState<ToastState | null>(null);
   const [busy, setBusy] = useState(false);
@@ -503,6 +648,7 @@ export function CampusProfileShell({
   const [blockedDraft, setBlockedDraft] = useState("");
   const [mutedDraft, setMutedDraft] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(initialAvatarUrl);
+  const [avatarCropDraft, setAvatarCropDraft] = useState<AvatarCropDraft | null>(null);
   const [followingState, setFollowingState] = useState(isFollowing);
   const [followerCount, setFollowerCount] = useState(stats.followers);
   const [activeTab, setActiveTab] = useState<ProfileTab>("posts");
@@ -516,6 +662,9 @@ export function CampusProfileShell({
   const profileSeed = `${username}-${viewerName}`;
   const avatarStorageKey = buildStoredAvatarKey(username);
   const resolvedAvatarUrl = avatarUrl ?? buildAvatarUrl(profileSeed);
+  const avatarCropMetrics = avatarCropDraft
+    ? getAvatarCropMetrics(avatarCropDraft.imageWidth, avatarCropDraft.imageHeight, avatarCropDraft.zoom)
+    : null;
   const layoutStyle = {
     "--vyb-campus-left-width": "260px",
     "--vyb-campus-right-width": "336px"
@@ -561,6 +710,12 @@ export function CampusProfileShell({
 
     window.localStorage.setItem(avatarStorageKey, avatarUrl);
   }, [avatarStorageKey, avatarUrl]);
+
+  useEffect(() => {
+    return () => {
+      revokeObjectUrl(avatarCropDraft?.sourceUrl);
+    };
+  }, [avatarCropDraft?.sourceUrl]);
 
   useEffect(() => {
     if (!isOwnProfile) {
@@ -626,6 +781,120 @@ export function CampusProfileShell({
 
   function showError(text: string) {
     setMessage({ text, tone: "error" });
+  }
+
+  function closeAvatarCropper() {
+    avatarCropDragRef.current = null;
+    setAvatarCropDraft((current) => {
+      revokeObjectUrl(current?.sourceUrl);
+      return null;
+    });
+  }
+
+  function resetAvatarCrop() {
+    setAvatarCropDraft((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        zoom: AVATAR_CROP_MIN_ZOOM,
+        ...getCenteredAvatarOffsets(current.imageWidth, current.imageHeight, AVATAR_CROP_MIN_ZOOM)
+      };
+    });
+  }
+
+  function handleAvatarCropZoomChange(event: ChangeEvent<HTMLInputElement>) {
+    const nextZoom = clampNumber(Number(event.target.value), AVATAR_CROP_MIN_ZOOM, AVATAR_CROP_MAX_ZOOM);
+    setAvatarCropDraft((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const currentMetrics = getAvatarCropMetrics(current.imageWidth, current.imageHeight, current.zoom);
+      const nextMetrics = getAvatarCropMetrics(current.imageWidth, current.imageHeight, nextZoom);
+      const centerX = (AVATAR_CROP_FRAME_SIZE / 2 - current.offsetX) / currentMetrics.scale;
+      const centerY = (AVATAR_CROP_FRAME_SIZE / 2 - current.offsetY) / currentMetrics.scale;
+      const nextOffsetX = AVATAR_CROP_FRAME_SIZE / 2 - centerX * nextMetrics.scale;
+      const nextOffsetY = AVATAR_CROP_FRAME_SIZE / 2 - centerY * nextMetrics.scale;
+
+      return {
+        ...current,
+        zoom: nextZoom,
+        ...clampAvatarOffsets(nextOffsetX, nextOffsetY, current.imageWidth, current.imageHeight, nextZoom)
+      };
+    });
+  }
+
+  function handleAvatarCropPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!avatarCropDraft) {
+      return;
+    }
+
+    avatarCropDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: avatarCropDraft.offsetX,
+      originY: avatarCropDraft.offsetY
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleAvatarCropPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const dragState = avatarCropDragRef.current;
+    if (!dragState || event.pointerId !== dragState.pointerId) {
+      return;
+    }
+
+    const deltaX = event.clientX - dragState.startX;
+    const deltaY = event.clientY - dragState.startY;
+
+    setAvatarCropDraft((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        ...clampAvatarOffsets(
+          dragState.originX + deltaX,
+          dragState.originY + deltaY,
+          current.imageWidth,
+          current.imageHeight,
+          current.zoom
+        )
+      };
+    });
+  }
+
+  function handleAvatarCropPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+    if (avatarCropDragRef.current?.pointerId === event.pointerId) {
+      avatarCropDragRef.current = null;
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  async function handleAvatarCropSave() {
+    if (!avatarCropDraft) {
+      return;
+    }
+
+    setAvatarBusy(true);
+    setMessage(null);
+
+    try {
+      const croppedBlob = await exportAvatarCrop(avatarCropDraft);
+      const nextAvatarUrl = await blobToDataUrl(croppedBlob);
+      setAvatarUrl(nextAvatarUrl);
+      closeAvatarCropper();
+      showSuccess("Profile photo updated.");
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "We could not update your profile photo right now.");
+    } finally {
+      setAvatarBusy(false);
+    }
   }
 
   function applyTheme(nextTheme: ThemeMode) {
@@ -726,39 +995,32 @@ export function CampusProfileShell({
       return;
     }
 
+    if (file.size > 12 * 1024 * 1024) {
+      showError("Choose an image smaller than 12 MB.");
+      return;
+    }
+
     setAvatarBusy(true);
     setMessage(null);
 
     try {
-      const formData = new FormData();
-      formData.set("intent", "post");
-      formData.set("file", file);
+      const sourceUrl = URL.createObjectURL(file);
+      const { width, height } = await readImageDimensions(sourceUrl);
+      const nextDraft: AvatarCropDraft = {
+        fileName: file.name,
+        sourceUrl,
+        imageWidth: width,
+        imageHeight: height,
+        zoom: AVATAR_CROP_MIN_ZOOM,
+        ...getCenteredAvatarOffsets(width, height, AVATAR_CROP_MIN_ZOOM)
+      };
 
-      const response = await fetch("/api/social-media", {
-        method: "POST",
-        body: formData
+      setAvatarCropDraft((current) => {
+        revokeObjectUrl(current?.sourceUrl);
+        return nextDraft;
       });
-      const payload = (await response.json().catch(() => null)) as
-        | {
-            asset?: {
-              mediaType?: "image" | "video";
-              mediaUrl?: string;
-            };
-            error?: {
-              message?: string;
-            };
-          }
-        | null;
-
-      if (!response.ok || payload?.asset?.mediaType !== "image" || !payload.asset.mediaUrl) {
-        showError(payload?.error?.message ?? "We could not upload your profile photo right now.");
-        return;
-      }
-
-      setAvatarUrl(payload.asset.mediaUrl);
-      showSuccess("Profile photo updated.");
-    } catch {
-      showError("We could not upload your profile photo right now.");
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "We could not open that photo.");
     } finally {
       setAvatarBusy(false);
     }
@@ -997,6 +1259,96 @@ export function CampusProfileShell({
 
         {message ? <div className={`vyb-profile-toast is-${message.tone}`}>{message.text}</div> : null}
 
+        {avatarCropDraft && avatarCropMetrics ? (
+          <div className="vyb-avatar-cropper" role="dialog" aria-modal="true" aria-labelledby="vyb-avatar-cropper-title">
+            <div className="vyb-avatar-cropper-backdrop" onClick={avatarBusy ? undefined : closeAvatarCropper} />
+            <div className="vyb-avatar-cropper-panel">
+              <div className="vyb-avatar-cropper-header">
+                <div>
+                  <h2 id="vyb-avatar-cropper-title">Adjust profile photo</h2>
+                  <p>Drag and zoom to frame your avatar before saving.</p>
+                </div>
+                <button
+                  type="button"
+                  className="vyb-avatar-cropper-close"
+                  onClick={closeAvatarCropper}
+                  disabled={avatarBusy}
+                  aria-label="Close photo cropper"
+                >
+                  <CloseIcon />
+                </button>
+              </div>
+
+              <div className="vyb-avatar-cropper-body">
+                <div
+                  className="vyb-avatar-cropper-stage"
+                  onPointerDown={handleAvatarCropPointerDown}
+                  onPointerMove={handleAvatarCropPointerMove}
+                  onPointerUp={handleAvatarCropPointerUp}
+                  onPointerCancel={handleAvatarCropPointerUp}
+                >
+                  <img
+                    src={avatarCropDraft.sourceUrl}
+                    alt={avatarCropDraft.fileName}
+                    className="vyb-avatar-cropper-image"
+                    draggable={false}
+                    style={{
+                      width: `${avatarCropMetrics.renderedWidth}px`,
+                      height: `${avatarCropMetrics.renderedHeight}px`,
+                      transform: `translate(${avatarCropDraft.offsetX}px, ${avatarCropDraft.offsetY}px)`
+                    }}
+                  />
+                  <div className="vyb-avatar-cropper-mask" aria-hidden="true" />
+                </div>
+
+                <div className="vyb-avatar-cropper-preview">
+                  <span>Preview</span>
+                  <div className="vyb-avatar-cropper-preview-bubble">
+                    <img
+                      src={avatarCropDraft.sourceUrl}
+                      alt=""
+                      aria-hidden="true"
+                      draggable={false}
+                      style={{
+                        width: `${avatarCropMetrics.renderedWidth}px`,
+                        height: `${avatarCropMetrics.renderedHeight}px`,
+                        transform: `translate(${avatarCropDraft.offsetX}px, ${avatarCropDraft.offsetY}px)`
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="vyb-avatar-cropper-controls">
+                <label className="vyb-avatar-cropper-zoom">
+                  <span>Zoom</span>
+                  <input
+                    type="range"
+                    min={AVATAR_CROP_MIN_ZOOM}
+                    max={AVATAR_CROP_MAX_ZOOM}
+                    step={0.01}
+                    value={avatarCropDraft.zoom}
+                    onChange={handleAvatarCropZoomChange}
+                    disabled={avatarBusy}
+                  />
+                </label>
+                <button type="button" className="vyb-insta-outline-btn" onClick={resetAvatarCrop} disabled={avatarBusy}>
+                  Recenter
+                </button>
+              </div>
+
+              <div className="vyb-avatar-cropper-actions">
+                <button type="button" className="vyb-insta-outline-btn" onClick={closeAvatarCropper} disabled={avatarBusy}>
+                  Cancel
+                </button>
+                <button type="button" className="vyb-insta-save-btn" onClick={handleAvatarCropSave} disabled={avatarBusy}>
+                  {avatarBusy ? "Saving..." : "Save photo"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <div className="vyb-insta-profile-shell" style={{ display: (settingsOpen || editProfileOpen) ? "none" : "block" }}>
           <section className="vyb-insta-header">
             <div className="vyb-insta-header-main">
@@ -1134,7 +1486,7 @@ export function CampusProfileShell({
                     </div>
                     <div className="vyb-insta-photo-copy">
                       <strong>Profile photo</strong>
-                      <span>Update your avatar from edit profile.</span>
+                      <span>Choose a photo, adjust it, then save your cropped avatar.</span>
                     </div>
                     <button
                       type="button"
@@ -1142,7 +1494,7 @@ export function CampusProfileShell({
                       onClick={() => avatarInputRef.current?.click()}
                       disabled={avatarBusy}
                     >
-                      {avatarBusy ? "Uploading..." : avatarUrl ? "Change photo" : "Add photo"}
+                      {avatarBusy ? "Working..." : avatarUrl ? "Change photo" : "Add photo"}
                     </button>
                   </div>
 

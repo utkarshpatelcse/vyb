@@ -630,6 +630,21 @@ export interface SendChatMessageResponse {
   conversationPreview: ChatConversationPreview;
 }
 
+export interface MigrateChatMessageEncryptionItem {
+  messageId: string;
+  cipherText: string;
+  cipherIv: string;
+  cipherAlgorithm: string;
+}
+
+export interface MigrateChatMessageEncryptionRequest {
+  items: MigrateChatMessageEncryptionItem[];
+}
+
+export interface MigrateChatMessageEncryptionResponse {
+  items: ChatMessageRecord[];
+}
+
 export interface MarkChatReadResponse {
   conversationId: string;
   messageId: string;

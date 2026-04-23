@@ -2,10 +2,12 @@ import { readJson, sendError, sendJson } from "../../lib/http.mjs";
 import { getProfileByUserId } from "../identity/profile-repository.mjs";
 import { resolveLiveContext } from "../shared/viewer-context.mjs";
 import {
+  canAccessChatConversation,
   createOrGetDirectConversation,
   getChatConversation,
   listChatInbox,
   markChatConversationRead,
+  migrateChatConversationEncryption,
   reactToChatMessage,
   sendChatMessage,
   uploadEncryptedChatAttachment,
@@ -46,6 +48,21 @@ export function getChatModuleHealth() {
     module: "chat",
     status: "ok"
   };
+}
+
+export async function canOpenChatRealtimeConnection({ tenantId, userId, membershipId, conversationId }) {
+  if (!tenantId || !userId || !membershipId || !conversationId) {
+    return false;
+  }
+
+  return canAccessChatConversation(
+    {
+      tenantId,
+      userId,
+      membershipId
+    },
+    conversationId
+  );
 }
 
 export async function handleChatRoute({ request, response, url, context }) {
@@ -108,7 +125,7 @@ export async function handleChatRoute({ request, response, url, context }) {
     }
 
     if (!requireNonEmptyString(payload.publicKey)) {
-      sendError(response, 400, "INVALID_PUBLIC_KEY", "A public key is required for encrypted chat.");
+      sendError(response, 400, "INVALID_PUBLIC_KEY", "A public key is required to set up secure chat.");
       return true;
     }
 
@@ -128,7 +145,7 @@ export async function handleChatRoute({ request, response, url, context }) {
     }
 
     if (!requireNonEmptyString(payload.fileName) || !requireNonEmptyString(payload.mimeType) || !requireNonEmptyString(payload.base64Data)) {
-      sendError(response, 400, "INVALID_FILE", "Encrypted attachment upload is missing file data.");
+      sendError(response, 400, "INVALID_FILE", "Attachment upload data is incomplete.");
       return true;
     }
 
@@ -165,7 +182,7 @@ export async function handleChatRoute({ request, response, url, context }) {
     }
 
     if (!requireNonEmptyString(payload.cipherText) || !requireNonEmptyString(payload.cipherIv)) {
-      sendError(response, 400, "INVALID_MESSAGE", "Encrypted message data is required.");
+      sendError(response, 400, "INVALID_MESSAGE", "Message data is required.");
       return true;
     }
 
@@ -173,6 +190,27 @@ export async function handleChatRoute({ request, response, url, context }) {
       sendJson(response, 201, await sendChatMessage(viewer, sendMatch[1], payload));
     } catch (error) {
       sendChatFailure(response, "chat_send", resolved, error);
+    }
+    return true;
+  }
+
+  const encryptionMatch = url.pathname.match(/^\/v1\/chats\/([^/]+)\/messages\/encryption$/);
+  if (request.method === "PUT" && encryptionMatch) {
+    const payload = await readJson(request);
+    if (!payload || typeof payload !== "object") {
+      sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+      return true;
+    }
+
+    if (!Array.isArray(payload.items) || payload.items.length === 0) {
+      sendError(response, 400, "INVALID_ENCRYPTION_UPGRADE", "Choose at least one message to upgrade.");
+      return true;
+    }
+
+    try {
+      sendJson(response, 200, await migrateChatConversationEncryption(viewer, encryptionMatch[1], payload));
+    } catch (error) {
+      sendChatFailure(response, "chat_encryption_upgrade", resolved, error);
     }
     return true;
   }

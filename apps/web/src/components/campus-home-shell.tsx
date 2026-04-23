@@ -1705,6 +1705,8 @@ export function CampusHomeShell({
       <SocialThreadSheet
         viewerName={viewerName}
         viewerUsername={viewerUsername}
+        desktopInsetLeft="var(--vyb-campus-left-width)"
+        desktopInsetRight="var(--vyb-campus-right-width)"
         post={engagement.selectedPost}
         comments={engagement.selectedComments}
         draft={engagement.threadDraft}
