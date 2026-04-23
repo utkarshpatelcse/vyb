@@ -5,19 +5,24 @@ import type {
   CreateMarketPostRequest,
   CreateMarketPostResponse,
   ManageMarketListingResponse,
+  ManageMarketRequestResponse,
   MarketDashboardResponse,
   UpdateMarketListingRequest,
   UpdateMarketListingResponse,
+  UpdateMarketRequestRequest,
+  UpdateMarketRequestResponse,
   ToggleMarketSaveResponse
 } from "@vyb/contracts";
 import {
   createMarketContact as createMarketContactRequest,
   createMarketPost as createMarketPostRequest,
   deleteMarketListing as deleteMarketListingRequest,
+  deleteMarketRequest as deleteMarketRequestCall,
   getMarketDashboard as getMarketDashboardRequest,
   markMarketListingSold as markMarketListingSoldRequest,
   toggleMarketSave as toggleMarketSaveRequest,
-  updateMarketListing as updateMarketListingRequest
+  updateMarketListing as updateMarketListingRequest,
+  updateMarketRequest as updateMarketRequestCall
 } from "./backend";
 import type { DevSession } from "./dev-session";
 
@@ -62,6 +67,17 @@ export async function updateMarketListing(
   }
 }
 
+export async function updateMarketRequest(
+  viewer: DevSession,
+  payload: UpdateMarketRequestRequest
+): Promise<UpdateMarketRequestResponse> {
+  try {
+    return await updateMarketRequestCall(viewer, payload);
+  } catch (error) {
+    throw createMarketFailure("request_update", error);
+  }
+}
+
 export async function markMarketListingSold(
   viewer: DevSession,
   listingId: string
@@ -81,6 +97,17 @@ export async function deleteMarketListing(
     return await deleteMarketListingRequest(viewer, listingId);
   } catch (error) {
     throw createMarketFailure("delete", error);
+  }
+}
+
+export async function deleteMarketRequest(
+  viewer: DevSession,
+  requestId: string
+): Promise<ManageMarketRequestResponse> {
+  try {
+    return await deleteMarketRequestCall(viewer, requestId);
+  } catch (error) {
+    throw createMarketFailure("request_delete", error);
   }
 }
 

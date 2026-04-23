@@ -149,7 +149,8 @@
   word-break: break-word;
 }
 
-.fc-see-more {
+.fc-see-more,
+.fc-read-more {
   display: inline;
   background: none;
   border: none;
@@ -163,7 +164,8 @@
   transition: color 0.15s ease;
 }
 
-.fc-see-more:hover { color: #a78bfa; }
+.fc-see-more:hover,
+.fc-read-more:hover { color: #a78bfa; }
 
 /* ── Media container ─────────────────────────────────────────────────────── */
 .fc-media {

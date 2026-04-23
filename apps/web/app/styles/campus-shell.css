@@ -547,6 +547,15 @@
   padding: 0 1rem 8rem;
 }
 
+.vyb-campus-feed-item {
+  width: 100%;
+}
+
+.vyb-campus-feed-item > .fc-card,
+.vyb-campus-feed-item > .vyb-home-vibes-teaser {
+  width: 100%;
+}
+
 .vyb-campus-feed-card {
   margin-bottom: 1.5rem;
   overflow: hidden;

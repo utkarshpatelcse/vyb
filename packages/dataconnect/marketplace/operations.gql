@@ -385,6 +385,33 @@ mutation UpdateMarketListingDetails(
   )
 }
 
+mutation UpdateMarketRequestDetails(
+  $id: String!
+  $tag: String!
+  $title: String!
+  $detail: String!
+  $category: String!
+  $campusSpot: String!
+  $budgetLabel: String!
+  $budgetAmount: Int
+  $tone: String!
+) @auth(level: NO_ACCESS) @transaction {
+  marketRequest_update(
+    key: { id: $id }
+    data: {
+      tag: $tag
+      title: $title
+      detail: $detail
+      category: $category
+      campusSpot: $campusSpot
+      budgetLabel: $budgetLabel
+      budgetAmount: $budgetAmount
+      tone: $tone
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
 mutation MarkMarketListingSold($id: String!) @auth(level: NO_ACCESS) @transaction {
   marketListing_update(
     key: { id: $id }
@@ -419,6 +446,16 @@ mutation SoftDeleteMarketRequest($id: String!) @auth(level: NO_ACCESS) @transact
 
 mutation SoftDeleteMarketListingMedia($id: String!) @auth(level: NO_ACCESS) @transaction {
   marketListingMedia_update(
+    key: { id: $id }
+    data: {
+      deletedAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation SoftDeleteMarketRequestMedia($id: String!) @auth(level: NO_ACCESS) @transaction {
+  marketRequestMedia_update(
     key: { id: $id }
     data: {
       deletedAt_expr: "request.time"

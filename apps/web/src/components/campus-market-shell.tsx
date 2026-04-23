@@ -4,12 +4,14 @@ import type {
   ContactMarketPostResponse,
   CreateMarketPostResponse,
   ManageMarketListingResponse,
+  ManageMarketRequestResponse,
   MarketDashboardResponse,
   MarketListing,
   MarketMediaAsset,
   MarketRequest,
   MarketTab,
   UpdateMarketListingResponse,
+  UpdateMarketRequestResponse,
   ToggleMarketSaveResponse
 } from "@vyb/contracts";
 import Link from "next/link";
@@ -38,6 +40,7 @@ type CampusMarketShellProps = {
 type ResizeSide = "left" | "right";
 type MarketSort = "latest" | "value-low" | "value-high" | "az";
 type MarketTarget = { type: "listing" | "request"; id: string } | null;
+type MarketEditingTarget = { type: "listing" | "request"; id: string } | null;
 type MarketComposerMode = "create" | "edit";
 type MarketComposerState = {
   tab: MarketTab;
@@ -424,7 +427,7 @@ export function CampusMarketShell({
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [composerMode, setComposerMode] = useState<MarketComposerMode>("create");
-  const [editingListingId, setEditingListingId] = useState<string | null>(null);
+  const [editingTarget, setEditingTarget] = useState<MarketEditingTarget>(null);
   const [composerState, setComposerState] = useState<MarketComposerState>(() => buildComposerState("sale"));
   const [composerMedia, setComposerMedia] = useState<MarketMediaPreview[]>([]);
   const [composerMessage, setComposerMessage] = useState<string | null>(null);
@@ -649,7 +652,7 @@ export function CampusMarketShell({
   function openComposer(nextTab: MarketTab = activeTab) {
     clearComposerMedia();
     setComposerMode("create");
-    setEditingListingId(null);
+    setEditingTarget(null);
     setComposerState(buildComposerState(nextTab));
     setComposerMessage(null);
     setIsComposerOpen(true);
@@ -658,7 +661,7 @@ export function CampusMarketShell({
   function openListingEditor(listing: MarketListing) {
     clearComposerMedia();
     setComposerMode("edit");
-    setEditingListingId(listing.id);
+    setEditingTarget({ type: "listing", id: listing.id });
     setComposerState({
       tab: "sale",
       title: listing.title,
@@ -671,6 +674,26 @@ export function CampusMarketShell({
       tag: ""
     });
     setComposerMedia(listing.media.map(buildExistingMediaPreview));
+    setComposerMessage(null);
+    setIsComposerOpen(true);
+  }
+
+  function openRequestEditor(request: MarketRequest) {
+    clearComposerMedia();
+    setComposerMode("edit");
+    setEditingTarget({ type: "request", id: request.id });
+    setComposerState({
+      tab: request.tab,
+      title: request.title,
+      category: request.category,
+      description: request.detail,
+      condition: "Good condition",
+      priceAmount: "",
+      budgetAmount: request.budgetAmount ? String(request.budgetAmount) : "",
+      budgetLabel: request.budgetLabel,
+      tag: request.tag
+    });
+    setComposerMedia(request.media.map(buildExistingMediaPreview));
     setComposerMessage(null);
     setIsComposerOpen(true);
   }
@@ -698,7 +721,7 @@ export function CampusMarketShell({
     clearComposerMedia();
     setIsComposerOpen(false);
     setComposerMode("create");
-    setEditingListingId(null);
+    setEditingTarget(null);
     setComposerMessage(null);
     setComposerState(buildComposerState(activeTab === "sale" ? "sale" : activeTab));
   }
@@ -834,6 +857,8 @@ export function CampusMarketShell({
   const detailTitle = selectedListing?.title ?? selectedRequest?.title ?? "Market media";
   const contactListing = contactTarget?.type === "listing" ? dashboard.listings.find((item) => item.id === contactTarget.id) ?? null : null;
   const contactRequest = contactTarget?.type === "request" ? dashboard.requests.find((item) => item.id === contactTarget.id) ?? null : null;
+  const isEditingListing = composerMode === "edit" && editingTarget?.type === "listing";
+  const isEditingRequest = composerMode === "edit" && editingTarget?.type === "request";
 
   useEffect(() => {
     setDetailMediaIndex((current) => clampMediaIndex(detailMedia.length, current));
@@ -1021,22 +1046,35 @@ export function CampusMarketShell({
 
     try {
       if (composerMode === "edit") {
-        if (!editingListingId) {
-          setComposerMessage("We could not find that listing to edit.");
+        if (!editingTarget) {
+          setComposerMessage("We could not find that market post to edit.");
           return;
         }
 
         const formData = new FormData();
+        formData.set("tab", composerState.tab);
         formData.set("title", title);
         formData.set("category", category);
         formData.set("description", description);
 
-        if (composerState.condition.trim()) {
+        if (editingTarget.type === "listing" && composerState.condition.trim()) {
           formData.set("condition", composerState.condition.trim());
         }
 
-        if (priceAmount !== null) {
+        if (editingTarget.type === "listing" && priceAmount !== null) {
           formData.set("priceAmount", String(priceAmount));
+        }
+
+        if (editingTarget.type === "request" && budgetAmount !== null) {
+          formData.set("budgetAmount", String(budgetAmount));
+        }
+
+        if (editingTarget.type === "request" && composerState.budgetLabel.trim()) {
+          formData.set("budgetLabel", composerState.budgetLabel.trim());
+        }
+
+        if (editingTarget.type === "request" && composerState.tag.trim()) {
+          formData.set("tag", composerState.tag.trim());
         }
 
         for (const mediaItem of composerMedia) {
@@ -1050,13 +1088,19 @@ export function CampusMarketShell({
           }
         }
 
-        const response = await fetch(`/api/market/listings/${encodeURIComponent(editingListingId)}`, {
+        const response = await fetch(
+          editingTarget.type === "listing"
+            ? `/api/market/listings/${encodeURIComponent(editingTarget.id)}`
+            : `/api/market/requests/${encodeURIComponent(editingTarget.id)}`,
+          {
           method: "PATCH",
           body: formData
-        });
+          }
+        );
 
         const payload = (await response.json().catch(() => null)) as
           | UpdateMarketListingResponse
+          | UpdateMarketRequestResponse
           | {
               error?: {
                 message?: string;
@@ -1065,14 +1109,18 @@ export function CampusMarketShell({
           | null;
 
         if (!response.ok || !payload || !("dashboard" in payload)) {
-          setComposerMessage(payload && "error" in payload ? payload.error?.message ?? "We could not update this listing." : "We could not update this listing.");
+          setComposerMessage(
+            payload && "error" in payload
+              ? payload.error?.message ?? "We could not update this market post."
+              : "We could not update this market post."
+          );
           return;
         }
 
         setDashboard(payload.dashboard);
         closeDetailSheet();
         closeComposer();
-        setFlashMessage("Your listing has been updated.");
+        setFlashMessage(editingTarget.type === "listing" ? "Your listing has been updated." : "Your request has been updated.");
         return;
       }
 
@@ -1141,7 +1189,7 @@ export function CampusMarketShell({
             : "Your lend request is now live for the campus."
       );
     } catch {
-      setComposerMessage(composerMode === "edit" ? "We could not update this listing." : "We could not publish this market post.");
+      setComposerMessage(composerMode === "edit" ? "We could not update this market post." : "We could not publish this market post.");
     } finally {
       setIsComposerSubmitting(false);
     }
@@ -1249,6 +1297,44 @@ export function CampusMarketShell({
       setFlashMessage(`${listing.title} was deleted from the market.`);
     } catch {
       setFlashMessage("We could not delete this listing.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleDeleteRequest(request: MarketRequest) {
+    const confirmed = window.confirm(`Delete "${request.title}" from the market board?`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setBusyAction(`delete-request:${request.id}`);
+
+    try {
+      const response = await fetch(`/api/market/requests/${encodeURIComponent(request.id)}`, {
+        method: "DELETE"
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | ManageMarketRequestResponse
+        | {
+            error?: {
+              message?: string;
+            };
+          }
+        | null;
+
+      if (!response.ok || !payload || !("dashboard" in payload)) {
+        setFlashMessage(payload && "error" in payload ? payload.error?.message ?? "We could not delete this request." : "We could not delete this request.");
+        return;
+      }
+
+      setDashboard(payload.dashboard);
+      closeDetailSheet();
+      setFlashMessage(`${request.title} was removed from the market board.`);
+    } catch {
+      setFlashMessage("We could not delete this request.");
     } finally {
       setBusyAction(null);
     }
@@ -1548,10 +1634,9 @@ export function CampusMarketShell({
                     <button
                       type="button"
                       className="vyb-market-request-action"
-                      disabled={isOwnRequest}
-                      onClick={() => openContactSheet({ type: "request", id: request.id })}
+                      onClick={() => (isOwnRequest ? openRequestEditor(request) : openContactSheet({ type: "request", id: request.id }))}
                     >
-                      <span>{isOwnRequest ? "Your request" : "Offer help"}</span>
+                      <span>{isOwnRequest ? "Edit request" : "Offer help"}</span>
                       <ChevronRightIcon />
                     </button>
                   </article>
@@ -1654,7 +1739,7 @@ export function CampusMarketShell({
             className="vyb-campus-compose-sheet"
             role="dialog"
             aria-modal="true"
-            aria-label={composerMode === "edit" ? "Edit market listing" : "Create a market post"}
+            aria-label={composerMode === "edit" ? "Edit market post" : "Create a market post"}
             onClick={(event) => event.stopPropagation()}
           >
             <div className="vyb-campus-compose-handle" aria-hidden="true" />
@@ -1662,10 +1747,12 @@ export function CampusMarketShell({
             <div className="vyb-campus-compose-head">
               <div className="vyb-campus-compose-head-copy">
                 <span className="vyb-campus-compose-kicker">Campus market</span>
-                <strong>{composerMode === "edit" ? "Edit listing" : "Create post"}</strong>
+                <strong>{composerMode === "edit" ? (isEditingRequest ? "Edit request" : "Edit listing") : "Create post"}</strong>
                 <span>
                   {composerMode === "edit"
-                    ? "Update your listing details without reposting it."
+                    ? isEditingRequest
+                      ? "Update your request details without posting it again."
+                      : "Update your listing details without reposting it."
                     : "List an item, post a request, or ask to borrow something trusted on campus."}
                 </span>
               </div>
@@ -1851,7 +1938,7 @@ export function CampusMarketShell({
                   <div className="vyb-market-upload-header">
                     <div>
                       <span className="vyb-campus-compose-kicker">{composerMode === "edit" ? "Manage media" : "Media upload"}</span>
-                      <strong>{composerMode === "edit" ? "Add or remove listing media" : "Upload images or videos directly"}</strong>
+                      <strong>{composerMode === "edit" ? `Add or remove ${isEditingRequest ? "request" : "listing"} media` : "Upload images or videos directly"}</strong>
                     </div>
                     <button type="button" className="vyb-market-upload-trigger" onClick={openComposerFilePicker} disabled={isComposerSubmitting}>
                       <PlusIcon />
@@ -1926,7 +2013,9 @@ export function CampusMarketShell({
                 <div className="vyb-market-compose-preview">
                   <span>
                     {composerMode === "edit"
-                      ? "Editing listing"
+                      ? isEditingRequest
+                        ? "Editing request"
+                        : "Editing listing"
                       : composerState.tab === "sale"
                         ? "Live listing"
                         : composerState.tab === "buying"
@@ -2193,17 +2282,39 @@ export function CampusMarketShell({
                   </button>
                 )
               ) : selectedRequest ? (
-                <button
-                  type="button"
-                  className="vyb-campus-compose-primary"
-                  disabled={selectedRequest.requester.userId === dashboard.viewer.userId}
-                  onClick={() => {
-                    closeDetailSheet();
-                    openContactSheet({ type: "request", id: selectedRequest.id });
-                  }}
-                >
-                  Offer help
-                </button>
+                selectedRequest.requester.userId === dashboard.viewer.userId ? (
+                  <>
+                    <button
+                      type="button"
+                      className="vyb-campus-compose-secondary vyb-market-manage-danger"
+                      disabled={busyAction === `delete-request:${selectedRequest.id}`}
+                      onClick={() => handleDeleteRequest(selectedRequest)}
+                    >
+                      {busyAction === `delete-request:${selectedRequest.id}` ? "Deleting..." : "Delete"}
+                    </button>
+                    <button
+                      type="button"
+                      className="vyb-campus-compose-primary"
+                      onClick={() => {
+                        closeDetailSheet();
+                        openRequestEditor(selectedRequest);
+                      }}
+                    >
+                      Edit request
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    className="vyb-campus-compose-primary"
+                    onClick={() => {
+                      closeDetailSheet();
+                      openContactSheet({ type: "request", id: selectedRequest.id });
+                    }}
+                  >
+                    Offer help
+                  </button>
+                )
               ) : null}
             </div>
           </div>

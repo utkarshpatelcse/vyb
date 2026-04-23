@@ -1224,7 +1224,7 @@ export function CampusHomeShell({
                 : [];
 
               return (
-              <div key={post.id}>
+              <div key={post.id} className="vyb-campus-feed-item">
                 <article id={`post-${post.id}`} className="fc-card">
                   {/* ── Header ── */}
                   <div className="fc-header">

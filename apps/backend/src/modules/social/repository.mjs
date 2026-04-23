@@ -665,6 +665,19 @@ function mapStoryRecord(item, viewerUserId = null, reactionMaps = null, viewMaps
   };
 }
 
+function mapConnectionProfile(profile, viewerFollowingIds = null, viewerUserId = null) {
+  return {
+    userId: profile.userId,
+    username: profile.username,
+    displayName: profile.fullName,
+    collegeName: profile.collegeName,
+    course: profile.course,
+    stream: profile.stream,
+    isFollowing: viewerUserId ? Boolean(viewerFollowingIds?.has(profile.userId)) : false,
+    isViewer: profile.userId === viewerUserId
+  };
+}
+
 async function mapPostList(records, viewerMembershipId = null, profileMap = null) {
   if (records.length === 0) {
     return [];
@@ -1243,6 +1256,57 @@ export async function markStorySeen({ storyId, membershipId }) {
     membershipId,
     viewed: true
   };
+}
+
+export async function listProfileConnections({
+  tenantId,
+  targetUserId,
+  viewerUserId = null,
+  scope = "followers",
+  limit = 50
+}) {
+  const normalizedScope = scope === "following" ? "following" : "followers";
+  const connectionsResponse =
+    normalizedScope === "followers"
+      ? await listFollowersByUserQuery(getSocialDc(), {
+          tenantId,
+          followingUserId: targetUserId,
+          limit
+        })
+      : await listFollowingByUserQuery(getSocialDc(), {
+          tenantId,
+          followerUserId: targetUserId,
+          limit
+        });
+
+  const connectionUserIds = Array.from(
+    new Set(
+      connectionsResponse.data.follows
+        .map((item) => (normalizedScope === "followers" ? item.followerUserId : item.followingUserId))
+        .filter((value) => typeof value === "string" && value.trim().length > 0)
+    )
+  );
+  if (connectionUserIds.length === 0) {
+    return [];
+  }
+
+  const [profileMap, viewerFollowingIds] = await Promise.all([
+    buildProfileByUserIdMap(tenantId, connectionUserIds),
+    viewerUserId
+      ? listFollowingByUserQuery(getSocialDc(), {
+          tenantId,
+          followerUserId: viewerUserId,
+          limit: TENANT_SCAN_LIMIT
+        }).then((response) => new Set(response.data.follows.map((item) => item.followingUserId)))
+      : Promise.resolve(new Set())
+  ]);
+
+  return connectionUserIds
+    .map((connectionUserId) => {
+      const profile = profileMap.get(connectionUserId) ?? null;
+      return profile ? mapConnectionProfile(profile, viewerFollowingIds, viewerUserId) : null;
+    })
+    .filter(Boolean);
 }
 
 export async function followUser({ tenantId, followerUserId, followingUserId }) {

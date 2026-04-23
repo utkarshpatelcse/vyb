@@ -26,8 +26,11 @@ import {
   markMarketListingSold,
   softDeleteMarketListing,
   softDeleteMarketListingMedia,
+  softDeleteMarketRequest,
+  softDeleteMarketRequestMedia,
   softDeleteMarketListingSave,
-  updateMarketListingDetails
+  updateMarketListingDetails,
+  updateMarketRequestDetails
 } from "../../../../../packages/dataconnect/marketplace-admin-sdk/esm/index.esm.js";
 import { listProfilesByTenant } from "../identity/profile-repository.mjs";
 
@@ -337,6 +340,12 @@ async function getLiveListingMediaRecords(tenantId, listingId) {
   return response.data.marketListingMediaRecords.filter((item) => !item.deletedAt && item.listingId === listingId);
 }
 
+async function getLiveRequestMediaRecords(tenantId, requestId) {
+  const dc = getMarketplaceDc();
+  const response = await listMarketRequestMediaByTenant(dc, { tenantId, limit: TENANT_SCAN_LIMIT });
+  return response.data.marketRequestMediaRecords.filter((item) => !item.deletedAt && item.requestId === requestId);
+}
+
 async function deleteMarketMediaAssets(assets) {
   const removable = assets.filter((asset) => typeof asset.storagePath === "string" && asset.storagePath.length > 0);
 
@@ -361,6 +370,21 @@ async function requireOwnedActiveLiveListing(viewer, listingId) {
   }
 
   return { dc, listing };
+}
+
+async function requireOwnedActiveLiveRequest(viewer, requestId) {
+  const dc = getMarketplaceDc();
+  const request = (await getMarketRequestById(dc, { requestId })).data.marketRequest;
+
+  if (!request || request.tenantId !== viewer.tenantId || request.deletedAt || request.status !== "active") {
+    throw new Error("That request is no longer available.");
+  }
+
+  if (request.requesterUserId !== viewer.userId) {
+    throw new Error("You can only manage your own request.");
+  }
+
+  return { dc, request };
 }
 
 export async function getLiveMarketDashboard(viewer) {
@@ -533,6 +557,69 @@ export async function updateLiveMarketListing(viewer, payload) {
   };
 }
 
+export async function updateLiveMarketRequest(viewer, payload) {
+  const { dc, request } = await requireOwnedActiveLiveRequest(viewer, payload.requestId);
+  const existingMedia = await getLiveRequestMediaRecords(viewer.tenantId, request.id);
+  const tab = request.tab === "lend" ? "lend" : "buying";
+  const category = normalizeText(payload.category, "Other");
+
+  await updateMarketRequestDetails(dc, {
+    id: request.id,
+    tag: buildRequestTag(tab, payload.tag),
+    title: normalizeText(payload.title),
+    detail: normalizeText(payload.description),
+    category,
+    campusSpot: request.campusSpot,
+    budgetLabel: buildBudgetLabel(tab, payload.budgetAmount ?? null, payload.budgetLabel),
+    budgetAmount:
+      typeof payload.budgetAmount === "number" && Number.isFinite(payload.budgetAmount) ? Math.round(payload.budgetAmount) : null,
+    tone: buildTone(category, tab)
+  });
+
+  const keepMediaIds = new Set(
+    Array.isArray(payload.keepMediaIds) ? payload.keepMediaIds : existingMedia.map((item) => item.id)
+  );
+  const removedMedia = existingMedia.filter((item) => !keepMediaIds.has(item.id));
+
+  await Promise.all(removedMedia.map((item) => softDeleteMarketRequestMedia(dc, { id: item.id })));
+
+  const createdAt = new Date().toISOString();
+  await Promise.all(
+    (payload.media ?? []).map((asset) => {
+      const persisted = buildPersistedMedia(asset, createdAt);
+      return createMarketRequestMedia(dc, {
+        id: persisted.id,
+        tenantId: viewer.tenantId,
+        requestId: request.id,
+        kind: persisted.kind,
+        url: persisted.url,
+        fileName: persisted.fileName,
+        mimeType: persisted.mimeType,
+        sizeBytes: persisted.sizeBytes,
+        storagePath: persisted.storagePath,
+        createdAt: persisted.createdAt
+      });
+    })
+  );
+
+  await deleteMarketMediaAssets(
+    removedMedia.map((item) => ({
+      id: item.id,
+      kind: item.kind === "video" ? "video" : "image",
+      url: item.url,
+      fileName: item.fileName,
+      mimeType: item.mimeType,
+      sizeBytes: toMediaSizeBytes(item.sizeBytes),
+      storagePath: item.storagePath ?? null
+    }))
+  );
+
+  return {
+    dashboard: await getLiveMarketDashboard(viewer),
+    requestId: request.id
+  };
+}
+
 export async function markLiveMarketListingSold(viewer, listingId) {
   const { dc, listing } = await requireOwnedActiveLiveListing(viewer, listingId);
   await markMarketListingSold(dc, { id: listing.id });
@@ -564,6 +651,30 @@ export async function deleteLiveMarketListing(viewer, listingId) {
   return {
     dashboard: await getLiveMarketDashboard(viewer),
     listingId: listing.id,
+    action: "deleted"
+  };
+}
+
+export async function deleteLiveMarketRequest(viewer, requestId) {
+  const { dc, request } = await requireOwnedActiveLiveRequest(viewer, requestId);
+  const existingMedia = await getLiveRequestMediaRecords(viewer.tenantId, request.id);
+  await softDeleteMarketRequest(dc, { id: request.id });
+  await Promise.all(existingMedia.map((item) => softDeleteMarketRequestMedia(dc, { id: item.id })));
+  await deleteMarketMediaAssets(
+    existingMedia.map((item) => ({
+      id: item.id,
+      kind: item.kind === "video" ? "video" : "image",
+      url: item.url,
+      fileName: item.fileName,
+      mimeType: item.mimeType,
+      sizeBytes: toMediaSizeBytes(item.sizeBytes),
+      storagePath: item.storagePath ?? null
+    }))
+  );
+
+  return {
+    dashboard: await getLiveMarketDashboard(viewer),
+    requestId: request.id,
     action: "deleted"
   };
 }

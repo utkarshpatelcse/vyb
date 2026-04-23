@@ -5,10 +5,12 @@ import {
   createLiveMarketContact,
   createLiveMarketPost,
   deleteLiveMarketListing,
+  deleteLiveMarketRequest,
   getLiveMarketDashboard,
   markLiveMarketListingSold,
   toggleLiveMarketSave,
-  updateLiveMarketListing
+  updateLiveMarketListing,
+  updateLiveMarketRequest
 } from "./repository.mjs";
 
 function requireNonEmptyString(value) {
@@ -294,6 +296,75 @@ export async function handleMarketRoute({ request, response, url, context }) {
       );
     } catch (error) {
       sendMarketFailure(response, "market_update", resolved, error);
+    }
+    return true;
+  }
+
+  const requestMatch =
+    request.method === "PATCH" || request.method === "DELETE"
+      ? url.pathname.match(/^\/v1\/market\/requests\/([^/]+)$/)
+      : null;
+  if (requestMatch) {
+    const requestId = requestMatch[1];
+
+    if (request.method === "DELETE") {
+      try {
+        sendJson(response, 200, await deleteLiveMarketRequest(viewer, requestId));
+      } catch (error) {
+        sendMarketFailure(response, "market_request_delete", resolved, error);
+      }
+      return true;
+    }
+
+    const payload = await readJson(request);
+    if (!payload || typeof payload !== "object") {
+      sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+      return true;
+    }
+
+    const title = requireNonEmptyString(payload.title) ? payload.title.trim() : "";
+    const category = requireNonEmptyString(payload.category) ? payload.category.trim() : "";
+    const description = requireNonEmptyString(payload.description) ? payload.description.trim() : "";
+    const budgetAmount = parseAmount(payload.budgetAmount);
+
+    if (!title) {
+      sendError(response, 400, "INVALID_TITLE", "Add a title for the request.");
+      return true;
+    }
+
+    if (!category) {
+      sendError(response, 400, "INVALID_CATEGORY", "Choose a category for the request.");
+      return true;
+    }
+
+    if (!description) {
+      sendError(response, 400, "INVALID_DESCRIPTION", "Add a short description for the request.");
+      return true;
+    }
+
+    if (budgetAmount !== null && (!Number.isFinite(budgetAmount) || budgetAmount < 0)) {
+      sendError(response, 400, "INVALID_BUDGET", "Budget must be a positive amount.");
+      return true;
+    }
+
+    try {
+      sendJson(
+        response,
+        200,
+        await updateLiveMarketRequest(viewer, {
+          requestId,
+          title,
+          category,
+          description,
+          keepMediaIds: Array.isArray(payload.keepMediaIds) ? payload.keepMediaIds.filter(requireNonEmptyString) : [],
+          media: Array.isArray(payload.media) ? payload.media : [],
+          budgetAmount,
+          budgetLabel: requireNonEmptyString(payload.budgetLabel) ? payload.budgetLabel.trim() : null,
+          tag: requireNonEmptyString(payload.tag) ? payload.tag.trim() : null
+        })
+      );
+    } catch (error) {
+      sendMarketFailure(response, "market_request_update", resolved, error);
     }
     return true;
   }

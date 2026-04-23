@@ -1,6 +1,14 @@
 "use client";
 
-import type { ActivityItem, CourseItem, FeedCard, ProfileRecord, ResourceItem } from "@vyb/contracts";
+import type {
+  ActivityItem,
+  CourseItem,
+  FeedCard,
+  ProfileConnectionItem,
+  ProfileConnectionsResponse,
+  ProfileRecord,
+  ResourceItem
+} from "@vyb/contracts";
 import { sendPasswordResetEmail } from "firebase/auth";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -71,6 +79,14 @@ type PrivacyPrefs = {
   discoverable: boolean;
   allowMessages: boolean;
   activityVisible: boolean;
+};
+type ConnectionScope = "followers" | "following";
+type ConnectionsSheetState = {
+  open: boolean;
+  scope: ConnectionScope;
+  items: ProfileConnectionItem[];
+  loading: boolean;
+  error: string | null;
 };
 
 function IconBase({ children }: { children: ReactNode }) {
@@ -636,12 +652,22 @@ export function CampusProfileShell({
   const [avatarCropDraft, setAvatarCropDraft] = useState<AvatarCropDraft | null>(null);
   const [followingState, setFollowingState] = useState(isFollowing);
   const [followerCount, setFollowerCount] = useState(stats.followers);
+  const [followingCount, setFollowingCount] = useState(stats.following);
+  const [connectionsSheet, setConnectionsSheet] = useState<ConnectionsSheetState>({
+    open: false,
+    scope: "followers",
+    items: [],
+    loading: false,
+    error: null
+  });
+  const [connectionBusyUsernames, setConnectionBusyUsernames] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<ProfileTab>("posts");
 
   const streamOptions = useMemo(() => getStreamOptions(profileDraft.course), [profileDraft.course]);
   const yearOptions = useMemo(() => getYearOptionsForCourse(profileDraft.course), [profileDraft.course]);
   const vibePosts = useMemo(() => posts.filter((post) => post.kind === "video"), [posts]);
   const likesCount = useMemo(() => posts.reduce((total, post) => total + post.reactions, 0), [posts]);
+  const blockedUsernameSet = useMemo(() => new Set(blockedAccounts), [blockedAccounts]);
   const visiblePosts = activeTab === "posts" ? posts : activeTab === "vibes" ? vibePosts : ([] as FeedCard[]);
   const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
   const profileSeed = `${username}-${viewerName}`;
@@ -684,9 +710,12 @@ export function CampusProfileShell({
     setThemeMode(nextTheme);
     setNotificationPrefs(readStoredJson("vyb-profile-notifications", notificationPrefs));
     setPrivacyPrefs(readStoredJson("vyb-profile-privacy", privacyPrefs));
-    setBlockedAccounts(readStoredJson("vyb-profile-blocked", []));
     setMutedAccounts(readStoredJson("vyb-profile-muted", []));
   }, [isOwnProfile]);
+
+  useEffect(() => {
+    setBlockedAccounts(readStoredJson("vyb-profile-blocked", []));
+  }, []);
 
   useEffect(() => {
     const storedAvatar = readStoredAvatarUrl(avatarStorageIdentity);
@@ -724,11 +753,8 @@ export function CampusProfileShell({
   }, [privacyPrefs, isOwnProfile]);
 
   useEffect(() => {
-    if (!isOwnProfile) {
-      return;
-    }
     window.localStorage.setItem("vyb-profile-blocked", JSON.stringify(blockedAccounts));
-  }, [blockedAccounts, isOwnProfile]);
+  }, [blockedAccounts]);
 
   useEffect(() => {
     if (!isOwnProfile) {
@@ -738,18 +764,19 @@ export function CampusProfileShell({
   }, [mutedAccounts, isOwnProfile]);
 
   useEffect(() => {
-    if (!settingsOpen && !editProfileOpen) {
+    if (!settingsOpen && !editProfileOpen && !connectionsSheet.open) {
       return;
     }
     function handleEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setSettingsOpen(false);
         setEditProfileOpen(false);
+        setConnectionsSheet((current) => ({ ...current, open: false, loading: false, error: null }));
       }
     }
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
-  }, [settingsOpen, editProfileOpen]);
+  }, [connectionsSheet.open, editProfileOpen, settingsOpen]);
 
   useEffect(() => {
     if (!message) {
@@ -1049,7 +1076,7 @@ export function CampusProfileShell({
       stats: {
         posts: stats.posts,
         followers: followerCount,
-        following: stats.following,
+        following: followingCount,
         likes: likesCount
       },
       activity: recentActivity,
@@ -1075,6 +1102,177 @@ export function CampusProfileShell({
     showSuccess("Profile data export downloaded.");
   }
 
+  function closeConnectionsSheet() {
+    setConnectionsSheet((current) => ({
+      ...current,
+      open: false,
+      loading: false,
+      error: null
+    }));
+  }
+
+  function setConnectionBusyState(targetUsername: string, nextBusy: boolean) {
+    setConnectionBusyUsernames((current) => {
+      const next = new Set(current);
+      if (nextBusy) {
+        next.add(targetUsername);
+      } else {
+        next.delete(targetUsername);
+      }
+      return Array.from(next);
+    });
+  }
+
+  async function submitFollowState(targetUsername: string, shouldFollow: boolean) {
+    const response = await fetch(`/api/follows/${encodeURIComponent(targetUsername)}`, {
+      method: shouldFollow ? "PUT" : "DELETE"
+    });
+
+    const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+    if (!response.ok) {
+      throw new Error(payload?.error?.message ?? "We could not update that follow right now.");
+    }
+  }
+
+  async function openConnectionsSheet(scope: ConnectionScope) {
+    setConnectionsSheet({
+      open: true,
+      scope,
+      items: [],
+      loading: true,
+      error: null
+    });
+
+    try {
+      const response = await fetch(`/api/users/${encodeURIComponent(username)}/${scope}`, {
+        cache: "no-store"
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | ProfileConnectionsResponse
+        | {
+            error?: {
+              message?: string;
+            };
+          }
+        | null;
+
+      if (!response.ok || !payload || !("items" in payload)) {
+        throw new Error(payload && "error" in payload ? payload.error?.message ?? `We could not load ${scope}.` : `We could not load ${scope}.`);
+      }
+
+      setConnectionsSheet((current) =>
+        current.scope !== scope
+          ? current
+          : {
+              ...current,
+              items: payload.items,
+              loading: false,
+              error: null
+            }
+      );
+    } catch (error) {
+      setConnectionsSheet((current) =>
+        current.scope !== scope
+          ? current
+          : {
+              ...current,
+              items: [],
+              loading: false,
+              error: error instanceof Error ? error.message : `We could not load ${scope}.`
+            }
+      );
+    }
+  }
+
+  async function handleConnectionFollowToggle(item: ProfileConnectionItem) {
+    if (item.isViewer) {
+      return;
+    }
+
+    const nextFollowingState = !item.isFollowing;
+    setConnectionBusyState(item.username, true);
+    setConnectionsSheet((current) => ({ ...current, error: null }));
+
+    try {
+      await submitFollowState(item.username, nextFollowingState);
+
+      setConnectionsSheet((current) => ({
+        ...current,
+        error: null,
+        items: current.items.map((entry) =>
+          entry.username === item.username
+            ? {
+                ...entry,
+                isFollowing: nextFollowingState
+              }
+            : entry
+        )
+      }));
+
+      if (isOwnProfile) {
+        setFollowingCount((current) => Math.max(0, current + (nextFollowingState ? 1 : -1)));
+      }
+
+      showSuccess(nextFollowingState ? `Following @${item.username}.` : `Unfollowed @${item.username}.`);
+    } catch (error) {
+      setConnectionsSheet((current) => ({
+        ...current,
+        error: error instanceof Error ? error.message : "We could not update that follow right now."
+      }));
+      showError(error instanceof Error ? error.message : "We could not update that follow right now.");
+    } finally {
+      setConnectionBusyState(item.username, false);
+    }
+  }
+
+  async function handleConnectionBlockToggle(item: ProfileConnectionItem) {
+    if (item.isViewer) {
+      return;
+    }
+
+    const alreadyBlocked = blockedUsernameSet.has(item.username);
+    setConnectionBusyState(item.username, true);
+    setConnectionsSheet((current) => ({ ...current, error: null }));
+
+    try {
+      if (alreadyBlocked) {
+        setBlockedAccounts((current) => current.filter((entry) => entry !== item.username));
+        showSuccess(`@${item.username} removed from blocked accounts.`);
+        return;
+      }
+
+      if (item.isFollowing) {
+        await submitFollowState(item.username, false);
+        setConnectionsSheet((current) => ({
+          ...current,
+          items: current.items.map((entry) =>
+            entry.username === item.username
+              ? {
+                  ...entry,
+                  isFollowing: false
+                }
+              : entry
+          )
+        }));
+
+        if (isOwnProfile) {
+          setFollowingCount((current) => Math.max(0, current - 1));
+        }
+      }
+
+      setBlockedAccounts((current) => Array.from(new Set([...current, item.username])));
+      showSuccess(`@${item.username} blocked on this device.`);
+    } catch (error) {
+      setConnectionsSheet((current) => ({
+        ...current,
+        error: error instanceof Error ? error.message : "We could not update that account right now."
+      }));
+      showError(error instanceof Error ? error.message : "We could not update that account right now.");
+    } finally {
+      setConnectionBusyState(item.username, false);
+    }
+  }
+
   async function handleFollowToggle() {
     if (isOwnProfile) {
       return;
@@ -1084,22 +1282,14 @@ export function CampusProfileShell({
     setMessage(null);
 
     try {
-      const response = await fetch(`/api/follows/${encodeURIComponent(username)}`, {
-        method: followingState ? "DELETE" : "PUT"
-      });
-
-      const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
-      if (!response.ok) {
-        showError(payload?.error?.message ?? "We could not update that follow right now.");
-        return;
-      }
-
+      const nextFollowingState = !followingState;
+      await submitFollowState(username, nextFollowingState);
       setFollowingState((current) => !current);
       setFollowerCount((current) => Math.max(0, current + (followingState ? -1 : 1)));
-      showSuccess(followingState ? `Unfollowed @${username}.` : `Following @${username}.`);
+      showSuccess(nextFollowingState ? `Following @${username}.` : `Unfollowed @${username}.`);
       router.refresh();
-    } catch {
-      showError("We could not update that follow right now.");
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "We could not update that follow right now.");
     } finally {
       setBusy(false);
     }
@@ -1167,6 +1357,7 @@ export function CampusProfileShell({
   ];
 
   return (
+    <>
     <main className="vyb-campus-home vyb-profile-layout" style={layoutStyle}>
       <CampusDesktopNavigation navItems={navItems} viewerName={viewerName} viewerUsername={username} />
 
@@ -1349,8 +1540,24 @@ export function CampusProfileShell({
 
                 <div className="vyb-insta-stats">
                   <span><strong>{formatMetric(stats.posts)}</strong> posts</span>
-                  <span><strong>{formatMetric(followerCount)}</strong> followers</span>
-                  <span><strong>{formatMetric(stats.following)}</strong> following</span>
+                  <button
+                    type="button"
+                    className="vyb-insta-stat-button"
+                    onClick={() => openConnectionsSheet("followers")}
+                    aria-haspopup="dialog"
+                    aria-expanded={connectionsSheet.open && connectionsSheet.scope === "followers"}
+                  >
+                    <strong>{formatMetric(followerCount)}</strong> followers
+                  </button>
+                  <button
+                    type="button"
+                    className="vyb-insta-stat-button"
+                    onClick={() => openConnectionsSheet("following")}
+                    aria-haspopup="dialog"
+                    aria-expanded={connectionsSheet.open && connectionsSheet.scope === "following"}
+                  >
+                    <strong>{formatMetric(followingCount)}</strong> following
+                  </button>
                 </div>
               </div>
             </div>
@@ -1690,5 +1897,93 @@ export function CampusProfileShell({
 
       <CampusMobileNavigation navItems={navItems} />
     </main>
+    {connectionsSheet.open ? (
+      <div className="vyb-profile-connections-backdrop" role="presentation" onClick={closeConnectionsSheet}>
+        <div
+          className="vyb-profile-connections-sheet"
+          role="dialog"
+          aria-modal="true"
+          aria-label={connectionsSheet.scope === "followers" ? "Followers" : "Following"}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="vyb-profile-connections-head">
+            <div>
+              <strong>{connectionsSheet.scope === "followers" ? "Followers" : "Following"}</strong>
+              <span>@{username}</span>
+            </div>
+            <button
+              type="button"
+              className="vyb-profile-connections-close"
+              aria-label="Close connections"
+              onClick={closeConnectionsSheet}
+            >
+              <CloseIcon />
+            </button>
+          </div>
+
+          <div className="vyb-profile-connections-list">
+            {connectionsSheet.loading ? <p className="vyb-profile-connections-state">Loading list...</p> : null}
+            {!connectionsSheet.loading && connectionsSheet.error ? (
+              <p className="vyb-profile-connections-state">{connectionsSheet.error}</p>
+            ) : null}
+            {!connectionsSheet.loading && !connectionsSheet.error && connectionsSheet.items.length === 0 ? (
+              <p className="vyb-profile-connections-state">
+                No {connectionsSheet.scope === "followers" ? "followers" : "following"} visible yet.
+              </p>
+            ) : null}
+
+            {connectionsSheet.items.map((item) => {
+              const isConnectionBusy = connectionBusyUsernames.includes(item.username);
+              const isBlocked = blockedUsernameSet.has(item.username);
+
+              return (
+                <article key={item.userId} className="vyb-profile-connections-item">
+                  <Link
+                    href={item.isViewer ? "/dashboard" : `/u/${encodeURIComponent(item.username)}`}
+                    className="vyb-profile-connections-user"
+                    onClick={closeConnectionsSheet}
+                  >
+                    <span className="vyb-profile-connections-avatar">
+                      <img src={buildAvatarUrl(item.username)} alt={item.displayName} />
+                    </span>
+                    <span className="vyb-profile-connections-copy">
+                      <strong>{item.displayName}</strong>
+                      <span>@{item.username}</span>
+                      <span>{[item.course, item.stream, item.collegeName].filter(Boolean).join(" • ")}</span>
+                    </span>
+                  </Link>
+
+                  <div className="vyb-profile-connections-actions">
+                    {item.isViewer ? (
+                      <span className="vyb-profile-connections-badge">You</span>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className={`vyb-profile-connections-button${item.isFollowing ? " is-active" : ""}`}
+                          onClick={() => handleConnectionFollowToggle(item)}
+                          disabled={isConnectionBusy}
+                        >
+                          {isConnectionBusy ? "Working..." : item.isFollowing ? "Following" : "Follow"}
+                        </button>
+                        <button
+                          type="button"
+                          className={`vyb-profile-connections-button is-secondary${isBlocked ? " is-danger" : ""}`}
+                          onClick={() => handleConnectionBlockToggle(item)}
+                          disabled={isConnectionBusy}
+                        >
+                          {isConnectionBusy ? "Working..." : isBlocked ? "Unblock" : "Block"}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    ) : null}
+    </>
   );
 }

@@ -1,7 +1,5 @@
 import "server-only";
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
 import type {
   CampusEvent,
   CampusEventActorSummary,
@@ -33,6 +31,7 @@ import type {
 } from "@vyb/contracts";
 import type { DevSession } from "./dev-session";
 import { deleteEventMediaAssets } from "./events-media-server";
+import { getFirebaseAdminDatabase } from "./firebase-admin-server";
 import type { EventViewerIdentity } from "./events-types";
 
 type StoredRegistration = CampusEventRegistration;
@@ -66,10 +65,10 @@ type EventStore = {
   events: StoredEvent[];
 };
 
-const storePath = path.resolve(process.cwd(), "../../data/events-store.json");
 const defaultStore: EventStore = {
   events: []
 };
+const EVENTS_STORE_ROOT = "campus-event-stores";
 
 const seedMediaByCategory: Record<string, string> = {
   Cultural: "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=1200&q=80&auto=format&fit=crop",
@@ -78,9 +77,6 @@ const seedMediaByCategory: Record<string, string> = {
   Sports: "https://images.unsplash.com/photo-1552674605-db6ffd4facb5?w=1200&q=80&auto=format&fit=crop",
   Film: "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=1200&q=80&auto=format&fit=crop"
 };
-
-let storeCache: EventStore | null = null;
-let writeQueue = Promise.resolve();
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -658,38 +654,95 @@ function toCampusEvent(event: StoredEvent, viewer?: Pick<DevSession, "userId">):
   };
 }
 
-async function loadStore() {
-  if (storeCache) {
-    return storeCache;
-  }
-
-  try {
-    const raw = await readFile(storePath, "utf8");
-    const parsed = JSON.parse(raw) as Partial<EventStore>;
-    storeCache = {
-      events: Array.isArray(parsed.events) ? parsed.events.map((event) => normalizeStoredEvent(event)) : []
-    };
-  } catch {
-    storeCache = clone(defaultStore);
-  }
-
-  return storeCache;
+function getStoreRef(tenantId: string) {
+  return getFirebaseAdminDatabase().ref(`${EVENTS_STORE_ROOT}/${tenantId}`);
 }
 
-async function saveStore(nextStore: EventStore) {
-  storeCache = nextStore;
-  await mkdir(path.dirname(storePath), { recursive: true });
-  writeQueue = writeQueue.then(() => writeFile(storePath, `${JSON.stringify(nextStore, null, 2)}\n`, "utf8"));
-  await writeQueue;
+function normalizeStore(raw: unknown, tenantId: string): EventStore {
+  const parsed = raw && typeof raw === "object" ? (raw as Partial<EventStore>) : null;
+  return {
+    events: Array.isArray(parsed?.events)
+      ? parsed.events.map((event) => normalizeStoredEvent(event)).filter((event) => event.tenantId === tenantId)
+      : []
+  };
+}
+
+function serializeStore(store: EventStore) {
+  return {
+    events: clone(store.events)
+  };
+}
+
+function seedTenantStoreIfEmpty(store: EventStore, tenantId: string) {
+  if (store.events.some((event) => event.tenantId === tenantId)) {
+    return false;
+  }
+
+  store.events.push(...buildSeedEvents(tenantId));
+  return true;
+}
+
+async function loadStore(tenantId: string) {
+  const snapshot = await getStoreRef(tenantId).get();
+  return normalizeStore(snapshot.val(), tenantId);
+}
+
+async function transactStore<T>(
+  tenantId: string,
+  mutate: (store: EventStore) => {
+    result: T;
+    changed?: boolean;
+  }
+) {
+  const storeRef = getStoreRef(tenantId);
+  let finalStore = clone(defaultStore);
+  let finalResult: T | undefined;
+  let shouldPersist = false;
+
+  const transaction = await storeRef.transaction(
+    (current) => {
+      const store = normalizeStore(current, tenantId);
+      const outcome = mutate(store);
+
+      finalStore = store;
+      finalResult = outcome.result;
+      shouldPersist = outcome.changed !== false;
+
+      if (!shouldPersist) {
+        return undefined;
+      }
+
+      return serializeStore(store);
+    },
+    undefined,
+    false
+  );
+
+  if (finalResult === undefined) {
+    throw new Error("We could not complete the event update.");
+  }
+
+  if (shouldPersist && !transaction.committed) {
+    throw new Error("We could not save the latest event changes.");
+  }
+
+  return {
+    store: finalStore,
+    result: finalResult,
+    changed: shouldPersist
+  };
 }
 
 async function ensureTenantSeeded(tenantId: string) {
-  const store = await loadStore();
-
-  if (!store.events.some((event) => event.tenantId === tenantId)) {
-    store.events.push(...buildSeedEvents(tenantId));
-    await saveStore(store);
+  const currentStore = await loadStore(tenantId);
+  if (currentStore.events.length > 0) {
+    return currentStore;
   }
+
+  const { store } = await transactStore(tenantId, (store) => ({
+    result: null,
+    changed: seedTenantStoreIfEmpty(store, tenantId)
+  }));
 
   return store;
 }
@@ -972,40 +1025,44 @@ export async function createCampusEvent(
   identity: EventViewerIdentity,
   payload: CreateCampusEventRequest
 ): Promise<CreateCampusEventResponse> {
-  const store = await ensureTenantSeeded(viewer.tenantId);
   const eventId = makeId("event");
+  const createdAt = new Date().toISOString();
+  const { store } = await transactStore(viewer.tenantId, (store) => {
+    seedTenantStoreIfEmpty(store, viewer.tenantId);
+    store.events.unshift({
+      id: eventId,
+      tenantId: viewer.tenantId,
+      host: {
+        userId: identity.userId,
+        username: identity.username,
+        displayName: identity.displayName,
+        role: identity.role
+      },
+      title: normalizeText(payload.title),
+      club: normalizeText(payload.club),
+      category: normalizeText(payload.category),
+      description: normalizeText(payload.description),
+      location: normalizeText(payload.location),
+      startsAt: payload.startsAt,
+      endsAt: payload.endsAt?.trim() || null,
+      media: payload.media ?? [],
+      passKind: payload.passKind,
+      passLabel: buildPassLabel(payload.passKind, payload.passLabel),
+      capacity: normalizeInteger(payload.capacity),
+      commentCount: 0,
+      status: "published",
+      createdAt,
+      savedByUserIds: [],
+      interestedUserIds: [],
+      responseMode: payload.responseMode,
+      registrationConfig: buildRegistrationConfig(payload),
+      registrations: []
+    });
 
-  store.events.unshift({
-    id: eventId,
-    tenantId: viewer.tenantId,
-    host: {
-      userId: identity.userId,
-      username: identity.username,
-      displayName: identity.displayName,
-      role: identity.role
-    },
-    title: normalizeText(payload.title),
-    club: normalizeText(payload.club),
-    category: normalizeText(payload.category),
-    description: normalizeText(payload.description),
-    location: normalizeText(payload.location),
-    startsAt: payload.startsAt,
-    endsAt: payload.endsAt?.trim() || null,
-    media: payload.media ?? [],
-    passKind: payload.passKind,
-    passLabel: buildPassLabel(payload.passKind, payload.passLabel),
-    capacity: normalizeInteger(payload.capacity),
-    commentCount: 0,
-    status: "published",
-    createdAt: new Date().toISOString(),
-    savedByUserIds: [],
-    interestedUserIds: [],
-    responseMode: payload.responseMode,
-    registrationConfig: buildRegistrationConfig(payload),
-    registrations: []
+    return {
+      result: eventId
+    };
   });
-
-  await saveStore(store);
 
   return {
     dashboard: buildDashboard(store, viewer),
@@ -1014,28 +1071,33 @@ export async function createCampusEvent(
 }
 
 export async function updateCampusEvent(viewer: DevSession, payload: UpdateCampusEventRequest): Promise<UpdateCampusEventResponse> {
-  const store = await ensureTenantSeeded(viewer.tenantId);
-  const event = getStoredEventOrThrow(store, viewer, payload.eventId);
-  ensureHostAccess(event, viewer);
+  let removable: CampusEventMediaAsset[] = [];
+  const { store } = await transactStore(viewer.tenantId, (store) => {
+    seedTenantStoreIfEmpty(store, viewer.tenantId);
+    const event = getStoredEventOrThrow(store, viewer, payload.eventId);
+    ensureHostAccess(event, viewer);
 
-  const keepIds = new Set(payload.keepMediaIds ?? event.media.map((media) => media.id));
-  const removable = event.media.filter((media) => !keepIds.has(media.id));
+    const keepIds = new Set(payload.keepMediaIds ?? event.media.map((media) => media.id));
+    removable = event.media.filter((media) => !keepIds.has(media.id));
 
-  event.title = normalizeText(payload.title);
-  event.club = normalizeText(payload.club);
-  event.category = normalizeText(payload.category);
-  event.description = normalizeText(payload.description);
-  event.location = normalizeText(payload.location);
-  event.startsAt = payload.startsAt;
-  event.endsAt = payload.endsAt?.trim() || null;
-  event.passKind = payload.passKind;
-  event.passLabel = buildPassLabel(payload.passKind, payload.passLabel);
-  event.capacity = normalizeInteger(payload.capacity);
-  event.responseMode = payload.responseMode;
-  event.registrationConfig = buildRegistrationConfig(payload);
-  event.media = [...event.media.filter((media) => keepIds.has(media.id)), ...(payload.media ?? [])];
+    event.title = normalizeText(payload.title);
+    event.club = normalizeText(payload.club);
+    event.category = normalizeText(payload.category);
+    event.description = normalizeText(payload.description);
+    event.location = normalizeText(payload.location);
+    event.startsAt = payload.startsAt;
+    event.endsAt = payload.endsAt?.trim() || null;
+    event.passKind = payload.passKind;
+    event.passLabel = buildPassLabel(payload.passKind, payload.passLabel);
+    event.capacity = normalizeInteger(payload.capacity);
+    event.responseMode = payload.responseMode;
+    event.registrationConfig = buildRegistrationConfig(payload);
+    event.media = [...event.media.filter((media) => keepIds.has(media.id)), ...(payload.media ?? [])];
 
-  await saveStore(store);
+    return {
+      result: event.id
+    };
+  });
 
   if (removable.length > 0) {
     await deleteEventMediaAssets(removable).catch(() => undefined);
@@ -1043,51 +1105,61 @@ export async function updateCampusEvent(viewer: DevSession, payload: UpdateCampu
 
   return {
     dashboard: buildDashboard(store, viewer),
-    eventId: event.id
+    eventId: payload.eventId
   };
 }
 
 export async function toggleCampusEventSave(viewer: DevSession, eventId: string): Promise<ToggleCampusEventSaveResponse> {
-  const store = await ensureTenantSeeded(viewer.tenantId);
-  const event = store.events.find((candidate) => candidate.id === eventId && candidate.tenantId === viewer.tenantId && candidate.status === "published");
+  const { store, result: isSaved } = await transactStore(viewer.tenantId, (store) => {
+    seedTenantStoreIfEmpty(store, viewer.tenantId);
+    const event = store.events.find((candidate) => candidate.id === eventId && candidate.tenantId === viewer.tenantId && candidate.status === "published");
 
-  if (!event) {
-    throw new Error("Choose a valid event to save.");
-  }
+    if (!event) {
+      throw new Error("Choose a valid event to save.");
+    }
 
-  const alreadySaved = event.savedByUserIds.includes(viewer.userId);
-  event.savedByUserIds = alreadySaved ? event.savedByUserIds.filter((userId) => userId !== viewer.userId) : [...event.savedByUserIds, viewer.userId];
-  await saveStore(store);
+    const alreadySaved = event.savedByUserIds.includes(viewer.userId);
+    event.savedByUserIds = alreadySaved ? event.savedByUserIds.filter((userId) => userId !== viewer.userId) : [...event.savedByUserIds, viewer.userId];
+
+    return {
+      result: !alreadySaved
+    };
+  });
 
   return {
     dashboard: buildDashboard(store, viewer),
     eventId,
-    isSaved: !alreadySaved
+    isSaved
   };
 }
 
 export async function toggleCampusEventInterest(viewer: DevSession, eventId: string): Promise<ToggleCampusEventInterestResponse> {
-  const store = await ensureTenantSeeded(viewer.tenantId);
-  const event = store.events.find((candidate) => candidate.id === eventId && candidate.tenantId === viewer.tenantId && candidate.status === "published");
+  const { store, result: isInterested } = await transactStore(viewer.tenantId, (store) => {
+    seedTenantStoreIfEmpty(store, viewer.tenantId);
+    const event = store.events.find((candidate) => candidate.id === eventId && candidate.tenantId === viewer.tenantId && candidate.status === "published");
 
-  if (!event) {
-    throw new Error("Choose a valid event before updating your RSVP.");
-  }
+    if (!event) {
+      throw new Error("Choose a valid event before updating your RSVP.");
+    }
 
-  if (event.responseMode !== "interest") {
-    throw new Error("This event needs a registration or application form instead of simple interest.");
-  }
+    if (event.responseMode !== "interest") {
+      throw new Error("This event needs a registration or application form instead of simple interest.");
+    }
 
-  const alreadyInterested = event.interestedUserIds.includes(viewer.userId);
-  event.interestedUserIds = alreadyInterested
-    ? event.interestedUserIds.filter((userId) => userId !== viewer.userId)
-    : [...event.interestedUserIds, viewer.userId];
-  await saveStore(store);
+    const alreadyInterested = event.interestedUserIds.includes(viewer.userId);
+    event.interestedUserIds = alreadyInterested
+      ? event.interestedUserIds.filter((userId) => userId !== viewer.userId)
+      : [...event.interestedUserIds, viewer.userId];
+
+    return {
+      result: !alreadyInterested
+    };
+  });
 
   return {
     dashboard: buildDashboard(store, viewer),
     eventId,
-    isInterested: !alreadyInterested
+    isInterested
   };
 }
 
@@ -1096,78 +1168,93 @@ export async function upsertCampusEventRegistration(
   identity: EventViewerIdentity,
   payload: UpsertCampusEventRegistrationRequest
 ): Promise<UpsertCampusEventRegistrationResponse> {
-  const store = await ensureTenantSeeded(viewer.tenantId);
-  const event = getStoredEventOrThrow(store, viewer, payload.eventId);
+  let removableAttachments: CampusEventMediaAsset[] = [];
+  let updatedEvent: StoredEvent | null = null;
+  let nextRegistration: StoredRegistration | null = null;
+  const createdRegistrationId = makeId("event-reg");
 
-  if (event.host.userId === viewer.userId) {
-    throw new Error("Hosts cannot register for their own event.");
-  }
+  const { store } = await transactStore(viewer.tenantId, (store) => {
+    seedTenantStoreIfEmpty(store, viewer.tenantId);
+    const event = getStoredEventOrThrow(store, viewer, payload.eventId);
 
-  const existingRegistration = event.registrations.find((registration) => registration.attendee.userId === viewer.userId) ?? null;
-  const normalized = validateRegistrationInput(event, payload, existingRegistration);
-  const timestamp = new Date().toISOString();
-  const nextStatus: CampusEventRegistrationStatus = event.responseMode === "apply" ? "submitted" : "approved";
-  const removableAttachments = (existingRegistration?.attachments ?? []).filter(
-    (attachment) => !normalized.attachments.some((candidate) => candidate.id === attachment.id)
-  );
-
-  const nextRegistration: StoredRegistration = existingRegistration
-    ? {
-        ...existingRegistration,
-        attendee: {
-          userId: identity.userId,
-          username: identity.username,
-          displayName: identity.displayName,
-          role: identity.role
-        },
-        status: nextStatus,
-      updatedAt: timestamp,
-      teamName: normalized.teamName,
-      teamSize: normalized.teamSize,
-      teamMembers: normalized.teamMembers,
-      answers: normalized.answers,
-      attachments: normalized.attachments,
-      note: normalized.note,
-      reviewNote: event.responseMode === "apply" ? null : existingRegistration.reviewNote ?? null
+    if (event.host.userId === viewer.userId) {
+      throw new Error("Hosts cannot register for their own event.");
     }
-    : {
-        id: makeId("event-reg"),
-        eventId: event.id,
-        attendee: {
-          userId: identity.userId,
-          username: identity.username,
-          displayName: identity.displayName,
-          role: identity.role
-        },
-        status: nextStatus,
-        submittedAt: timestamp,
-        updatedAt: timestamp,
-        teamName: normalized.teamName,
-        teamSize: normalized.teamSize,
-        teamMembers: normalized.teamMembers,
-        answers: normalized.answers,
-        attachments: normalized.attachments,
-        note: normalized.note,
-        reviewNote: null
-      };
 
-  event.registrations = existingRegistration
-    ? event.registrations.map((registration) => (registration.id === existingRegistration.id ? nextRegistration : registration))
-    : [nextRegistration, ...event.registrations];
+    const existingRegistration = event.registrations.find((registration) => registration.attendee.userId === viewer.userId) ?? null;
+    const normalized = validateRegistrationInput(event, payload, existingRegistration);
+    const timestamp = new Date().toISOString();
+    const nextStatus: CampusEventRegistrationStatus = event.responseMode === "apply" ? "submitted" : "approved";
+    removableAttachments = (existingRegistration?.attachments ?? []).filter(
+      (attachment) => !normalized.attachments.some((candidate) => candidate.id === attachment.id)
+    );
 
-  if (!event.interestedUserIds.includes(viewer.userId)) {
-    event.interestedUserIds.push(viewer.userId);
-  }
+    nextRegistration = existingRegistration
+      ? {
+          ...existingRegistration,
+          attendee: {
+            userId: identity.userId,
+            username: identity.username,
+            displayName: identity.displayName,
+            role: identity.role
+          },
+          status: nextStatus,
+          updatedAt: timestamp,
+          teamName: normalized.teamName,
+          teamSize: normalized.teamSize,
+          teamMembers: normalized.teamMembers,
+          answers: normalized.answers,
+          attachments: normalized.attachments,
+          note: normalized.note,
+          reviewNote: event.responseMode === "apply" ? null : existingRegistration.reviewNote ?? null
+        }
+      : {
+          id: createdRegistrationId,
+          eventId: event.id,
+          attendee: {
+            userId: identity.userId,
+            username: identity.username,
+            displayName: identity.displayName,
+            role: identity.role
+          },
+          status: nextStatus,
+          submittedAt: timestamp,
+          updatedAt: timestamp,
+          teamName: normalized.teamName,
+          teamSize: normalized.teamSize,
+          teamMembers: normalized.teamMembers,
+          answers: normalized.answers,
+          attachments: normalized.attachments,
+          note: normalized.note,
+          reviewNote: null
+        };
 
-  await saveStore(store);
+    event.registrations = existingRegistration
+      ? event.registrations.map((registration) => (registration.id === existingRegistration.id ? nextRegistration! : registration))
+      : [nextRegistration, ...event.registrations];
+
+    if (!event.interestedUserIds.includes(viewer.userId)) {
+      event.interestedUserIds.push(viewer.userId);
+    }
+
+    updatedEvent = clone(event);
+
+    return {
+      result: event.id
+    };
+  });
 
   if (removableAttachments.length > 0) {
     await deleteEventMediaAssets(removableAttachments).catch(() => undefined);
   }
 
+  if (!updatedEvent || !nextRegistration) {
+    throw new Error("We could not save your registration.");
+  }
+
   return {
     dashboard: buildDashboard(store, viewer),
-    event: toCampusEvent(event, viewer),
+    event: toCampusEvent(updatedEvent, viewer),
     registration: toViewerRegistrationSummary(nextRegistration)!
   };
 }
@@ -1197,34 +1284,54 @@ export async function manageCampusEventRegistration(
   registrationId: string,
   payload: ManageCampusEventRegistrationRequest
 ): Promise<ManageCampusEventRegistrationResponse> {
-  const store = await ensureTenantSeeded(viewer.tenantId);
-  const event = getStoredEventOrThrow(store, viewer, eventId);
-  ensureHostAccess(event, viewer);
+  let managedEvent: StoredEvent | null = null;
+  let nextStatus: CampusEventRegistrationStatus | null = null;
+  const { store } = await transactStore(viewer.tenantId, (store) => {
+    seedTenantStoreIfEmpty(store, viewer.tenantId);
+    const event = getStoredEventOrThrow(store, viewer, eventId);
+    ensureHostAccess(event, viewer);
 
-  const registration = event.registrations.find((candidate) => candidate.id === registrationId);
-  if (!registration) {
-    throw new Error("This registration could not be found.");
-  }
-
-  if (payload.status === "approved" && event.capacity) {
-    const approvedUsage = getApprovedSeatUsage(event, registration.status === "approved" ? registration.id : undefined);
-    if (approvedUsage + registration.teamSize > event.capacity) {
-      throw new Error("There are not enough spots left to approve this registration.");
+    const registration = event.registrations.find((candidate) => candidate.id === registrationId);
+    if (!registration) {
+      throw new Error("This registration could not be found.");
     }
+
+    if (payload.status === "approved" && event.capacity) {
+      const approvedUsage = getApprovedSeatUsage(event, registration.status === "approved" ? registration.id : undefined);
+      if (approvedUsage + registration.teamSize > event.capacity) {
+        throw new Error("There are not enough spots left to approve this registration.");
+      }
+    }
+
+    registration.status = payload.status;
+    registration.reviewNote = normalizeText(payload.reviewNote ?? "", "") || null;
+    registration.updatedAt = new Date().toISOString();
+    managedEvent = clone(event);
+    nextStatus = registration.status;
+
+    return {
+      result: registration.id
+    };
+  });
+
+  if (managedEvent === null || nextStatus === null) {
+    throw new Error("We could not update this registration.");
   }
 
-  registration.status = payload.status;
-  registration.reviewNote = normalizeText(payload.reviewNote ?? "", "") || null;
-  registration.updatedAt = new Date().toISOString();
-
-  await saveStore(store);
+  const finalizedEvent: StoredEvent = managedEvent;
+  const finalizedStatus: CampusEventRegistrationStatus = nextStatus;
+  const sortedRegistrations = clone(
+    [...finalizedEvent.registrations].sort(
+      (left: StoredRegistration, right: StoredRegistration) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+    )
+  );
 
   return {
     dashboard: buildDashboard(store, viewer),
-    event: toCampusEvent(event, viewer),
-    registrations: clone(event.registrations.sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())),
+    event: toCampusEvent(finalizedEvent, viewer),
+    registrations: sortedRegistrations,
     registrationId,
-    status: registration.status
+    status: finalizedStatus
   };
 }
 
@@ -1246,15 +1353,22 @@ export async function exportCampusEventRegistrationsCsv(
 }
 
 async function manageEvent(viewer: DevSession, eventId: string, action: "cancelled" | "deleted"): Promise<ManageCampusEventResponse> {
-  const store = await ensureTenantSeeded(viewer.tenantId);
-  const event = getStoredEventOrThrow(store, viewer, eventId);
-  ensureHostAccess(event, viewer);
+  let removableMedia: CampusEventMediaAsset[] = [];
+  const { store } = await transactStore(viewer.tenantId, (store) => {
+    seedTenantStoreIfEmpty(store, viewer.tenantId);
+    const event = getStoredEventOrThrow(store, viewer, eventId);
+    ensureHostAccess(event, viewer);
 
-  event.status = action;
-  await saveStore(store);
+    event.status = action;
+    removableMedia = action === "deleted" ? [...event.media] : [];
 
-  if (action === "deleted" && event.media.length > 0) {
-    await deleteEventMediaAssets(event.media).catch(() => undefined);
+    return {
+      result: event.id
+    };
+  });
+
+  if (removableMedia.length > 0) {
+    await deleteEventMediaAssets(removableMedia).catch(() => undefined);
   }
 
   return {

@@ -283,6 +283,17 @@ export interface UserSearchResponse {
   items: UserSearchItem[];
 }
 
+export interface ProfileConnectionItem extends PublicProfileSummary {
+  isFollowing: boolean;
+  isViewer: boolean;
+}
+
+export interface ProfileConnectionsResponse {
+  profileUsername: string;
+  scope: "followers" | "following";
+  items: ProfileConnectionItem[];
+}
+
 export interface PublicProfileResponse {
   profile: PublicProfileSummary;
   stats: SocialProfileStats;
@@ -831,10 +842,33 @@ export interface UpdateMarketListingResponse {
   listingId: string;
 }
 
+export interface UpdateMarketRequestRequest {
+  requestId: string;
+  title: string;
+  category: string;
+  description: string;
+  keepMediaIds?: string[];
+  media?: MarketMediaAsset[];
+  budgetAmount?: number | null;
+  budgetLabel?: string | null;
+  tag?: string | null;
+}
+
+export interface UpdateMarketRequestResponse {
+  dashboard: MarketDashboardResponse;
+  requestId: string;
+}
+
 export interface ManageMarketListingResponse {
   dashboard: MarketDashboardResponse;
   listingId: string;
   action: "sold" | "deleted";
+}
+
+export interface ManageMarketRequestResponse {
+  dashboard: MarketDashboardResponse;
+  requestId: string;
+  action: "deleted";
 }
 
 export interface ToggleMarketSaveRequest {

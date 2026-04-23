@@ -25,10 +25,12 @@ import type {
   ListResourcesResponse,
   MarkChatReadResponse,
   ManageMarketListingResponse,
+  ManageMarketRequestResponse,
   MigrateChatMessageEncryptionRequest,
   MigrateChatMessageEncryptionResponse,
   MarketDashboardResponse,
   MeResponse,
+  ProfileConnectionsResponse,
   PublicProfileResponse,
   ProfileResponse,
   PostLikerListResponse,
@@ -49,6 +51,8 @@ import type {
   UploadEncryptedChatAttachmentResponse,
   UpdateMarketListingRequest,
   UpdateMarketListingResponse,
+  UpdateMarketRequestRequest,
+  UpdateMarketRequestResponse,
   UpdatePostRequest,
   UpdatePostResponse,
   UpsertChatKeyBackupRequest,
@@ -382,6 +386,23 @@ export async function getCampusUserProfile(viewer: DevSession, username: string)
   return fetchBackendJson<PublicProfileResponse>(`/v1/users/${encodeURIComponent(username)}?${params.toString()}`, viewer);
 }
 
+export async function getCampusUserConnections(
+  viewer: DevSession,
+  username: string,
+  scope: "followers" | "following",
+  limit = 50
+) {
+  const params = new URLSearchParams({
+    tenantId: viewer.tenantId,
+    limit: String(limit)
+  });
+
+  return fetchBackendJson<ProfileConnectionsResponse>(
+    `/v1/users/${encodeURIComponent(username)}/${scope}?${params.toString()}`,
+    viewer
+  );
+}
+
 export async function updateViewerUsername(viewer: DevSession, payload: UpdateUsernameRequest) {
   const response = await requestBackendResponse("/v1/profile/username", {
     method: "PATCH",
@@ -553,9 +574,27 @@ export async function updateMarketListing(viewer: DevSession, payload: UpdateMar
   );
 }
 
+export async function updateMarketRequest(viewer: DevSession, payload: UpdateMarketRequestRequest) {
+  return mutateBackendJson<UpdateMarketRequestResponse>(
+    `/v1/market/requests/${encodeURIComponent(payload.requestId)}`,
+    "PATCH",
+    payload,
+    viewer
+  );
+}
+
 export async function deleteMarketListing(viewer: DevSession, listingId: string) {
   return mutateBackendJson<ManageMarketListingResponse>(
     `/v1/market/listings/${encodeURIComponent(listingId)}`,
+    "DELETE",
+    {},
+    viewer
+  );
+}
+
+export async function deleteMarketRequest(viewer: DevSession, requestId: string) {
+  return mutateBackendJson<ManageMarketRequestResponse>(
+    `/v1/market/requests/${encodeURIComponent(requestId)}`,
     "DELETE",
     {},
     viewer
