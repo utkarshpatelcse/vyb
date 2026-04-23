@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getStorage } from "firebase-admin/storage";
-import { getFirebaseAdminApp } from "../../../../../packages/config/src/index.mjs";
+import { getFirebaseAdminApp, loadRootEnv } from "../../../../../packages/config/src/index.mjs";
 
 const MAX_SOCIAL_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_SOCIAL_VIDEO_BYTES = 10 * 1024 * 1024;
@@ -47,7 +47,9 @@ function extensionFromMimeType(mimeType, fallback = "bin") {
 }
 
 function ensureStorageConfigured() {
-  if (!process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET) {
+  loadRootEnv();
+
+  if (!process.env.FIREBASE_STORAGE_BUCKET && !process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET) {
     throw new Error("Firebase Storage is not configured yet.");
   }
 }

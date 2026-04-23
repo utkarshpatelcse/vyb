@@ -18,6 +18,11 @@ function normalizeMimeType(value: string) {
   return value.trim().toLowerCase();
 }
 
+function getConfiguredStorageBucket() {
+  loadWorkspaceRootEnv();
+  return process.env.FIREBASE_STORAGE_BUCKET ?? process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ?? null;
+}
+
 function getSocialMediaKind(mimeType: string) {
   const normalized = normalizeMimeType(mimeType);
 
@@ -49,48 +54,33 @@ function extensionFromMimeType(mimeType: string, fallback = "bin") {
 }
 
 function ensureStorageConfigured() {
-  loadWorkspaceRootEnv();
-
-  if (!process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET) {
+  if (!getConfiguredStorageBucket()) {
     throw new Error("Firebase Storage is not configured yet.");
   }
 }
 
-function validateFile(file: File) {
-  const mimeType = normalizeMimeType(file.type || "application/octet-stream");
-  const mediaType = getSocialMediaKind(mimeType);
-
-  if (!mediaType) {
-    throw new Error("Only image and video uploads are supported right now.");
-  }
-
-  const maxBytes = mediaType === "video" ? MAX_SOCIAL_VIDEO_BYTES : MAX_SOCIAL_IMAGE_BYTES;
-  if (file.size > maxBytes) {
-    throw new Error(
-      mediaType === "video"
-        ? "Video is still too large after optimization. Keep it under 10 MB."
-        : "Image is too large right now. Keep it under 4 MB."
-    );
-  }
-
-  return {
-    mediaType,
-    mimeType
-  };
-}
-
-function resolveAssetType(intent: string | null) {
+function resolveAssetType(intent: "post" | "story" | "vibe") {
   if (intent === "story") {
     return {
       assetType: "stories",
       placement: "feed"
-    } as const;
+    };
   }
 
   return {
     assetType: "posts",
     placement: intent === "vibe" ? "vibe" : "feed"
-  } as const;
+  };
+}
+
+function sanitizeFileName(value: string, fallback: string) {
+  const cleaned = value
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-zA-Z0-9._-]/g, "")
+    .replace(/-+/g, "-");
+
+  return cleaned || fallback;
 }
 
 export async function persistSocialMediaAsset(input: {
@@ -101,13 +91,33 @@ export async function persistSocialMediaAsset(input: {
 }) {
   ensureStorageConfigured();
 
-  const { mediaType, mimeType } = validateFile(input.file);
+  const mimeType = normalizeMimeType(input.file.type || "application/octet-stream");
+  const mediaType = getSocialMediaKind(mimeType);
+
+  if (!mediaType) {
+    throw new Error("Only image and video uploads are supported right now.");
+  }
+
+  const buffer = Buffer.from(await input.file.arrayBuffer());
+  if (buffer.byteLength <= 0) {
+    throw new Error("Upload payload is empty.");
+  }
+
+  const maxBytes = mediaType === "video" ? MAX_SOCIAL_VIDEO_BYTES : MAX_SOCIAL_IMAGE_BYTES;
+  if (buffer.byteLength > maxBytes) {
+    throw new Error(
+      mediaType === "video"
+        ? "Video is still too large after optimization. Keep it under 10 MB."
+        : "Image is too large right now. Keep it under 4 MB."
+    );
+  }
+
   const { assetType, placement } = resolveAssetType(input.intent);
   const assetId = randomUUID();
   const token = randomUUID();
   const extension = extensionFromMimeType(mimeType, mediaType === "video" ? "mp4" : "jpg");
+  const originalFileName = sanitizeFileName(input.file.name || `${assetType}.${extension}`, `${assetType}.${extension}`);
   const storagePath = `social/${input.tenantId}/${assetType}/${placement}/${input.userId}/${assetId}.${extension}`;
-  const buffer = Buffer.from(await input.file.arrayBuffer());
   const bucket = getFirebaseAdminStorageBucket();
 
   await bucket.file(storagePath).save(buffer, {
@@ -117,7 +127,7 @@ export async function persistSocialMediaAsset(input: {
       cacheControl: "public, max-age=31536000, immutable",
       metadata: {
         firebaseStorageDownloadTokens: token,
-        originalFileName: input.file.name || `${assetType}.${extension}`
+        originalFileName
       }
     }
   });

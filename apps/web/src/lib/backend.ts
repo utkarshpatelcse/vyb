@@ -256,10 +256,6 @@ export async function proxyBackendMutation(
   });
 }
 
-const CHAT_BACKEND_DIRECT_ONLY = {
-  allowBridgeFallback: false
-} as const;
-
 function buildClientShellFallback(): ClientShellResponse {
   const launchCampus = {
     id: "kiet",
@@ -597,28 +593,19 @@ export async function uploadSocialMediaAsset(
 }
 
 export async function getChatInbox(viewer: DevSession) {
-  return fetchBackendJson<ChatInboxResponse>("/v1/chats", viewer, CHAT_BACKEND_DIRECT_ONLY);
+  return fetchBackendJson<ChatInboxResponse>("/v1/chats", viewer);
 }
 
 export async function createChatConversation(viewer: DevSession, payload: CreateChatConversationRequest) {
-  return postBackendJson<CreateChatConversationResponse>("/v1/chats", payload, viewer, CHAT_BACKEND_DIRECT_ONLY);
+  return postBackendJson<CreateChatConversationResponse>("/v1/chats", payload, viewer);
 }
 
 export async function getChatConversation(viewer: DevSession, conversationId: string) {
-  return fetchBackendJson<ChatConversationResponse>(
-    `/v1/chats/${encodeURIComponent(conversationId)}`,
-    viewer,
-    CHAT_BACKEND_DIRECT_ONLY
-  );
+  return fetchBackendJson<ChatConversationResponse>(`/v1/chats/${encodeURIComponent(conversationId)}`, viewer);
 }
 
 export async function sendChatMessage(viewer: DevSession, conversationId: string, payload: SendChatMessageRequest) {
-  return postBackendJson<SendChatMessageResponse>(
-    `/v1/chats/${encodeURIComponent(conversationId)}/messages`,
-    payload,
-    viewer,
-    CHAT_BACKEND_DIRECT_ONLY
-  );
+  return postBackendJson<SendChatMessageResponse>(`/v1/chats/${encodeURIComponent(conversationId)}/messages`, payload, viewer);
 }
 
 export async function migrateChatMessageEncryption(
@@ -630,23 +617,16 @@ export async function migrateChatMessageEncryption(
     `/v1/chats/${encodeURIComponent(conversationId)}/messages/encryption`,
     "PUT",
     payload,
-    viewer,
-    CHAT_BACKEND_DIRECT_ONLY
+    viewer
   );
 }
 
 export async function getChatKeyBackup(viewer: DevSession) {
-  return fetchBackendJson<GetChatKeyBackupResponse>("/v1/chats/key-backup", viewer, CHAT_BACKEND_DIRECT_ONLY);
+  return fetchBackendJson<GetChatKeyBackupResponse>("/v1/chats/key-backup", viewer);
 }
 
 export async function upsertChatKeyBackup(viewer: DevSession, payload: UpsertChatKeyBackupRequest) {
-  return mutateBackendJson<UpsertChatKeyBackupResponse>(
-    "/v1/chats/key-backup",
-    "PUT",
-    payload,
-    viewer,
-    CHAT_BACKEND_DIRECT_ONLY
-  );
+  return mutateBackendJson<UpsertChatKeyBackupResponse>("/v1/chats/key-backup", "PUT", payload, viewer);
 }
 
 export async function markChatRead(viewer: DevSession, conversationId: string, messageId: string) {
@@ -654,8 +634,7 @@ export async function markChatRead(viewer: DevSession, conversationId: string, m
     `/v1/chats/${encodeURIComponent(conversationId)}/read`,
     "PUT",
     { messageId },
-    viewer,
-    CHAT_BACKEND_DIRECT_ONLY
+    viewer
   );
 }
 
@@ -664,8 +643,7 @@ export async function reactToChatMessage(viewer: DevSession, messageId: string, 
     `/v1/chats/messages/${encodeURIComponent(messageId)}/reactions`,
     "PUT",
     { emoji },
-    viewer,
-    CHAT_BACKEND_DIRECT_ONLY
+    viewer
   );
 }
 
@@ -674,19 +652,12 @@ export async function deleteChatMessage(viewer: DevSession, messageId: string, p
     `/v1/chats/messages/${encodeURIComponent(messageId)}`,
     "DELETE",
     payload,
-    viewer,
-    CHAT_BACKEND_DIRECT_ONLY
+    viewer
   );
 }
 
 export async function upsertChatIdentity(viewer: DevSession, payload: UpsertChatIdentityRequest) {
-  return mutateBackendJson<UpsertChatIdentityResponse>(
-    "/v1/chats/keys",
-    "PUT",
-    payload,
-    viewer,
-    CHAT_BACKEND_DIRECT_ONLY
-  );
+  return mutateBackendJson<UpsertChatIdentityResponse>("/v1/chats/keys", "PUT", payload, viewer);
 }
 
 export async function uploadEncryptedChatAttachment(
@@ -699,10 +670,5 @@ export async function uploadEncryptedChatAttachment(
     height?: number | null;
   }
 ) {
-  return postBackendJson<UploadEncryptedChatAttachmentResponse>(
-    "/v1/chats/media/upload",
-    payload,
-    viewer,
-    CHAT_BACKEND_DIRECT_ONLY
-  );
+  return postBackendJson<UploadEncryptedChatAttachmentResponse>("/v1/chats/media/upload", payload, viewer);
 }

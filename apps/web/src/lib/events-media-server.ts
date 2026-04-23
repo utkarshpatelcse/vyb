@@ -66,8 +66,8 @@ function sanitizeFileName(value: string) {
 function ensureStorageConfigured() {
   loadWorkspaceRootEnv();
 
-  if (!process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET) {
-    throw new Error("Firebase Storage is not configured yet. Add NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET before uploading event media.");
+  if (!process.env.FIREBASE_STORAGE_BUCKET && !process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET) {
+    throw new Error("Firebase Storage is not configured yet. Add FIREBASE_STORAGE_BUCKET or NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET before uploading event media.");
   }
 }
 
