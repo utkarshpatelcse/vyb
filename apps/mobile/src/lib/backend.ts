@@ -1,9 +1,12 @@
 import type {
   ActivityListResponse,
+  ChatConversationResponse,
   ChatInboxResponse,
   ClientShellResponse,
+  FeedCard,
   FeedListResponse,
   ListResourcesResponse,
+  MarketDashboardResponse,
   MeResponse,
   ProfileResponse,
   PublicProfileResponse,
@@ -75,6 +78,31 @@ async function requestJson<T>(path: string, viewer?: MobileViewerSession): Promi
   return (await response.json()) as T;
 }
 
+function normalizeFeedCard(item: FeedCard): FeedCard {
+  const normalizedMedia: FeedCard["media"] = Array.isArray(item.media)
+    ? item.media
+    : item.mediaUrl
+      ? [
+          {
+            url: item.mediaUrl,
+            kind: item.kind === "video" ? "video" : "image"
+          }
+        ]
+      : [];
+
+  return {
+    ...item,
+    media: normalizedMedia
+  };
+}
+
+function normalizeFeedResponse(response: FeedListResponse): FeedListResponse {
+  return {
+    ...response,
+    items: Array.isArray(response.items) ? response.items.map((item) => normalizeFeedCard(item)) : []
+  };
+}
+
 export function getClientShellData() {
   return requestJson<ClientShellResponse>("/v1/client-shell");
 }
@@ -101,7 +129,16 @@ export function getCampusFeed(viewer: MobileViewerSession, options?: { limit?: n
     limit: String(options?.limit ?? 20)
   });
 
-  return requestJson<FeedListResponse>(`/v1/feed?${params.toString()}`, viewer);
+  return requestJson<FeedListResponse>(`/v1/feed?${params.toString()}`, viewer).then(normalizeFeedResponse);
+}
+
+export function getCampusVibes(viewer: MobileViewerSession, limit = 12) {
+  const params = new URLSearchParams({
+    tenantId: viewer.tenantId,
+    limit: String(limit)
+  });
+
+  return requestJson<FeedListResponse>(`/v1/vibes?${params.toString()}`, viewer).then(normalizeFeedResponse);
 }
 
 export function getSuggestedCampusUsers(viewer: MobileViewerSession, limit = 5) {
@@ -128,12 +165,21 @@ export function getChatInbox(viewer: MobileViewerSession) {
   return requestJson<ChatInboxResponse>("/v1/chats", viewer);
 }
 
+export function getChatConversation(viewer: MobileViewerSession, conversationId: string) {
+  return requestJson<ChatConversationResponse>(`/v1/chats/${encodeURIComponent(conversationId)}`, viewer);
+}
+
 export function getViewerPublicProfile(viewer: MobileViewerSession, username: string) {
   const params = new URLSearchParams({
     tenantId: viewer.tenantId
   });
 
-  return requestJson<PublicProfileResponse>(`/v1/users/${encodeURIComponent(username)}?${params.toString()}`, viewer);
+  return requestJson<PublicProfileResponse>(`/v1/users/${encodeURIComponent(username)}?${params.toString()}`, viewer).then(
+    (response) => ({
+      ...response,
+      posts: Array.isArray(response.posts) ? response.posts.map((item) => normalizeFeedCard(item)) : []
+    })
+  );
 }
 
 export function getCampusResources(viewer: MobileViewerSession, options?: { limit?: number }) {
@@ -151,4 +197,8 @@ export function getViewerActivity(viewer: MobileViewerSession, limit = 6) {
   });
 
   return requestJson<ActivityListResponse>(`/v1/activity?${params.toString()}`, viewer);
+}
+
+export function getMarketDashboard(viewer: MobileViewerSession) {
+  return requestJson<MarketDashboardResponse>("/v1/market", viewer);
 }
