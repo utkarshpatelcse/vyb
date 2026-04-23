@@ -5,6 +5,7 @@ node_modules/
 .next/
 .turbo/
 .cache/
+.expo/
 dist/
 build/
 coverage/

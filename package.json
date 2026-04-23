@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "turbo run dev --filter=@vyb/web",
     "dev:web": "pnpm --filter @vyb/web dev",
+    "dev:mobile": "pnpm --filter @vyb/mobile start",
     "dev:backend": "pnpm --filter @vyb/backend dev",
     "dc:services": "node scripts/run-firebase-cli.mjs dataconnect:services:list",
     "dc:compile": "node scripts/run-firebase-cli.mjs dataconnect:compile",
