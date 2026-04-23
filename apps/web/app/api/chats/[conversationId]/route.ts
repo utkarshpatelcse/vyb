@@ -17,7 +17,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ con
   const { conversationId } = await params;
 
   try {
-    return NextResponse.json(await getChatConversation(viewer, conversationId));
+    return NextResponse.json(await getChatConversation(viewer, conversationId), {
+      headers: {
+        "cache-control": "no-store, no-cache, must-revalidate"
+      }
+    });
   } catch (error) {
     return buildError(500, "CHAT_DETAIL_FAILED", error instanceof Error ? error.message : "We could not load that chat.");
   }

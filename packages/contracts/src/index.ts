@@ -599,6 +599,8 @@ export interface ChatConversationResponse {
     messages: ChatMessageRecord[];
     lastReadMessageId: string | null;
     lastReadAt: string | null;
+    peerLastReadMessageId: string | null;
+    peerLastReadAt: string | null;
   };
 }
 
@@ -669,6 +671,7 @@ export interface DeleteChatMessageResponse {
   messageId: string;
   scope: DeleteChatMessageScope;
   deletedAt: string;
+  item: ChatMessageRecord | null;
   conversationPreview: ChatConversationPreview;
 }
 

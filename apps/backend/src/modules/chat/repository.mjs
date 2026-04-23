@@ -17,6 +17,8 @@ const END_TO_END_CHAT_ALGORITHM = "ECDH-P256/AES-GCM";
 const CHAT_KEY_BACKUP_WRAPPING_ALGORITHM = "PBKDF2-SHA-256/AES-GCM";
 const CHAT_DELETE_FOR_EVERYONE_WINDOW_MS = 30 * 60 * 1000;
 const CHAT_HIDDEN_MESSAGE_LIMIT = 2000;
+const CHAT_DELETED_MESSAGE_ALGORITHM = "deleted";
+const CHAT_DELETED_MESSAGE_MARKER = "__vyb_chat_deleted__";
 const CHAT_ALLOWED_REACTION_EMOJIS = new Set([
   "\u2764\uFE0F",
   "\uD83D\uDD25",
@@ -433,12 +435,28 @@ const UPDATE_CHAT_MESSAGE_ENCRYPTION_MUTATION = `
   }
 `;
 
-const SOFT_DELETE_CHAT_MESSAGE_MUTATION = `
-  mutation SoftDeleteChatMessage($id: UUID!) {
+const MARK_CHAT_MESSAGE_DELETED_FOR_EVERYONE_MUTATION = `
+  mutation MarkChatMessageDeletedForEveryone(
+    $id: UUID!
+    $messageKind: String!
+    $cipherText: String!
+    $cipherAlgorithm: String!
+  ) {
     chatMessage_update(
       key: { id: $id }
       data: {
-        deletedAt_expr: "request.time"
+        messageKind: $messageKind
+        cipherText: $cipherText
+        cipherIv: ""
+        cipherAlgorithm: $cipherAlgorithm
+        replyToMessageId: null
+        attachmentUrl: null
+        attachmentStoragePath: null
+        attachmentMimeType: null
+        attachmentSizeBytes: null
+        attachmentWidth: null
+        attachmentHeight: null
+        attachmentDurationMs: null
         updatedAt_expr: "request.time"
       }
     ) {
@@ -652,6 +670,8 @@ function mapChatMessage(item, reactionsByMessageId = new Map()) {
     return null;
   }
 
+  const isDeletedForEveryone = item.cipherAlgorithm === CHAT_DELETED_MESSAGE_ALGORITHM;
+
   return {
     id: item.id,
     conversationId: item.conversationId,
@@ -664,7 +684,7 @@ function mapChatMessage(item, reactionsByMessageId = new Map()) {
     cipherAlgorithm: item.cipherAlgorithm,
     replyToMessageId: item.replyToMessageId ?? null,
     attachment:
-      item.attachmentUrl && item.attachmentMimeType
+      !isDeletedForEveryone && item.attachmentUrl && item.attachmentMimeType
         ? {
             kind: "image",
             url: item.attachmentUrl,
@@ -676,7 +696,7 @@ function mapChatMessage(item, reactionsByMessageId = new Map()) {
           }
         : null,
     createdAt: toIsoString(item.createdAt),
-    reactions: reactionsByMessageId.get(item.id) ?? []
+    reactions: isDeletedForEveryone ? [] : reactionsByMessageId.get(item.id) ?? []
   };
 }
 
@@ -844,7 +864,13 @@ async function buildConversationPreview(viewer, conversation, viewerParticipant,
   const lastMessageAt = lastMessage?.createdAt ?? toIsoString(conversation.updatedAt);
   const viewerLastReadAt = viewerParticipant.lastReadAt ? new Date(viewerParticipant.lastReadAt).getTime() : 0;
   const messageTimestamp = lastMessage?.createdAt ? new Date(lastMessage.createdAt).getTime() : 0;
-  const unreadCount = lastMessage && lastMessage.senderUserId !== viewer.userId && messageTimestamp > viewerLastReadAt ? 1 : 0;
+  const unreadCount =
+    lastMessage &&
+    lastMessage.cipherAlgorithm !== CHAT_DELETED_MESSAGE_ALGORITHM &&
+    lastMessage.senderUserId !== viewer.userId &&
+    messageTimestamp > viewerLastReadAt
+      ? 1
+      : 0;
 
   return {
     id: conversation.id,
@@ -1185,7 +1211,9 @@ export async function createOrGetDirectConversation(viewer, input) {
       peer: buildPeerSummary(peerProfile, peerIdentity),
       messages: [],
       lastReadMessageId: access.viewerParticipant.lastReadMessageId ?? null,
-      lastReadAt: access.viewerParticipant.lastReadAt ? toIsoString(access.viewerParticipant.lastReadAt) : null
+      lastReadAt: access.viewerParticipant.lastReadAt ? toIsoString(access.viewerParticipant.lastReadAt) : null,
+      peerLastReadMessageId: access.peerParticipant.lastReadMessageId ?? null,
+      peerLastReadAt: access.peerParticipant.lastReadAt ? toIsoString(access.peerParticipant.lastReadAt) : null
     },
     viewerIdentity
   };
@@ -1228,7 +1256,9 @@ export async function getChatConversation(viewer, conversationId) {
       peer: buildPeerSummary(peerProfile, peerIdentity),
       messages: visibleMessages.map((item) => mapChatMessage(item, reactionsByMessageId)).filter(Boolean),
       lastReadMessageId: access.viewerParticipant.lastReadMessageId ?? null,
-      lastReadAt: access.viewerParticipant.lastReadAt ? toIsoString(access.viewerParticipant.lastReadAt) : null
+      lastReadAt: access.viewerParticipant.lastReadAt ? toIsoString(access.viewerParticipant.lastReadAt) : null,
+      peerLastReadMessageId: access.peerParticipant.lastReadMessageId ?? null,
+      peerLastReadAt: access.peerParticipant.lastReadAt ? toIsoString(access.peerParticipant.lastReadAt) : null
     }
   };
 }
@@ -1460,6 +1490,10 @@ export async function reactToChatMessage(viewer, messageId, emoji) {
     throw new Error("You can only react inside your own conversations.");
   }
 
+  if (message.cipherAlgorithm === CHAT_DELETED_MESSAGE_ALGORITHM) {
+    throw new Error("Deleted messages cannot receive reactions.");
+  }
+
   const reactionKey = buildChatMessageReactionKey(messageId, viewer.membershipId);
   const existingResponse = await getChatDc().executeGraphqlRead(GET_CHAT_MESSAGE_REACTION_BY_KEY_QUERY, {
     operationName: "GetChatMessageReactionByKey",
@@ -1530,25 +1564,33 @@ export async function deleteChatMessage(viewer, messageId, scope) {
 
   const deletedAt = new Date().toISOString();
   const isOwner = message.senderMembershipId === viewer.membershipId;
+  let updatedMessage = null;
 
   if (scope === "everyone") {
     if (!isOwner) {
       throw new Error("Only the sender can delete this message for everyone.");
     }
 
-    const messageAgeMs = Date.now() - new Date(message.createdAt).getTime();
-    if (messageAgeMs > CHAT_DELETE_FOR_EVERYONE_WINDOW_MS) {
-      throw new Error("Delete for everyone is only available for 30 minutes after sending.");
-    }
-
-    await getChatDc().executeGraphql(SOFT_DELETE_CHAT_MESSAGE_MUTATION, {
-      operationName: "SoftDeleteChatMessage",
-      variables: {
-        id: messageId
+    if (message.cipherAlgorithm === CHAT_DELETED_MESSAGE_ALGORITHM) {
+      updatedMessage = mapChatMessage(message);
+    } else {
+      const messageAgeMs = Date.now() - new Date(message.createdAt).getTime();
+      if (messageAgeMs > CHAT_DELETE_FOR_EVERYONE_WINDOW_MS) {
+        throw new Error("Delete for everyone is only available for 30 minutes after sending.");
       }
-    });
 
-    await syncConversationLastMessage(message.conversationId);
+      await getChatDc().executeGraphql(MARK_CHAT_MESSAGE_DELETED_FOR_EVERYONE_MUTATION, {
+        operationName: "MarkChatMessageDeletedForEveryone",
+        variables: {
+          id: messageId,
+          messageKind: "text",
+          cipherText: CHAT_DELETED_MESSAGE_MARKER,
+          cipherAlgorithm: CHAT_DELETED_MESSAGE_ALGORITHM
+        }
+      });
+
+      updatedMessage = mapChatMessage(await getChatMessageById(messageId));
+    }
   } else {
     const hiddenState = await getHiddenChatMessageState(viewer);
     const nextHiddenIds = [...new Set([...hiddenState.hiddenMessageIds, messageId])].slice(-CHAT_HIDDEN_MESSAGE_LIMIT);
@@ -1558,9 +1600,14 @@ export async function deleteChatMessage(viewer, messageId, scope) {
     });
   }
 
-  const preview = await buildConversationPreview(viewer, access.conversation, access.viewerParticipant, access.peerParticipant, new Set(
-    (await getHiddenChatMessageState(viewer)).hiddenMessageIds
-  ));
+  const hiddenState = await getHiddenChatMessageState(viewer);
+  const preview = await buildConversationPreview(
+    viewer,
+    access.conversation,
+    access.viewerParticipant,
+    access.peerParticipant,
+    new Set(hiddenState.hiddenMessageIds)
+  );
 
   emitChatRealtimeEvent({
     conversationId: message.conversationId,
@@ -1577,6 +1624,7 @@ export async function deleteChatMessage(viewer, messageId, scope) {
     messageId,
     scope,
     deletedAt,
+    item: updatedMessage,
     conversationPreview: preview
   };
 }

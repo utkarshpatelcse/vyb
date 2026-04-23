@@ -55,12 +55,17 @@ const CHAT_REACTION_OPTIONS = [
   "\uD83D\uDE0E"
 ] as const;
 const DELETE_FOR_EVERYONE_WINDOW_MS = 30 * 60 * 1000;
+const CHAT_DELETED_MESSAGE_ALGORITHM = "deleted";
 
 function getDismissedDecryptionWarningStorageKey(userId: string) {
   return `${DISMISSED_DECRYPTION_WARNING_STORAGE_PREFIX}:${userId}`;
 }
 
 function getMessageFallbackLabel(message: ChatMessageRecord) {
+  if (message.cipherAlgorithm === CHAT_DELETED_MESSAGE_ALGORITHM) {
+    return "This message has been deleted.";
+  }
+
   switch (message.messageKind) {
     case "image":
       return "Shared a photo";
@@ -73,6 +78,14 @@ function getMessageFallbackLabel(message: ChatMessageRecord) {
     default:
       return isE2eeCipherAlgorithm(message.cipherAlgorithm) ? "Encrypted message" : "Message";
   }
+}
+
+function isDeletedChatMessage(message: ChatMessageRecord) {
+  return message.cipherAlgorithm === CHAT_DELETED_MESSAGE_ALGORITHM;
+}
+
+function getDeletedMessageLabel(isOwnMessage: boolean) {
+  return isOwnMessage ? "Your message has been deleted." : "This message has been deleted.";
 }
 
 function timeAgo(dateString: string) {
@@ -132,7 +145,15 @@ function getConversationPreviewLabel(
   }
 }
 
-function getMessageBody(message: ChatMessageRecord, plaintextOverride?: string | null) {
+function getMessageBody(
+  message: ChatMessageRecord,
+  plaintextOverride?: string | null,
+  options?: { isOwnMessage?: boolean }
+) {
+  if (isDeletedChatMessage(message)) {
+    return getDeletedMessageLabel(Boolean(options?.isOwnMessage));
+  }
+
   if (plaintextOverride?.trim()) {
     return plaintextOverride;
   }
@@ -175,7 +196,7 @@ function isOwnChatMessage(message: ChatMessageRecord, viewerUserId: string, view
 }
 
 function canDeleteChatMessageForEveryone(message: ChatMessageRecord, viewerMembershipId: string, nowTimestamp: number) {
-  if (message.senderMembershipId !== viewerMembershipId) {
+  if (message.senderMembershipId !== viewerMembershipId || isDeletedChatMessage(message)) {
     return false;
   }
 
@@ -261,6 +282,15 @@ function IconCheck() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+function IconDoubleCheck() {
+  return (
+    <svg width="14" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="4 13 8 17 13 12" />
+      <polyline points="11 13 15 17 22 9" />
     </svg>
   );
 }
@@ -449,6 +479,7 @@ export function CampusMessagesShell({
     isOwnMessage: boolean;
   } | null>(null);
   const chatIdentityPromiseRef = useRef<Promise<boolean> | null>(null);
+  const sessionProbePromiseRef = useRef<Promise<boolean | null> | null>(null);
   const keyBackupSyncIdentityRef = useRef<string | null>(null);
   const migratingMessageIdsRef = useRef<Set<string>>(new Set());
   const messageIdsRef = useRef<Set<string>>(new Set(initialConversation?.messages.map((message) => message.id) ?? []));
@@ -484,19 +515,65 @@ export function CampusMessagesShell({
     setViewerIdentity(initialViewerIdentity);
   }, [initialViewerIdentity]);
 
+  async function probeBrowserSession() {
+    if (sessionProbePromiseRef.current) {
+      return sessionProbePromiseRef.current;
+    }
+
+    const pending = (async () => {
+      try {
+        const response = await fetch("/api/dev-session", {
+          cache: "no-store",
+          credentials: "same-origin"
+        });
+
+        if (response.status === 401) {
+          return false;
+        }
+
+        if (!response.ok) {
+          return null;
+        }
+
+        const data = await response.json().catch(() => null);
+        return data?.session?.userId === viewerUserId;
+      } catch {
+        return null;
+      } finally {
+        sessionProbePromiseRef.current = null;
+      }
+    })();
+
+    sessionProbePromiseRef.current = pending;
+    return pending;
+  }
+
+  async function syncSessionWarning(status: number) {
+    if (!isMountedRef.current) {
+      return;
+    }
+
+    if (status !== 401) {
+      setSessionExpired(false);
+      return;
+    }
+
+    const confirmedExpired = await probeBrowserSession();
+    if (!isMountedRef.current || confirmedExpired === null) {
+      return;
+    }
+
+    setSessionExpired(!confirmedExpired);
+  }
+
   async function fetchChatEndpoint(input: string, init?: RequestInit) {
     const response = await fetch(input, {
+      cache: "no-store",
       credentials: "same-origin",
       ...(init ?? {})
     });
 
-    if (isMountedRef.current) {
-      if (response.status === 401) {
-        setSessionExpired(true);
-      } else {
-        setSessionExpired(false);
-      }
-    }
+    void syncSessionWarning(response.status);
 
     return response;
   }
@@ -1188,6 +1265,25 @@ export function CampusMessagesShell({
     return items;
   }, [activeConversation]);
 
+  const seenOwnMessageIds = useMemo(() => {
+    const seenIds = new Set<string>();
+    if (!activeConversation?.peerLastReadMessageId) {
+      return seenIds;
+    }
+
+    for (const message of activeConversation.messages) {
+      if (isOwnChatMessage(message, viewerUserId, viewerMembershipId)) {
+        seenIds.add(message.id);
+      }
+
+      if (message.id === activeConversation.peerLastReadMessageId) {
+        break;
+      }
+    }
+
+    return seenIds;
+  }, [activeConversation, viewerMembershipId, viewerUserId]);
+
   const latestIncomingMessage = useMemo(() => {
     if (!activeConversation) return null;
 
@@ -1343,7 +1439,7 @@ export function CampusMessagesShell({
               payload?: { messageId?: string };
             };
 
-            if (payload.type === "chat.sync") {
+            if (payload.type === "chat.sync" || payload.type === "chat.read") {
               void loadConversationDetail(conversationId, {
                 silent: true,
                 preserveActiveConversation: true
@@ -1434,6 +1530,31 @@ export function CampusMessagesShell({
   }, [activeConversationId]);
 
   useEffect(() => {
+    if (!activeConversationId) {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return;
+      }
+
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        return;
+      }
+
+      void loadConversationDetail(activeConversationId, {
+        silent: true,
+        preserveActiveConversation: true
+      });
+    }, realtimeState === "live" ? 4000 : 2200);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [activeConversationId, realtimeState]);
+
+  useEffect(() => {
     const thread = threadRef.current;
     if (!thread) return;
     thread.scrollTop = thread.scrollHeight;
@@ -1452,7 +1573,7 @@ export function CampusMessagesShell({
 
     void (async () => {
       try {
-        const response = await fetch(`/api/chats/${encodeURIComponent(activeConversation.id)}/read`, {
+        const response = await fetchChatEndpoint(`/api/chats/${encodeURIComponent(activeConversation.id)}/read`, {
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ messageId: latestIncomingMessage.id }),
@@ -1460,7 +1581,6 @@ export function CampusMessagesShell({
         });
 
         if (response.status === 401) {
-          setSessionExpired(true);
           return;
         }
 
@@ -1569,6 +1689,12 @@ export function CampusMessagesShell({
       return;
     }
 
+    if (isDeletedChatMessage(message)) {
+      resetSwipeReplyPreview();
+      clearLongPressTimer();
+      return;
+    }
+
     swipeGestureRef.current = {
       messageId: message.id,
       startX: event.clientX,
@@ -1587,6 +1713,12 @@ export function CampusMessagesShell({
 
   function handleMessagePointerMove(message: ChatMessageRecord, event: React.PointerEvent<HTMLDivElement>) {
     if (event.pointerType !== "touch") {
+      return;
+    }
+
+    if (isDeletedChatMessage(message)) {
+      resetSwipeReplyPreview();
+      clearLongPressTimer();
       return;
     }
 
@@ -1635,6 +1767,14 @@ export function CampusMessagesShell({
       return;
     }
 
+    if (isDeletedChatMessage(message)) {
+      resetSwipeReplyPreview();
+      clearLongPressTimer();
+      longPressTriggeredRef.current = false;
+      lastTapRef.current = null;
+      return;
+    }
+
     const gesture = swipeGestureRef.current;
     const directionalOffset =
       gesture && gesture.messageId === message.id
@@ -1676,6 +1816,11 @@ export function CampusMessagesShell({
   }
 
   function handleReplyToMessage(messageId: string) {
+    const targetMessage = messageMap.get(messageId);
+    if (!targetMessage || isDeletedChatMessage(targetMessage)) {
+      return;
+    }
+
     resetSwipeReplyPreview();
     setReplyingToMessageId(messageId);
     setSelectedMessageActionId(null);
@@ -1686,6 +1831,11 @@ export function CampusMessagesShell({
   }
 
   async function handleReactToMessage(messageId: string, emoji: string) {
+    const targetMessage = messageMap.get(messageId);
+    if (!targetMessage || isDeletedChatMessage(targetMessage)) {
+      return;
+    }
+
     setMessageActionBusy(true);
     setMessageActionError(null);
 
@@ -1748,15 +1898,30 @@ export function CampusMessagesShell({
         data?.conversationPreview && typeof data.conversationPreview === "object"
           ? (data.conversationPreview as ChatConversationPreview)
           : null;
+      const updatedMessage =
+        data?.item && typeof data.item === "object"
+          ? (data.item as ChatMessageRecord)
+          : null;
 
-      setActiveConversation((current) =>
-        current
-          ? {
-              ...current,
-              messages: current.messages.filter((message) => message.id !== selectedMessageAction.id)
-            }
-          : current
-      );
+      setActiveConversation((current) => {
+        if (!current) {
+          return current;
+        }
+
+        if (scope === "everyone" && updatedMessage) {
+          return {
+            ...current,
+            messages: current.messages.map((message) =>
+              message.id === selectedMessageAction.id ? updatedMessage : message
+            )
+          };
+        }
+
+        return {
+          ...current,
+          messages: current.messages.filter((message) => message.id !== selectedMessageAction.id)
+        };
+      });
 
       if (conversationPreview) {
         setConversations((current) => upsertConversationItem(current, conversationPreview));
@@ -1904,6 +2069,7 @@ export function CampusMessagesShell({
   const selectedMessageActionIsOwn = Boolean(
     selectedMessageAction && isOwnChatMessage(selectedMessageAction, viewerUserId, viewerMembershipId)
   );
+  const selectedMessageActionIsDeleted = Boolean(selectedMessageAction && isDeletedChatMessage(selectedMessageAction));
   const hasCompatibleLocalChatKey = Boolean(
     viewerIdentity && localChatKey && isStoredChatKeyCompatible(localChatKey, viewerIdentity)
   );
@@ -2391,8 +2557,13 @@ export function CampusMessagesShell({
 
                         const message = item.message;
                         const isOwnMessage = isOwnChatMessage(message, viewerUserId, viewerMembershipId);
+                        const isDeletedMessage = isDeletedChatMessage(message);
                         const replyTarget = message.replyToMessageId ? messageMap.get(message.replyToMessageId) : null;
-                        const reactionSummary = [...new Set(message.reactions.map((reaction) => reaction.emoji))].join(" ");
+                        const reactionSummary = isDeletedMessage
+                          ? ""
+                          : [...new Set(message.reactions.map((reaction) => reaction.emoji))].join(" ");
+                        const isSeenByPeer = isOwnMessage && !isDeletedMessage && seenOwnMessageIds.has(message.id);
+                        const receiptLabel = isOwnMessage && !isDeletedMessage ? (isSeenByPeer ? "Seen" : "Sent") : null;
                         const swipeOffsetX = swipeReplyPreview?.messageId === message.id ? swipeReplyPreview.offsetX : 0;
                         const showSwipeReplyCue = Math.abs(swipeOffsetX) >= 10;
 
@@ -2451,11 +2622,19 @@ export function CampusMessagesShell({
                                 </div>
                               )}
 
-                              <p className="spm-chat-message-text">{getMessageBody(message, messagePlaintextById[message.id])}</p>
+                              <p className="spm-chat-message-text">
+                                {getMessageBody(message, messagePlaintextById[message.id], { isOwnMessage })}
+                              </p>
 
                               <div className="spm-chat-message-meta">
                                 {reactionSummary ? (
                                   <span className="spm-chat-reaction-pill">{reactionSummary}</span>
+                                ) : null}
+                                {receiptLabel ? (
+                                  <span className={`spm-chat-receipt${isSeenByPeer ? " is-seen" : ""}`}>
+                                    {isSeenByPeer ? <IconDoubleCheck /> : <IconCheck />}
+                                    {receiptLabel}
+                                  </span>
                                 ) : null}
                                 <span suppressHydrationWarning>{formatMessageTime(message.createdAt)}</span>
                               </div>
@@ -2536,22 +2715,24 @@ export function CampusMessagesShell({
                           <span>{getMessageBody(selectedMessageAction, messagePlaintextById[selectedMessageAction.id])}</span>
                         </div>
 
-                        <div className="spm-chat-action-reactions">
-                          {CHAT_REACTION_OPTIONS.map((emoji) => (
-                            <button
-                              key={`${selectedMessageAction.id}-${emoji}`}
-                              type="button"
-                              className="spm-chat-action-emoji"
-                              onClick={() => {
-                                void handleReactToMessage(selectedMessageAction.id, emoji);
-                              }}
-                              disabled={messageActionBusy}
-                              aria-label={`React with ${emoji}`}
-                            >
-                              {emoji}
-                            </button>
-                          ))}
-                        </div>
+                        {!selectedMessageActionIsDeleted && (
+                          <div className="spm-chat-action-reactions">
+                            {CHAT_REACTION_OPTIONS.map((emoji) => (
+                              <button
+                                key={`${selectedMessageAction.id}-${emoji}`}
+                                type="button"
+                                className="spm-chat-action-emoji"
+                                onClick={() => {
+                                  void handleReactToMessage(selectedMessageAction.id, emoji);
+                                }}
+                                disabled={messageActionBusy}
+                                aria-label={`React with ${emoji}`}
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+                          </div>
+                        )}
 
                         {messageActionError && (
                           <p className="spm-chat-action-error" role="alert">{messageActionError}</p>
@@ -2584,18 +2765,20 @@ export function CampusMessagesShell({
                             {selectedMessageActionIsOwn ? "Delete for you" : "Delete from your side"}
                           </button>
 
-                          <button
-                            type="button"
-                            className="spm-chat-action-button"
-                            onClick={() => handleReplyToMessage(selectedMessageAction.id)}
-                            disabled={messageActionBusy}
-                          >
-                            <IconReply />
-                            Reply
-                          </button>
+                          {!selectedMessageActionIsDeleted && (
+                            <button
+                              type="button"
+                              className="spm-chat-action-button"
+                              onClick={() => handleReplyToMessage(selectedMessageAction.id)}
+                              disabled={messageActionBusy}
+                            >
+                              <IconReply />
+                              Reply
+                            </button>
+                          )}
                         </div>
 
-                        {selectedMessageActionIsOwn && !selectedMessageDeleteForEveryoneAllowed && (
+                        {selectedMessageActionIsOwn && !selectedMessageActionIsDeleted && !selectedMessageDeleteForEveryoneAllowed && (
                           <p className="spm-chat-action-note">
                             Delete for everyone is available only for 30 minutes after sending.
                           </p>

@@ -15923,6 +15923,17 @@ html {
   font-weight: 600;
 }
 
+.spm-chat-receipt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+  color: rgba(226, 232, 240, 0.56);
+}
+
+.spm-chat-receipt.is-seen {
+  color: rgba(125, 211, 252, 0.9);
+}
+
 .spm-chat-reaction-pill {
   display: inline-flex;
   align-items: center;

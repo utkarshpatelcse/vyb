@@ -15,7 +15,11 @@ export async function GET() {
   }
 
   try {
-    return NextResponse.json(await getChatInbox(viewer));
+    return NextResponse.json(await getChatInbox(viewer), {
+      headers: {
+        "cache-control": "no-store, no-cache, must-revalidate"
+      }
+    });
   } catch (error) {
     return buildError(500, "CHAT_INBOX_FAILED", error instanceof Error ? error.message : "We could not load chats.");
   }
