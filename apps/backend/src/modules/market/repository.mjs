@@ -29,6 +29,7 @@ import {
   softDeleteMarketListingSave,
   updateMarketListingDetails
 } from "../../../../../packages/dataconnect/marketplace-admin-sdk/esm/index.esm.js";
+import { listProfilesByTenant } from "../identity/profile-repository.mjs";
 
 const TENANT_SCAN_LIMIT = 5000;
 const SAVE_LOOKUP_LIMIT = 8;
@@ -151,6 +152,23 @@ function buildPersistedMedia(asset, createdAt) {
   };
 }
 
+async function buildProfileByUserIdMap(tenantId, userIds) {
+  const normalizedUserIds = Array.from(
+    new Set(userIds.filter((value) => typeof value === "string" && value.trim().length > 0))
+  );
+  if (!tenantId || normalizedUserIds.length === 0) {
+    return new Map();
+  }
+
+  const userIdSet = new Set(normalizedUserIds);
+  const profiles = await listProfilesByTenant(tenantId);
+  return new Map(
+    profiles
+      .filter((profile) => userIdSet.has(profile.userId))
+      .map((profile) => [profile.userId, profile])
+  );
+}
+
 async function readLiveMarketSnapshot(tenantId) {
   const dc = getMarketplaceDc();
   const [
@@ -182,7 +200,7 @@ async function readLiveMarketSnapshot(tenantId) {
   };
 }
 
-function buildDashboard(snapshot, viewer) {
+function buildDashboard(snapshot, viewer, profileMap = null) {
   const activeListings = snapshot.listings.filter(
     (item) => isActiveRecord(item) && !isLegacySeedMarketActorId(item.sellerUserId)
   );
@@ -242,41 +260,46 @@ function buildDashboard(snapshot, viewer) {
   }
 
   const listings = sortNewest(
-    activeListings.map((item) => ({
-      id: item.id,
-      tenantId: item.tenantId,
-      seller: {
-        userId: item.sellerUserId,
-        username: item.sellerUsername,
-        displayName: item.sellerName,
-        role: normalizeRole(item.sellerRole)
-      },
-      title: item.title,
-      description: item.description,
-      category: item.category,
-      condition: item.condition,
-      priceAmount: item.priceAmount,
-      location: item.location,
-      campusSpot: item.campusSpot,
-      media: listingMediaMap.get(item.id) ?? [],
-      createdAt: item.createdAt,
-      savedCount: Number(saveCounts.get(item.id) ?? 0),
-      inquiryCount: Number(listingInquiryCounts.get(item.id) ?? 0),
-      isSaved: savedListingIds.has(item.id)
-    }))
+    activeListings.map((item) => {
+      const profile = profileMap?.get(item.sellerUserId) ?? null;
+
+      return {
+        id: item.id,
+        tenantId: item.tenantId,
+        seller: {
+          userId: item.sellerUserId,
+          username: profile?.username ?? item.sellerUsername,
+          displayName: profile?.fullName ?? item.sellerName,
+          role: normalizeRole(item.sellerRole)
+        },
+        title: item.title,
+        description: item.description,
+        category: item.category,
+        condition: item.condition,
+        priceAmount: item.priceAmount,
+        location: item.location,
+        campusSpot: item.campusSpot,
+        media: listingMediaMap.get(item.id) ?? [],
+        createdAt: item.createdAt,
+        savedCount: Number(saveCounts.get(item.id) ?? 0),
+        inquiryCount: Number(listingInquiryCounts.get(item.id) ?? 0),
+        isSaved: savedListingIds.has(item.id)
+      };
+    })
   );
 
   const requests = sortNewest(
     activeRequests.map((item) => {
       const tab = item.tab === "lend" ? "lend" : "buying";
+      const profile = profileMap?.get(item.requesterUserId) ?? null;
       return {
         id: item.id,
         tenantId: item.tenantId,
         tab,
         requester: {
           userId: item.requesterUserId,
-          username: item.requesterUsername,
-          displayName: item.requesterName,
+          username: profile?.username ?? item.requesterUsername,
+          displayName: profile?.fullName ?? item.requesterName,
           role: normalizeRole(item.requesterRole)
         },
         tag: buildRequestTag(tab, item.tag),
@@ -341,7 +364,13 @@ async function requireOwnedActiveLiveListing(viewer, listingId) {
 }
 
 export async function getLiveMarketDashboard(viewer) {
-  return buildDashboard(await readLiveMarketSnapshot(viewer.tenantId), viewer);
+  const snapshot = await readLiveMarketSnapshot(viewer.tenantId);
+  const profileMap = await buildProfileByUserIdMap(viewer.tenantId, [
+    ...snapshot.listings.map((item) => item.sellerUserId),
+    ...snapshot.requests.map((item) => item.requesterUserId)
+  ]);
+
+  return buildDashboard(snapshot, viewer, profileMap);
 }
 
 export async function createLiveMarketPost(viewer, payload) {

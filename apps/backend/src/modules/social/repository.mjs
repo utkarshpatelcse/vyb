@@ -31,6 +31,7 @@ import {
   updateReaction as updateReactionMutation,
   updateStoryReaction as updateStoryReactionMutation
 } from "../../../../../packages/dataconnect/social-admin-sdk/esm/index.esm.js";
+import { listProfilesByTenant } from "../identity/profile-repository.mjs";
 
 const TENANT_SCAN_LIMIT = 5000;
 const FEED_SCAN_MULTIPLIER = 4;
@@ -315,6 +316,23 @@ function buildStoryViewKey(storyId, membershipId) {
   return `${storyId}:${membershipId}`;
 }
 
+async function buildProfileByUserIdMap(tenantId, userIds) {
+  const normalizedUserIds = Array.from(
+    new Set(userIds.filter((value) => typeof value === "string" && value.trim().length > 0))
+  );
+  if (!tenantId || normalizedUserIds.length === 0) {
+    return new Map();
+  }
+
+  const userIdSet = new Set(normalizedUserIds);
+  const profiles = await listProfilesByTenant(tenantId);
+  return new Map(
+    profiles
+      .filter((profile) => userIdSet.has(profile.userId))
+      .map((profile) => [profile.userId, profile])
+  );
+}
+
 function decodeDataUrl(value) {
   if (typeof value !== "string" || !value.startsWith("data:")) {
     return null;
@@ -583,7 +601,8 @@ async function countCommentReactionsByComment(commentId) {
   ).length;
 }
 
-function mapPostRecord(item, counts = null) {
+function mapPostRecord(item, counts = null, profileMap = null) {
+  const profile = profileMap?.get(item.authorUserId) ?? null;
   return {
     id: item.id,
     tenantId: item.tenantId,
@@ -603,8 +622,8 @@ function mapPostRecord(item, counts = null) {
     createdAt: toIsoString(item.createdAt),
     author: {
       userId: item.authorUserId,
-      username: item.authorUsername ?? "vyb_user",
-      displayName: item.authorName ?? "Vyb Student"
+      username: profile?.username ?? item.authorUsername ?? "vyb_user",
+      displayName: profile?.fullName ?? item.authorName ?? "Vyb Student"
     }
   };
 }
@@ -626,13 +645,14 @@ function mapCommentRecord(item, reactionMaps = null) {
   };
 }
 
-function mapStoryRecord(item, viewerUserId = null, reactionMaps = null, viewMaps = null) {
+function mapStoryRecord(item, viewerUserId = null, reactionMaps = null, viewMaps = null, profileMap = null) {
+  const profile = profileMap?.get(item.userId) ?? null;
   return {
     id: item.id,
     tenantId: item.tenantId,
     userId: item.userId,
-    username: item.username,
-    displayName: item.displayName,
+    username: profile?.username ?? item.username,
+    displayName: profile?.fullName ?? item.displayName,
     mediaType: item.mediaType,
     mediaUrl: item.mediaUrl,
     caption: item.caption ?? "",
@@ -645,7 +665,7 @@ function mapStoryRecord(item, viewerUserId = null, reactionMaps = null, viewMaps
   };
 }
 
-async function mapPostList(records, viewerMembershipId = null) {
+async function mapPostList(records, viewerMembershipId = null, profileMap = null) {
   if (records.length === 0) {
     return [];
   }
@@ -656,7 +676,7 @@ async function mapPostList(records, viewerMembershipId = null) {
     viewerMembershipId
   );
 
-  return records.map((item) => mapPostRecord(item, counts));
+  return records.map((item) => mapPostRecord(item, counts, profileMap));
 }
 
 export async function listPosts({
@@ -687,7 +707,12 @@ export async function listPosts({
     .filter((item) => (communityId ? item.communityId === communityId : true))
     .slice(0, limit);
 
-  return mapPostList(filtered, viewerMembershipId);
+  const profileMap = await buildProfileByUserIdMap(
+    tenantId,
+    filtered.map((item) => item.authorUserId)
+  );
+
+  return mapPostList(filtered, viewerMembershipId, profileMap);
 }
 
 export async function listPostsByUser({ tenantId, userId, limit = 24, placement = "feed", viewerMembershipId = null }) {
@@ -728,7 +753,8 @@ export async function findPostById(postId, { tenantId = null, viewerMembershipId
     }
   }
 
-  return mapPostRecord(item, counts);
+  const profileMap = await buildProfileByUserIdMap(item.tenantId, [item.authorUserId]);
+  return mapPostRecord(item, counts, profileMap);
 }
 
 export async function createPost(payload) {
@@ -1051,7 +1077,8 @@ export async function findStoryById(storyId, { tenantId = null, viewerUserId = n
     ? await buildStoryViewMaps(item.tenantId, [item.id], viewerMembershipId)
     : { viewerSeen: new Map() };
 
-  return mapStoryRecord(item, viewerUserId, reactionMaps, viewMaps);
+  const profileMap = await buildProfileByUserIdMap(item.tenantId, [item.userId]);
+  return mapStoryRecord(item, viewerUserId, reactionMaps, viewMaps, profileMap);
 }
 
 export async function listStories({ tenantId, viewerUserId, viewerMembershipId = null }) {
@@ -1102,7 +1129,12 @@ export async function listStories({ tenantId, viewerUserId, viewerMembershipId =
     )
     : { viewerSeen: new Map() };
 
-  return records.map((item) => mapStoryRecord(item, viewerUserId, reactionMaps, viewMaps));
+  const profileMap = await buildProfileByUserIdMap(
+    tenantId,
+    records.map((item) => item.userId)
+  );
+
+  return records.map((item) => mapStoryRecord(item, viewerUserId, reactionMaps, viewMaps, profileMap));
 }
 
 export async function createStory(payload) {

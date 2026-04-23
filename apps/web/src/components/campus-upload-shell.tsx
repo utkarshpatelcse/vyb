@@ -17,12 +17,11 @@ import type {
 import {
   formatBytes,
   prepareSocialUploadFile,
-  uploadSocialMediaAsset,
 } from "../lib/social-media-client";
+import { enqueueBackgroundPublish } from "../lib/background-publish";
 import {
   STORY_MUSIC_CLIP_OPTIONS,
   STORY_MUSIC_DEFAULT_CLIP_SECONDS,
-  composeStoryMusicVideo,
   searchStoryMusicTracks,
   type StoryMusicStickerPosition,
   type StoryMusicTrack,
@@ -786,11 +785,20 @@ export function CampusUploadShell({
 
   /* ── Publish ────────────────────────────────────────────────────────── */
   async function handlePublish() {
-    if (isPreparingMedia) { setMessage("Please wait until optimization finishes."); return; }
+    if (isPreparingMedia) {
+      setMessage("Please wait until optimization finishes.");
+      return;
+    }
 
     if (mode === "vibe") {
-      if (!vibeVideoFile) { setMessage("Add a portrait video before posting."); return; }
-      if (!vibeIsPortrait) { setMessage("Use a 9:16 portrait video for Vibes."); return; }
+      if (!vibeVideoFile) {
+        setMessage("Add a portrait video before posting.");
+        return;
+      }
+      if (!vibeIsPortrait) {
+        setMessage("Use a 9:16 portrait video for Vibes.");
+        return;
+      }
     }
 
     if (mode === "moment" && !caption.trim() && momentImages.length === 0) {
@@ -803,141 +811,50 @@ export function CampusUploadShell({
     }
 
     setIsPublishing(true);
-    setMessage(null);
+    setMessage("Posting will continue in background.");
 
     try {
       if (mode === "vibe" && vibeVideoFile) {
-        const uploadedMedia = await uploadSocialMediaAsset(vibeVideoFile, "vibe");
-        const trimmedCaption = caption.trim();
-        const response = await fetch("/api/vibes", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            title: trimmedCaption ? trimmedCaption.slice(0, 72) : null,
-            body: trimmedCaption || "Fresh campus vibe.",
-            mediaUrl: uploadedMedia?.url ?? null,
-            mediaStoragePath: uploadedMedia?.storagePath ?? null,
-            mediaMimeType: uploadedMedia?.mimeType ?? null,
-            mediaSizeBytes: uploadedMedia?.sizeBytes ?? null,
-            location: collegeName,
-          }),
+        enqueueBackgroundPublish({
+          kind: "vibe",
+          caption,
+          collegeName,
+          videoFile: vibeVideoFile
         });
-        const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
-        if (!response.ok) { setMessage(payload?.error?.message ?? "Could not publish Vibe."); return; }
       } else if (mode === "story") {
-        const trimmedCaption = caption.trim();
-
-        let normalizedStoryAssets = storyAssets.map((asset) => ({
-          file: asset.file,
-          mediaType: asset.kind,
-          mimeType: asset.file.type || null
-        }));
-
-        if (storyMusicTrack && activeStoryAsset) {
-          const composed = await composeStoryMusicVideo({
-            visualFile: activeStoryAsset.file,
-            visualKind: activeStoryAsset.kind,
-            track: storyMusicTrack,
-            clipDurationSeconds: storyMusicClipDurationSeconds,
-            trimStartSeconds: storyMusicTrimSeconds,
-            stickerPosition: storyMusicStickerPosition,
-            onStatus: setMessage
-          });
-
-          normalizedStoryAssets = [
-            {
-              file: composed.file,
-              mediaType: "video" as const,
-              mimeType: composed.file.type || "video/mp4"
-            }
-          ];
-        }
-
-        let completed = 0;
-        const total = normalizedStoryAssets.length;
-        const uploadedMediaAssets = await Promise.all(
-          normalizedStoryAssets.map(async (asset) => {
-            const uploaded = await uploadSocialMediaAsset(asset.file, "story");
-            completed += 1;
-            setMessage(`Uploading ${completed}/${total}...`);
-            return {
-              mediaType: asset.mediaType,
-              mediaUrl: uploaded?.url ?? "",
-              mediaStoragePath: uploaded?.storagePath ?? null,
-              mediaMimeType: uploaded?.mimeType ?? asset.mimeType ?? null,
-              mediaSizeBytes: uploaded?.sizeBytes ?? null
-            };
-          })
-        );
-
-        for (let index = 0; index < uploadedMediaAssets.length; index += 1) {
-          setMessage(`Publishing ${index + 1}/${uploadedMediaAssets.length} stories...`);
-          const asset = uploadedMediaAssets[index];
-          const response = await fetch("/api/stories", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              mediaType: asset.mediaType,
-              mediaUrl: asset.mediaUrl,
-              mediaStoragePath: asset.mediaStoragePath ?? null,
-              mediaMimeType: asset.mediaMimeType ?? null,
-              mediaSizeBytes: asset.mediaSizeBytes ?? null,
-              caption: trimmedCaption || null
-            })
-          });
-          const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
-          if (!response.ok) {
-            setMessage(payload?.error?.message ?? "Could not publish Story.");
-            return;
-          }
-        }
-      } else {
-        // moment — upload all images if present
-        let completed = 0;
-        const total = momentImages.length;
-        let uploadedMediaAssets: any[] = [];
-
-        if (total > 0) {
-          setMessage(`Uploading 0/${total}...`);
-          const uploadPromises = momentImages.map(async (img) => {
-            const uploaded = await uploadSocialMediaAsset(img.file, "post");
-            completed++;
-            setMessage(`Uploading ${completed}/${total}...`);
-            return {
-              url: uploaded?.url ?? "",
-              kind: "image",
-              storagePath: uploaded?.storagePath ?? null,
-              mimeType: uploaded?.mimeType ?? null,
-              sizeBytes: uploaded?.sizeBytes ?? null
-            };
-          });
-          // Ensure all media are processed in parallel
-          uploadedMediaAssets = await Promise.all(uploadPromises);
-          setMessage("Optimizing layout...");
-        }
-
-        const trimmedCaption = caption.trim();
-        const response = await fetch("/api/posts", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            title: trimmedCaption ? trimmedCaption.slice(0, 72) : "",
-            body: trimmedCaption || "",
-            kind: total > 0 ? "image" : "text",
-            mediaAssets: uploadedMediaAssets.length > 0 ? uploadedMediaAssets : undefined,
-            location: collegeName,
-          }),
+        enqueueBackgroundPublish({
+          kind: "story",
+          caption,
+          storyAssets: storyAssets.map((asset) => ({
+            file: asset.file,
+            mediaType: asset.kind,
+            mimeType: asset.file.type || null
+          })),
+          storyMusic:
+            storyMusicTrack && activeStoryAsset
+              ? {
+                  visualFile: activeStoryAsset.file,
+                  visualKind: activeStoryAsset.kind,
+                  track: storyMusicTrack,
+                  clipDurationSeconds: storyMusicClipDurationSeconds,
+                  trimStartSeconds: storyMusicTrimSeconds,
+                  stickerPosition: storyMusicStickerPosition
+                }
+              : null
         });
-        const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
-        if (!response.ok) { setMessage(payload?.error?.message ?? "Could not publish Moment."); return; }
+      } else {
+        enqueueBackgroundPublish({
+          kind: "post",
+          caption,
+          collegeName,
+          mediaFiles: momentImages.map((asset) => asset.file)
+        });
       }
 
       router.push(returnTo);
-      router.refresh();
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Could not publish right now.");
-    } finally {
       setIsPublishing(false);
+      setMessage(err instanceof Error ? err.message : "Could not queue this post right now.");
     }
   }
 
@@ -983,7 +900,7 @@ export function CampusUploadShell({
                 onClick={handlePublish}
                 disabled={!canPublish || isPublishing || isPreparingMedia}
               >
-                {isPublishing ? "Posting…" : mode === "vibe" ? "Post Vibe" : mode === "story" ? "Post Story" : "Post Moment"}
+                {isPublishing ? "Queueing..." : mode === "vibe" ? "Post Vibe" : mode === "story" ? "Post Story" : "Post Moment"}
               </button>
             )}
             <button type="button" className="cs-close-btn" onClick={handleClose} aria-label="Close">
@@ -1624,9 +1541,9 @@ export function CampusUploadShell({
                 disabled={!canPublish || isPublishing || isPreparingMedia}
               >
                 {isPublishing
-                  ? "Posting…"
+                  ? "Queueing..."
                   : isPreparingMedia
-                    ? "Preparing…"
+                    ? "Preparing..."
                     : mode === "vibe"
                       ? "Post Vibe ✦"
                       : mode === "story"
