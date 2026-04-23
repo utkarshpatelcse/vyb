@@ -4,6 +4,7 @@ import type { CampusEvent, CampusEventFormField, CampusEventFormFieldType, Campu
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
+import { useResolvedAvatarUrl } from "./campus-avatar";
 import { VybLogoLockup } from "./vyb-logo";
 
 type CampusEventHostShellProps = {
@@ -172,6 +173,9 @@ export function CampusEventHostShell({
   const [media, setMedia] = useState<EventMediaPreview[]>(() => buildExistingMedia(initialEvent));
   const mediaRef = useRef<EventMediaPreview[]>(buildExistingMedia(initialEvent));
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const viewerAvatarUrl = useResolvedAvatarUrl({
+    username: viewerUsername
+  });
 
   useEffect(() => {
     return () => {
@@ -820,7 +824,7 @@ export function CampusEventHostShell({
             <div className="vyb-campus-side-card">
               <span className="vyb-campus-side-label">Host identity</span>
               <div className="vyb-events-side-user">
-                <img src={`https://i.pravatar.cc/120?u=${encodeURIComponent(viewerUsername)}`} alt={viewerName} />
+                <img src={viewerAvatarUrl ?? `https://i.pravatar.cc/120?u=${encodeURIComponent(viewerUsername)}`} alt={viewerName} />
                 <div>
                   <strong>{viewerName}</strong>
                   <span>{role} • @{viewerUsername}</span>

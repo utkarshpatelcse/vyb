@@ -4,6 +4,7 @@ import type { FeedCard, PostLikerItem, StoryCard, UserSearchItem } from "@vyb/co
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { CampusAvatarContent, useResolvedAvatarUrl } from "./campus-avatar";
 import { SocialPostActionSheet } from "./social-post-action-sheet";
 import { SocialPostLightbox } from "./social-post-lightbox";
 import { SocialPostLikersSheet } from "./social-post-likers-sheet";
@@ -586,6 +587,10 @@ export function CampusHomeShell({
 
   const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
   const navItems = useMemo(() => buildPrimaryCampusNav("home", { unreadCount: unreadChatCount }), [unreadChatCount]);
+  const viewerAvatarUrl = useResolvedAvatarUrl({
+    username: viewerUsername,
+    email: viewerEmail
+  });
 
   function syncMirroredPost(postId: string, updater: (post: FeedCard) => FeedCard) {
     setVibeStrip((current) => current.map((post) => (post.id === postId ? updater(post) : post)));
@@ -1224,7 +1229,13 @@ export function CampusHomeShell({
                   {/* ── Header ── */}
                   <div className="fc-header">
                     <Link href={getProfileHref(post.author.username, viewerUsername)} className="fc-avatar" aria-label={post.author.username}>
-                      {post.author.displayName.slice(0, 1).toUpperCase()}
+                      <CampusAvatarContent
+                        userId={post.author.userId}
+                        username={post.author.username}
+                        displayName={post.author.displayName}
+                        fallback={post.author.displayName.slice(0, 1).toUpperCase()}
+                        decorative
+                      />
                     </Link>
                     <div className="fc-header-info">
                       <div className="fc-header-top">
@@ -1353,7 +1364,7 @@ export function CampusHomeShell({
         <div className="vyb-campus-side-card">
           <span className="vyb-campus-side-label">Your vibe</span>
           <div className="vyb-campus-side-user">
-            <img src={`https://i.pravatar.cc/120?u=${encodeURIComponent(viewerEmail)}`} alt={viewerName} />
+            <img src={viewerAvatarUrl ?? `https://i.pravatar.cc/120?u=${encodeURIComponent(viewerEmail)}`} alt={viewerName} />
             <div>
               <strong>{viewerName}</strong>
               <span>@{viewerUsername}</span>
@@ -1441,7 +1452,13 @@ export function CampusHomeShell({
               <div className="vyb-campus-compose-main">
                 <div className="vyb-campus-compose-user">
                   <div className="vyb-campus-compose-avatar" aria-hidden="true">
-                    {(viewerName.trim() || viewerUsername).slice(0, 2).toUpperCase()}
+                    <CampusAvatarContent
+                      username={viewerUsername}
+                      email={viewerEmail}
+                      displayName={viewerName}
+                      fallback={(viewerName.trim() || viewerUsername).slice(0, 2).toUpperCase()}
+                      decorative
+                    />
                   </div>
                   <div className="vyb-campus-compose-user-copy">
                     <strong>{viewerName}</strong>
@@ -1562,7 +1579,13 @@ export function CampusHomeShell({
             <div className="vyb-story-viewer-head">
               <div className="vyb-story-viewer-user">
                 <span className="vyb-story-viewer-avatar" aria-hidden="true">
-                  {(selectedStory.displayName.trim() || selectedStory.username).slice(0, 2).toUpperCase()}
+                  <CampusAvatarContent
+                    userId={selectedStory.userId}
+                    username={selectedStory.username}
+                    displayName={selectedStory.displayName}
+                    fallback={(selectedStory.displayName.trim() || selectedStory.username).slice(0, 2).toUpperCase()}
+                    decorative
+                  />
                 </span>
                 <div className="vyb-story-viewer-user-copy">
                   <strong>{selectedStory.isOwn ? "Your story" : selectedStory.displayName}</strong>

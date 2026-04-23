@@ -1,8 +1,8 @@
 # Vyb
 
 Owner: Product and Engineering
-Last Updated: 2026-04-22
-Change Summary: Synced the repo overview with the live Phase 1 social, story music, immersive playback, market, and campus events capabilities.
+Last Updated: 2026-04-23
+Change Summary: Added the canonical Locked-In UI theme guidance to the shared design system and kept the repo overview aligned with the live social product.
 
 Multi-tenant campus platform architecture with a responsive web client in Phase 1 and a future native mobile client.
 
@@ -56,7 +56,7 @@ Multi-tenant campus platform architecture with a responsive web client in Phase 
 - `packages/contracts` for API contracts
 - `packages/validation` for shared schemas
 - `packages/app-core` for client-safe shared business-flow logic
-- `packages/design-tokens` for shared design language
+- `packages/design-tokens` for shared design language and the canonical Locked-In theme used by all web features
 - `packages/ui-web` for web-only UI primitives
 - `packages/ui-native` for native-only UI primitives
 - `packages/dataconnect` for database connectors and operations

@@ -23,6 +23,7 @@ import {
   type StoryMusicStickerPosition,
   type StoryMusicTrack,
 } from "../lib/story-music";
+import { CampusAvatarContent } from "./campus-avatar";
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 type CampusUploadShellProps = {
@@ -974,7 +975,15 @@ export function CampusUploadShell({
             <div className="cs-vibe-right">
               {/* User pill */}
               <div className="cs-user-row">
-                <div className="cs-avatar" aria-hidden="true">{avatarInitials}</div>
+                  <div className="cs-avatar" aria-hidden="true">
+                    <CampusAvatarContent
+                      username={viewerUsername}
+                      email={viewerEmail}
+                      displayName={viewerName}
+                      fallback={avatarInitials}
+                      decorative
+                    />
+                  </div>
                 <div className="cs-user-info">
                   <strong>{viewerName}</strong>
                   <span>@{viewerUsername}</span>
@@ -1036,7 +1045,15 @@ export function CampusUploadShell({
         {(mode === "story" || mode === "moment") && (
           <div className="cs-moment-screen">
             <div className="cs-user-row cs-user-row--moment">
-              <div className="cs-avatar" aria-hidden="true">{avatarInitials}</div>
+                <div className="cs-avatar" aria-hidden="true">
+                  <CampusAvatarContent
+                    username={viewerUsername}
+                    email={viewerEmail}
+                    displayName={viewerName}
+                    fallback={avatarInitials}
+                    decorative
+                  />
+                </div>
               <div className="cs-user-info">
                 <strong>{viewerName}</strong>
                 <span>@{viewerUsername}</span>

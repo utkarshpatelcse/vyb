@@ -12,6 +12,7 @@ import type {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { CampusAvatarContent } from "./campus-avatar";
 import {
   CHAT_IDENTITY_ALGORITHM,
   createStoredChatKeyMaterial,
@@ -2186,7 +2187,13 @@ export function CampusMessagesShell({
                     <div key={user.userId} className="spm-user-result" role="listitem">
                       <div className="spm-conv-avatar-wrap">
                         <div className="spm-conv-avatar spm-pulse-ring spm-pulse-away">
-                          {initials}
+                          <CampusAvatarContent
+                            userId={user.userId}
+                            username={user.username}
+                            displayName={user.displayName}
+                            fallback={initials}
+                            decorative
+                          />
                         </div>
                       </div>
                       <div className="spm-conv-content">
@@ -2252,7 +2259,14 @@ export function CampusMessagesShell({
                     >
                       <div className="spm-conv-avatar-wrap">
                         <div className={`spm-conv-avatar spm-pulse-ring spm-pulse-${statusRing}`}>
-                          {initials}
+                          <CampusAvatarContent
+                            userId={item.peer.userId}
+                            username={item.peer.username}
+                            displayName={item.peer.displayName}
+                            avatarUrl={item.peer.avatarUrl ?? null}
+                            fallback={initials}
+                            decorative
+                          />
                         </div>
                         <span
                           className={`spm-status-dot spm-status-${statusRing}`}
@@ -2398,7 +2412,14 @@ export function CampusMessagesShell({
                   <div className="spm-chat-peer">
                     <div className="spm-conv-avatar-wrap">
                       <div className={`spm-conv-avatar spm-pulse-ring spm-pulse-${activePeerStatus}`}>
-                        {activePeerInitials}
+                        <CampusAvatarContent
+                          userId={activePeer.userId}
+                          username={activePeer.username}
+                          displayName={activePeer.displayName}
+                          avatarUrl={activePeer.avatarUrl ?? null}
+                          fallback={activePeerInitials}
+                          decorative
+                        />
                       </div>
                       <span className={`spm-status-dot spm-status-${activePeerStatus}`} />
                     </div>
@@ -2555,7 +2576,14 @@ export function CampusMessagesShell({
                           >
                             {!isOwnMessage && (
                               <div className="spm-chat-mini-avatar" aria-hidden="true">
-                                {activePeerInitials}
+                                <CampusAvatarContent
+                                  userId={activePeer?.userId}
+                                  username={activePeer?.username}
+                                  displayName={activePeer?.displayName}
+                                  avatarUrl={activePeer?.avatarUrl ?? null}
+                                  fallback={activePeerInitials}
+                                  decorative
+                                />
                               </div>
                             )}
 
@@ -2634,7 +2662,13 @@ export function CampusMessagesShell({
                                   <IconMore />
                                 </button>
                                 <div className="spm-chat-mini-avatar spm-chat-mini-avatar-self" aria-hidden="true">
-                                  {getInitials(viewerName)}
+                                  <CampusAvatarContent
+                                    userId={viewerUserId}
+                                    username={viewerUsername}
+                                    displayName={viewerName}
+                                    fallback={getInitials(viewerName)}
+                                    decorative
+                                  />
                                 </div>
                               </>
                             )}
@@ -2828,7 +2862,13 @@ export function CampusMessagesShell({
 
                     <form className="spm-chat-compose-form" onSubmit={handleSendMessage}>
                       <div className="spm-chat-compose-avatar" aria-hidden="true">
-                        {getInitials(viewerName)}
+                        <CampusAvatarContent
+                          userId={viewerUserId}
+                          username={viewerUsername}
+                          displayName={viewerName}
+                          fallback={getInitials(viewerName)}
+                          decorative
+                        />
                       </div>
 
                       <label className="spm-chat-compose-box">

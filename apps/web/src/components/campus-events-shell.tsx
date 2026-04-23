@@ -16,6 +16,7 @@ import type {
 } from "@vyb/contracts";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
+import { useResolvedAvatarUrl } from "./campus-avatar";
 import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
 import { SignOutButton } from "./sign-out-button";
 import { VybLogoLockup } from "./vyb-logo";
@@ -440,6 +441,10 @@ export function CampusEventsShell({
   const [hostRegistrationStatuses, setHostRegistrationStatuses] = useState<CampusEventRegistrationStatus[]>([]);
   const registrationFileInputRef = useRef<HTMLInputElement | null>(null);
   const resizeState = useRef<{ side: ResizeSide; startX: number; startWidth: number } | null>(null);
+  const viewerAvatarUrl = useResolvedAvatarUrl({
+    username: viewerUsername,
+    email: viewerEmail
+  });
 
   useEffect(() => {
     setDashboard(initialDashboard ?? buildEmptyDashboard(viewerUsername));
@@ -1223,7 +1228,7 @@ export function CampusEventsShell({
         <div className="vyb-campus-side-card vyb-events-side-card">
           <span className="vyb-campus-side-label">Your event lane</span>
           <div className="vyb-events-side-user">
-            <img src={`https://i.pravatar.cc/120?u=${encodeURIComponent(viewerEmail)}`} alt={viewerName} />
+            <img src={viewerAvatarUrl ?? `https://i.pravatar.cc/120?u=${encodeURIComponent(viewerEmail)}`} alt={viewerName} />
             <div>
               <strong>{viewerName}</strong>
               <span>{identityLine}</span>

@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import type { CommentItem, FeedCard } from "@vyb/contracts";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
+import { CampusAvatarContent } from "./campus-avatar";
 
 type ThreadMediaKind = "gif" | "sticker";
 
@@ -303,7 +304,13 @@ export function SocialThreadSheet({
       >
         <article className={`vyb-thread-comment${depth > 0 ? " is-reply" : ""}`}>
           <div className="vyb-thread-comment-avatar" aria-hidden="true">
-            {getInitials(comment.author?.displayName ?? "Vyb Student")}
+            <CampusAvatarContent
+              userId={comment.author?.userId}
+              username={comment.author?.username}
+              displayName={comment.author?.displayName ?? "Vyb Student"}
+              fallback={getInitials(comment.author?.displayName ?? "Vyb Student")}
+              decorative
+            />
           </div>
           <div className="vyb-thread-comment-body">
             <div className="vyb-thread-comment-copy">
@@ -388,7 +395,7 @@ export function SocialThreadSheet({
               className="vyb-thread-list" 
               style={{ scrollbarWidth: "none", msOverflowStyle: "none", overflowY: "auto", touchAction: "pan-y" }}
             >
-              <div className="vyb-thread-list-inner">
+              <div className={`vyb-thread-list-inner${!isLoading && comments.length > 0 ? " has-comments" : ""}`}>
                 {isLoading ? <p className="vyb-thread-state">Loading comments...</p> : null}
                 {!isLoading && comments.length === 0 ? <p className="vyb-thread-state">No comments yet. Start the conversation.</p> : null}
                 {!isLoading ? thread.map((node, index) => renderComment(node, 0, `root-${index}`)) : null}
@@ -442,7 +449,12 @@ export function SocialThreadSheet({
 
               <div className="vyb-thread-composer">
                 <div className="vyb-thread-composer-avatar" aria-hidden="true">
-                  {getInitials(viewerName || viewerUsername)}
+                  <CampusAvatarContent
+                    username={viewerUsername}
+                    displayName={viewerName}
+                    fallback={getInitials(viewerName || viewerUsername)}
+                    decorative
+                  />
                 </div>
 
                 <div className="vyb-thread-input-shell">

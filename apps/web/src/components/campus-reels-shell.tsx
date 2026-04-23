@@ -4,6 +4,7 @@ import type { FeedCard, PostLikerItem } from "@vyb/contracts";
 import { animate, motion, useReducedMotion } from "framer-motion";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { CampusAvatarContent } from "./campus-avatar";
 import { SocialPostActionSheet } from "./social-post-action-sheet";
 import { SocialPostLightbox } from "./social-post-lightbox";
 import { SocialPostLikersSheet } from "./social-post-likers-sheet";
@@ -922,7 +923,15 @@ export function CampusReelsShell({
               <PlusIcon />
             </Link>
             <Link href="/dashboard" className="vyb-vibes-viewer-chip">
-              <span className="vyb-vibes-viewer-avatar">{getInitials(viewerName || viewerUsername)}</span>
+              <span className="vyb-vibes-viewer-avatar">
+                <CampusAvatarContent
+                  username={viewerUsername}
+                  email={viewerEmail}
+                  displayName={viewerName}
+                  fallback={getInitials(viewerName || viewerUsername)}
+                  decorative
+                />
+              </span>
               <span className="vyb-vibes-viewer-copy">
                 <strong>{viewerName}</strong>
                 <span>@{viewerUsername}</span>
@@ -1048,7 +1057,13 @@ export function CampusReelsShell({
                         >
                           <div className="vyb-vibes-author-row">
                             <Link href={profileHref} className="vyb-vibes-author-avatar" aria-label={`Open ${item.author.displayName} profile`}>
-                              {getInitials(item.author.displayName)}
+                              <CampusAvatarContent
+                                userId={item.author.userId}
+                                username={item.author.username}
+                                displayName={item.author.displayName}
+                                fallback={getInitials(item.author.displayName)}
+                                decorative
+                              />
                             </Link>
                             <div className="vyb-vibes-author-copy">
                               <Link href={profileHref}>

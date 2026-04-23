@@ -2,3 +2,22 @@
 @import "./styles/base.css";
 @import "./styles/campus-shell.css";
 @import "./styles/social-surfaces.css";
+@import "./styles/landing.css";
+
+:root {
+  --vyb-theme-name: var(--cl-theme-name);
+  --vyb-theme-font-sans: var(--cl-font-sans);
+  --vyb-theme-bg: var(--cl-color-ink);
+  --vyb-theme-accent: var(--cl-color-accent);
+  --vyb-theme-accent-strong: var(--cl-color-accent-strong);
+  --vyb-theme-secondary: var(--cl-color-market);
+  --vyb-theme-success: var(--cl-color-success);
+  --vyb-theme-glass: var(--cl-surface-glass);
+  --vyb-theme-glass-strong: var(--cl-surface-glass-strong);
+  --vyb-theme-border: var(--cl-border-soft);
+  --vyb-theme-shadow: var(--cl-shadow-neon);
+  --vyb-theme-shadow-market: var(--cl-shadow-market);
+  --vyb-theme-blur: var(--cl-glass-blur);
+  --vyb-theme-gradient-primary: var(--cl-gradient-primary);
+  --vyb-theme-gradient-secondary: var(--cl-gradient-market);
+}

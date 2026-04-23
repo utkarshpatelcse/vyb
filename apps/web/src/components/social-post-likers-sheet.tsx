@@ -1,6 +1,7 @@
 "use client";
 
 import type { FeedCard, PostLikerItem } from "@vyb/contracts";
+import { CampusAvatarContent } from "./campus-avatar";
 
 type SocialPostLikersSheetProps = {
   post: FeedCard | null;
@@ -34,7 +35,15 @@ export function SocialPostLikersSheet({ post, items, isLoading, message, onClose
 
           {items.map((item) => (
             <article key={`${item.membershipId}-${item.reactedAt}`} className="vyb-post-likers-item">
-              <span className="vyb-post-likers-avatar">{item.displayName.slice(0, 1).toUpperCase()}</span>
+              <span className="vyb-post-likers-avatar">
+                <CampusAvatarContent
+                  userId={item.userId}
+                  username={item.username}
+                  displayName={item.displayName}
+                  fallback={item.displayName.slice(0, 1).toUpperCase()}
+                  decorative
+                />
+              </span>
               <div>
                 <strong>{item.displayName}</strong>
                 <span>@{item.username}</span>

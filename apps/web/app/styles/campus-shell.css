@@ -529,9 +529,9 @@
   justify-content: center;
   border-radius: 999px;
   border: 2px solid var(--vyb-campus-bg);
-  background: linear-gradient(135deg, #ffffff, #dbeafe);
-  color: #2563eb;
-  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.28);
+  background: var(--vyb-campus-gradient);
+  color: #ffffff;
+  box-shadow: var(--vyb-campus-shadow);
   z-index: 2;
 }
 
@@ -1070,6 +1070,7 @@
   color: #ffffff;
   font-weight: 900;
   letter-spacing: 0.04em;
+  overflow: hidden;
 }
 
 .vyb-campus-compose-user-copy {
@@ -1303,7 +1304,7 @@
   border: 0;
   background: var(--vyb-campus-gradient);
   color: #ffffff;
-  box-shadow: 0 14px 24px rgba(210, 32, 255, 0.24);
+  box-shadow: var(--vyb-campus-shadow);
 }
 
 .vyb-campus-compose-secondary {
@@ -1437,7 +1438,7 @@
   background: var(--vyb-campus-gradient);
   color: #ffffff;
   cursor: pointer;
-  box-shadow: 0 14px 24px rgba(210, 32, 255, 0.24);
+  box-shadow: var(--vyb-campus-shadow);
 }
 
 .vyb-upload-submit-top:disabled {
@@ -1483,7 +1484,7 @@
 .vyb-upload-kind-chip.is-active {
   border: 0;
   background: var(--vyb-campus-gradient);
-  box-shadow: 0 14px 24px rgba(210, 32, 255, 0.18);
+  box-shadow: var(--vyb-campus-shadow);
 }
 
 .vyb-upload-modal-body {
@@ -1826,7 +1827,7 @@
   border: 0;
   background: var(--vyb-campus-gradient);
   color: #ffffff;
-  box-shadow: 0 14px 24px rgba(210, 32, 255, 0.24);
+  box-shadow: var(--vyb-campus-shadow);
 }
 
 .vyb-upload-secondary-button {

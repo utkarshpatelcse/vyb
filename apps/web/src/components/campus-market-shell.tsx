@@ -19,6 +19,7 @@ import {
   hasExplicitMarketCampusSpot,
   hasExplicitMarketLocation
 } from "../lib/market-defaults";
+import { CampusAvatarContent, useResolvedAvatarUrl } from "./campus-avatar";
 import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
 import { SignOutButton } from "./sign-out-button";
 import { VybLogoLockup } from "./vyb-logo";
@@ -800,6 +801,10 @@ export function CampusMarketShell({
 
   const visibleCount = activeTab === "sale" ? sortedItems.length : sortedRequests.length;
   const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
+  const viewerAvatarUrl = useResolvedAvatarUrl({
+    username: viewerUsername,
+    email: viewerEmail
+  });
   const tabCounts = {
     sale: dashboard.listings.length,
     buying: dashboard.requests.filter((request) => request.tab === "buying").length,
@@ -1582,7 +1587,7 @@ export function CampusMarketShell({
         <div className="vyb-campus-side-card vyb-market-side-card">
           <span className="vyb-campus-side-label">Your market vibe</span>
           <div className="vyb-market-side-user">
-            <img src={`https://i.pravatar.cc/120?u=${encodeURIComponent(viewerEmail)}`} alt={viewerName} />
+            <img src={viewerAvatarUrl ?? `https://i.pravatar.cc/120?u=${encodeURIComponent(viewerEmail)}`} alt={viewerName} />
             <div>
               <strong>{viewerName}</strong>
               <span>{identityLine}</span>
@@ -1692,7 +1697,13 @@ export function CampusMarketShell({
               <div className="vyb-campus-compose-main">
                 <div className="vyb-campus-compose-user">
                   <div className="vyb-campus-compose-avatar" aria-hidden="true">
-                    {(viewerName.trim() || viewerUsername).slice(0, 2).toUpperCase()}
+                    <CampusAvatarContent
+                      username={viewerUsername}
+                      email={viewerEmail}
+                      displayName={viewerName}
+                      fallback={(viewerName.trim() || viewerUsername).slice(0, 2).toUpperCase()}
+                      decorative
+                    />
                   </div>
                   <div className="vyb-campus-compose-user-copy">
                     <strong>{viewerName}</strong>

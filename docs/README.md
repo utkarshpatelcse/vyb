@@ -1,8 +1,8 @@
 # Vyb Documentation Hub
 
 Owner: Architecture and Product
-Last Updated: 2026-04-22
-Change Summary: Synced the docs hub with the live Phase 1 social surface, including immersive stories and vibes, story music composition notes, and the required supporting ADR and API contracts.
+Last Updated: 2026-04-23
+Change Summary: Added the canonical Locked-In UI theme guide and kept the docs hub aligned with the live product, architecture, and implementation rules.
 
 This directory is the single source of truth for product, architecture, delivery, and engineering process.
 
@@ -18,21 +18,23 @@ This directory is the single source of truth for product, architecture, delivery
    The living Software Requirements Specification.
 5. `docs/product/MASTER_PLAN.md`
    The execution narrative: what we are building, why, what is done, and what comes next.
-6. `docs/lld/phase-1/`
+6. `docs/product/UI_THEME_GUIDE.md`
+   The canonical visual system for colors, typography, glass surfaces, and shared interaction styling across all pages and future features.
+7. `docs/lld/phase-1/`
    Execution-ready LLDs for the core Phase 1 backend modules.
-7. `docs/contracts/phase-1/`
+8. `docs/contracts/phase-1/`
    API contracts for the current public Phase 1 backend endpoints.
-8. `docs/architecture/ADR_001_PHASE1_HOSTING_TOPOLOGY.md` and later ADRs
+9. `docs/architecture/ADR_001_PHASE1_HOSTING_TOPOLOGY.md` and later ADRs
    Accepted architecture decisions for hosting, external services, and new runtime dependencies.
-9. `docs/query-reviews/phase-1/`
+10. `docs/query-reviews/phase-1/`
    Query reviews for the hot paths we expect to matter in Phase 1.
-10. `docs/templates/LLD_TEMPLATE.md`
+11. `docs/templates/LLD_TEMPLATE.md`
    The mandatory template for any feature-level Low Level Design.
-11. `docs/templates/API_CONTRACT_TEMPLATE.md`
+12. `docs/templates/API_CONTRACT_TEMPLATE.md`
    The mandatory template for documenting public or internal API contracts.
-12. `docs/templates/QUERY_REVIEW_TEMPLATE.md`
+13. `docs/templates/QUERY_REVIEW_TEMPLATE.md`
    The mandatory template for hot-path queries and index justification.
-13. `docs/templates/ADR_TEMPLATE.md`
+14. `docs/templates/ADR_TEMPLATE.md`
    The mandatory template for architecture decisions such as Redis, Pub/Sub, caching, search, or a new third-party service.
 
 ## Rules For Updating Docs
@@ -42,6 +44,7 @@ This directory is the single source of truth for product, architecture, delivery
 - Any new external dependency or infrastructure service must have an ADR.
 - Any requirement change must update `SRS.md`.
 - Any phase/status/progress update must update `MASTER_PLAN.md`.
+- Any user-facing visual change must stay aligned with `UI_THEME_GUIDE.md`.
 - If code changes but docs do not, the task is not done.
 
 ## Review Order For New Teammates
@@ -51,9 +54,10 @@ This directory is the single source of truth for product, architecture, delivery
 3. Read `ENGINEERING_RULEBOOK.md`
 4. Read `SRS.md`
 5. Read `MASTER_PLAN.md`
-6. Read the relevant Phase 1 LLD or feature LLD
-7. Read the matching API contract and query review for hot paths
-8. Read the relevant ADRs for the assigned feature
+6. Read `UI_THEME_GUIDE.md`
+7. Read the relevant Phase 1 LLD or feature LLD
+8. Read the matching API contract and query review for hot paths
+9. Read the relevant ADRs for the assigned feature
 
 ## Ownership
 

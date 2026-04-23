@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { courseOptions, defaultCourse, getStreamOptions, getYearOptionsForCourse, splitDisplayName } from "../lib/college-access";
 import { getFirebaseClientAuth, isFirebaseClientConfigured } from "../lib/firebase-client";
+import { persistStoredAvatarUrl, readStoredAvatarUrl } from "./campus-avatar";
 import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
 import { SignOutButton } from "./sign-out-button";
 import { VybLogoLockup, VybLogoMark } from "./vyb-logo";
@@ -342,27 +343,10 @@ function buildAvatarUrl(seed: string) {
   return `https://i.pravatar.cc/240?u=${encodeURIComponent(seed || "vyb-user")}`;
 }
 
-function buildStoredAvatarKey(username: string) {
-  return `vyb-profile-avatar:${username}`;
-}
-
 const AVATAR_CROP_FRAME_SIZE = 320;
 const AVATAR_CROP_OUTPUT_SIZE = 512;
 const AVATAR_CROP_MIN_ZOOM = 1;
 const AVATAR_CROP_MAX_ZOOM = 3;
-
-function readStoredString(key: string) {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const value = window.localStorage.getItem(key);
-    return value && value.trim().length > 0 ? value : null;
-  } catch {
-    return null;
-  }
-}
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -661,7 +645,14 @@ export function CampusProfileShell({
   const visiblePosts = activeTab === "posts" ? posts : activeTab === "vibes" ? vibePosts : ([] as FeedCard[]);
   const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
   const profileSeed = `${username}-${viewerName}`;
-  const avatarStorageKey = buildStoredAvatarKey(username);
+  const avatarStorageIdentity = useMemo(
+    () => ({
+      userId: initialProfile?.userId ?? null,
+      username,
+      email: viewerEmail ?? null
+    }),
+    [initialProfile?.userId, username, viewerEmail]
+  );
   const resolvedAvatarUrl = avatarUrl ?? buildAvatarUrl(profileSeed);
   const avatarCropMetrics = avatarCropDraft
     ? getAvatarCropMetrics(avatarCropDraft.imageWidth, avatarCropDraft.imageHeight, avatarCropDraft.zoom)
@@ -698,19 +689,19 @@ export function CampusProfileShell({
   }, [isOwnProfile]);
 
   useEffect(() => {
-    const storedAvatar = readStoredString(avatarStorageKey);
+    const storedAvatar = readStoredAvatarUrl(avatarStorageIdentity);
     if (storedAvatar) {
       setAvatarUrl(storedAvatar);
     }
-  }, [avatarStorageKey]);
+  }, [avatarStorageIdentity]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !avatarUrl) {
       return;
     }
 
-    window.localStorage.setItem(avatarStorageKey, avatarUrl);
-  }, [avatarStorageKey, avatarUrl]);
+    persistStoredAvatarUrl(avatarStorageIdentity, avatarUrl);
+  }, [avatarStorageIdentity, avatarUrl]);
 
   useEffect(() => {
     return () => {
