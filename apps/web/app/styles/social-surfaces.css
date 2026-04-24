@@ -5925,3 +5925,192 @@
     border-radius: 2rem;
   }
 }
+
+/* ---- vyb-cp-* utility classes ---- */
+
+.vyb-cp-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.2rem;
+}
+
+.vyb-cp-row-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1;
+}
+
+.vyb-cp-row-copy h3 {
+  font-size: 1.05rem;
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: -0.02em;
+  color: #f8fafc;
+  margin: 0;
+}
+
+.vyb-cp-row-copy p {
+  font-size: 0.75rem;
+  color: rgba(148,163,184,0.72);
+  line-height: 1.65;
+  margin: 0;
+  max-width: 26ch;
+}
+
+.vyb-cp-inline {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 1.2rem !important;
+}
+
+.vyb-cp-btn-white {
+  flex-shrink: 0;
+  background: #ffffff;
+  color: #000000;
+  border: none;
+  padding: 0.65rem 1.3rem;
+  border-radius: 0.9rem;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.vyb-cp-btn-white:hover:not(:disabled) {
+  background: #e2e8f0;
+  transform: scale(1.02);
+  box-shadow: 0 0 15px rgba(255,255,255,0.15);
+}
+
+.vyb-cp-btn-white:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.vyb-cp-btn-ghost {
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.05);
+  color: rgba(226,232,240,0.85);
+  border: 1px solid rgba(255,255,255,0.1);
+  padding: 0.65rem 1.3rem;
+  border-radius: 0.9rem;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.vyb-cp-btn-ghost:hover:not(:disabled) {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.18);
+}
+
+.vyb-cp-btn-ghost:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.vyb-cp-btn-indigo {
+  width: 100%;
+  background: linear-gradient(135deg, #4f46e5, #6366f1);
+  color: #fff;
+  border: none;
+  padding: 1rem 1.5rem;
+  border-radius: 1.1rem;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 8px 24px rgba(99,102,241,0.25);
+}
+
+.vyb-cp-btn-indigo:hover:not(:disabled) {
+  background: linear-gradient(135deg, #4338ca, #6366f1);
+  box-shadow: 0 12px 32px rgba(99,102,241,0.4);
+}
+
+.vyb-cp-btn-indigo:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.vyb-cp-shield-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+  border-radius: 0.9rem;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.05);
+  font-size: 0.68rem;
+}
+
+.vyb-cp-shield-bar span:first-child {
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(148,163,184,0.7);
+}
+
+.vyb-cp-shield-value {
+  font-weight: 900;
+  color: #818cf8;
+}
+
+/* PIN input centered large */
+.vyb-cp-pin-input {
+  text-align: center !important;
+  font-size: 1.6rem !important;
+  letter-spacing: 0.5em !important;
+}
+
+/* FOOTER */
+.vyb-cp-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding-top: 1.5rem;
+  text-align: center;
+}
+
+.vyb-cp-footer-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.vyb-cp-footer-meta p:first-child {
+  font-size: 0.58rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  color: rgba(100,116,139,0.7);
+}
+
+.vyb-cp-footer-meta p:last-child {
+  font-size: 0.7rem;
+  font-weight: 500;
+  font-style: italic;
+  color: rgba(148,163,184,0.55);
+}
+
+.vyb-cp-footer-links {
+  display: flex;
+  gap: 1.2rem;
+}
+
+.vyb-cp-footer-link {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(100,116,139,0.5);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.vyb-cp-footer-link:hover { color: rgba(148,163,184,0.8); }

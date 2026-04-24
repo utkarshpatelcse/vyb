@@ -342,488 +342,336 @@ function buildGuidanceCard(props: ChatPrivacyUIProps): GuidanceCard {
 }
 
 export function ChatPrivacyUI(props: ChatPrivacyUIProps) {
-  const statusCards = buildStatusCards(props);
-  const guidance = buildGuidanceCard(props);
   const lockoutActive = Boolean(props.activeLockoutCountdown);
-  const showRefreshAction = !props.hasViewerIdentity || props.hasCompatibleLocalChatKey;
-  const showRestoreAction = props.hasViewerIdentity && !props.hasCompatibleLocalChatKey && props.hasRemoteBackup;
   const attemptsLabel = props.attemptState
     ? props.attemptState.isLocked
-      ? "PIN attempts are temporarily blocked on the server."
-      : `${Math.max(0, props.attemptState.remainingAttempts)} server-tracked attempts left before lockout.`
-    : "PIN checks are rate-limited on the backend.";
-  const renderGuidanceAction = (action: GuidanceAction, variant: "primary" | "ghost" = "primary") => {
-    const className = variant === "primary" ? "vyb-chat-privacy-primary" : "vyb-chat-privacy-ghost";
+      ? "Temporarily blocked by server"
+      : `${Math.max(0, props.attemptState.remainingAttempts)} attempts remaining`
+    : "Rate-limited on backend";
 
-    if (action.kind === "anchor-restore") {
-      return (
-        <a href="#chat-privacy-restore" className={className}>
-          {action.label}
-        </a>
-      );
-    }
-
-    const disabled =
-      (action.kind === "create-identity" && props.busyAction === "identity") ||
-      (action.kind === "create-backup" && props.busyAction === "create-backup") ||
-      (action.kind === "change-pin" && props.busyAction === "change-pin") ||
-      (action.kind === "verify-recovery" && props.busyAction === "view-phrase");
-
-    const onClick =
-      action.kind === "create-identity"
-        ? props.onCreateIdentity
-        : action.kind === "create-backup"
-          ? () => props.setActiveModal("create-backup")
-          : action.kind === "change-pin"
-            ? () => props.setActiveModal("change-pin")
-            : () => props.setActiveModal("verify-recovery");
-
-    return (
-      <button type="button" className={className} onClick={onClick} disabled={disabled}>
-        {action.label}
-      </button>
-    );
-  };
+  const sessionStatus =
+    props.secureSessionTone === "ready" ? "Active" :
+    props.secureSessionTone === "restore" ? "Restore" : "Setup";
+  const sessionPulse =
+    props.secureSessionTone === "ready" ? "secured" :
+    props.secureSessionTone === "restore" ? "warning" : "risk";
 
   return (
     <>
       <div className="vyb-chat-privacy-shell">
+
+        {/* ── HEADER ── */}
         <motion.header
           className="vyb-chat-privacy-hero"
-          initial={{ opacity: 0, y: 18 }}
+          initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.28 }}
+          transition={{ duration: 0.26 }}
         >
           <div className="vyb-chat-privacy-hero-copy">
-            <span className="vyb-chat-privacy-kicker">Profile settings / Chat privacy</span>
-            <h1>Privacy & Chat Identity</h1>
-            <p>
-              High-trust E2EE controls for {props.viewerName}. Manage PIN backup, recovery phrase access, and device restore without entering any chat thread.
-            </p>
+            <nav className="vyb-chat-privacy-kicker">Chat Privacy</nav>
+            <h1>Identity Vault</h1>
           </div>
           <div className="vyb-chat-privacy-hero-status">
-            <SessionToneBadge tone={props.secureSessionTone} />
-            <strong>Secure Session</strong>
-            <span>{props.localSessionLabel}</span>
-            <small>{props.cloudBackupLabel}</small>
+            <span className={`vyb-chat-privacy-pulse vyb-chat-privacy-pulse-${sessionPulse}`} />
+            <strong>{sessionStatus}</strong>
           </div>
         </motion.header>
 
-        <section className="vyb-chat-privacy-snapshot" aria-label="Chat privacy overview">
-          <article className="vyb-chat-privacy-snapshot-card">
-            <span>Account</span>
-            <strong>@{props.viewerUsername}</strong>
-            <small>{props.viewerName}</small>
-          </article>
-          <article className="vyb-chat-privacy-snapshot-card">
-            <span>Campus</span>
-            <strong>{props.collegeName}</strong>
-            <small>Trusted profile settings</small>
-          </article>
-          <article className="vyb-chat-privacy-snapshot-card">
-            <span>Backup</span>
-            <strong>{props.hasRemoteBackup ? "Encrypted cloud backup ready" : "Backup still missing"}</strong>
-            <small>{props.hasCompatibleLocalChatKey ? "This browser can open secure chats now." : "Restore or create the local vault."}</small>
-          </article>
-        </section>
+        {/* ── 3 MINI STAT CARDS ── */}
+        <motion.div
+          className="vyb-chat-privacy-snapshot"
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.26, delay: 0.05 }}
+        >
+          <div className="vyb-chat-privacy-snapshot-card">
+            <span>Local</span>
+            <strong>{props.hasCompatibleLocalChatKey ? "Encrypted" : "Not ready"}</strong>
+          </div>
+          <div className="vyb-chat-privacy-snapshot-card">
+            <span>Cloud</span>
+            <strong>{props.hasRemoteBackup ? "Synced" : "Missing"}</strong>
+          </div>
+          <div className="vyb-chat-privacy-snapshot-card">
+            <span>E2EE</span>
+            <strong>v2.1</strong>
+          </div>
+        </motion.div>
 
-        <div className="vyb-chat-privacy-actions">
-          <Link href={props.backToHref} className="vyb-chat-privacy-ghost">
-            {props.backToLabel}
-          </Link>
-          <Link href="/dashboard" className="vyb-chat-privacy-ghost">
-            Back to profile
-          </Link>
-          {showRefreshAction ? (
-            <button
-              type="button"
-              className="vyb-chat-privacy-primary"
-              onClick={props.onCreateIdentity}
-              disabled={props.busyAction === "identity"}
-            >
-              {props.busyAction === "identity"
-                ? "Preparing secure session..."
-                : props.hasViewerIdentity
-                  ? "Refresh secure session"
-                  : "Create secure session"}
-            </button>
-          ) : null}
-          {showRestoreAction ? (
-            <a href="#chat-privacy-restore" className="vyb-chat-privacy-primary">
-              Restore this browser
-            </a>
-          ) : null}
-        </div>
-
-        {props.pageError ? (
+        {/* ── ALERTS ── */}
+        {props.pageError && (
           <div className="vyb-chat-privacy-banner vyb-chat-privacy-banner-error" role="alert">
             <LockIcon />
             <div>
-              <strong>Attention needed</strong>
+              <strong>Attention</strong>
               <span>{props.pageError}</span>
             </div>
           </div>
-        ) : null}
-
-        {props.pageSuccess ? (
+        )}
+        {props.pageSuccess && (
           <div className="vyb-chat-privacy-banner vyb-chat-privacy-banner-success" role="status">
             <SparkIcon />
             <div>
-              <strong>Security updated</strong>
+              <strong>Updated</strong>
               <span>{props.pageSuccess}</span>
             </div>
           </div>
-        ) : null}
-
-        {lockoutActive ? (
+        )}
+        {lockoutActive && (
           <div className="vyb-chat-privacy-banner vyb-chat-privacy-banner-warning" role="alert">
             <LockIcon />
             <div>
               <strong>PIN locked for {props.activeLockoutCountdown}</strong>
-              <span>Wrong PIN attempts are rate-limited server-side, so clearing local browser state will not bypass this window.</span>
+              <span>Server-side rate limit — clearing browser data won&apos;t bypass this.</span>
             </div>
           </div>
-        ) : null}
+        )}
 
-        <motion.section
-          className={`vyb-chat-privacy-next-step vyb-chat-privacy-next-step-${guidance.tone}`}
-          initial={{ opacity: 0, y: 18 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.28, delay: 0.08 }}
-        >
-          <div className="vyb-chat-privacy-next-step-copy">
-            <span className="vyb-chat-privacy-kicker">{guidance.kicker}</span>
-            <strong>{guidance.title}</strong>
-            <p>{guidance.detail}</p>
-          </div>
-          <div className="vyb-chat-privacy-inline-actions">
-            {renderGuidanceAction(guidance.primaryAction)}
-            {guidance.secondaryAction ? renderGuidanceAction(guidance.secondaryAction, "ghost") : null}
-          </div>
-        </motion.section>
+        {/* ── MAIN SECTIONS ── */}
+        <main className="vyb-chat-privacy-card-grid">
 
-        <section className="vyb-chat-privacy-content vyb-chat-privacy-content-full">
-          <div className="vyb-chat-privacy-status-grid">
-            {statusCards.map((card, index) => (
-              <StatusCardView key={card.title} card={card} index={index} />
-            ))}
-          </div>
-
-          <div className="vyb-chat-privacy-card-grid">
-            <motion.section
-              className="vyb-chat-privacy-card"
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.28, delay: 0.08 }}
-            >
-              <div className="vyb-chat-privacy-card-head">
-                <div>
-                  <span className="vyb-chat-privacy-card-kicker">Security PIN</span>
-                  <strong>{props.hasRemoteBackup ? "PIN protects restore" : "Set your first PIN"}</strong>
-                </div>
-                <ShieldIcon />
+          {/* Security PIN */}
+          <motion.section
+            className="vyb-chat-privacy-card"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.26, delay: 0.08 }}
+          >
+            <div className="vyb-cp-row">
+              <div className="vyb-cp-row-copy">
+                <h3>Security PIN</h3>
+                <p>Critical for device recovery. Losing this PIN will result in permanent chat loss.</p>
               </div>
-              <p>
-                Your PIN is not used to start every chat. It is only used to seal backup, restore on another browser, and reveal the recovery phrase.
-              </p>
-              <div className="vyb-chat-privacy-note">
-                <span className="vyb-chat-privacy-pulse vyb-chat-privacy-pulse-secured" />
-                {props.hasRemoteBackup
-                  ? "Current backup already exists. You can rotate the PIN any time."
-                  : "The 24-word recovery phrase appears right after the first backup is created."}
-              </div>
-              <div className="vyb-chat-privacy-inline-actions">
-                {!props.hasRemoteBackup ? (
-                  <button type="button" className="vyb-chat-privacy-primary" onClick={() => props.setActiveModal("create-backup")}>
-                    Set first PIN
-                  </button>
-                ) : (
-                  <>
-                    <button type="button" className="vyb-chat-privacy-primary" onClick={() => props.setActiveModal("change-pin")}>
-                      Change PIN
-                    </button>
-                    <button type="button" className="vyb-chat-privacy-ghost" onClick={() => props.setActiveModal("verify-recovery")}>
-                      View recovery phrase
-                    </button>
-                  </>
-                )}
-              </div>
-            </motion.section>
-
-            <motion.section
-              className="vyb-chat-privacy-card"
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.28, delay: 0.12 }}
-            >
-              <div className="vyb-chat-privacy-card-head">
-                <div>
-                  <span className="vyb-chat-privacy-card-kicker">Recovery phrase</span>
-                  <strong>{props.hasRemoteBackup ? (props.backupNeedsUpgrade ? "Upgrade before reveal" : "Your 24-word fallback") : "Available after first backup"}</strong>
-                </div>
-                <KeyIcon />
-              </div>
-              <p>
-                {props.hasRemoteBackup
-                  ? props.backupNeedsUpgrade
-                    ? "This account uses the older backup envelope. Change the PIN once, then the phrase can be revealed safely again."
-                    : "This is your master recovery phrase. Keep it offline. Anyone with these 24 words can restore your encrypted identity."
-                  : "Create your first encrypted backup and VYB will generate the private 24-word recovery phrase for you."}
-              </p>
-              <div className="vyb-chat-privacy-note">
-                <span className={`vyb-chat-privacy-pulse vyb-chat-privacy-pulse-${props.backupNeedsUpgrade ? "warning" : props.hasRemoteBackup ? "secured" : "risk"}`} />
-                {props.hasRemoteBackup ? attemptsLabel : "No phrase is shown until the first backup exists."}
-              </div>
-              <div className="vyb-chat-privacy-inline-actions">
-                {props.backupNeedsUpgrade ? (
-                  <button type="button" className="vyb-chat-privacy-primary" onClick={() => props.setActiveModal("change-pin")}>
-                    Upgrade backup now
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="vyb-chat-privacy-ghost"
-                    onClick={() => props.setActiveModal("verify-recovery")}
-                    disabled={!props.hasRemoteBackup}
-                  >
-                    View recovery phrase
-                  </button>
-                )}
-              </div>
-            </motion.section>
-
-            <motion.section
-              id="chat-privacy-restore"
-              className="vyb-chat-privacy-card"
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.28, delay: 0.16 }}
-            >
-              <div className="vyb-chat-privacy-card-head">
-                <div>
-                  <span className="vyb-chat-privacy-card-kicker">Device restore</span>
-                  <strong>Recover this browser</strong>
-                </div>
-                <CloudIcon />
-              </div>
-              <p>
-                If chat was working earlier on this account but this browser lost the local key, restore it here using the same 6-digit PIN or the full 24-word phrase.
-              </p>
-              <label className="vyb-chat-privacy-field">
-                <span>PIN or 24-word phrase</span>
-                <input
-                  value={props.restoreSecret}
-                  onChange={(event) => props.onRestoreSecretChange(event.target.value)}
-                  placeholder="Enter 6-digit PIN or paste the 24-word phrase"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                />
-              </label>
-              <div className="vyb-chat-privacy-note">
-                <span className={`vyb-chat-privacy-pulse vyb-chat-privacy-pulse-${props.hasCompatibleLocalChatKey ? "secured" : "warning"}`} />
-                {props.hasCompatibleLocalChatKey
-                  ? "This browser already has a usable local key, but you can still restore if needed."
-                  : "Without restore, this browser cannot decrypt secure chats yet."}
-              </div>
-              <div className="vyb-chat-privacy-inline-actions">
+              {!props.hasRemoteBackup ? (
                 <button
                   type="button"
-                  className="vyb-chat-privacy-primary"
-                  onClick={props.onRestoreLocalKey}
-                  disabled={!props.hasRemoteBackup || props.busyAction === "restore-device"}
+                  className="vyb-cp-btn-white"
+                  onClick={() => props.setActiveModal("create-backup")}
+                  disabled={props.busyAction === "create-backup"}
                 >
-                  {props.busyAction === "restore-device" ? "Restoring..." : "Restore this browser"}
+                  {props.busyAction === "create-backup" ? "Sealing…" : "Set PIN"}
                 </button>
-              </div>
-            </motion.section>
+              ) : (
+                <button
+                  type="button"
+                  className="vyb-cp-btn-white"
+                  onClick={() => props.setActiveModal("change-pin")}
+                  disabled={props.busyAction === "change-pin"}
+                >
+                  {props.busyAction === "change-pin" ? "Saving…" : "Update"}
+                </button>
+              )}
+            </div>
+            <div className="vyb-cp-shield-bar">
+              <span>Identity Brute-force Shield:</span>
+              <span className="vyb-cp-shield-value">{attemptsLabel}</span>
+            </div>
+          </motion.section>
 
-            <motion.section
-              className="vyb-chat-privacy-card"
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.28, delay: 0.2 }}
+          {/* Recovery Phrase */}
+          <motion.section
+            className="vyb-chat-privacy-card vyb-cp-inline"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.26, delay: 0.11 }}
+          >
+            <div className="vyb-cp-row-copy">
+              <h3>Recovery Phrase</h3>
+              <p>24-word master cryptographic fallback.</p>
+            </div>
+            {props.backupNeedsUpgrade ? (
+              <button
+                type="button"
+                className="vyb-cp-btn-ghost"
+                onClick={() => props.setActiveModal("change-pin")}
+              >
+                Upgrade
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="vyb-cp-btn-ghost"
+                onClick={() => props.setActiveModal("verify-recovery")}
+                disabled={!props.hasRemoteBackup}
+              >
+                Reveal
+              </button>
+            )}
+          </motion.section>
+
+          {/* Sync / Restore */}
+          <motion.section
+            id="chat-privacy-restore"
+            className="vyb-chat-privacy-card"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.26, delay: 0.14 }}
+          >
+            <div className="vyb-cp-row-copy">
+              <h3>Sync New Device</h3>
+              <p>Securely restore your session on this browser.</p>
+            </div>
+            <label className="vyb-chat-privacy-field">
+              <input
+                value={props.restoreSecret}
+                onChange={(e) => props.onRestoreSecretChange(e.target.value)}
+                placeholder="PIN or 24-word phrase"
+                autoCapitalize="none"
+                spellCheck={false}
+              />
+            </label>
+            <button
+              type="button"
+              className="vyb-cp-btn-indigo"
+              onClick={props.onRestoreLocalKey}
+              disabled={!props.hasRemoteBackup || props.busyAction === "restore-device"}
             >
-              <div className="vyb-chat-privacy-card-head">
-                <div>
-                  <span className="vyb-chat-privacy-card-kicker">Session notes</span>
-                  <strong>How this works on your account</strong>
-                </div>
-                <SessionToneBadge tone={props.secureSessionTone} />
+              {props.busyAction === "restore-device" ? "Restoring…" : "Request Identity Restore"}
+            </button>
+          </motion.section>
+
+          {/* Session / identity refresh */}
+          {(!props.hasViewerIdentity || props.hasCompatibleLocalChatKey) && (
+            <motion.section
+              className="vyb-chat-privacy-card vyb-cp-inline"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.26, delay: 0.17 }}
+            >
+              <div className="vyb-cp-row-copy">
+                <h3>Secure Session</h3>
+                <p>{props.localSessionLabel}</p>
               </div>
-              <p>
-                Account: @{props.viewerUsername} at {props.collegeName}. Logout still uses secure wipe for the local vault, so shared devices should always sign out after chat use.
-              </p>
-              <div className="vyb-chat-privacy-note">
-                <span className={`vyb-chat-privacy-pulse vyb-chat-privacy-pulse-${lockoutActive ? "warning" : "secured"}`} />
-                {lockoutActive ? `PIN locked for ${props.activeLockoutCountdown}.` : attemptsLabel}
-              </div>
+              <button
+                type="button"
+                className="vyb-cp-btn-ghost"
+                onClick={props.onCreateIdentity}
+                disabled={props.busyAction === "identity"}
+              >
+                {props.busyAction === "identity" ? "Preparing…" :
+                  props.hasViewerIdentity ? "Refresh" : "Create"}
+              </button>
             </motion.section>
+          )}
+
+        </main>
+
+        {/* ── FOOTER ── */}
+        <footer className="vyb-cp-footer">
+          <div className="vyb-cp-footer-meta">
+            <p>Zero-Knowledge Protection</p>
+            <p>Verified for {props.viewerName}</p>
           </div>
-        </section>
+          <div className="vyb-cp-footer-links">
+            <Link href={props.backToHref} className="vyb-cp-footer-link">
+              {props.backToLabel}
+            </Link>
+            <Link href="/dashboard" className="vyb-cp-footer-link">
+              Profile
+            </Link>
+          </div>
+        </footer>
+
       </div>
 
+      {/* ── MODALS ── */}
       <AnimatePresence>
-        {props.activeModal === "create-backup" ? (
+
+        {props.activeModal === "create-backup" && (
           <ModalFrame
-            title="Set your first security PIN"
-            description="This PIN protects backup and restore only. VYB will seal the cloud backup and generate your 24-word recovery phrase."
+            title="Set Security PIN"
+            description="PIN protects backup and restore only. VYB generates your 24-word phrase after the first backup."
             onClose={() => props.setActiveModal(null)}
           >
             <div className="vyb-chat-privacy-modal-body">
               <label className="vyb-chat-privacy-field">
                 <span>Create 6-digit PIN</span>
-                <input
-                  type="password"
-                  value={props.createPin}
-                  onChange={(event) => props.onCreatePinChange(event.target.value)}
-                  placeholder="6-digit PIN"
-                  inputMode="numeric"
-                  maxLength={6}
-                />
+                <input type="password" value={props.createPin} onChange={(e) => props.onCreatePinChange(e.target.value)} placeholder="6-digit PIN" inputMode="numeric" maxLength={6} />
               </label>
               <label className="vyb-chat-privacy-field">
-                <span>Confirm security PIN</span>
-                <input
-                  type="password"
-                  value={props.confirmCreatePin}
-                  onChange={(event) => props.onConfirmCreatePinChange(event.target.value)}
-                  placeholder="Confirm PIN"
-                  inputMode="numeric"
-                  maxLength={6}
-                />
+                <span>Confirm PIN</span>
+                <input type="password" value={props.confirmCreatePin} onChange={(e) => props.onConfirmCreatePinChange(e.target.value)} placeholder="Confirm PIN" inputMode="numeric" maxLength={6} />
               </label>
               <div className="vyb-chat-privacy-modal-actions">
-                <button type="button" className="vyb-chat-privacy-ghost" onClick={() => props.setActiveModal(null)}>
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="vyb-chat-privacy-primary"
-                  onClick={props.onCreateBackup}
-                  disabled={props.busyAction === "create-backup"}
-                >
-                  {props.busyAction === "create-backup" ? "Sealing backup..." : "Create backup"}
+                <button type="button" className="vyb-chat-privacy-ghost" onClick={() => props.setActiveModal(null)}>Cancel</button>
+                <button type="button" className="vyb-chat-privacy-primary" onClick={props.onCreateBackup} disabled={props.busyAction === "create-backup"}>
+                  {props.busyAction === "create-backup" ? "Sealing…" : "Create backup"}
                 </button>
               </div>
             </div>
           </ModalFrame>
-        ) : null}
+        )}
 
-        {props.activeModal === "change-pin" ? (
+        {props.activeModal === "change-pin" && (
           <ModalFrame
-            title="Change security PIN"
-            description="Enter the current PIN once. VYB will decrypt the backup locally and reseal it with the new PIN."
+            title="Change Security PIN"
+            description="Enter the current PIN once. VYB will reseal the backup with the new PIN."
             onClose={() => props.setActiveModal(null)}
           >
             <div className="vyb-chat-privacy-modal-body">
               <label className="vyb-chat-privacy-field">
                 <span>Current PIN</span>
-                <input
-                  type="password"
-                  value={props.currentPin}
-                  onChange={(event) => props.onCurrentPinChange(event.target.value)}
-                  placeholder="Current PIN"
-                  inputMode="numeric"
-                  maxLength={6}
-                />
+                <input type="password" value={props.currentPin} onChange={(e) => props.onCurrentPinChange(e.target.value)} placeholder="Current PIN" inputMode="numeric" maxLength={6} />
               </label>
               <label className="vyb-chat-privacy-field">
                 <span>New PIN</span>
-                <input
-                  type="password"
-                  value={props.newPin}
-                  onChange={(event) => props.onNewPinChange(event.target.value)}
-                  placeholder="New 6-digit PIN"
-                  inputMode="numeric"
-                  maxLength={6}
-                />
+                <input type="password" value={props.newPin} onChange={(e) => props.onNewPinChange(e.target.value)} placeholder="New 6-digit PIN" inputMode="numeric" maxLength={6} />
               </label>
               <label className="vyb-chat-privacy-field">
                 <span>Confirm new PIN</span>
-                <input
-                  type="password"
-                  value={props.confirmNewPin}
-                  onChange={(event) => props.onConfirmNewPinChange(event.target.value)}
-                  placeholder="Confirm new PIN"
-                  inputMode="numeric"
-                  maxLength={6}
-                />
+                <input type="password" value={props.confirmNewPin} onChange={(e) => props.onConfirmNewPinChange(e.target.value)} placeholder="Confirm new PIN" inputMode="numeric" maxLength={6} />
               </label>
               <div className="vyb-chat-privacy-modal-actions">
-                <button type="button" className="vyb-chat-privacy-ghost" onClick={() => props.setActiveModal(null)}>
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="vyb-chat-privacy-primary"
-                  onClick={props.onChangePin}
-                  disabled={props.busyAction === "change-pin"}
-                >
-                  {props.busyAction === "change-pin" ? "Updating..." : "Update PIN"}
+                <button type="button" className="vyb-chat-privacy-ghost" onClick={() => props.setActiveModal(null)}>Cancel</button>
+                <button type="button" className="vyb-chat-privacy-primary" onClick={props.onChangePin} disabled={props.busyAction === "change-pin"}>
+                  {props.busyAction === "change-pin" ? "Updating…" : "Update PIN"}
                 </button>
               </div>
             </div>
           </ModalFrame>
-        ) : null}
+        )}
 
-        {props.activeModal === "verify-recovery" ? (
+        {props.activeModal === "verify-recovery" && (
           <ModalFrame
-            title="Verify PIN to reveal phrase"
-            description="The recovery phrase stays hidden until you verify the current PIN on this browser."
+            title="Verify PIN"
+            description="Enter your 6-digit PIN to decrypt the master recovery phrase."
             onClose={() => props.setActiveModal(null)}
           >
             <div className="vyb-chat-privacy-modal-body">
               <label className="vyb-chat-privacy-field">
                 <span>Current PIN</span>
-                <input
-                  type="password"
-                  value={props.viewPhrasePin}
-                  onChange={(event) => props.onViewPhrasePinChange(event.target.value)}
-                  placeholder="Enter current PIN"
-                  inputMode="numeric"
-                  maxLength={6}
-                />
+                <input type="password" value={props.viewPhrasePin} onChange={(e) => props.onViewPhrasePinChange(e.target.value)} placeholder="Enter PIN" inputMode="numeric" maxLength={6} className="vyb-cp-pin-input" />
               </label>
               <div className="vyb-chat-privacy-note">
                 <span className="vyb-chat-privacy-pulse vyb-chat-privacy-pulse-warning" />
                 {attemptsLabel}
               </div>
               <div className="vyb-chat-privacy-modal-actions">
-                <button type="button" className="vyb-chat-privacy-ghost" onClick={() => props.setActiveModal(null)}>
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="vyb-chat-privacy-primary"
-                  onClick={props.onViewRecoveryPhrase}
-                  disabled={props.busyAction === "view-phrase"}
-                >
-                  {props.busyAction === "view-phrase" ? "Verifying..." : "Reveal phrase"}
+                <button type="button" className="vyb-chat-privacy-ghost" onClick={() => props.setActiveModal(null)}>Cancel</button>
+                <button type="button" className="vyb-chat-privacy-primary" onClick={props.onViewRecoveryPhrase} disabled={props.busyAction === "view-phrase"}>
+                  {props.busyAction === "view-phrase" ? "Verifying…" : "Verify"}
                 </button>
               </div>
             </div>
           </ModalFrame>
-        ) : null}
+        )}
 
-        {props.revealedRecoveryPhrase ? (
+        {props.revealedRecoveryPhrase && (
           <ModalFrame
-            title="Recovery phrase"
-            description="Store these 24 words offline. Anyone holding them can restore your encrypted chat identity."
+            title="Recovery Phrase"
+            description="Store these 24 words offline. Anyone with them can restore your identity."
             onClose={props.onHideRecoveryPhrase}
           >
             <div className="vyb-chat-privacy-modal-body">
               <div className="vyb-chat-privacy-phrase">{props.revealedRecoveryPhrase}</div>
               <div className="vyb-chat-privacy-modal-actions">
-                <button type="button" className="vyb-chat-privacy-ghost" onClick={props.onHideRecoveryPhrase}>
-                  Hide
-                </button>
-                <button type="button" className="vyb-chat-privacy-primary" onClick={props.onCopyRecoveryPhrase}>
-                  Copy phrase
-                </button>
+                <button type="button" className="vyb-chat-privacy-ghost" onClick={props.onHideRecoveryPhrase}>Hide</button>
+                <button type="button" className="vyb-chat-privacy-primary" onClick={props.onCopyRecoveryPhrase}>Copy phrase</button>
               </div>
             </div>
           </ModalFrame>
-        ) : null}
+        )}
+
       </AnimatePresence>
     </>
   );
