@@ -1730,9 +1730,9 @@
 
 .spm-chat-inline-reactions {
   position: absolute;
-  top: 50%;
+  top: calc(100% - 0.5rem);
   left: 2rem;
-  transform: translateY(-50%);
+  transform: none;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
