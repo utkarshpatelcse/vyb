@@ -36,7 +36,8 @@ function IconBase({ children }: { children: ReactNode }) {
 function HomeIcon() {
   return (
     <IconBase>
-      <path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4.8a.7.7 0 0 1-.7-.7v-4.1a1.5 1.5 0 0 0-3 0v4.1a.7.7 0 0 1-.7.7H5a1 1 0 0 1-1-1z" fill="currentColor" />
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9 22V12h6v10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </IconBase>
   );
 }
@@ -44,14 +45,8 @@ function HomeIcon() {
 function EventsIcon() {
   return (
     <IconBase>
-      <path
-        d="M7 3v3M17 3v3M5 8h14M6 5h12a1 1 0 0 1 1 1v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <rect width="18" height="18" x="3" y="4" rx="2" ry="2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </IconBase>
   );
 }
@@ -59,14 +54,7 @@ function EventsIcon() {
 function ReelsIcon() {
   return (
     <IconBase>
-      <path
-        d="M6.5 3h11A3.5 3.5 0 0 1 21 6.5v11a3.5 3.5 0 0 1-3.5 3.5h-11A3.5 3.5 0 0 1 3 17.5v-11A3.5 3.5 0 0 1 6.5 3Zm0 0 3 4M11.5 3l3 4M16.5 3l3 4M10 10.5l5 2.9L10 16.3z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </IconBase>
   );
 }
@@ -74,14 +62,8 @@ function ReelsIcon() {
 function MarketIcon() {
   return (
     <IconBase>
-      <path
-        d="M4 8.5 5.6 4h12.8L20 8.5M5 10v7.2A1.8 1.8 0 0 0 6.8 19h10.4A1.8 1.8 0 0 0 19 17.2V10M9 13h6"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3 6h18M16 10a4 4 0 0 1-8 0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </IconBase>
   );
 }
@@ -89,14 +71,9 @@ function MarketIcon() {
 function ProfileIcon() {
   return (
     <IconBase>
-      <path
-        d="M12 12a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm-6 7.2C6 16.9 8.7 15 12 15s6 1.9 6 4.2"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="12" cy="10" r="3" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </IconBase>
   );
 }
@@ -104,14 +81,7 @@ function ProfileIcon() {
 function SearchIcon() {
   return (
     <IconBase>
-      <path
-        d="m20 20-3.8-3.8M10.8 17a6.2 6.2 0 1 1 0-12.4 6.2 6.2 0 0 1 0 12.4Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" fill="none" stroke="currentColor" />
     </IconBase>
   );
 }
@@ -127,14 +97,7 @@ function PlusIcon() {
 function HeartIcon() {
   return (
     <IconBase>
-      <path
-        d="M12 20.4s-6.6-4.3-8.6-8A4.8 4.8 0 0 1 11 6.9L12 8l1-1.1a4.8 4.8 0 0 1 7.6 5.5c-2 3.7-8.6 8-8.6 8Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" fill="none" stroke="currentColor" />
     </IconBase>
   );
 }
@@ -142,14 +105,7 @@ function HeartIcon() {
 function HeartBurstIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className="vyb-vibes-double-heart-icon">
-      <path
-        d="M12 20.4s-6.6-4.3-8.6-8A4.8 4.8 0 0 1 11 6.9L12 8l1-1.1a4.8 4.8 0 0 1 7.6 5.5c-2 3.7-8.6 8-8.6 8Z"
-        fill="currentColor"
-        stroke="currentColor"
-        strokeWidth="1.15"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" fill="currentColor" stroke="currentColor" />
     </svg>
   );
 }
@@ -157,14 +113,7 @@ function HeartBurstIcon() {
 function CommentIcon() {
   return (
     <IconBase>
-      <path
-        d="M5.8 17.8a7.7 7.7 0 1 1 3 1.1L4 20l1.8-4.2Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" d="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.48.432.447.74 1.04.586 1.641-.183.711-.532 1.488-1.025 2.115a.498.498 0 00.41.791c1.512-.132 2.871-.78 3.84-1.647A8.905 8.905 0 0012 20.25z" fill="none" stroke="currentColor" />
     </IconBase>
   );
 }
@@ -172,14 +121,7 @@ function CommentIcon() {
 function RepostIcon() {
   return (
     <IconBase>
-      <path
-        d="M7 7.5h8.8L13.6 5M17 16.5H8.2l2.2 2.5M17 7v4.2M7 12.8V17"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" fill="none" stroke="currentColor" />
     </IconBase>
   );
 }
@@ -187,10 +129,7 @@ function RepostIcon() {
 function ShareIcon() {
   return (
     <IconBase>
-      <path d="M9.1 10.5 14.7 7.2M9.1 13.5l5.6 3.3" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="6.5" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.9" />
-      <circle cx="17.6" cy="5.8" r="3" fill="none" stroke="currentColor" strokeWidth="1.9" />
-      <circle cx="17.6" cy="18.2" r="3" fill="none" stroke="currentColor" strokeWidth="1.9" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" fill="none" stroke="currentColor" />
     </IconBase>
   );
 }
@@ -207,14 +146,21 @@ function VolumeOnIcon() {
   return (
     <IconBase>
       <path
-        d="M6.8 14.5H4.5a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h2.3L11.5 6v12Z"
+        d="M5 9.5h3.1L12.8 6v12l-4.7-3.5H5z"
         fill="none"
         stroke="currentColor"
-        strokeWidth="1.7"
+        strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <path d="M15.5 9.5a4 4 0 0 1 0 5M18 7a7 7 0 0 1 0 10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path
+        d="M16 9.2a4 4 0 0 1 0 5.6M18.7 6.4a8 8 0 0 1 0 11.2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </IconBase>
   );
 }
@@ -223,14 +169,14 @@ function VolumeMutedIcon() {
   return (
     <IconBase>
       <path
-        d="M6.8 14.5H4.5a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h2.3L11.5 6v12Z"
+        d="M5 9.5h3.1L12.8 6v12l-4.7-3.5H5z"
         fill="none"
         stroke="currentColor"
-        strokeWidth="1.7"
+        strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <path d="m15 9 4 4M19 9l-4 4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="m16.2 8.5 4.3 7M20.5 8.5l-4.3 7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </IconBase>
   );
 }

@@ -424,12 +424,12 @@
 
 .vyb-campus-stories {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.95rem;
   width: min(100%, 620px);
   max-width: 620px;
   align-self: center;
-  padding: 1.25rem 1.25rem 0.9rem;
+  padding: 1.45rem 1.35rem 1.15rem;
   overflow-x: auto;
   overscroll-behavior-x: contain;
 }
@@ -456,6 +456,7 @@
   min-width: 4.5rem;
   display: grid;
   justify-items: center;
+  padding: 0.2rem 0.3rem 0.3rem 0;
 }
 
 .vyb-campus-story > span:last-child {
@@ -497,12 +498,66 @@
   border: 2px solid var(--vyb-campus-bg);
 }
 
-.vyb-campus-story-ring video {
+.vyb-campus-story-ring video,
+.vyb-campus-story-preview {
   width: 100%;
   height: 100%;
+  display: grid;
+  place-items: center;
   border-radius: 999px;
-  object-fit: cover;
   border: 2px solid var(--vyb-campus-bg);
+}
+
+.vyb-campus-story-ring video {
+  object-fit: cover;
+}
+
+.vyb-campus-story-preview {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top, rgba(96, 165, 250, 0.38), transparent 48%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(30, 41, 59, 0.94));
+}
+
+.vyb-campus-story-preview-avatar {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.96);
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.vyb-campus-story-preview-avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.vyb-campus-story-video-badge {
+  position: absolute;
+  right: 0.28rem;
+  bottom: 0.28rem;
+  width: 1.3rem;
+  height: 1.3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #ffffff;
+  box-shadow: 0 8px 20px rgba(2, 6, 23, 0.28);
+}
+
+.vyb-campus-story-video-badge .vyb-campus-icon {
+  width: 0.78rem;
+  height: 0.78rem;
 }
 
 .vyb-campus-story-add .vyb-campus-story-ring {
@@ -520,8 +575,8 @@
 
 .vyb-campus-story-plus {
   position: absolute;
-  right: -0.1rem;
-  top: 2.45rem;
+  right: 0.05rem;
+  top: 2.55rem;
   width: 1.5rem;
   height: 1.5rem;
   display: inline-flex;

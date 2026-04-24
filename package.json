@@ -11,6 +11,7 @@
     "dc:compile": "node scripts/run-firebase-cli.mjs dataconnect:compile",
     "dc:sdk": "node scripts/run-firebase-cli.mjs dataconnect:sdk:generate",
     "dc:deploy": "node scripts/run-firebase-cli.mjs deploy --only dataconnect",
+    "dc:deploy:other-device": "powershell -ExecutionPolicy Bypass -File scripts/deploy-dataconnect-other-device.ps1",
     "bootstrap:tenant": "node scripts/bootstrap-dataconnect.mjs",
     "build": "turbo run build",
     "check": "turbo run check"

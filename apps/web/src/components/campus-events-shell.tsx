@@ -1892,3 +1892,4 @@ export function CampusEventsShell({
     </main>
   );
 }
+

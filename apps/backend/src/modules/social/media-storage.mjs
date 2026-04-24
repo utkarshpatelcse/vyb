@@ -3,7 +3,7 @@ import { getStorage } from "firebase-admin/storage";
 import { getFirebaseAdminApp, loadRootEnv } from "../../../../../packages/config/src/index.mjs";
 
 const MAX_SOCIAL_IMAGE_BYTES = 4 * 1024 * 1024;
-const MAX_SOCIAL_VIDEO_BYTES = 10 * 1024 * 1024;
+const MAX_SOCIAL_VIDEO_BYTES = 40 * 1024 * 1024;
 
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"]);
 const VIDEO_MIME_TYPES = new Set(["video/mp4", "video/webm", "video/quicktime"]);
@@ -101,7 +101,7 @@ export async function persistSocialMediaAsset(input) {
   if (buffer.byteLength > maxBytes) {
     throw new Error(
       mediaType === "video"
-        ? "Video is still too large after optimization. Keep it under 10 MB."
+        ? "Video is still too large after optimization. Keep it under 40 MB."
         : "Image is too large right now. Keep it under 4 MB."
     );
   }

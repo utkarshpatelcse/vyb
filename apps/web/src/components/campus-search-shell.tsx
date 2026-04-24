@@ -4,6 +4,7 @@ import type { UserSearchItem } from "@vyb/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
+import { CampusAvatarContent } from "./campus-avatar";
 
 export function CampusSearchShell({
   initialQuery,
@@ -80,77 +81,93 @@ export function CampusSearchShell({
   return (
     <main className="vyb-auth-page">
       <div className="vyb-auth-glow" aria-hidden="true" />
-      <div className="vyb-auth-shell">
-        <div className="vyb-search-shell">
-          <div className="vyb-search-header">
-            <div>
-              <span className="vyb-page-badge">Campus Search</span>
-              <h1>Find people by user ID</h1>
-              <p>Search verified campus profiles and follow people to unlock their stories in your feed.</p>
-            </div>
-            <Link href="/home" className="vyb-secondary-button">
-              Back to home
-            </Link>
+      <div className="vyb-search-shell">
+        <header className="vyb-search-header">
+          <div className="vyb-search-header-copy">
+            <span className="vyb-page-badge">Campus Search</span>
+            <h1>Find your campus squad</h1>
+            <p>Connect with classmates and discover new stories across the lane.</p>
           </div>
+          <Link href="/home" className="vyb-secondary-button is-compact">
+            Back to home
+          </Link>
+        </header>
 
-          <form className="vyb-search-form" onSubmit={handleSearchSubmit}>
+        <form className="vyb-search-form" onSubmit={handleSearchSubmit}>
+          <div className="vyb-search-input-wrapper">
+            <svg className="vyb-search-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value.toLowerCase())}
-              placeholder="Search by user ID or name"
+              placeholder="Enter user ID or name..."
               autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
             />
-            <button type="submit" className="vyb-primary-button">
-              Search
-            </button>
-          </form>
-
-          {message ? <p className="vyb-inline-message">{message}</p> : null}
-
-          <div className="vyb-search-results">
-            {items.length === 0 ? (
-              <div className="vyb-campus-empty-state">
-                <strong>{hasSearched ? "No results found" : "Start with a user ID"}</strong>
-                <span>
-                  {hasSearched
-                    ? "No campus profile matched that user ID or name."
-                    : "Enter a user ID or name and then press search."}
-                </span>
-              </div>
-            ) : null}
-
-            {items.map((item) => (
-              <article key={item.userId} className="vyb-search-card">
-                <div className="vyb-search-card-copy">
-                  <Link href={item.username === viewerUsername ? "/dashboard" : `/u/${encodeURIComponent(item.username)}`}>
-                    <strong>@{item.username}</strong>
-                  </Link>
-                  <span>{item.displayName}</span>
-                  <p>
-                    {item.course} / {item.stream}
-                  </p>
-                </div>
-
-                <div className="vyb-search-card-meta">
-                  <span>{item.stats.followers} followers</span>
-                  <button
-                    type="button"
-                    className="vyb-secondary-button"
-                    disabled={busyUsername === item.username || item.username === viewerUsername}
-                    onClick={() => handleFollowToggle(item.username, !item.isFollowing)}
-                  >
-                    {item.username === viewerUsername
-                      ? "You"
-                      : busyUsername === item.username
-                        ? "..."
-                        : item.isFollowing
-                          ? "Following"
-                          : "Follow"}
-                  </button>
-                </div>
-              </article>
-            ))}
           </div>
+          <button type="submit" className="vyb-primary-button">
+            Search
+          </button>
+        </form>
+
+        {message ? <p className="vyb-inline-message is-error">{message}</p> : null}
+
+        <div className="vyb-search-results">
+          {items.length === 0 ? (
+            <div className="vyb-campus-empty-state">
+              <strong>{hasSearched ? "No results found" : "Ready to explore?"}</strong>
+              <span>
+                {hasSearched
+                  ? `We couldn't find anyone matching "${query}".`
+                  : "Type a username or student name to begin your search."}
+              </span>
+            </div>
+          ) : null}
+
+          {items.map((item) => (
+            <article key={item.userId} className="vyb-search-card">
+              <Link href={item.username === viewerUsername ? "/dashboard" : `/u/${encodeURIComponent(item.username)}`} className="vyb-search-card-avatar">
+                <CampusAvatarContent
+                  userId={item.userId}
+                  username={item.username}
+                  displayName={item.displayName}
+                  fallback={(item.displayName || item.username).slice(0, 2).toUpperCase()}
+                  decorative
+                />
+              </Link>
+              
+              <div className="vyb-search-card-info">
+                <Link href={item.username === viewerUsername ? "/dashboard" : `/u/${encodeURIComponent(item.username)}`} className="vyb-search-card-title">
+                  <strong>{item.displayName || item.username}</strong>
+                  <span>@{item.username}</span>
+                </Link>
+                <p className="vyb-search-card-sub">
+                  {item.course} • {item.stream}
+                </p>
+                <span className="vyb-search-card-meta">{item.stats.followers} followers</span>
+              </div>
+
+              <div className="vyb-search-card-actions">
+                <button
+                  type="button"
+                  className={`vyb-follow-button${item.isFollowing ? " is-following" : ""}`}
+                  disabled={busyUsername === item.username || item.username === viewerUsername}
+                  onClick={() => handleFollowToggle(item.username, !item.isFollowing)}
+                >
+                  {item.username === viewerUsername
+                    ? "You"
+                    : busyUsername === item.username
+                      ? "..."
+                      : item.isFollowing
+                        ? "Following"
+                        : "Follow"}
+                </button>
+              </div>
+            </article>
+          ))}
         </div>
       </div>
     </main>

@@ -46,7 +46,7 @@ type StoryComposerAsset = {
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
-const MAX_VIDEO_BYTES = 10 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 40 * 1024 * 1024;
 const STORY_IMAGE_DURATION_SECONDS = 15;
 const STORY_MAX_TOTAL_SECONDS = 60;
 const STORY_MAX_IMAGES = STORY_MAX_TOTAL_SECONDS / STORY_IMAGE_DURATION_SECONDS;
@@ -965,7 +965,7 @@ export function CampusUploadShell({
                     </div>
                     <strong>Drop your video here</strong>
                     <span>or click to browse</span>
-                    <span className="cs-vibe-empty-hint">9:16 portrait · MP4 / MOV · Max 10 MB</span>
+                    <span className="cs-vibe-empty-hint">9:16 portrait · MP4 / MOV / WEBM · Max 40 MB</span>
                   </div>
                 )}
               </div>

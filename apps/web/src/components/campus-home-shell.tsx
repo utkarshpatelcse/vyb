@@ -154,6 +154,28 @@ function buildStoryRailGroups(items: StoryCard[], viewerUsername: string) {
     });
 }
 
+function renderStoryRailPreview(story: StoryCard, alt: string) {
+  if (story.mediaType === "image") {
+    return <img src={story.mediaUrl} alt={alt} loading="lazy" />;
+  }
+
+  return (
+    <span className="vyb-campus-story-preview is-video" aria-hidden="true">
+      <span className="vyb-campus-story-preview-avatar">
+        <CampusAvatarContent
+          userId={story.userId}
+          username={story.username}
+          displayName={story.displayName}
+          decorative
+        />
+      </span>
+      <span className="vyb-campus-story-video-badge">
+        <PlayIcon />
+      </span>
+    </span>
+  );
+}
+
 function IconBase({ children }: { children: ReactNode }) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className="vyb-campus-icon">
@@ -210,7 +232,7 @@ function ProfileIcon() {
 function SearchIcon() {
   return (
     <IconBase>
-      <path d="m20 20-3.8-3.8M10.8 17a6.2 6.2 0 1 1 0-12.4 6.2 6.2 0 0 1 0 12.4Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" fill="none" stroke="currentColor" />
     </IconBase>
   );
 }
@@ -226,7 +248,7 @@ function BellIcon() {
 function SendIcon() {
   return (
     <IconBase>
-      <path d="M21 4 10 15M21 4l-7 17-4-6-6-4z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" fill="none" stroke="currentColor" />
     </IconBase>
   );
 }
@@ -242,7 +264,7 @@ function AddPostIcon() {
 function HeartIcon() {
   return (
     <IconBase>
-      <path d="M12 20.4s-6.6-4.3-8.6-8A4.8 4.8 0 0 1 11 6.9L12 8l1-1.1a4.8 4.8 0 0 1 7.6 5.5c-2 3.7-8.6 8-8.6 8Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" fill="none" stroke="currentColor" />
     </IconBase>
   );
 }
@@ -250,7 +272,7 @@ function HeartIcon() {
 function CommentIcon() {
   return (
     <IconBase>
-      <path d="M5.8 17.8a7.7 7.7 0 1 1 3 1.1L4 20l1.8-4.2Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" d="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.48.432.447.74 1.04.586 1.641-.183.711-.532 1.488-1.025 2.115a.498.498 0 00.41.791c1.512-.132 2.871-.78 3.84-1.647A8.905 8.905 0 0012 20.25z" fill="none" stroke="currentColor" />
     </IconBase>
   );
 }
@@ -258,10 +280,7 @@ function CommentIcon() {
 function ShareIcon() {
   return (
     <IconBase>
-      <path d="M9.1 10.5 14.7 7.2M9.1 13.5l5.6 3.3" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="6.5" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.9" />
-      <circle cx="17.6" cy="5.8" r="3" fill="none" stroke="currentColor" strokeWidth="1.9" />
-      <circle cx="17.6" cy="18.2" r="3" fill="none" stroke="currentColor" strokeWidth="1.9" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" fill="none" stroke="currentColor" />
     </IconBase>
   );
 }
@@ -269,7 +288,7 @@ function ShareIcon() {
 function BookmarkIcon() {
   return (
     <IconBase>
-      <path d="M7 4.5h10a1 1 0 0 1 1 1v14l-6-3-6 3v-14a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z" fill="none" stroke="currentColor" />
     </IconBase>
   );
 }
@@ -277,10 +296,7 @@ function BookmarkIcon() {
 function RepostIcon() {
   return (
     <IconBase>
-      <path d="M17 3l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M3 7h18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M7 13l-4 4 4 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M21 17H3" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" fill="none" stroke="currentColor" />
     </IconBase>
   );
 }
@@ -343,6 +359,14 @@ function VolumeOffIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </IconBase>
+  );
+}
+
+function PlayIcon() {
+  return (
+    <IconBase>
+      <path d="M9 7.2v9.6l7.4-4.8z" fill="currentColor" stroke="none" />
     </IconBase>
   );
 }
@@ -1250,11 +1274,7 @@ export function CampusHomeShell({
                   <span
                     className={`vyb-campus-story-ring${selectedStoryGroup?.userId === ownStoryGroup.userId ? " is-active" : ""}`}
                   >
-                    {ownStoryGroup.preview.mediaType === "video" ? (
-                      <video src={ownStoryGroup.preview.mediaUrl} muted playsInline autoPlay loop />
-                    ) : (
-                      <img src={ownStoryGroup.preview.mediaUrl} alt="Your story" />
-                    )}
+                    {renderStoryRailPreview(ownStoryGroup.preview, "Your story")}
                   </span>
                   <span>Your story</span>
                 </button>
@@ -1284,11 +1304,7 @@ export function CampusHomeShell({
                 onClick={() => openStoryGroup(group)}
               >
                 <span className={`vyb-campus-story-ring${selectedStoryGroup?.userId === group.userId ? " is-active" : ""}`}>
-                  {group.preview.mediaType === "video" ? (
-                    <video src={group.preview.mediaUrl} muted playsInline autoPlay loop />
-                  ) : (
-                    <img src={group.preview.mediaUrl} alt={group.username} />
-                  )}
+                  {renderStoryRailPreview(group.preview, group.username)}
                 </span>
                 <span>{group.username}</span>
               </button>
@@ -1863,3 +1879,7 @@ export function CampusHomeShell({
     </main>
   );
 }
+
+
+
+

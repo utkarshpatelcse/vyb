@@ -15,7 +15,7 @@ type VideoFrameRequester = HTMLVideoElement & {
   requestVideoFrameCallback?: (callback: VideoFrameCallback) => number;
 };
 
-const DEFAULT_MAX_VIDEO_BYTES = 10 * 1024 * 1024;
+const DEFAULT_MAX_VIDEO_BYTES = 40 * 1024 * 1024;
 const DEFAULT_TARGET_VIDEO_BYTES = Math.floor(DEFAULT_MAX_VIDEO_BYTES * 0.96);
 const VIDEO_COMPRESSION_FRAME_RATE = 30;
 const VIDEO_AUDIO_BITRATE = 128_000;

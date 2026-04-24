@@ -2470,3 +2470,4 @@ export function CampusMarketShell({
     </main>
   );
 }
+

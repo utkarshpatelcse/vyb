@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { getStorage } from "firebase-admin/storage";
 import { getFirebaseAdminApp, getFirebaseDataConnect } from "../../../../../packages/config/src/index.mjs";
 import {
@@ -33,9 +36,135 @@ import {
 } from "../../../../../packages/dataconnect/social-admin-sdk/esm/index.esm.js";
 import { listProfilesByTenant } from "../identity/profile-repository.mjs";
 
+const directoryName = path.dirname(fileURLToPath(import.meta.url));
+const fallbackStorePath = path.resolve(directoryName, "../../data/social-store.json");
 const TENANT_SCAN_LIMIT = 5000;
 const FEED_SCAN_MULTIPLIER = 4;
 const INACTIVE_COMMENT_REACTION_TYPE = "__inactive__";
+
+const defaultFallbackStore = {
+  posts: [
+    {
+      id: "post-1",
+      tenantId: "tenant-demo",
+      communityId: "community-general",
+      userId: "dev-akash-1",
+      membershipId: "membership-demo-1",
+      authorUsername: "akash_vyb",
+      authorName: "Akash Verma",
+      placement: "feed",
+      kind: "image",
+      mediaUrl: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80",
+      location: "Innovation Lab",
+      title: "Prototype Night",
+      body: "Club demo night is live. Bring your build, record a clip, and drop your wins before 9 PM.",
+      status: "published",
+      reactions: 124,
+      comments: 18,
+      createdAt: "2026-04-18T08:15:00.000Z"
+    },
+    {
+      id: "post-2",
+      tenantId: "tenant-demo",
+      communityId: "community-batch",
+      userId: "dev-priya-1",
+      membershipId: "membership-demo-2",
+      authorUsername: "priya.dev",
+      authorName: "Priya Sharma",
+      placement: "feed",
+      kind: "text",
+      mediaUrl: null,
+      location: "Central Library",
+      title: "Placement Prep Sprint",
+      body: "Shared DSA revision sheet plus mock interview slots for tomorrow evening.",
+      status: "published",
+      reactions: 88,
+      comments: 26,
+      createdAt: "2026-04-18T06:45:00.000Z"
+    }
+  ],
+  comments: [],
+  reactions: [],
+  stories: [],
+  follows: []
+};
+
+let fallbackStoreCache = null;
+let fallbackWriteQueue = Promise.resolve();
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+async function ensureFallbackStore() {
+  if (fallbackStoreCache) {
+    return fallbackStoreCache;
+  }
+
+  await mkdir(path.dirname(fallbackStorePath), { recursive: true });
+
+  try {
+    const raw = await readFile(fallbackStorePath, "utf8");
+    fallbackStoreCache = JSON.parse(raw);
+  } catch {
+    fallbackStoreCache = clone(defaultFallbackStore);
+    await persistFallbackStore();
+  }
+
+  return fallbackStoreCache;
+}
+
+async function persistFallbackStore() {
+  if (!fallbackStoreCache) {
+    return;
+  }
+
+  const snapshot = JSON.stringify(fallbackStoreCache, null, 2);
+  fallbackWriteQueue = fallbackWriteQueue.then(() => writeFile(fallbackStorePath, snapshot, "utf8"));
+  await fallbackWriteQueue;
+}
+
+function isFallbackEligibleError(error) {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return (
+    message.includes("oauth2.googleapis.com/token") ||
+    message.includes("failed to fetch a valid google oauth2 access token") ||
+    message.includes("connect eacces") ||
+    message.includes("econnrefused") ||
+    message.includes("enotfound") ||
+    message.includes("fetch failed")
+  );
+}
+
+function isMissingPostSaveOperationError(error) {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return message.includes("unrecognized operation query.postsaves");
+}
+
+function normalizeFallbackPostRecord(item) {
+  return {
+    id: item.id,
+    tenantId: item.tenantId,
+    communityId: item.communityId ?? null,
+    membershipId: item.membershipId,
+    authorUserId: item.authorUserId ?? item.userId ?? item.membershipId ?? item.id,
+    authorUsername: item.authorUsername ?? "vyb_user",
+    authorName: item.authorName ?? "Vyb Student",
+    placement: item.placement ?? "feed",
+    kind: item.kind ?? (item.mediaUrl ? "image" : "text"),
+    mediaUrl: item.mediaUrl ?? null,
+    location: item.location ?? null,
+    title: item.title ?? "Campus update",
+    body: item.body ?? "",
+    status: item.status ?? "published",
+    reactions: item.reactions ?? 0,
+    comments: item.comments ?? 0,
+    savedCount: item.savedCount ?? 0,
+    isSaved: item.isSaved ?? false,
+    viewerReactionType: item.viewerReactionType ?? null,
+    createdAt: item.createdAt ?? new Date().toISOString()
+  };
+}
 
 const EXTENDED_COMMENT_FIELDS = `
   id
@@ -603,6 +732,7 @@ async function countCommentReactionsByComment(commentId) {
 
 function mapPostRecord(item, counts = null, profileMap = null) {
   const profile = profileMap?.get(item.authorUserId) ?? null;
+  const mediaKind = item.kind === "video" ? "video" : "image";
   return {
     id: item.id,
     tenantId: item.tenantId,
@@ -612,13 +742,21 @@ function mapPostRecord(item, counts = null, profileMap = null) {
     placement: normalizePlacement(item.placement),
     kind: item.kind ?? "text",
     mediaUrl: item.mediaUrl ?? null,
+    media:
+      Array.isArray(item.media) && item.media.length > 0
+        ? item.media
+        : item.mediaUrl
+          ? [{ url: item.mediaUrl, kind: mediaKind }]
+          : [],
     location: item.location ?? null,
     title: item.title ?? "Campus update",
     body: item.body ?? "",
     status: item.status ?? "published",
-    reactions: Number(counts?.reactions?.get(item.id) ?? 0),
-    comments: Number(counts?.comments?.get(item.id) ?? 0),
-    viewerReactionType: counts?.viewerReactions?.get(item.id) ?? null,
+    reactions: Number(counts?.reactions?.get(item.id) ?? item.reactions ?? 0),
+    comments: Number(counts?.comments?.get(item.id) ?? item.comments ?? 0),
+    savedCount: Number(item.savedCount ?? 0),
+    isSaved: Boolean(item.isSaved),
+    viewerReactionType: counts?.viewerReactions?.get(item.id) ?? item.viewerReactionType ?? null,
     createdAt: toIsoString(item.createdAt),
     author: {
       userId: item.authorUserId,
@@ -679,6 +817,22 @@ async function mapPostList(records, viewerMembershipId = null, profileMap = null
   return records.map((item) => mapPostRecord(item, counts, profileMap));
 }
 
+async function listFallbackPosts({ tenantId, communityId = null, limit, placement = "feed", userId = null }) {
+  const store = await ensureFallbackStore();
+  const normalizedPlacement = normalizePlacement(placement);
+
+  return store.posts
+    .map(normalizeFallbackPostRecord)
+    .filter((item) => item.tenantId === tenantId)
+    .filter((item) => item.status === "published")
+    .filter((item) => normalizePlacement(item.placement) === normalizedPlacement)
+    .filter((item) => (communityId ? item.communityId === communityId : true))
+    .filter((item) => (userId ? item.authorUserId === userId : true))
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, limit)
+    .map((item) => mapPostRecord(item));
+}
+
 export async function listPosts({
   tenantId,
   communityId = null,
@@ -690,29 +844,51 @@ export async function listPosts({
   const normalizedPlacement = normalizePlacement(placement);
   const effectiveLimit = communityId ? Math.max(limit * FEED_SCAN_MULTIPLIER, limit) : limit;
 
-  const response = userId
-    ? await listPostsByAuthorQuery(getSocialDc(), {
+  try {
+    const response = userId
+      ? await listPostsByAuthorQuery(getSocialDc(), {
+        tenantId,
+        authorUserId: userId,
+        placement: normalizedPlacement,
+        limit: effectiveLimit
+      })
+      : await listFeedByTenantQuery(getSocialDc(), {
+        tenantId,
+        placement: normalizedPlacement,
+        limit: effectiveLimit
+      });
+
+    const filtered = response.data.posts
+      .filter((item) => (communityId ? item.communityId === communityId : true))
+      .slice(0, limit);
+
+    const profileMap = await buildProfileByUserIdMap(
       tenantId,
-      authorUserId: userId,
-      placement: normalizedPlacement,
-      limit: effectiveLimit
-    })
-    : await listFeedByTenantQuery(getSocialDc(), {
+      filtered.map((item) => item.authorUserId)
+    );
+
+    return mapPostList(filtered, viewerMembershipId, profileMap);
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    console.warn("[social/repository] listPosts falling back to local social store", {
       tenantId,
       placement: normalizedPlacement,
-      limit: effectiveLimit
+      communityId,
+      userId,
+      message: error instanceof Error ? error.message : String(error)
     });
 
-  const filtered = response.data.posts
-    .filter((item) => (communityId ? item.communityId === communityId : true))
-    .slice(0, limit);
-
-  const profileMap = await buildProfileByUserIdMap(
-    tenantId,
-    filtered.map((item) => item.authorUserId)
-  );
-
-  return mapPostList(filtered, viewerMembershipId, profileMap);
+    return listFallbackPosts({
+      tenantId,
+      communityId,
+      limit,
+      placement: normalizedPlacement,
+      userId
+    });
+  }
 }
 
 export async function listPostsByUser({ tenantId, userId, limit = 24, placement = "feed", viewerMembershipId = null }) {
@@ -720,14 +896,28 @@ export async function listPostsByUser({ tenantId, userId, limit = 24, placement 
 }
 
 export async function countPostsByUser({ tenantId, userId, placement = "feed" }) {
-  const response = await listPostsByAuthorQuery(getSocialDc(), {
-    tenantId,
-    authorUserId: userId,
-    placement: normalizePlacement(placement),
-    limit: TENANT_SCAN_LIMIT
-  });
+  try {
+    const response = await listPostsByAuthorQuery(getSocialDc(), {
+      tenantId,
+      authorUserId: userId,
+      placement: normalizePlacement(placement),
+      limit: TENANT_SCAN_LIMIT
+    });
 
-  return response.data.posts.length;
+    return response.data.posts.length;
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const items = await listFallbackPosts({
+      tenantId,
+      userId,
+      placement,
+      limit: TENANT_SCAN_LIMIT
+    });
+    return items.length;
+  }
 }
 
 export async function findPostById(postId, { tenantId = null, viewerMembershipId = null } = {}) {
@@ -943,6 +1133,13 @@ export async function listPostReactions({ postId, limit = 100 }) {
     reactionType: item.reactionType ?? "like",
     createdAt: toIsoString(item.createdAt)
   }));
+}
+
+export async function togglePostSave({ tenantId, postId, userId }) {
+  void tenantId;
+  void postId;
+  void userId;
+  throw new Error("Post save support is not deployed in the current Data Connect service yet.");
 }
 
 export async function upsertCommentReaction(payload) {

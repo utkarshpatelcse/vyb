@@ -710,6 +710,8 @@
 .vyb-story-viewer-media-wrap {
   position: absolute;
   inset: 0;
+  display: grid;
+  place-items: center;
 }
 
 .vyb-story-viewer-media {
@@ -864,6 +866,18 @@
     width: min(calc(100% - 2rem), 460px);
     right: auto;
     margin-inline: auto;
+  }
+
+  .vyb-story-viewer-media {
+    position: relative;
+    inset: auto;
+    width: min(calc((100dvh - 2rem) * 9 / 16), calc(100vw - 2rem));
+    height: min(calc(100dvh - 2rem), calc((100vw - 2rem) * 16 / 9));
+  }
+
+  .vyb-story-viewer-video {
+    object-fit: contain;
+    object-position: center;
   }
 }
 
@@ -1501,20 +1515,27 @@
   display: flex;
   align-items: center;
   gap: 0.85rem;
-  padding: 0.9rem;
-  border-radius: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
+  padding: 1rem 1.25rem;
+  border-radius: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.02);
+  transition: all 0.2s ease;
+}
+
+.vyb-post-share-user:hover {
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateY(-1px);
 }
 
 .vyb-post-repost-avatar,
 .vyb-post-share-preview-avatar,
 .vyb-post-share-user-avatar {
-  width: 2.8rem;
-  height: 2.8rem;
+  width: 3rem;
+  height: 3rem;
   flex-shrink: 0;
   border-radius: 999px;
   overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
 }
 
 .vyb-post-repost-viewer-copy,
@@ -3091,13 +3112,16 @@
 }
 
 .vyb-search-shell {
-  width: min(960px, 100%);
+  width: min(720px, 100%);
+  margin: 0 auto;
   display: grid;
-  gap: 1.25rem;
-  padding: 1.4rem;
-  border-radius: 1.5rem;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  background: rgba(18, 20, 30, 0.96);
+  gap: 1.5rem;
+  padding: 2.5rem;
+  border-radius: 2rem;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: radial-gradient(circle at top, rgba(99, 102, 241, 0.08), transparent 60%), rgba(18, 20, 30, 0.6);
+  backdrop-filter: blur(24px);
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .vyb-search-header {
@@ -3108,8 +3132,13 @@
 }
 
 .vyb-search-header h1 {
-  margin: 0.35rem 0 0;
-  font-size: clamp(2rem, 5vw, 3rem);
+  margin: 0.5rem 0 0;
+  font-size: clamp(2.5rem, 5vw, 3.5rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, #fff 40%, #a5b4fc);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .vyb-search-header p {
@@ -3120,16 +3149,91 @@
 .vyb-search-form {
   display: flex;
   gap: 0.8rem;
+  margin-top: 0.5rem;
+}
+
+.vyb-search-input-wrapper {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0 1rem;
+  border-radius: 1.2rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  transition: all 0.2s ease;
+}
+
+.vyb-search-input-wrapper:focus-within {
+  border-color: rgba(99, 102, 241, 0.4);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+}
+
+.vyb-search-input-icon {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: 0 0 auto;
+  color: var(--vyb-campus-dim);
 }
 
 .vyb-search-form input {
   flex: 1;
   min-width: 0;
-  padding: 0.95rem 1rem;
-  border-radius: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  background: rgba(255, 255, 255, 0.04);
+  padding: 1rem 0;
+  border: 0;
+  background: transparent;
   color: var(--vyb-campus-text);
+  font-size: 1rem;
+}
+
+.vyb-search-form input:focus {
+  outline: none;
+}
+
+.vyb-search-card-avatar {
+  width: 3.4rem;
+  height: 3.4rem;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.9), rgba(59, 130, 246, 0.86));
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.2);
+}
+
+.vyb-search-card-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 0.22rem;
+}
+
+.vyb-search-card-title {
+  min-width: 0;
+  display: grid;
+  gap: 0.12rem;
+}
+
+.vyb-search-card-title strong {
+  font-size: 1.04rem;
+  color: #fff;
+}
+
+.vyb-search-card-title span,
+.vyb-search-card-sub,
+.vyb-search-card-meta {
+  margin: 0;
+  color: var(--vyb-campus-dim);
+  font-size: 0.88rem;
+}
+
+.vyb-search-card-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
 }
 
 .vyb-search-results {
@@ -3142,27 +3246,37 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1rem 1.05rem;
-  border-radius: 1.15rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 1.2rem 1.4rem;
+  border-radius: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.02);
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.vyb-search-card:hover {
   background: rgba(255, 255, 255, 0.04);
+  transform: translateY(-2px);
 }
 
 .vyb-search-card-copy {
   display: grid;
-  gap: 0.25rem;
+  gap: 0.2rem;
+}
+
+.vyb-search-card-copy strong {
+  font-size: 1.1rem;
+  color: #fff;
 }
 
 .vyb-search-card-copy span,
 .vyb-search-card-copy p {
   margin: 0;
   color: var(--vyb-campus-dim);
+  font-size: 0.88rem;
 }
 
 .vyb-search-card-meta {
-  display: grid;
-  justify-items: end;
-  gap: 0.55rem;
+  display: block;
 }
 
 /* Legacy vyb-messages styles replaced by Spatial Messaging spm-* system */
@@ -3201,10 +3315,6 @@
 
   .vyb-reels-header-card {
     margin: 1rem 1rem 0;
-  }
-
-  .vyb-search-card-meta {
-    justify-items: stretch;
   }
 
   .vyb-messages-card-meta,
@@ -3696,14 +3806,22 @@
   justify-items: center;
   gap: 0.32rem;
   padding: 0.7rem 0.45rem;
-  border-radius: 1.2rem;
-  border: 1px solid rgba(96, 165, 250, 0.14);
-  background: var(--vyb-vibes-panel-strong);
-  backdrop-filter: blur(18px);
+  border: 0;
+  background: transparent;
   color: var(--vyb-campus-text);
   font: inherit;
   font-weight: 700;
   cursor: pointer;
+  transition: transform 0.2s, color 0.2s;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+
+.vyb-vibes-action-button:hover {
+  transform: scale(1.05);
+}
+
+.vyb-vibes-action-button .vyb-campus-icon {
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
 }
 
 .vyb-vibes-action-button .vyb-campus-icon {
@@ -3717,9 +3835,13 @@
 }
 
 .vyb-vibes-action-button.is-active {
-  background: var(--vyb-campus-gradient);
-  border-color: transparent;
-  box-shadow: var(--vyb-campus-shadow);
+  color: var(--vyb-campus-teal);
+  text-shadow: 0 0 16px color-mix(in srgb, var(--vyb-campus-teal) 42%, transparent);
+}
+
+.vyb-vibes-action-button.is-active svg path {
+  fill: color-mix(in srgb, var(--vyb-campus-teal) 84%, white 16%);
+  stroke: var(--vyb-campus-teal);
 }
 
 .vyb-vibes-volume-toggle {
@@ -6774,18 +6896,8 @@ html {
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 860px;
-  max-height: calc(100dvh - 2rem);
-  border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  background:
-    linear-gradient(160deg, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0.02) 100%),
-    rgba(10, 14, 26, 0.92);
-  backdrop-filter: blur(32px) saturate(160%);
-  -webkit-backdrop-filter: blur(32px) saturate(160%);
   box-shadow:
-    0 0 0 1px rgba(255,255,255,0.07) inset,
-    0 40px 100px rgba(0,0,0,0.55),
+    0 18px 54px rgba(15, 23, 42, 0.16),
     0 0 80px rgba(99,102,241,0.08);
   overflow: hidden;
   animation: cs-shell-in 0.30s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -6797,3 +6909,218 @@ html {
    ════════════════════════════════════════════════════════════════ */
 
 /* Page shell */
+
+
+
+/* Professional Share UI Overrides */
+.vyb-post-share-user {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 1rem 1.25rem;
+  border-radius: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.02);
+  transition: all 0.2s ease;
+}
+
+.vyb-post-share-user:hover {
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateY(-1px);
+}
+
+.vyb-post-share-user-avatar {
+  width: 3rem;
+  height: 3rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+.vyb-post-share-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 1.25rem;
+  border-radius: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: radial-gradient(circle at top left, rgba(99, 102, 241, 0.08), transparent 70%), rgba(255, 255, 255, 0.02);
+}
+
+/* ==========================================================================
+   SOCIAL POST SHARE SHEET (Professional Standard)
+   ========================================================================== */
+
+.vyb-post-share-sheet {
+  width: min(100% - 2rem, 420px) !important;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.vyb-post-share-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.vyb-post-share-preview-avatar {
+  width: 2.8rem;
+  height: 2.8rem;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.vyb-post-share-preview-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.vyb-post-share-preview-copy strong {
+  display: block;
+  font-size: 0.95rem;
+}
+
+.vyb-post-share-preview-copy span {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--vyb-campus-dim);
+}
+
+.vyb-post-share-preview-copy p {
+  margin: 0.2rem 0 0;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.8;
+}
+
+.vyb-post-share-quick-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin: 0.5rem 0;
+}
+
+.vyb-post-share-quick-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: #f1f5f9;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.vyb-post-share-quick-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(99, 102, 241, 0.3);
+  transform: translateY(-2px);
+}
+
+.vyb-post-share-quick-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+}
+
+.vyb-post-share-divider {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 0.5rem 0;
+  color: var(--vyb-campus-dim);
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.vyb-post-share-divider::before,
+.vyb-post-share-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.vyb-post-share-users {
+  display: grid;
+  gap: 0.5rem;
+  max-height: 200px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.vyb-post-share-user {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem;
+  border-radius: 0.9rem;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.02);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.vyb-post-share-user:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.vyb-post-share-user-avatar {
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.vyb-post-share-user-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.vyb-post-share-user-copy strong {
+  display: block;
+  font-size: 0.88rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vyb-post-share-user-copy span {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--vyb-campus-dim);
+}
+
+.vyb-post-share-user-action {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #818cf8;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.1);
+}

@@ -28,6 +28,25 @@ function getPostSnippet(post: FeedCard) {
   return body || title || `Post from @${post.author.username}`;
 }
 
+function LinkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="vyb-campus-icon">
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </svg>
+  );
+}
+
+function ExternalShareIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="vyb-campus-icon">
+      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+      <polyline points="16 6 12 2 8 6" />
+      <line x1="12" y1="2" x2="12" y2="15" />
+    </svg>
+  );
+}
+
 export function SocialPostShareSheet({
   post,
   suggestedUsers,
@@ -37,9 +56,11 @@ export function SocialPostShareSheet({
   onShare
 }: SocialPostShareSheetProps) {
   const [query, setQuery] = useState("");
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
 
   useEffect(() => {
     setQuery("");
+    setCopyStatus(null);
   }, [post?.id]);
 
   const normalizedQuery = normalizeUsername(query).toLowerCase();
@@ -58,6 +79,30 @@ export function SocialPostShareSheet({
     return ranked.slice(0, 8);
   }, [normalizedQuery, suggestedUsers]);
 
+  async function handleCopyLink() {
+    if (!post) return;
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/post/${post.id}`);
+      setCopyStatus("Link copied!");
+      setTimeout(() => setCopyStatus(null), 2000);
+    } catch {
+      setCopyStatus("Failed to copy");
+    }
+  }
+
+  async function handleSystemShare() {
+    if (!post || !navigator.share) return;
+    try {
+      await navigator.share({
+        title: post.title || 'Vyb Post',
+        text: getPostSnippet(post),
+        url: `${window.location.origin}/post/${post.id}`
+      });
+    } catch (err) {
+      console.error('Share failed:', err);
+    }
+  }
+
   if (!post) {
     return null;
   }
@@ -73,8 +118,8 @@ export function SocialPostShareSheet({
       >
         <div className="vyb-post-actions-head">
           <div>
-            <strong>Share in chats</strong>
-            <span>Pick someone and we will open this inside your Vyb chatbox.</span>
+            <strong>Share post</strong>
+            <span>Send to friends or copy the link to share elsewhere.</span>
           </div>
           <button type="button" className="vyb-campus-compose-secondary" onClick={onClose} disabled={Boolean(busyUsername)}>
             Close
@@ -98,13 +143,29 @@ export function SocialPostShareSheet({
           </div>
         </div>
 
+        <div className="vyb-post-share-quick-actions">
+          <button type="button" className="vyb-post-share-quick-btn" onClick={handleCopyLink}>
+            <div className="vyb-post-share-quick-icon"><LinkIcon /></div>
+            <span>{copyStatus || "Copy Link"}</span>
+          </button>
+          {typeof navigator !== "undefined" && typeof navigator.share === "function" && (
+            <button type="button" className="vyb-post-share-quick-btn" onClick={handleSystemShare}>
+              <div className="vyb-post-share-quick-icon"><ExternalShareIcon /></div>
+              <span>System Share</span>
+            </button>
+          )}
+        </div>
+
+        <div className="vyb-post-share-divider">
+          <span>Or send to a friend</span>
+        </div>
+
         <label className="vyb-post-actions-field">
-          <span>Find a username</span>
           <input
             type="text"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="@username"
+            placeholder="Search username..."
             autoCapitalize="off"
             autoCorrect="off"
             spellCheck={false}
@@ -138,23 +199,23 @@ export function SocialPostShareSheet({
                     <strong>{user.displayName || user.username}</strong>
                     <span>@{user.username}</span>
                   </div>
-                  <span className="vyb-post-share-user-action">{isBusy ? "Opening..." : "Open chat"}</span>
+                  <span className="vyb-post-share-user-action">{isBusy ? "Opening..." : "Send"}</span>
                 </button>
               );
             })
           ) : (
-            <div className="vyb-post-share-empty">No matches yet. Type a full username below.</div>
+            <div className="vyb-post-share-empty">No matches found.</div>
           )}
         </div>
 
-        {normalizeUsername(query) ? (
+        {normalizeUsername(query) && !filteredUsers.some(u => u.username.toLowerCase() === normalizeUsername(query).toLowerCase()) ? (
           <button
             type="button"
             className="vyb-campus-compose-primary vyb-post-share-manual"
             onClick={() => onShare(normalizeUsername(query))}
             disabled={Boolean(busyUsername)}
           >
-            {busyUsername === normalizeUsername(query) ? "Opening..." : `Open chat with @${normalizeUsername(query)}`}
+            {busyUsername === normalizeUsername(query) ? "Opening..." : `Send to @${normalizeUsername(query)}`}
           </button>
         ) : null}
 
