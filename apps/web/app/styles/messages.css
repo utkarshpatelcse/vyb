@@ -1298,7 +1298,6 @@
 .spm-chat-message-row {
   display: flex;
   align-items: flex-end;
-  gap: 0.8rem;
   position: relative;
 }
 
@@ -1307,7 +1306,10 @@
 }
 
 .spm-chat-message-trigger {
-  flex-shrink: 0;
+  position: absolute;
+  left: -2.6rem;
+  top: 50%;
+  transform: translateY(-50%) scale(0.9);
   width: 2.2rem;
   height: 2.2rem;
   display: inline-flex;
@@ -1320,12 +1322,12 @@
   cursor: pointer;
   transition: all 0.2s ease;
   opacity: 0;
-  transform: scale(0.9);
+  z-index: 10;
 }
 
 .spm-chat-message-row:hover .spm-chat-message-trigger {
   opacity: 1;
-  transform: scale(1);
+  transform: translateY(-50%) scale(1);
 }
 
 .spm-chat-message-trigger:hover {
@@ -1335,7 +1337,9 @@
 }
 
 .spm-chat-message-trigger-self {
-  order: -2;
+  left: auto;
+  right: -2.6rem;
+  order: unset;
 }
 
 .spm-chat-mini-avatar {
