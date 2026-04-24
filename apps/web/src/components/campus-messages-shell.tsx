@@ -2,6 +2,7 @@
 
 import type {
   CampusEventsDashboardResponse,
+  ChatEncryptedAttachment,
   ChatConversationPreview,
   ChatConversationResponse,
   ChatDealCardPayload,
@@ -48,7 +49,7 @@ import {
   type ChatPinAttemptState,
   type StoredChatKeyMaterial
 } from "../lib/chat-e2ee";
-import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
+import { buildPrimaryCampusNav, CampusDesktopNavigation } from "./campus-navigation";
 import { MessageCardRenderer } from "./message-card-renderer";
 
 type ActiveConversation = ChatConversationResponse["conversation"];
@@ -72,6 +73,15 @@ type PendingSharedPost = {
 };
 type ShareMenuTab = "deals" | "events" | "vibes" | "profiles";
 type ShareMenuCollections = Record<ShareMenuTab, PendingShareCard[]>;
+type PendingMediaAttachment = {
+  file: File;
+  name: string;
+  mimeType: string;
+  previewUrl: string;
+  width: number | null;
+  height: number | null;
+};
+type OutgoingReceiptState = "undelivered" | "sent" | "delivered" | "read";
 const DISMISSED_DECRYPTION_WARNING_STORAGE_PREFIX = "vyb-chat-dismissed-decryption-warning";
 const CHAT_DEFAULT_TTL_STORAGE_PREFIX = "vyb-chat-default-ttl";
 const CHAT_REACTION_OPTIONS = [
@@ -283,6 +293,19 @@ function formatMessageTime(dateString: string) {
   });
 }
 
+async function readImageDimensions(objectUrl: string) {
+  if (typeof window === "undefined") {
+    return { width: null, height: null };
+  }
+
+  return new Promise<{ width: number | null; height: number | null }>((resolve) => {
+    const image = new window.Image();
+    image.onload = () => resolve({ width: image.naturalWidth || null, height: image.naturalHeight || null });
+    image.onerror = () => resolve({ width: null, height: null });
+    image.src = objectUrl;
+  });
+}
+
 
 function formatLockoutCountdown(milliseconds: number) {
   const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
@@ -386,6 +409,19 @@ function getStatusRing(userId: string): "online" | "vibing" | "away" {
   if (code % 3 === 0) return "online";
   if (code % 3 === 1) return "vibing";
   return "away";
+}
+
+function getReceiptLabel(state: OutgoingReceiptState) {
+  switch (state) {
+    case "read":
+      return "Read";
+    case "delivered":
+      return "Delivered";
+    case "undelivered":
+      return "Undelivered";
+    default:
+      return "Sent";
+  }
 }
 
 function isOwnChatMessage(message: ChatMessageRecord, viewerUserId: string, viewerMembershipId: string) {
@@ -693,8 +729,10 @@ export function CampusMessagesShell({
   const [conversationError, setConversationError] = useState<string | null>(activeConversationError);
   const [draftMessage, setDraftMessage] = useState("");
   const [pendingShareCard, setPendingShareCard] = useState<PendingShareCard | null>(null);
+  const [pendingMediaAttachment, setPendingMediaAttachment] = useState<PendingMediaAttachment | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
   const [realtimeState, setRealtimeState] = useState<RealtimeState>(initialConversationId ? "connecting" : "idle");
   const [viewerIdentity, setViewerIdentity] = useState<ChatIdentitySummary | null>(initialViewerIdentity);
   const [localChatKey, setLocalChatKey] = useState<StoredChatKeyMaterial | null>(null);
@@ -729,11 +767,14 @@ export function CampusMessagesShell({
   const [messageActionError, setMessageActionError] = useState<string | null>(null);
   const [chatSettingsOpen, setChatSettingsOpen] = useState(false);
   const [showE2eeAssurance, setShowE2eeAssurance] = useState(false);
+  const [expandedReceiptMessageId, setExpandedReceiptMessageId] = useState<string | null>(null);
+  const [calendarDayMarker, setCalendarDayMarker] = useState(() => new Date().toDateString());
   const [defaultDurationKey, setDefaultDurationKey] = useState<ChatMessageTtlKey>("30d");
   const [dismissedDecryptionWarningIds, setDismissedDecryptionWarningIds] = useState<Record<string, true>>({});
   const [creatingChatIdentity, setCreatingChatIdentity] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const mediaInputRef = useRef<HTMLInputElement | null>(null);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const requestRef = useRef(0);
   const appliedShareIntentRef = useRef<string | null>(null);
@@ -783,6 +824,29 @@ export function CampusMessagesShell({
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const now = new Date();
+    const nextMidnight = new Date(now);
+    nextMidnight.setHours(24, 0, 2, 0);
+    const timer = window.setTimeout(() => {
+      setCalendarDayMarker(new Date().toDateString());
+    }, Math.max(1000, nextMidnight.getTime() - now.getTime()));
+
+    return () => window.clearTimeout(timer);
+  }, [calendarDayMarker]);
+
+  useEffect(() => {
+    return () => {
+      if (pendingMediaAttachment?.previewUrl && typeof window !== "undefined") {
+        window.URL.revokeObjectURL(pendingMediaAttachment.previewUrl);
+      }
+    };
+  }, [pendingMediaAttachment]);
+
+  useEffect(() => {
     setConversations(
       dedupeConversationItems(
         initialConversation ? upsertConversationItem(initialItems, buildConversationPreview(initialConversation)) : initialItems
@@ -816,6 +880,11 @@ export function CampusMessagesShell({
 
     window.localStorage.setItem(getDefaultTtlStorageKey(viewerUserId, activeConversationId), defaultDurationKey);
   }, [activeConversationId, defaultDurationKey, viewerUserId]);
+
+  useEffect(() => {
+    setShowE2eeAssurance(false);
+    setExpandedReceiptMessageId(null);
+  }, [activeConversationId]);
 
   useEffect(() => {
     setChatSettingsOpen(false);
@@ -1494,7 +1563,7 @@ export function CampusMessagesShell({
 
   const messageMap = useMemo(() => {
     return new Map((activeConversation?.messages ?? []).map((message) => [message.id, message]));
-  }, [activeConversation]);
+  }, [activeConversation, calendarDayMarker]);
 
   const replyingToMessage = useMemo(
     () => (replyingToMessageId ? messageMap.get(replyingToMessageId) ?? null : null),
@@ -1829,6 +1898,91 @@ export function CampusMessagesShell({
 
     return seenIds;
   }, [activeConversation, viewerMembershipId, viewerUserId]);
+
+  function clearPendingMediaAttachment() {
+    setPendingMediaAttachment((current) => {
+      if (current?.previewUrl && typeof window !== "undefined") {
+        window.URL.revokeObjectURL(current.previewUrl);
+      }
+
+      return null;
+    });
+
+    if (mediaInputRef.current) {
+      mediaInputRef.current.value = "";
+    }
+  }
+
+  async function handleMediaSelection(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setSendError("Right now chat media supports images only.");
+      event.target.value = "";
+      return;
+    }
+
+    const previewUrl = window.URL.createObjectURL(file);
+    const dimensions = await readImageDimensions(previewUrl);
+    setSendError(null);
+    setPendingShareCard(null);
+
+    setPendingMediaAttachment((current) => {
+      if (current?.previewUrl && current.previewUrl !== previewUrl && typeof window !== "undefined") {
+        window.URL.revokeObjectURL(current.previewUrl);
+      }
+
+      return {
+        file,
+        name: file.name,
+        mimeType: file.type || "image/jpeg",
+        previewUrl,
+        width: dimensions.width,
+        height: dimensions.height
+      };
+    });
+
+    event.target.value = "";
+    focusComposerSoon();
+  }
+
+  function getOutgoingReceiptState(message: ChatMessageRecord, isOwnMessage: boolean, isDeletedMessage: boolean): OutgoingReceiptState | null {
+    if (!isOwnMessage || isDeletedMessage || !activeConversation) {
+      return null;
+    }
+
+    if (seenOwnMessageIds.has(message.id)) {
+      return "read";
+    }
+
+    const createdAt = new Date(message.createdAt).getTime();
+    const hasLaterPeerMessage = activeConversation.messages.some(
+      (candidate) =>
+        candidate.senderMembershipId !== viewerMembershipId && new Date(candidate.createdAt).getTime() > createdAt
+    );
+
+    if (hasLaterPeerMessage || realtimeState === "live") {
+      return "delivered";
+    }
+
+    const latestOutstandingOwnMessage = [...activeConversation.messages]
+      .reverse()
+      .find(
+        (candidate) =>
+          candidate.senderMembershipId === viewerMembershipId &&
+          !isDeletedChatMessage(candidate) &&
+          !seenOwnMessageIds.has(candidate.id)
+      );
+
+    if ((sessionExpired || realtimeState === "offline") && latestOutstandingOwnMessage?.id === message.id) {
+      return "undelivered";
+    }
+
+    return "sent";
+  }
 
   const latestIncomingMessage = useMemo(() => {
     if (!activeConversation) return null;
@@ -2743,12 +2897,14 @@ export function CampusMessagesShell({
     conversationId,
     plaintext,
     messageKind,
-    replyToMessageId
+    replyToMessageId,
+    attachment
   }: {
     conversationId: string;
     plaintext: string;
     messageKind: ChatMessageKind;
     replyToMessageId?: string | null;
+    attachment?: ChatEncryptedAttachment | null;
   }) {
     const peerIdentity = activeConversation?.peer.publicKey ?? null;
     const chatReady = await ensureChatIdentity();
@@ -2773,6 +2929,7 @@ export function CampusMessagesShell({
         messageKind,
         replyToMessageId: replyToMessageId ?? null,
         durationKey: defaultDurationKey,
+        attachment: attachment ?? null,
         ...encryptedPayload
       })
     });
@@ -2840,7 +2997,8 @@ export function CampusMessagesShell({
     const conversationId = activeConversation?.id;
     const nextMessage = draftMessage.trim();
     const hasPendingShare = Boolean(pendingShareCard);
-    if (!conversationId || (!nextMessage && !hasPendingShare) || sending) {
+    const hasPendingMedia = Boolean(pendingMediaAttachment);
+    if (!conversationId || (!nextMessage && !hasPendingShare && !hasPendingMedia) || sending || uploadingMedia) {
       return;
     }
 
@@ -2848,19 +3006,49 @@ export function CampusMessagesShell({
     setSendError(null);
 
     try {
+      let uploadedAttachment: ChatEncryptedAttachment | null = null;
+      let outgoingMessageKind: ChatMessageKind = pendingShareCard ? pendingShareCard.kind : "text";
+
+      if (pendingMediaAttachment) {
+        setUploadingMedia(true);
+        const formData = new FormData();
+        formData.set("file", pendingMediaAttachment.file);
+        formData.set("mimeType", pendingMediaAttachment.mimeType);
+        if (typeof pendingMediaAttachment.width === "number") {
+          formData.set("width", String(pendingMediaAttachment.width));
+        }
+        if (typeof pendingMediaAttachment.height === "number") {
+          formData.set("height", String(pendingMediaAttachment.height));
+        }
+
+        const uploadResponse = await fetchChatEndpoint("/api/chats/media", {
+          method: "POST",
+          body: formData
+        });
+        const uploadData = await uploadResponse.json().catch(() => null);
+
+        if (!uploadResponse.ok) {
+          throw new Error(uploadData?.error?.message ?? "We could not upload that image.");
+        }
+
+        uploadedAttachment = (uploadData?.attachment as ChatEncryptedAttachment | undefined) ?? null;
+        outgoingMessageKind = "image";
+      }
+
       const outgoingText = pendingShareCard
         ? serializeShareCardPayload(pendingShareCard, nextMessage || null)
         : nextMessage;
-      const outgoingMessageKind: ChatMessageKind = pendingShareCard ? pendingShareCard.kind : "text";
       await dispatchEncryptedMessage({
         conversationId,
         plaintext: outgoingText,
         messageKind: outgoingMessageKind,
-        replyToMessageId: replyingToMessageId
+        replyToMessageId: replyingToMessageId,
+        attachment: uploadedAttachment
       });
 
       setDraftMessage("");
       setPendingShareCard(null);
+      clearPendingMediaAttachment();
       setShareMenuOpen(false);
       setReplyingToMessageId(null);
       focusComposerSoon();
@@ -2868,6 +3056,7 @@ export function CampusMessagesShell({
       setSendError(error instanceof Error ? error.message : "Network error. Please try again in a moment.");
     } finally {
       setSending(false);
+      setUploadingMedia(false);
     }
   }
 
@@ -3221,6 +3410,11 @@ export function CampusMessagesShell({
 
                 {activePeer ? (
                   <div className="spm-chat-peer">
+                    <Link
+                      href={`/u/${activePeer.username}`}
+                      className="spm-chat-peer-avatar-link"
+                      aria-label={`Open ${activePeer.displayName}'s profile`}
+                    >
                     <div className="spm-conv-avatar-wrap">
                       <div className={`spm-conv-avatar spm-pulse-ring spm-pulse-${activePeerStatus}`}>
                         <CampusAvatarContent
@@ -3234,30 +3428,34 @@ export function CampusMessagesShell({
                       </div>
                       <span className={`spm-status-dot spm-status-${activePeerStatus}`} />
                     </div>
-                    <Link href={`/u/${activePeer.username}`} className="spm-chat-peer-copy">
-                      <strong style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                        {activePeer.displayName}
-                      </strong>
+                    </Link>
+                    <div className="spm-chat-peer-copy">
+                      <Link href={`/u/${activePeer.username}`} className="spm-chat-peer-name">
+                        <strong style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                          {activePeer.displayName}
+                        </strong>
+                      </Link>
                       <div className="spm-chat-peer-status-row">
-                        <span 
-                          className="spm-chat-lock-pill-mini" 
-                          onClick={(e) => { e.preventDefault(); setShowE2eeAssurance(!showE2eeAssurance); }}
-                          style={{ cursor: 'pointer' }}
+                        <button
+                          type="button"
+                          className="spm-chat-lock-pill-mini"
+                          onClick={() => setShowE2eeAssurance((current) => !current)}
+                          aria-expanded={showE2eeAssurance}
                         >
                           <IconShield />
                           {isE2eeReadyForActiveConversation ? "E2EE" : "Secure"}
                           {showE2eeAssurance && (
                             <span className="spm-chat-e2ee-tooltip">
-                              Your chat is end-to-end encrypted. No one outside of this chat, not even VYB, can read them.
+                              Your chat is end-to-end encrypted. Only you and the other person in this chat can read it.
                             </span>
                           )}
-                        </span>
+                        </button>
                         <span style={{ opacity: 0.5 }}>•</span>
                         <span className={`spm-chat-live-pill-mini spm-chat-live-pill-${realtimeState}`}>
                           {realtimeLabel}
                         </span>
                       </div>
-                    </Link>
+                    </div>
                   </div>
                 ) : (
                   <div className="spm-chat-peer spm-chat-peer-skeleton" aria-hidden="true" />
@@ -3351,8 +3549,7 @@ export function CampusMessagesShell({
                         const reactionSummary = isDeletedMessage
                           ? ""
                           : [...new Set(message.reactions.map((reaction) => reaction.emoji))].join(" ");
-                        const isSeenByPeer = isOwnMessage && !isDeletedMessage && seenOwnMessageIds.has(message.id);
-                        const receiptLabel = isOwnMessage && !isDeletedMessage ? (isSeenByPeer ? "Seen" : "Sent") : null;
+                        const receiptState = getOutgoingReceiptState(message, isOwnMessage, isDeletedMessage);
                         const swipeOffsetX = swipeReplyPreview?.messageId === message.id ? swipeReplyPreview.offsetX : 0;
                         const showSwipeReplyCue = Math.abs(swipeOffsetX) >= 10;
                         const messageCardPayload = parseShareCardPayload(message.messageKind, messagePlaintextById[message.id]);
@@ -3364,13 +3561,17 @@ export function CampusMessagesShell({
                           !messagePlaintextById[message.id] &&
                           !isDeletedMessage;
 
-                        let plaintext = messagePlaintextById[message.id] || message.text || "";
-                        const isSystemMessage = message.messageKind === "system" || plaintext.includes("Suspected screenshot:");
+                        let plaintext =
+                          messagePlaintextById[message.id] ||
+                          (!isE2eeCipherAlgorithm(message.cipherAlgorithm) ? message.cipherText : "") ||
+                          "";
+                        const isScreenshotAlert = plaintext.includes("Suspected screenshot:");
+                        const isSystemMessage = message.messageKind === "system" || isScreenshotAlert;
                         if (isSystemMessage) {
                           plaintext = plaintext.replace("Suspected screenshot: ", "");
                         }
                         const rowClass = isSystemMessage 
-                          ? "spm-chat-message-row spm-chat-message-row-system" 
+                          ? `spm-chat-message-row spm-chat-message-row-system${isScreenshotAlert ? " spm-chat-message-row-screenshot" : ""}` 
                           : `spm-chat-message-row${isOwnMessage ? " spm-chat-message-row-self" : ""}`;
 
                         return (
@@ -3441,7 +3642,7 @@ export function CampusMessagesShell({
                                   )}
                                 </>
                               ) : (
-                                <p className="spm-chat-message-text">
+                                <p className={`spm-chat-message-text${isScreenshotAlert ? " spm-chat-message-text-system" : ""}`}>
                                   {getMessageBody(message, messagePlaintextById[message.id], { isOwnMessage })}
                                 </p>
                               )}
@@ -3463,11 +3664,19 @@ export function CampusMessagesShell({
                                   </span>
                                 ) : null}
                                 <span suppressHydrationWarning>{formatMessageTime(message.createdAt)}</span>
-                                {receiptLabel ? (
-                                  <span className="spm-chat-receipt-dot-wrapper" tabIndex={0}>
-                                    <span className="spm-chat-receipt-dot" style={{ backgroundColor: isSeenByPeer ? '#10b981' : '#9ca3af' }} />
-                                    <span className="spm-chat-receipt-text" style={{ color: isSeenByPeer ? '#10b981' : '#9ca3af' }}>{isSeenByPeer ? "Read" : "Sent"}</span>
-                                  </span>
+                                {receiptState ? (
+                                  <button
+                                    type="button"
+                                    className={`spm-chat-receipt-toggle is-${receiptState}${expandedReceiptMessageId === message.id ? " is-expanded" : ""}`}
+                                    onClick={() =>
+                                      setExpandedReceiptMessageId((current) => (current === message.id ? null : message.id))
+                                    }
+                                    aria-label={`Message ${getReceiptLabel(receiptState).toLowerCase()}`}
+                                    aria-expanded={expandedReceiptMessageId === message.id}
+                                  >
+                                    <span className="spm-chat-receipt-dot" aria-hidden="true" />
+                                    <span className="spm-chat-receipt-label">{getReceiptLabel(receiptState)}</span>
+                                  </button>
                                 ) : null}
                               </div>
                             </div>
@@ -3698,24 +3907,31 @@ export function CampusMessagesShell({
 
                         <div className="spm-chat-settings-dropdown-wrapper" style={{ marginTop: '1rem' }}>
                           <label style={{ display: 'block', fontSize: '0.8rem', color: 'rgba(255,255,255,0.7)', marginBottom: '0.5rem' }}>Auto-Destruct Time</label>
-                          <select 
-                            value={defaultDurationKey} 
-                            onChange={(e) => setDefaultDurationKey(e.target.value)}
-                            style={{
-                              width: '100%',
-                              padding: '0.8rem',
-                              borderRadius: '0.8rem',
-                              background: 'rgba(255, 255, 255, 0.05)',
-                              border: '1px solid rgba(255, 255, 255, 0.1)',
-                              color: '#fff',
-                              outline: 'none',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            {CHAT_TTL_OPTIONS.map((option) => (
-                              <option key={option.value} value={option.value} style={{ background: '#0f172a' }}>{option.label}</option>
-                            ))}
-                          </select>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
+                            {CHAT_TTL_OPTIONS.map((option) => {
+                              const isSelected = defaultDurationKey === option.value;
+                              return (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  onClick={() => setDefaultDurationKey(normalizeTtlDurationKey(option.value) ?? "30d")}
+                                  style={{
+                                    padding: '0.6rem 0',
+                                    borderRadius: '0.5rem',
+                                    background: isSelected ? 'linear-gradient(135deg, #6366f1, #4338ca)' : 'rgba(255, 255, 255, 0.05)',
+                                    border: `1px solid ${isSelected ? 'transparent' : 'rgba(255, 255, 255, 0.1)'}`,
+                                    color: isSelected ? '#fff' : 'rgba(255,255,255,0.7)',
+                                    fontWeight: isSelected ? '600' : '400',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s ease',
+                                    fontSize: '0.85rem'
+                                  }}
+                                >
+                                  {option.label}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -3877,6 +4093,29 @@ export function CampusMessagesShell({
                       </div>
                     )}
 
+                    {pendingMediaAttachment && (
+                      <div className="spm-chat-compose-share spm-chat-compose-media">
+                        <div className="spm-chat-compose-share-media" aria-hidden="true">
+                          <img src={pendingMediaAttachment.previewUrl} alt="" loading="lazy" />
+                        </div>
+
+                        <div className="spm-chat-compose-share-copy">
+                          <strong>Ready to send image</strong>
+                          <span>{pendingMediaAttachment.name}</span>
+                          <p>Add an optional caption, then send.</p>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="spm-chat-compose-reply-clear"
+                          onClick={clearPendingMediaAttachment}
+                          aria-label="Remove selected image"
+                        >
+                          <IconClose />
+                        </button>
+                      </div>
+                    )}
+
                     {replyingToMessage && (
                       <div className="spm-chat-compose-reply">
                         <div className="spm-chat-compose-reply-copy">
@@ -3909,15 +4148,21 @@ export function CampusMessagesShell({
                         />
                       </div>
 
-                      <label className="spm-chat-share-trigger" aria-label="Select Media" style={{ cursor: 'pointer' }}>
-                        <input
-                          type="file"
-                          style={{ display: "none" }}
-                          accept="image/*,video/*"
-                          onChange={() => alert("Media sharing coming soon!")}
-                        />
+                      <input
+                        ref={mediaInputRef}
+                        type="file"
+                        hidden
+                        accept="image/*"
+                        onChange={handleMediaSelection}
+                      />
+                      <button
+                        type="button"
+                        className="spm-chat-share-trigger"
+                        aria-label="Select media"
+                        onClick={() => mediaInputRef.current?.click()}
+                      >
                         <IconPlus />
-                      </label>
+                      </button>
                       <label className="spm-chat-compose-box">
                         <textarea
                           ref={composerRef}
@@ -3930,18 +4175,18 @@ export function CampusMessagesShell({
                             }
                           }}
                           rows={1}
-                          placeholder={`Message ${activePeer?.displayName ?? "your friend"}...`}
+                          placeholder=""
                           aria-label="Type a message"
                         />
                       </label>
 
                       <button
                         type="submit"
-                        className={`spm-chat-send${draftMessage.trim() || pendingShareCard ? " spm-chat-send-active" : ""}`}
-                        disabled={(!draftMessage.trim() && !pendingShareCard) || sending}
+                        className={`spm-chat-send${draftMessage.trim() || pendingShareCard || pendingMediaAttachment ? " spm-chat-send-active" : ""}`}
+                        disabled={(!draftMessage.trim() && !pendingShareCard && !pendingMediaAttachment) || sending || uploadingMedia}
                         aria-label="Send message"
                       >
-                        {sending || creatingChatIdentity ? <span className="spm-search-spinner" aria-hidden="true" /> : <IconSend />}
+                        {sending || uploadingMedia || creatingChatIdentity ? <span className="spm-search-spinner" aria-hidden="true" /> : <IconSend />}
                       </button>
                     </form>
                   </div>
@@ -4011,8 +4256,6 @@ export function CampusMessagesShell({
           </div>
         </div>
       )}
-
-      <CampusMobileNavigation navItems={navItems} />
     </main>
   );
 }
