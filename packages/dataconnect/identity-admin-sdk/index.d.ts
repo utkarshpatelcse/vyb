@@ -13,6 +13,11 @@ export interface AuditLog_Key {
   __typename?: 'AuditLog_Key';
 }
 
+export interface CampusEventStore_Key {
+  id: UUIDString;
+  __typename?: 'CampusEventStore_Key';
+}
+
 export interface ChatConversation_Key {
   id: UUIDString;
   __typename?: 'ChatConversation_Key';
@@ -141,6 +146,11 @@ export interface ModerationCase_Key {
 export interface PostMedia_Key {
   id: UUIDString;
   __typename?: 'PostMedia_Key';
+}
+
+export interface PostSave_Key {
+  id: UUIDString;
+  __typename?: 'PostSave_Key';
 }
 
 export interface Post_Key {

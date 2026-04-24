@@ -409,6 +409,24 @@ export function ChatPrivacyUI(props: ChatPrivacyUIProps) {
           </div>
         </motion.header>
 
+        <section className="vyb-chat-privacy-snapshot" aria-label="Chat privacy overview">
+          <article className="vyb-chat-privacy-snapshot-card">
+            <span>Account</span>
+            <strong>@{props.viewerUsername}</strong>
+            <small>{props.viewerName}</small>
+          </article>
+          <article className="vyb-chat-privacy-snapshot-card">
+            <span>Campus</span>
+            <strong>{props.collegeName}</strong>
+            <small>Trusted profile settings</small>
+          </article>
+          <article className="vyb-chat-privacy-snapshot-card">
+            <span>Backup</span>
+            <strong>{props.hasRemoteBackup ? "Encrypted cloud backup ready" : "Backup still missing"}</strong>
+            <small>{props.hasCompatibleLocalChatKey ? "This browser can open secure chats now." : "Restore or create the local vault."}</small>
+          </article>
+        </section>
+
         <div className="vyb-chat-privacy-actions">
           <Link href={props.backToHref} className="vyb-chat-privacy-ghost">
             {props.backToLabel}

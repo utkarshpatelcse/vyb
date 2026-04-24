@@ -82,6 +82,12 @@ type PendingMediaAttachment = {
   height: number | null;
 };
 type OutgoingReceiptState = "undelivered" | "sent" | "delivered" | "read";
+type PendingDeleteUndo = {
+  messageIds: string[];
+  scope: DeleteChatMessageScope;
+  label: string;
+  expiresAt: number;
+};
 const DISMISSED_DECRYPTION_WARNING_STORAGE_PREFIX = "vyb-chat-dismissed-decryption-warning";
 const CHAT_DEFAULT_TTL_STORAGE_PREFIX = "vyb-chat-default-ttl";
 const CHAT_REACTION_OPTIONS = [
@@ -99,6 +105,7 @@ const CHAT_REACTION_OPTIONS = [
   "\uD83D\uDE0E"
 ] as const;
 const DELETE_FOR_EVERYONE_WINDOW_MS = 30 * 60 * 1000;
+const DELETE_UNDO_WINDOW_MS = 10 * 1000;
 const CHAT_DELETED_MESSAGE_ALGORITHM = "deleted";
 const CHAT_TTL_OPTIONS = [
   { value: "instant", label: "Instant", durationMs: 0 },
@@ -145,7 +152,7 @@ function isDeletedChatMessage(message: ChatMessageRecord) {
 }
 
 function isExpiredChatMessage(message: ChatMessageRecord) {
-  if (!message.expiresAt) {
+  if (!message.expiresAt || message.isSaved || message.isStarred) {
     return false;
   }
 
@@ -608,6 +615,24 @@ function IconBookmark() {
   );
 }
 
+function IconCopy() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
+}
+
+function IconForward() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 8l5 4-5 4" />
+      <path d="M4 12h16" />
+    </svg>
+  );
+}
+
 function IconMore() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -760,11 +785,13 @@ export function CampusMessagesShell({
   const [shareMenuCollections, setShareMenuCollections] = useState<ShareMenuCollections>(() => buildShareMenuCollections());
   const [activeVibePreview, setActiveVibePreview] = useState<ChatVibeCardPayload | null>(null);
   const [replyingToMessageId, setReplyingToMessageId] = useState<string | null>(null);
-  const [selectedMessageActionId, setSelectedMessageActionId] = useState<string | null>(null);
-  const [selectedMessageDeleteForEveryoneAllowed, setSelectedMessageDeleteForEveryoneAllowed] = useState(false);
-  const [selectedMessageActionAnchor, setSelectedMessageActionAnchor] = useState<MessageActionAnchor | null>(null);
-  const [messageActionBusy, setMessageActionBusy] = useState(false);
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Record<string, true>>({});
+      const [messageActionBusy, setMessageActionBusy] = useState(false);
   const [messageActionError, setMessageActionError] = useState<string | null>(null);
+  const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [pendingDeleteUndo, setPendingDeleteUndo] = useState<PendingDeleteUndo | null>(null);
+  const [hiddenMessageIds, setHiddenMessageIds] = useState<Record<string, true>>({});
   const [chatSettingsOpen, setChatSettingsOpen] = useState(false);
   const [showE2eeAssurance, setShowE2eeAssurance] = useState(false);
   const [expandedReceiptMessageId, setExpandedReceiptMessageId] = useState<string | null>(null);
@@ -781,11 +808,12 @@ export function CampusMessagesShell({
   const isMountedRef = useRef(false);
   const composerFocusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastTapRef = useRef<{ messageId: string; timestamp: number } | null>(null);
+  const lastTapRef = useRef<{ messageIds: string[]; timestamp: number } | null>(null);
   const longPressTriggeredRef = useRef(false);
   const lastScreenshotAlertRef = useRef(0);
+  const pendingDeleteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const swipeGestureRef = useRef<{
-    messageId: string;
+    messageIds: string[];
     startX: number;
     startY: number;
     isOwnMessage: boolean;
@@ -798,7 +826,7 @@ export function CampusMessagesShell({
   const messageIdsRef = useRef<Set<string>>(new Set(initialConversation?.messages.map((message) => message.id) ?? []));
   const activeConversationRef = useRef<ActiveConversation | null>(initialConversation);
   const hasChatIdentity = Boolean(viewerIdentity);
-  const [swipeReplyPreview, setSwipeReplyPreview] = useState<{ messageId: string; offsetX: number } | null>(null);
+  const [swipeReplyPreview, setSwipeReplyPreview] = useState<{ messageIds: string[]; offsetX: number } | null>(null);
 
   const isSearching = query.trim().length > 0;
   const { results: searchResults, loading: searchLoading } = useUserSearch(query);
@@ -818,6 +846,9 @@ export function CampusMessagesShell({
       }
       if (longPressTimerRef.current) {
         clearTimeout(longPressTimerRef.current);
+      }
+      if (pendingDeleteTimeoutRef.current) {
+        clearTimeout(pendingDeleteTimeoutRef.current);
       }
       swipeGestureRef.current = null;
     };
@@ -1560,6 +1591,11 @@ export function CampusMessagesShell({
   }, [conversations, isSearching]);
 
   const unreadCount = conversations.filter((item) => item.unreadCount > 0).length;
+  const hiddenMessageIdSet = useMemo(() => new Set(Object.keys(hiddenMessageIds)), [hiddenMessageIds]);
+  const visibleConversationMessages = useMemo(
+    () => (activeConversation?.messages ?? []).filter((message) => !hiddenMessageIdSet.has(message.id)),
+    [activeConversation, hiddenMessageIdSet]
+  );
 
   const messageMap = useMemo(() => {
     return new Map((activeConversation?.messages ?? []).map((message) => [message.id, message]));
@@ -1570,10 +1606,15 @@ export function CampusMessagesShell({
     [messageMap, replyingToMessageId]
   );
 
-  const selectedMessageAction = useMemo(
-    () => (selectedMessageActionId ? messageMap.get(selectedMessageActionId) ?? null : null),
-    [messageMap, selectedMessageActionId]
+  const selectedMessageIdsList = useMemo(() => Object.keys(selectedMessageIds), [selectedMessageIds]);
+  const selectedMessages = useMemo(
+    () => selectedMessageIdsList.map(id => messageMap.get(id)).filter(Boolean) as ChatMessageRecord[],
+    [messageMap, selectedMessageIdsList]
   );
+  const selectedMessageActionIsOwn = selectedMessages.length > 0 && selectedMessages.every(m => isOwnChatMessage(m, viewerUserId, viewerMembershipId));
+  const selectedMessageActionIsDeleted = selectedMessages.length > 0 && selectedMessages.every(m => isDeletedChatMessage(m));
+  const selectedMessageDeleteForEveryoneAllowed = selectedMessages.length > 0 && selectedMessages.every(m => canDeleteChatMessageForEveryone(m, viewerMembershipId, Date.now()));
+  const hasSelection = selectedMessageIdsList.length > 0;
 
   useEffect(() => {
     messageIdsRef.current = new Set(activeConversation?.messages.map((message) => message.id) ?? []);
@@ -1613,13 +1654,30 @@ export function CampusMessagesShell({
     if (replyingToMessageId && !messageMap.has(replyingToMessageId)) {
       setReplyingToMessageId(null);
     }
-
-    if (selectedMessageActionId && !messageMap.has(selectedMessageActionId)) {
-      setSelectedMessageActionId(null);
-      setSelectedMessageDeleteForEveryoneAllowed(false);
-      setSelectedMessageActionAnchor(null);
+    const anyMissing = selectedMessageIdsList.some(id => !messageMap.has(id));
+    if (anyMissing) {
+      setSelectedMessageIds((prev) => {
+        const next = { ...prev };
+        selectedMessageIdsList.forEach(id => { if (!messageMap.has(id)) delete next[id]; });
+        return next;
+      });
+      setReactionPickerMessageId(null);
+      setDeleteConfirmOpen(false);
     }
-  }, [messageMap, replyingToMessageId, selectedMessageActionId]);
+  }, [messageMap, replyingToMessageId, selectedMessageIdsList]);
+
+  useEffect(() => {
+    const anyHidden = selectedMessageIdsList.some(id => hiddenMessageIdSet.has(id));
+    if (anyHidden) {
+      setSelectedMessageIds((prev) => {
+        const next = { ...prev };
+        selectedMessageIdsList.forEach(id => { if (hiddenMessageIdSet.has(id)) delete next[id]; });
+        return next;
+      });
+      setReactionPickerMessageId(null);
+      setDeleteConfirmOpen(false);
+    }
+  }, [hiddenMessageIdSet, selectedMessageIdsList]);
 
   useEffect(() => {
     if (!viewerIdentity || !localChatKey || !isStoredChatKeyCompatible(localChatKey, viewerIdentity)) {
@@ -1868,7 +1926,7 @@ export function CampusMessagesShell({
     }
 
     let currentDay = "";
-    for (const message of activeConversation.messages) {
+    for (const message of visibleConversationMessages) {
       const nextDay = new Date(message.createdAt).toDateString();
       if (nextDay !== currentDay) {
         currentDay = nextDay;
@@ -1878,7 +1936,7 @@ export function CampusMessagesShell({
     }
 
     return items;
-  }, [activeConversation]);
+  }, [activeConversation, visibleConversationMessages]);
 
   const seenOwnMessageIds = useMemo(() => {
     const seenIds = new Set<string>();
@@ -2366,18 +2424,19 @@ export function CampusMessagesShell({
     };
   }
 
+  function clearSelectedMessage() {
+    setSelectedMessageIds({});
+    setMessageActionError(null);
+    setReactionPickerMessageId(null);
+    setDeleteConfirmOpen(false);
+  }
+
   function openMessageActions(message: ChatMessageRecord, target?: HTMLElement | null, isOwnMessage = false) {
     resetSwipeReplyPreview();
-    setSelectedMessageActionId(message.id);
-    setSelectedMessageDeleteForEveryoneAllowed(
-      canDeleteChatMessageForEveryone(message, viewerMembershipId, Date.now())
-    );
-    setSelectedMessageActionAnchor(
-      typeof window !== "undefined" && target
-        ? buildMessageActionAnchor(target, isOwnMessage)
-        : null
-    );
+    setSelectedMessageIds((prev) => ({ ...prev, [message.id]: true }));
     setMessageActionError(null);
+    setReactionPickerMessageId(null);
+    setDeleteConfirmOpen(false);
   }
 
   function handleMessagePointerDown(
@@ -2504,15 +2563,22 @@ export function CampusMessagesShell({
       return;
     }
 
-    const now = Date.now();
-    const previousTap = lastTapRef.current;
-    if (previousTap && previousTap.messageId === message.id && now - previousTap.timestamp <= 280) {
-      lastTapRef.current = null;
-      void handleReactToMessage(message.id, "\u2764\uFE0F");
+    lastTapRef.current = null;
+    if (message.messageKind === "system") {
       return;
     }
 
-    lastTapRef.current = { messageId: message.id, timestamp: now };
+    if (Object.keys(selectedMessageIds).length > 0) {
+      setSelectedMessageIds((prev) => {
+        const next = { ...prev };
+        if (next[message.id]) delete next[message.id];
+        else next[message.id] = true;
+        return next;
+      });
+      return;
+    }
+
+    void handleToggleSavedMessage(message.id);
   }
 
   function handleReplyToMessage(messageId: string) {
@@ -2523,9 +2589,7 @@ export function CampusMessagesShell({
 
     resetSwipeReplyPreview();
     setReplyingToMessageId(messageId);
-    setSelectedMessageActionId(null);
-    setSelectedMessageDeleteForEveryoneAllowed(false);
-    setSelectedMessageActionAnchor(null);
+    setSelectedMessageIds({});
     setMessageActionError(null);
     focusComposerSoon();
   }
@@ -2563,9 +2627,7 @@ export function CampusMessagesShell({
             }
           : current
       );
-      setSelectedMessageActionId(null);
-      setSelectedMessageDeleteForEveryoneAllowed(false);
-      setSelectedMessageActionAnchor(null);
+      clearSelectedMessage();
     } catch {
       setMessageActionError("Network issue while reacting to that message.");
     } finally {
@@ -2573,12 +2635,17 @@ export function CampusMessagesShell({
     }
   }
 
-  async function handleUpdateMessageLifecycle(payload: {
-    durationKey?: ChatMessageTtlKey;
-    isStarred?: boolean;
-    isSaved?: boolean;
-  }) {
-    if (!selectedMessageAction || isDeletedChatMessage(selectedMessageAction)) {
+  async function updateMessageLifecycleById(
+    messageId: string,
+    payload: {
+      durationKey?: ChatMessageTtlKey;
+      isStarred?: boolean;
+      isSaved?: boolean;
+    },
+    options?: { closeSelection?: boolean }
+  ) {
+    const targetMessage = messageMap.get(messageId);
+    if (!targetMessage || isDeletedChatMessage(targetMessage)) {
       return;
     }
 
@@ -2586,7 +2653,7 @@ export function CampusMessagesShell({
     setMessageActionError(null);
 
     try {
-      const response = await fetchChatEndpoint(`/api/chats/messages/${encodeURIComponent(selectedMessageAction.id)}/lifecycle`, {
+      const response = await fetchChatEndpoint(`/api/chats/messages/${encodeURIComponent(messageId)}/lifecycle`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload)
@@ -2624,9 +2691,9 @@ export function CampusMessagesShell({
         setConversations((current) => upsertConversationItem(current, conversationPreview));
       }
 
-      setSelectedMessageActionId(null);
-      setSelectedMessageDeleteForEveryoneAllowed(false);
-      setSelectedMessageActionAnchor(null);
+      if (options?.closeSelection !== false) {
+        clearSelectedMessage();
+      }
     } catch {
       setMessageActionError("Network issue while updating that message.");
     } finally {
@@ -2634,16 +2701,27 @@ export function CampusMessagesShell({
     }
   }
 
-  async function handleDeleteMessage(scope: DeleteChatMessageScope) {
-    if (!selectedMessageAction) {
+  async function handleToggleSavedMessage(messageId: string) {
+    const targetMessage = messageMap.get(messageId);
+    if (!targetMessage || isDeletedChatMessage(targetMessage)) {
       return;
     }
 
+    await updateMessageLifecycleById(
+      messageId,
+      {
+        isSaved: !targetMessage.isSaved
+      },
+      { closeSelection: false }
+    );
+  }
+
+  async function commitDeleteMessage(messageId: string, scope: DeleteChatMessageScope) {
     setMessageActionBusy(true);
     setMessageActionError(null);
 
     try {
-      const response = await fetchChatEndpoint(`/api/chats/messages/${encodeURIComponent(selectedMessageAction.id)}`, {
+      const response = await fetchChatEndpoint(`/api/chats/messages/${encodeURIComponent(messageId)}`, {
         method: "DELETE",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ scope })
@@ -2651,6 +2729,11 @@ export function CampusMessagesShell({
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
+        setHiddenMessageIds((current) => {
+          const next = { ...current };
+          delete next[messageId];
+          return next;
+        });
         setMessageActionError(data?.error?.message ?? "We could not delete that message.");
         return;
       }
@@ -2672,15 +2755,13 @@ export function CampusMessagesShell({
         if (scope === "everyone" && updatedMessage) {
           return {
             ...current,
-            messages: current.messages.map((message) =>
-              message.id === selectedMessageAction.id ? updatedMessage : message
-            )
+            messages: current.messages.map((message) => (message.id === messageId ? updatedMessage : message))
           };
         }
 
         return {
           ...current,
-          messages: current.messages.filter((message) => message.id !== selectedMessageAction.id)
+          messages: current.messages.filter((message) => message.id !== messageId)
         };
       });
 
@@ -2688,18 +2769,119 @@ export function CampusMessagesShell({
         setConversations((current) => upsertConversationItem(current, conversationPreview));
       }
 
-      if (replyingToMessageId === selectedMessageAction.id) {
-        setReplyingToMessageId(null);
+      if (scope === "everyone") {
+        setHiddenMessageIds((current) => {
+          const next = { ...current };
+          delete next[messageId];
+          return next;
+        });
       }
 
-      setSelectedMessageActionId(null);
-      setSelectedMessageDeleteForEveryoneAllowed(false);
-      setSelectedMessageActionAnchor(null);
+      if (replyingToMessageId === messageId) {
+        setReplyingToMessageId(null);
+      }
     } catch {
+      setHiddenMessageIds((current) => {
+        const next = { ...current };
+        delete next[messageId];
+        return next;
+      });
       setMessageActionError("Network issue while deleting that message.");
     } finally {
       setMessageActionBusy(false);
     }
+  }
+
+  function handleUndoDelete() {
+    if (pendingDeleteTimeoutRef.current) {
+      clearTimeout(pendingDeleteTimeoutRef.current);
+      pendingDeleteTimeoutRef.current = null;
+    }
+
+    if (pendingDeleteUndo) {
+      setHiddenMessageIds((current) => {
+        const next = { ...current };
+        pendingDeleteUndo.messageIds.forEach(id => {
+          delete next[id];
+        });
+        return next;
+      });
+    }
+
+    setPendingDeleteUndo(null);
+  }
+
+  function scheduleDeleteMessage(scope: DeleteChatMessageScope) {
+    if (!hasSelection) {
+      return;
+    }
+
+    if (pendingDeleteTimeoutRef.current) {
+      clearTimeout(pendingDeleteTimeoutRef.current);
+      pendingDeleteTimeoutRef.current = null;
+    }
+
+    if (pendingDeleteUndo) {
+      pendingDeleteUndo.messageIds.forEach(id => void commitDeleteMessage(id, pendingDeleteUndo.scope));
+    }
+
+    const messageIds = [...selectedMessageIdsList];
+    setHiddenMessageIds((current) => {
+      const next = { ...current };
+      messageIds.forEach(id => next[id] = true);
+      return next;
+    });
+    
+    if (replyingToMessageId && selectedMessageIds[replyingToMessageId]) {
+      setReplyingToMessageId(null);
+    }
+
+    const nextPendingDelete: PendingDeleteUndo = {
+      messageIds,
+      scope,
+      label: scope === "everyone" ? "Messages scheduled to delete for everyone." : "Messages scheduled to delete for you.",
+      expiresAt: Date.now() + DELETE_UNDO_WINDOW_MS
+    };
+
+    setPendingDeleteUndo(nextPendingDelete);
+    clearSelectedMessage();
+
+    pendingDeleteTimeoutRef.current = setTimeout(() => {
+      pendingDeleteTimeoutRef.current = null;
+      setPendingDeleteUndo(null);
+      messageIds.forEach(id => void commitDeleteMessage(id, scope));
+    }, DELETE_UNDO_WINDOW_MS);
+  }
+
+  async function handleCopySelectedMessage() {
+    if (!hasSelection) return;
+
+    const content = selectedMessages.map(msg => getMessageBody(msg, messagePlaintextById[msg.id], {
+      isOwnMessage: isOwnChatMessage(msg, viewerUserId, viewerMembershipId)
+    })).join("\n\n");
+    
+    await navigator.clipboard?.writeText(content);
+    clearSelectedMessage();
+  }
+
+  async function handleForwardSelectedMessage() {
+    if (!hasSelection) return;
+
+    const content = selectedMessages.map(msg => getMessageBody(msg, messagePlaintextById[msg.id], {
+      isOwnMessage: isOwnChatMessage(msg, viewerUserId, viewerMembershipId)
+    })).join("\n\n");
+
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      try {
+        await navigator.share({ text: content });
+      } catch {
+        return;
+      }
+    } else {
+      await navigator.clipboard?.writeText(content);
+    }
+
+    clearSelectedMessage();
   }
 
   async function handleStartChat(username: string) {
@@ -2898,13 +3080,15 @@ export function CampusMessagesShell({
     plaintext,
     messageKind,
     replyToMessageId,
-    attachment
+    attachment,
+    durationKey
   }: {
     conversationId: string;
     plaintext: string;
     messageKind: ChatMessageKind;
     replyToMessageId?: string | null;
     attachment?: ChatEncryptedAttachment | null;
+    durationKey?: ChatMessageTtlKey;
   }) {
     const peerIdentity = activeConversation?.peer.publicKey ?? null;
     const chatReady = await ensureChatIdentity();
@@ -2928,7 +3112,7 @@ export function CampusMessagesShell({
       body: JSON.stringify({
         messageKind,
         replyToMessageId: replyToMessageId ?? null,
-        durationKey: defaultDurationKey,
+        durationKey: durationKey ?? defaultDurationKey,
         attachment: attachment ?? null,
         ...encryptedPayload
       })
@@ -2967,6 +3151,30 @@ export function CampusMessagesShell({
     }
 
     return sentMessage ?? null;
+  }
+
+  async function handleChangeDefaultDuration(nextDurationKey: ChatMessageTtlKey) {
+    if (nextDurationKey === defaultDurationKey) {
+      return;
+    }
+
+    setDefaultDurationKey(nextDurationKey);
+
+    const conversationId = activeConversation?.id;
+    if (!conversationId) {
+      return;
+    }
+
+    try {
+      await dispatchEncryptedMessage({
+        conversationId,
+        plaintext: `Auto-destruct timer changed to ${getTtlOptionLabel(nextDurationKey)} for new messages.`,
+        messageKind: "system",
+        durationKey: nextDurationKey
+      });
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : "We could not announce the timer change.");
+    }
   }
 
   async function handleDealInterested(payload: ChatDealCardPayload) {
@@ -3061,10 +3269,6 @@ export function CampusMessagesShell({
   }
 
   const activePeer = activeConversation?.peer ?? null;
-  const selectedMessageActionIsOwn = Boolean(
-    selectedMessageAction && isOwnChatMessage(selectedMessageAction, viewerUserId, viewerMembershipId)
-  );
-  const selectedMessageActionIsDeleted = Boolean(selectedMessageAction && isDeletedChatMessage(selectedMessageAction));
   const hasCompatibleLocalChatKey = Boolean(
     viewerIdentity && localChatKey && isStoredChatKeyCompatible(localChatKey, viewerIdentity)
   );
@@ -3484,6 +3688,41 @@ export function CampusMessagesShell({
                 </div>
               </header>
 
+              {hasSelection && !selectedMessageActionIsDeleted && (
+                <div className="spm-chat-selection-toolbar" role="toolbar" aria-label="Selected message actions">
+                  <button type="button" className="spm-chat-selection-close" onClick={clearSelectedMessage} aria-label="Clear selection">
+                    <IconClose />
+                  </button>
+                  <span className="spm-chat-selection-count">{selectedMessageIdsList.length} selected</span>
+                  <div className="spm-chat-selection-actions">
+                    <button
+                      type="button"
+                      className={`spm-chat-selection-button${selectedMessages.every(m => m.isStarred) ? " is-active" : ""}`}
+                      onClick={() => {
+                        const targetStarred = !selectedMessages.every(m => m.isStarred);
+                        selectedMessageIdsList.forEach(id => void updateMessageLifecycleById(
+                          id,
+                          { isStarred: targetStarred },
+                          { closeSelection: false }
+                        ));
+                      }}
+                      aria-label={selectedMessages.every(m => m.isStarred) ? "Remove star" : "Star message"}
+                    >
+                      <IconStar />
+                    </button>
+                    <button type="button" className="spm-chat-selection-button" onClick={() => void handleCopySelectedMessage()} aria-label="Copy message">
+                      <IconCopy />
+                    </button>
+                    <button type="button" className="spm-chat-selection-button" onClick={() => void handleForwardSelectedMessage()} aria-label="Forward message">
+                      <IconForward />
+                    </button>
+                    <button type="button" className="spm-chat-selection-button spm-chat-selection-button-danger" onClick={() => setDeleteConfirmOpen(true)} aria-label="Delete message">
+                      <IconTrash />
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {conversationLoading && !activeConversation && (
                 <div className="spm-chat-state">
                   <span className="spm-search-spinner" aria-hidden="true" />
@@ -3552,6 +3791,7 @@ export function CampusMessagesShell({
                         const receiptState = getOutgoingReceiptState(message, isOwnMessage, isDeletedMessage);
                         const swipeOffsetX = swipeReplyPreview?.messageId === message.id ? swipeReplyPreview.offsetX : 0;
                         const showSwipeReplyCue = Math.abs(swipeOffsetX) >= 10;
+                        const isSelectedMessage = Boolean(selectedMessageIds[message.id]);
                         const messageCardPayload = parseShareCardPayload(message.messageKind, messagePlaintextById[message.id]);
                         const showMessageCard = isShareCardKind(message.messageKind);
                         const showCardCaption = Boolean(messageCardPayload?.caption?.trim());
@@ -3577,7 +3817,7 @@ export function CampusMessagesShell({
                         return (
                           <div
                             key={item.key}
-                            className={rowClass}
+                            className={`${rowClass}${isSelectedMessage ? ' spm-chat-message-row-selected' : ''}`}
                           >
 
 
@@ -3595,7 +3835,7 @@ export function CampusMessagesShell({
                             )}
 
                             <div
-                              className={`spm-chat-bubble${isOwnMessage && !isSystemMessage ? " spm-chat-bubble-self" : ""}${isSystemMessage ? " spm-chat-bubble-system" : ""}${showSwipeReplyCue ? " spm-chat-bubble-swipe-active" : ""}`}
+                              className={`spm-chat-bubble${isOwnMessage && !isSystemMessage ? " spm-chat-bubble-self" : ""}${isSystemMessage ? " spm-chat-bubble-system" : ""}${showSwipeReplyCue ? " spm-chat-bubble-swipe-active" : ""}${isSelectedMessage ? " spm-chat-bubble-selected" : ""}`}
                               style={swipeOffsetX ? { transform: `translateX(${swipeOffsetX}px)` } : undefined}
                               onPointerDown={(event) => handleMessagePointerDown(message, isOwnMessage, event)}
                               onPointerMove={(event) => handleMessagePointerMove(message, event)}
@@ -3658,9 +3898,8 @@ export function CampusMessagesShell({
                                   </span>
                                 ) : null}
                                 {message.isSaved ? (
-                                  <span className="spm-chat-flag-pill">
+                                  <span className="spm-chat-saved-badge" aria-label="Saved message" title="Saved message">
                                     <IconBookmark />
-                                    Saved
                                   </span>
                                 ) : null}
                                 <span suppressHydrationWarning>{formatMessageTime(message.createdAt)}</span>
@@ -3680,6 +3919,53 @@ export function CampusMessagesShell({
                                 ) : null}
                               </div>
                             </div>
+
+                            {isSelectedMessage && selectedMessageIdsList.length === 1 && !isSystemMessage && !isDeletedMessage && (
+                              <div className={`spm-chat-inline-reactions${isOwnMessage ? " spm-chat-inline-reactions-self" : ""}`}>
+                                {CHAT_REACTION_OPTIONS.slice(0, 5).map((emoji) => (
+                                  <button
+                                    key={`${message.id}-inline-${emoji}`}
+                                    type="button"
+                                    className="spm-chat-inline-emoji"
+                                    onClick={() => {
+                                      void handleReactToMessage(message.id, emoji);
+                                    }}
+                                    disabled={messageActionBusy}
+                                    aria-label={`React with ${emoji}`}
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                                <button
+                                  type="button"
+                                  className="spm-chat-inline-emoji spm-chat-inline-emoji-more"
+                                  onClick={() =>
+                                    setReactionPickerMessageId((current) => (current === message.id ? null : message.id))
+                                  }
+                                  aria-label="More emojis"
+                                >
+                                  <IconPlus />
+                                </button>
+                                {reactionPickerMessageId === message.id && (
+                                  <div className="spm-chat-inline-more-grid">
+                                    {CHAT_REACTION_OPTIONS.slice(5).map((emoji) => (
+                                      <button
+                                        key={`${message.id}-more-${emoji}`}
+                                        type="button"
+                                        className="spm-chat-inline-emoji"
+                                        onClick={() => {
+                                          void handleReactToMessage(message.id, emoji);
+                                        }}
+                                        disabled={messageActionBusy}
+                                        aria-label={`React with ${emoji}`}
+                                      >
+                                        {emoji}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
 
                             {isOwnMessage && !isSystemMessage && (
                               <>
@@ -3702,181 +3988,80 @@ export function CampusMessagesShell({
                     )}
                   </div>
 
-                  {selectedMessageAction && (
+                  {messageActionError && (
+                    <div className="spm-chat-inline-error" role="alert">
+                      {messageActionError}
+                    </div>
+                  )}
+
+                  {deleteConfirmOpen && hasSelection && (
                     <div
                       className="spm-chat-action-backdrop"
                       role="presentation"
                       onClick={() => {
                         if (!messageActionBusy) {
-                          setSelectedMessageActionId(null);
-                          setSelectedMessageDeleteForEveryoneAllowed(false);
-                          setSelectedMessageActionAnchor(null);
-                          setMessageActionError(null);
+                          setDeleteConfirmOpen(false);
                         }
                       }}
                     >
-                        <div
-                          className="spm-chat-action-sheet"
-                          role="dialog"
-                          aria-modal="true"
-                          aria-label="Message actions"
-                          onClick={(event) => event.stopPropagation()}
-                          style={
-                            selectedMessageActionAnchor
-                              ? {
-                                  top: `${selectedMessageActionAnchor.top}px`,
-                                  left: `${selectedMessageActionAnchor.left}px`,
-                                  width: `${selectedMessageActionAnchor.width}px`
-                                }
-                              : undefined
-                          }
-                        >
-                        <div className="spm-chat-action-head">
-                          <strong>Message actions</strong>
+                      <div
+                        className="spm-chat-delete-popup"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label="Delete message"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <div className="spm-chat-delete-popup-head">
+                          <strong>Delete message?</strong>
                           <button
                             type="button"
-                            className="spm-chat-action-close"
-                            onClick={() => {
-                              if (!messageActionBusy) {
-                                setSelectedMessageActionId(null);
-                                setSelectedMessageDeleteForEveryoneAllowed(false);
-                                setSelectedMessageActionAnchor(null);
-                                setMessageActionError(null);
-                              }
-                            }}
-                            aria-label="Close message actions"
+                            className="spm-chat-delete-popup-close"
+                            onClick={() => setDeleteConfirmOpen(false)}
+                            aria-label="Close delete message popup"
                           >
                             <IconClose />
                           </button>
                         </div>
-
-                        <div className="spm-chat-action-preview">
-                          <span>{getMessageBody(selectedMessageAction, messagePlaintextById[selectedMessageAction.id])}</span>
-                        </div>
-
-                        {!selectedMessageActionIsDeleted && (
-                          <div className="spm-chat-action-reactions">
-                            {CHAT_REACTION_OPTIONS.map((emoji) => (
-                              <button
-                                key={`${selectedMessageAction.id}-${emoji}`}
-                                type="button"
-                                className="spm-chat-action-emoji"
-                                onClick={() => {
-                                  void handleReactToMessage(selectedMessageAction.id, emoji);
-                                }}
-                                disabled={messageActionBusy}
-                                aria-label={`React with ${emoji}`}
-                              >
-                                {emoji}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-
-                        {messageActionError && (
-                          <p className="spm-chat-action-error" role="alert">{messageActionError}</p>
-                        )}
-
-                        <div className="spm-chat-action-list">
-                          {!selectedMessageActionIsDeleted && (
-                            <>
-                              <button
-                                type="button"
-                                className="spm-chat-action-button"
-                                onClick={() => {
-                                  void handleUpdateMessageLifecycle({
-                                    isStarred: !selectedMessageAction.isStarred
-                                  });
-                                }}
-                                disabled={messageActionBusy}
-                              >
-                                <IconStar />
-                                {selectedMessageAction.isStarred ? "Remove star" : "Star message"}
-                              </button>
-
-                              <button
-                                type="button"
-                                className="spm-chat-action-button"
-                                onClick={() => {
-                                  void handleUpdateMessageLifecycle({
-                                    isSaved: !selectedMessageAction.isSaved
-                                  });
-                                }}
-                                disabled={messageActionBusy}
-                              >
-                                <IconBookmark />
-                                {selectedMessageAction.isSaved ? "Remove save" : "Save message"}
-                              </button>
-
-                              <label className="spm-chat-action-select">
-                                <span>Set expiry</span>
-                                <select
-                                  defaultValue=""
-                                  disabled={messageActionBusy}
-                                  onChange={(event) => {
-                                    const durationKey = normalizeTtlDurationKey(event.target.value);
-                                    if (durationKey) {
-                                      void handleUpdateMessageLifecycle({ durationKey });
-                                    }
-                                  }}
-                                  aria-label="Set message expiry"
-                                >
-                                  <option value="" disabled>Choose timer</option>
-                                  {CHAT_TTL_OPTIONS.map((option) => (
-                                    <option key={option.value} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-                            </>
-                          )}
-
-                          {selectedMessageActionIsOwn && selectedMessageDeleteForEveryoneAllowed && (
+                        <p className="spm-chat-delete-popup-copy">
+                          Choose where this message should disappear from. You will get 10 seconds to undo.
+                        </p>
+                        <div className="spm-chat-delete-popup-actions">
+                          {selectedMessageActionIsOwn && selectedMessageDeleteForEveryoneAllowed ? (
                             <button
                               type="button"
-                              className="spm-chat-action-button spm-chat-action-button-danger"
-                              onClick={() => {
-                                void handleDeleteMessage("everyone");
-                              }}
+                              className="spm-chat-delete-popup-button spm-chat-delete-popup-button-danger"
+                              onClick={() => scheduleDeleteMessage("everyone")}
                               disabled={messageActionBusy}
                             >
-                              <IconTrash />
                               Delete for everyone
                             </button>
-                          )}
-
+                          ) : null}
                           <button
                             type="button"
-                            className="spm-chat-action-button spm-chat-action-button-danger"
-                            onClick={() => {
-                              void handleDeleteMessage("self");
-                            }}
+                            className="spm-chat-delete-popup-button"
+                            onClick={() => scheduleDeleteMessage("self")}
                             disabled={messageActionBusy}
                           >
-                            <IconTrash />
-                            {selectedMessageActionIsOwn ? "Delete for you" : "Delete from your side"}
+                            {selectedMessageActionIsOwn ? "Delete for me" : "Delete from my side"}
                           </button>
-
-                          {!selectedMessageActionIsDeleted && (
-                            <button
-                              type="button"
-                              className="spm-chat-action-button"
-                              onClick={() => handleReplyToMessage(selectedMessageAction.id)}
-                              disabled={messageActionBusy}
-                            >
-                              <IconReply />
-                              Reply
-                            </button>
-                          )}
                         </div>
-
-                        {selectedMessageActionIsOwn && !selectedMessageActionIsDeleted && !selectedMessageDeleteForEveryoneAllowed && (
-                          <p className="spm-chat-action-note">
+                        {selectedMessageActionIsOwn &&
+                        !selectedMessageActionIsDeleted &&
+                        !selectedMessageDeleteForEveryoneAllowed ? (
+                          <p className="spm-chat-delete-popup-note">
                             Delete for everyone is available only for 30 minutes after sending.
                           </p>
-                        )}
+                        ) : null}
                       </div>
+                    </div>
+                  )}
+
+                  {pendingDeleteUndo && (
+                    <div className="spm-chat-undo-toast" role="status" aria-live="polite">
+                      <span>{pendingDeleteUndo.label}</span>
+                      <button type="button" className="spm-chat-undo-button" onClick={handleUndoDelete}>
+                        Undo
+                      </button>
                     </div>
                   )}
 
@@ -3914,7 +4099,10 @@ export function CampusMessagesShell({
                                 <button
                                   key={option.value}
                                   type="button"
-                                  onClick={() => setDefaultDurationKey(normalizeTtlDurationKey(option.value) ?? "30d")}
+                                  onClick={() => {
+                                    const nextDurationKey = normalizeTtlDurationKey(option.value) ?? "30d";
+                                    void handleChangeDefaultDuration(nextDurationKey);
+                                  }}
                                   style={{
                                     padding: '0.6rem 0',
                                     borderRadius: '0.5rem',

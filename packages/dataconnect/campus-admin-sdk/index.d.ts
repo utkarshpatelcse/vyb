@@ -13,6 +13,11 @@ export interface AuditLog_Key {
   __typename?: 'AuditLog_Key';
 }
 
+export interface CampusEventStore_Key {
+  id: UUIDString;
+  __typename?: 'CampusEventStore_Key';
+}
+
 export interface ChatConversation_Key {
   id: UUIDString;
   __typename?: 'ChatConversation_Key';
@@ -61,6 +66,16 @@ export interface Community_Key {
 export interface Course_Key {
   id: UUIDString;
   __typename?: 'Course_Key';
+}
+
+export interface CreateCampusEventStoreData {
+  campusEventStore_insert: CampusEventStore_Key;
+}
+
+export interface CreateCampusEventStoreVariables {
+  id: UUIDString;
+  tenantId: UUIDString;
+  eventsJson: string;
 }
 
 export interface CreateCommunityData {
@@ -126,6 +141,19 @@ export interface CreateTenantVariables {
 export interface Follow_Key {
   id: UUIDString;
   __typename?: 'Follow_Key';
+}
+
+export interface GetCampusEventStoreByTenantData {
+  campusEventStore?: {
+    id: UUIDString;
+    tenantId: UUIDString;
+    eventsJson: string;
+    updatedAt: TimestampString;
+  } & CampusEventStore_Key;
+}
+
+export interface GetCampusEventStoreByTenantVariables {
+  id: UUIDString;
 }
 
 export interface GetCommunityBySlugData {
@@ -398,6 +426,11 @@ export interface PostMedia_Key {
   __typename?: 'PostMedia_Key';
 }
 
+export interface PostSave_Key {
+  id: UUIDString;
+  __typename?: 'PostSave_Key';
+}
+
 export interface Post_Key {
   id: UUIDString;
   __typename?: 'Post_Key';
@@ -451,6 +484,15 @@ export interface TenantMembership_Key {
 export interface Tenant_Key {
   id: UUIDString;
   __typename?: 'Tenant_Key';
+}
+
+export interface UpdateCampusEventStoreData {
+  campusEventStore_update?: CampusEventStore_Key | null;
+}
+
+export interface UpdateCampusEventStoreVariables {
+  id: UUIDString;
+  eventsJson: string;
 }
 
 export interface UpdateTenantMembershipProfileData {
@@ -537,6 +579,11 @@ export function listTenantMembershipProfilesByTenant(dc: DataConnect, vars: List
 /** Generated Node Admin SDK operation action function for the 'ListTenantMembershipProfilesByTenant' Query. Allow users to pass in custom DataConnect instances. */
 export function listTenantMembershipProfilesByTenant(vars: ListTenantMembershipProfilesByTenantVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListTenantMembershipProfilesByTenantData>>;
 
+/** Generated Node Admin SDK operation action function for the 'GetCampusEventStoreByTenant' Query. Allow users to execute without passing in DataConnect. */
+export function getCampusEventStoreByTenant(dc: DataConnect, vars: GetCampusEventStoreByTenantVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetCampusEventStoreByTenantData>>;
+/** Generated Node Admin SDK operation action function for the 'GetCampusEventStoreByTenant' Query. Allow users to pass in custom DataConnect instances. */
+export function getCampusEventStoreByTenant(vars: GetCampusEventStoreByTenantVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetCampusEventStoreByTenantData>>;
+
 /** Generated Node Admin SDK operation action function for the 'CreateTenant' Mutation. Allow users to execute without passing in DataConnect. */
 export function createTenant(dc: DataConnect, vars: CreateTenantVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateTenantData>>;
 /** Generated Node Admin SDK operation action function for the 'CreateTenant' Mutation. Allow users to pass in custom DataConnect instances. */
@@ -561,6 +608,16 @@ export function createCommunity(vars: CreateCommunityVariables, options?: Operat
 export function createCommunityMembership(dc: DataConnect, vars: CreateCommunityMembershipVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateCommunityMembershipData>>;
 /** Generated Node Admin SDK operation action function for the 'CreateCommunityMembership' Mutation. Allow users to pass in custom DataConnect instances. */
 export function createCommunityMembership(vars: CreateCommunityMembershipVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateCommunityMembershipData>>;
+
+/** Generated Node Admin SDK operation action function for the 'CreateCampusEventStore' Mutation. Allow users to execute without passing in DataConnect. */
+export function createCampusEventStore(dc: DataConnect, vars: CreateCampusEventStoreVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateCampusEventStoreData>>;
+/** Generated Node Admin SDK operation action function for the 'CreateCampusEventStore' Mutation. Allow users to pass in custom DataConnect instances. */
+export function createCampusEventStore(vars: CreateCampusEventStoreVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateCampusEventStoreData>>;
+
+/** Generated Node Admin SDK operation action function for the 'UpdateCampusEventStore' Mutation. Allow users to execute without passing in DataConnect. */
+export function updateCampusEventStore(dc: DataConnect, vars: UpdateCampusEventStoreVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateCampusEventStoreData>>;
+/** Generated Node Admin SDK operation action function for the 'UpdateCampusEventStore' Mutation. Allow users to pass in custom DataConnect instances. */
+export function updateCampusEventStore(vars: UpdateCampusEventStoreVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateCampusEventStoreData>>;
 
 /** Generated Node Admin SDK operation action function for the 'UpdateTenantMembershipProfile' Mutation. Allow users to execute without passing in DataConnect. */
 export function updateTenantMembershipProfile(dc: DataConnect, vars: UpdateTenantMembershipProfileVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateTenantMembershipProfileData>>;

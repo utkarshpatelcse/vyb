@@ -13,6 +13,11 @@ export interface AuditLog_Key {
   __typename?: 'AuditLog_Key';
 }
 
+export interface CampusEventStore_Key {
+  id: UUIDString;
+  __typename?: 'CampusEventStore_Key';
+}
+
 export interface ChatConversation_Key {
   id: UUIDString;
   __typename?: 'ChatConversation_Key';
@@ -116,7 +121,6 @@ export interface CreatePostMediaData {
 export interface CreatePostMediaVariables {
   tenantId: UUIDString;
   postId: UUIDString;
-  mediaUrl?: string | null;
   storagePath: string;
   mediaType: string;
   mimeType: string;
@@ -124,6 +128,17 @@ export interface CreatePostMediaVariables {
   width?: number | null;
   height?: number | null;
   durationMs?: number | null;
+}
+
+export interface CreatePostSaveData {
+  postSave_insert: PostSave_Key;
+}
+
+export interface CreatePostSaveVariables {
+  id: UUIDString;
+  tenantId: UUIDString;
+  postId: UUIDString;
+  userId: UUIDString;
 }
 
 export interface CreatePostVariables {
@@ -254,13 +269,6 @@ export interface GetPostByIdData {
     location?: string | null;
     status: string;
     createdAt: TimestampString;
-    postMediaRecords_on_post: ({
-      id: UUIDString;
-      mediaUrl?: string | null;
-      mediaType: string;
-      mimeType: string;
-      sizeBytes: Int64String;
-    } & PostMedia_Key)[];
   } & Post_Key;
 }
 
@@ -333,6 +341,52 @@ export interface GetStoryViewByKeyData {
 
 export interface GetStoryViewByKeyVariables {
   storyViewKey: string;
+}
+
+export interface ListActivePostSavesByPostData {
+  postSaves: ({
+    id: UUIDString;
+    postId: UUIDString;
+    userId: UUIDString;
+    createdAt: TimestampString;
+  } & PostSave_Key)[];
+}
+
+export interface ListActivePostSavesByPostVariables {
+  postId: UUIDString;
+  limit: number;
+}
+
+export interface ListActivePostSavesByTenantData {
+  postSaves: ({
+    id: UUIDString;
+    tenantId: UUIDString;
+    postId: UUIDString;
+    userId: UUIDString;
+    createdAt: TimestampString;
+  } & PostSave_Key)[];
+}
+
+export interface ListActivePostSavesByTenantVariables {
+  tenantId: UUIDString;
+  limit: number;
+}
+
+export interface ListActivePostSavesByUserAndPostData {
+  postSaves: ({
+    id: UUIDString;
+    tenantId: UUIDString;
+    postId: UUIDString;
+    userId: UUIDString;
+    createdAt: TimestampString;
+  } & PostSave_Key)[];
+}
+
+export interface ListActivePostSavesByUserAndPostVariables {
+  tenantId: UUIDString;
+  postId: UUIDString;
+  userId: UUIDString;
+  limit: number;
 }
 
 export interface ListCommentReactionsByCommentData {
@@ -431,13 +485,6 @@ export interface ListFeedByTenantData {
     location?: string | null;
     status: string;
     createdAt: TimestampString;
-    postMediaRecords_on_post: ({
-      id: UUIDString;
-      mediaUrl?: string | null;
-      mediaType: string;
-      mimeType: string;
-      sizeBytes: Int64String;
-    } & PostMedia_Key)[];
   } & Post_Key)[];
 }
 
@@ -499,13 +546,6 @@ export interface ListPostsByAuthorData {
     location?: string | null;
     status: string;
     createdAt: TimestampString;
-    postMediaRecords_on_post: ({
-      id: UUIDString;
-      mediaUrl?: string | null;
-      mediaType: string;
-      mimeType: string;
-      sizeBytes: Int64String;
-    } & PostMedia_Key)[];
   } & Post_Key)[];
 }
 
@@ -664,6 +704,11 @@ export interface PostMedia_Key {
   __typename?: 'PostMedia_Key';
 }
 
+export interface PostSave_Key {
+  id: UUIDString;
+  __typename?: 'PostSave_Key';
+}
+
 export interface Post_Key {
   id: UUIDString;
   __typename?: 'Post_Key';
@@ -701,15 +746,15 @@ export interface SoftDeletePostData {
   post_update?: Post_Key | null;
 }
 
-export interface SoftDeletePostVariables {
+export interface SoftDeletePostSaveData {
+  postSave_update?: PostSave_Key | null;
+}
+
+export interface SoftDeletePostSaveVariables {
   id: UUIDString;
 }
 
-export interface SoftDeleteReactionData {
-  reaction_update?: Reaction_Key | null;
-}
-
-export interface SoftDeleteReactionVariables {
+export interface SoftDeletePostVariables {
   id: UUIDString;
 }
 
@@ -846,6 +891,21 @@ export function getReactionByKey(dc: DataConnect, vars: GetReactionByKeyVariable
 /** Generated Node Admin SDK operation action function for the 'GetReactionByKey' Query. Allow users to pass in custom DataConnect instances. */
 export function getReactionByKey(vars: GetReactionByKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetReactionByKeyData>>;
 
+/** Generated Node Admin SDK operation action function for the 'ListActivePostSavesByTenant' Query. Allow users to execute without passing in DataConnect. */
+export function listActivePostSavesByTenant(dc: DataConnect, vars: ListActivePostSavesByTenantVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListActivePostSavesByTenantData>>;
+/** Generated Node Admin SDK operation action function for the 'ListActivePostSavesByTenant' Query. Allow users to pass in custom DataConnect instances. */
+export function listActivePostSavesByTenant(vars: ListActivePostSavesByTenantVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListActivePostSavesByTenantData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListActivePostSavesByUserAndPost' Query. Allow users to execute without passing in DataConnect. */
+export function listActivePostSavesByUserAndPost(dc: DataConnect, vars: ListActivePostSavesByUserAndPostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListActivePostSavesByUserAndPostData>>;
+/** Generated Node Admin SDK operation action function for the 'ListActivePostSavesByUserAndPost' Query. Allow users to pass in custom DataConnect instances. */
+export function listActivePostSavesByUserAndPost(vars: ListActivePostSavesByUserAndPostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListActivePostSavesByUserAndPostData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListActivePostSavesByPost' Query. Allow users to execute without passing in DataConnect. */
+export function listActivePostSavesByPost(dc: DataConnect, vars: ListActivePostSavesByPostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListActivePostSavesByPostData>>;
+/** Generated Node Admin SDK operation action function for the 'ListActivePostSavesByPost' Query. Allow users to pass in custom DataConnect instances. */
+export function listActivePostSavesByPost(vars: ListActivePostSavesByPostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListActivePostSavesByPostData>>;
+
 /** Generated Node Admin SDK operation action function for the 'ListStoriesByTenant' Query. Allow users to execute without passing in DataConnect. */
 export function listStoriesByTenant(dc: DataConnect, vars: ListStoriesByTenantVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListStoriesByTenantData>>;
 /** Generated Node Admin SDK operation action function for the 'ListStoriesByTenant' Query. Allow users to pass in custom DataConnect instances. */
@@ -931,6 +991,16 @@ export function updateReaction(dc: DataConnect, vars: UpdateReactionVariables, o
 /** Generated Node Admin SDK operation action function for the 'UpdateReaction' Mutation. Allow users to pass in custom DataConnect instances. */
 export function updateReaction(vars: UpdateReactionVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateReactionData>>;
 
+/** Generated Node Admin SDK operation action function for the 'CreatePostSave' Mutation. Allow users to execute without passing in DataConnect. */
+export function createPostSave(dc: DataConnect, vars: CreatePostSaveVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreatePostSaveData>>;
+/** Generated Node Admin SDK operation action function for the 'CreatePostSave' Mutation. Allow users to pass in custom DataConnect instances. */
+export function createPostSave(vars: CreatePostSaveVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreatePostSaveData>>;
+
+/** Generated Node Admin SDK operation action function for the 'SoftDeletePostSave' Mutation. Allow users to execute without passing in DataConnect. */
+export function softDeletePostSave(dc: DataConnect, vars: SoftDeletePostSaveVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeletePostSaveData>>;
+/** Generated Node Admin SDK operation action function for the 'SoftDeletePostSave' Mutation. Allow users to pass in custom DataConnect instances. */
+export function softDeletePostSave(vars: SoftDeletePostSaveVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeletePostSaveData>>;
+
 /** Generated Node Admin SDK operation action function for the 'CreateStory' Mutation. Allow users to execute without passing in DataConnect. */
 export function createStory(dc: DataConnect, vars: CreateStoryVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateStoryData>>;
 /** Generated Node Admin SDK operation action function for the 'CreateStory' Mutation. Allow users to pass in custom DataConnect instances. */
@@ -970,9 +1040,4 @@ export function softDeleteFollow(vars: SoftDeleteFollowVariables, options?: Oper
 export function softDeletePost(dc: DataConnect, vars: SoftDeletePostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeletePostData>>;
 /** Generated Node Admin SDK operation action function for the 'SoftDeletePost' Mutation. Allow users to pass in custom DataConnect instances. */
 export function softDeletePost(vars: SoftDeletePostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeletePostData>>;
-
-/** Generated Node Admin SDK operation action function for the 'SoftDeleteReaction' Mutation. Allow users to execute without passing in DataConnect. */
-export function softDeleteReaction(dc: DataConnect, vars: SoftDeleteReactionVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeleteReactionData>>;
-/** Generated Node Admin SDK operation action function for the 'SoftDeleteReaction' Mutation. Allow users to pass in custom DataConnect instances. */
-export function softDeleteReaction(vars: SoftDeleteReactionVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeleteReactionData>>;
 

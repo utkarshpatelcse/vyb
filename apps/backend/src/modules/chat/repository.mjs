@@ -518,9 +518,7 @@ const CREATE_CHAT_MESSAGE_MUTATION = `
         attachmentHeight: $attachmentHeight
         attachmentDurationMs: $attachmentDurationMs
       }
-    ) {
-      id
-    }
+    )
   }
 `;
 
@@ -529,7 +527,7 @@ const LIST_EXPIRED_CHAT_MESSAGES_QUERY = `
     chatMessages(
       where: {
         deletedAt: { isNull: true }
-        expiresAt: { lte: $now }
+        expiresAt: { le: $now }
       }
       orderBy: [{ expiresAt: ASC }]
       limit: $limit
@@ -715,9 +713,7 @@ const UPDATE_CHAT_MESSAGE_LIFECYCLE_MUTATION = `
         isSaved: $isSaved
         updatedAt_expr: "request.time"
       }
-    ) {
-      id
-    }
+    )
   }
 `;
 
@@ -2169,7 +2165,6 @@ export async function sendChatMessage(viewer, conversationId, payload) {
   const cipherIv = normalizeString(payload.cipherIv);
   const cipherAlgorithm = normalizeString(payload.cipherAlgorithm) ?? END_TO_END_CHAT_ALGORITHM;
   const replyToMessageId = normalizeString(payload.replyToMessageId) ?? null;
-  const expiresAt = resolveMessageExpiry(payload);
 
   if (!cipherText || !cipherIv) {
     throw new Error("Message payload is incomplete.");
@@ -2209,9 +2204,7 @@ export async function sendChatMessage(viewer, conversationId, payload) {
       attachmentSizeBytes: attachment?.sizeBytes ?? null,
       attachmentWidth: attachment?.width ?? null,
       attachmentHeight: attachment?.height ?? null,
-      attachmentDurationMs: null,
-      expiresAt,
-      isSaved: false
+      attachmentDurationMs: null
     }
   });
 

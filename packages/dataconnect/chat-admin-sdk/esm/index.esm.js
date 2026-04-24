@@ -42,3 +42,21 @@ export function listChatMessageReactionsByConversation(dcOrVarsOrOptions, varsOr
   return dcInstance.executeQuery('ListChatMessageReactionsByConversation', inputVars, inputOpts);
 }
 
+export function listExpiredChatMessages(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListExpiredChatMessages', inputVars, inputOpts);
+}
+
+export function createChatMessage(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('CreateChatMessage', inputVars, inputOpts);
+}
+
+export function updateChatMessageLifecycle(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('UpdateChatMessageLifecycle', inputVars, inputOpts);
+}
+

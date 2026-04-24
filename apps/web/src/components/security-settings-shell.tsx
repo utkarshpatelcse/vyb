@@ -7,7 +7,7 @@ import type {
 } from "@vyb/contracts";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
+import { buildPrimaryCampusNav, CampusDesktopNavigation } from "./campus-navigation";
 import { ChatPrivacyUI } from "./chat-privacy-ui";
 import {
   CHAT_IDENTITY_ALGORITHM,
@@ -605,8 +605,6 @@ export function SecuritySettingsShell({
           backToLabel={returnTo ? "Continue to chats" : "Back to chats"}
         />
       </section>
-
-      <CampusMobileNavigation navItems={navItems} />
     </main>
   );
 }

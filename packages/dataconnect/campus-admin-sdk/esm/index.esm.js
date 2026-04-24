@@ -60,6 +60,12 @@ export function listTenantMembershipProfilesByTenant(dcOrVarsOrOptions, varsOrOp
   return dcInstance.executeQuery('ListTenantMembershipProfilesByTenant', inputVars, inputOpts);
 }
 
+export function getCampusEventStoreByTenant(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('GetCampusEventStoreByTenant', inputVars, inputOpts);
+}
+
 export function createTenant(dcOrVarsOrOptions, varsOrOptions, options) {
   const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
   dcInstance.useGen(true);
@@ -88,6 +94,18 @@ export function createCommunityMembership(dcOrVarsOrOptions, varsOrOptions, opti
   const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
   dcInstance.useGen(true);
   return dcInstance.executeMutation('CreateCommunityMembership', inputVars, inputOpts);
+}
+
+export function createCampusEventStore(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('CreateCampusEventStore', inputVars, inputOpts);
+}
+
+export function updateCampusEventStore(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('UpdateCampusEventStore', inputVars, inputOpts);
 }
 
 export function updateTenantMembershipProfile(dcOrVarsOrOptions, varsOrOptions, options) {

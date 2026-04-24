@@ -84,6 +84,27 @@ function getReactionByKey(dcOrVarsOrOptions, varsOrOptions, options) {
 }
 exports.getReactionByKey = getReactionByKey;
 
+function listActivePostSavesByTenant(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListActivePostSavesByTenant', inputVars, inputOpts);
+}
+exports.listActivePostSavesByTenant = listActivePostSavesByTenant;
+
+function listActivePostSavesByUserAndPost(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListActivePostSavesByUserAndPost', inputVars, inputOpts);
+}
+exports.listActivePostSavesByUserAndPost = listActivePostSavesByUserAndPost;
+
+function listActivePostSavesByPost(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListActivePostSavesByPost', inputVars, inputOpts);
+}
+exports.listActivePostSavesByPost = listActivePostSavesByPost;
+
 function listStoriesByTenant(dcOrVarsOrOptions, varsOrOptions, options) {
   const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
   dcInstance.useGen(true);
@@ -203,6 +224,20 @@ function updateReaction(dcOrVarsOrOptions, varsOrOptions, options) {
 }
 exports.updateReaction = updateReaction;
 
+function createPostSave(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('CreatePostSave', inputVars, inputOpts);
+}
+exports.createPostSave = createPostSave;
+
+function softDeletePostSave(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('SoftDeletePostSave', inputVars, inputOpts);
+}
+exports.softDeletePostSave = softDeletePostSave;
+
 function createStory(dcOrVarsOrOptions, varsOrOptions, options) {
   const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
   dcInstance.useGen(true);
@@ -258,11 +293,4 @@ function softDeletePost(dcOrVarsOrOptions, varsOrOptions, options) {
   return dcInstance.executeMutation('SoftDeletePost', inputVars, inputOpts);
 }
 exports.softDeletePost = softDeletePost;
-
-function softDeleteReaction(dcOrVarsOrOptions, varsOrOptions, options) {
-  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
-  dcInstance.useGen(true);
-  return dcInstance.executeMutation('SoftDeleteReaction', inputVars, inputOpts);
-}
-exports.softDeleteReaction = softDeleteReaction;
 

@@ -13,6 +13,11 @@ export interface AuditLog_Key {
   __typename?: 'AuditLog_Key';
 }
 
+export interface CampusEventStore_Key {
+  id: UUIDString;
+  __typename?: 'CampusEventStore_Key';
+}
+
 export interface ChatConversation_Key {
   id: UUIDString;
   __typename?: 'ChatConversation_Key';
@@ -448,6 +453,11 @@ export interface PostMedia_Key {
   __typename?: 'PostMedia_Key';
 }
 
+export interface PostSave_Key {
+  id: UUIDString;
+  __typename?: 'PostSave_Key';
+}
+
 export interface Post_Key {
   id: UUIDString;
   __typename?: 'Post_Key';
@@ -501,6 +511,14 @@ export interface SoftDeleteMarketRequestData {
   marketRequest_update?: MarketRequest_Key | null;
 }
 
+export interface SoftDeleteMarketRequestMediaData {
+  marketRequestMedia_update?: MarketRequestMedia_Key | null;
+}
+
+export interface SoftDeleteMarketRequestMediaVariables {
+  id: string;
+}
+
 export interface SoftDeleteMarketRequestVariables {
   id: string;
 }
@@ -548,6 +566,22 @@ export interface UpdateMarketListingDetailsVariables {
   priceAmount: number;
   location: string;
   campusSpot: string;
+}
+
+export interface UpdateMarketRequestDetailsData {
+  marketRequest_update?: MarketRequest_Key | null;
+}
+
+export interface UpdateMarketRequestDetailsVariables {
+  id: string;
+  tag: string;
+  title: string;
+  detail: string;
+  category: string;
+  campusSpot: string;
+  budgetLabel: string;
+  budgetAmount?: number | null;
+  tone: string;
 }
 
 export interface UserActivity_Key {
@@ -635,6 +669,11 @@ export function updateMarketListingDetails(dc: DataConnect, vars: UpdateMarketLi
 /** Generated Node Admin SDK operation action function for the 'UpdateMarketListingDetails' Mutation. Allow users to pass in custom DataConnect instances. */
 export function updateMarketListingDetails(vars: UpdateMarketListingDetailsVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateMarketListingDetailsData>>;
 
+/** Generated Node Admin SDK operation action function for the 'UpdateMarketRequestDetails' Mutation. Allow users to execute without passing in DataConnect. */
+export function updateMarketRequestDetails(dc: DataConnect, vars: UpdateMarketRequestDetailsVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateMarketRequestDetailsData>>;
+/** Generated Node Admin SDK operation action function for the 'UpdateMarketRequestDetails' Mutation. Allow users to pass in custom DataConnect instances. */
+export function updateMarketRequestDetails(vars: UpdateMarketRequestDetailsVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateMarketRequestDetailsData>>;
+
 /** Generated Node Admin SDK operation action function for the 'MarkMarketListingSold' Mutation. Allow users to execute without passing in DataConnect. */
 export function markMarketListingSold(dc: DataConnect, vars: MarkMarketListingSoldVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<MarkMarketListingSoldData>>;
 /** Generated Node Admin SDK operation action function for the 'MarkMarketListingSold' Mutation. Allow users to pass in custom DataConnect instances. */
@@ -654,6 +693,11 @@ export function softDeleteMarketRequest(vars: SoftDeleteMarketRequestVariables, 
 export function softDeleteMarketListingMedia(dc: DataConnect, vars: SoftDeleteMarketListingMediaVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeleteMarketListingMediaData>>;
 /** Generated Node Admin SDK operation action function for the 'SoftDeleteMarketListingMedia' Mutation. Allow users to pass in custom DataConnect instances. */
 export function softDeleteMarketListingMedia(vars: SoftDeleteMarketListingMediaVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeleteMarketListingMediaData>>;
+
+/** Generated Node Admin SDK operation action function for the 'SoftDeleteMarketRequestMedia' Mutation. Allow users to execute without passing in DataConnect. */
+export function softDeleteMarketRequestMedia(dc: DataConnect, vars: SoftDeleteMarketRequestMediaVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeleteMarketRequestMediaData>>;
+/** Generated Node Admin SDK operation action function for the 'SoftDeleteMarketRequestMedia' Mutation. Allow users to pass in custom DataConnect instances. */
+export function softDeleteMarketRequestMedia(vars: SoftDeleteMarketRequestMediaVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeleteMarketRequestMediaData>>;
 
 /** Generated Node Admin SDK operation action function for the 'CreateMarketListingSave' Mutation. Allow users to execute without passing in DataConnect. */
 export function createMarketListingSave(dc: DataConnect, vars: CreateMarketListingSaveVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateMarketListingSaveData>>;

@@ -5771,3 +5771,9 @@ body.chat-active .spm-nav {
 .spm-chat-compose-box textarea {
   transition: min-height 0.2s ease;
 }
+
+.spm-chat-message-row-selected {
+  background: rgba(99, 102, 241, 0.15);
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.5rem;
+}

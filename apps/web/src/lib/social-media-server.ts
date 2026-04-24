@@ -108,10 +108,15 @@ function ensureStorageConfigured() {
 export function canDirectUploadSocialMediaFromClient() {
   loadWorkspaceRootEnv();
 
+  if (
+    process.env.VYB_DISABLE_SOCIAL_DIRECT_UPLOAD === "1" ||
+    process.env.NEXT_PUBLIC_VYB_DISABLE_SOCIAL_DIRECT_UPLOAD === "1"
+  ) {
+    return false;
+  }
+
   return Boolean(
-    (process.env.VYB_ENABLE_SOCIAL_DIRECT_UPLOAD === "1" ||
-      process.env.NEXT_PUBLIC_VYB_ENABLE_SOCIAL_DIRECT_UPLOAD === "1") &&
-      process.env.NEXT_PUBLIC_FIREBASE_API_KEY &&
+    process.env.NEXT_PUBLIC_FIREBASE_API_KEY &&
       process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN &&
       process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID &&
       process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET &&

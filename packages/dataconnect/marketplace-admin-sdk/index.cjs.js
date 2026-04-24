@@ -112,6 +112,13 @@ function updateMarketListingDetails(dcOrVarsOrOptions, varsOrOptions, options) {
 }
 exports.updateMarketListingDetails = updateMarketListingDetails;
 
+function updateMarketRequestDetails(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('UpdateMarketRequestDetails', inputVars, inputOpts);
+}
+exports.updateMarketRequestDetails = updateMarketRequestDetails;
+
 function markMarketListingSold(dcOrVarsOrOptions, varsOrOptions, options) {
   const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
   dcInstance.useGen(true);
@@ -139,6 +146,13 @@ function softDeleteMarketListingMedia(dcOrVarsOrOptions, varsOrOptions, options)
   return dcInstance.executeMutation('SoftDeleteMarketListingMedia', inputVars, inputOpts);
 }
 exports.softDeleteMarketListingMedia = softDeleteMarketListingMedia;
+
+function softDeleteMarketRequestMedia(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('SoftDeleteMarketRequestMedia', inputVars, inputOpts);
+}
+exports.softDeleteMarketRequestMedia = softDeleteMarketRequestMedia;
 
 function createMarketListingSave(dcOrVarsOrOptions, varsOrOptions, options) {
   const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);

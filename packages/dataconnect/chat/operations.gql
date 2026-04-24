@@ -138,7 +138,7 @@ query ListExpiredChatMessages($now: Timestamp!, $limit: Int!) @auth(level: NO_AC
   chatMessages(
     where: {
       deletedAt: { isNull: true }
-      expiresAt: { lte: $now }
+      expiresAt: { le: $now }
     }
     orderBy: [{ expiresAt: ASC }]
     limit: $limit
@@ -197,9 +197,7 @@ mutation CreateChatMessage(
       isSaved: $isSaved
       isStarred: false
     }
-  ) {
-    id
-  }
+  )
 }
 
 mutation UpdateChatMessageLifecycle(
@@ -216,7 +214,5 @@ mutation UpdateChatMessageLifecycle(
       isSaved: $isSaved
       updatedAt_expr: "request.time"
     }
-  ) {
-    id
-  }
+  )
 }

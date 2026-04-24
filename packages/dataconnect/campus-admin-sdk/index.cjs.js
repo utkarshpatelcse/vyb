@@ -70,6 +70,13 @@ function listTenantMembershipProfilesByTenant(dcOrVarsOrOptions, varsOrOptions, 
 }
 exports.listTenantMembershipProfilesByTenant = listTenantMembershipProfilesByTenant;
 
+function getCampusEventStoreByTenant(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('GetCampusEventStoreByTenant', inputVars, inputOpts);
+}
+exports.getCampusEventStoreByTenant = getCampusEventStoreByTenant;
+
 function createTenant(dcOrVarsOrOptions, varsOrOptions, options) {
   const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
   dcInstance.useGen(true);
@@ -104,6 +111,20 @@ function createCommunityMembership(dcOrVarsOrOptions, varsOrOptions, options) {
   return dcInstance.executeMutation('CreateCommunityMembership', inputVars, inputOpts);
 }
 exports.createCommunityMembership = createCommunityMembership;
+
+function createCampusEventStore(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('CreateCampusEventStore', inputVars, inputOpts);
+}
+exports.createCampusEventStore = createCampusEventStore;
+
+function updateCampusEventStore(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('UpdateCampusEventStore', inputVars, inputOpts);
+}
+exports.updateCampusEventStore = updateCampusEventStore;
 
 function updateTenantMembershipProfile(dcOrVarsOrOptions, varsOrOptions, options) {
   const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);

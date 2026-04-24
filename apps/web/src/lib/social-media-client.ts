@@ -30,6 +30,7 @@ type VideoFrameRequester = HTMLVideoElement & {
 
 const DEFAULT_MAX_VIDEO_BYTES = 40 * 1024 * 1024;
 const DEFAULT_TARGET_VIDEO_BYTES = Math.floor(DEFAULT_MAX_VIDEO_BYTES * 0.96);
+const SERVER_PROXY_SAFE_UPLOAD_BYTES = 4 * 1024 * 1024;
 const VIDEO_COMPRESSION_FRAME_RATE = 30;
 const VIDEO_AUDIO_BITRATE = 128_000;
 const MIN_VIDEO_BITRATE = 500_000;
@@ -87,6 +88,21 @@ function computeVideoBitrate(targetBytes: number, durationSeconds: number, bitra
 
 function canCompressVideoInBrowser() {
   return typeof document !== "undefined" && typeof MediaRecorder !== "undefined";
+}
+
+function canSafelyFallbackToServerProxy(file: File) {
+  if (typeof window === "undefined") {
+    return true;
+  }
+
+  const hostname = window.location.hostname.toLowerCase();
+  const isLocalHost =
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "::1" ||
+    hostname.endsWith(".local");
+
+  return isLocalHost || file.size <= SERVER_PROXY_SAFE_UPLOAD_BYTES;
 }
 
 async function loadVideoElement(file: File) {
@@ -331,7 +347,10 @@ export async function uploadSocialMediaAsset(
       | null;
 
     if (!response.ok || !payload?.asset) {
-      const message = payload?.error?.message ?? "We could not upload this media right now.";
+      const message =
+        response.status === 413
+          ? "This deployed upload route rejected the file before it reached storage. Large social uploads must go directly to Firebase Storage in production."
+          : payload?.error?.message ?? "We could not upload this media right now.";
       const requestId = payload?.error?.requestId ? `, request: ${payload.error.requestId}` : "";
       throw new Error(`${message} (stage: upload, status: ${response.status}${requestId})`);
     }
@@ -394,6 +413,13 @@ export async function uploadSocialMediaAsset(
         intent,
         taskId: options?.debugTaskId ?? null
       });
+
+      if (!canSafelyFallbackToServerProxy(file)) {
+        throw new Error(
+          "Firebase sign-in is not ready for direct upload, and this file is too large for the deployed upload proxy. Refresh the session and try again."
+        );
+      }
+
       return uploadViaServerProxy();
     }
 
@@ -420,6 +446,15 @@ export async function uploadSocialMediaAsset(
         taskId: options?.debugTaskId ?? null,
         message: error instanceof Error ? error.message : "unknown"
       });
+
+      if (!canSafelyFallbackToServerProxy(file)) {
+        throw new Error(
+          error instanceof Error
+            ? `${error.message} Direct Firebase upload failed, and this file is too large for the deployed upload proxy.`
+            : "Direct Firebase upload failed, and this file is too large for the deployed upload proxy."
+        );
+      }
+
       return uploadViaServerProxy();
     }
   }

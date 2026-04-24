@@ -13,6 +13,11 @@ export interface AuditLog_Key {
   __typename?: 'AuditLog_Key';
 }
 
+export interface CampusEventStore_Key {
+  id: UUIDString;
+  __typename?: 'CampusEventStore_Key';
+}
+
 export interface ChatConversation_Key {
   id: UUIDString;
   __typename?: 'ChatConversation_Key';
@@ -61,6 +66,33 @@ export interface Community_Key {
 export interface Course_Key {
   id: UUIDString;
   __typename?: 'Course_Key';
+}
+
+export interface CreateChatMessageData {
+  chatMessage_insert: ChatMessage_Key;
+}
+
+export interface CreateChatMessageVariables {
+  id: UUIDString;
+  tenantId: UUIDString;
+  conversationId: UUIDString;
+  senderMembershipId: UUIDString;
+  senderUserId: UUIDString;
+  senderIdentityId: UUIDString;
+  messageKind: string;
+  cipherText: string;
+  cipherIv: string;
+  cipherAlgorithm: string;
+  replyToMessageId?: UUIDString | null;
+  attachmentUrl?: string | null;
+  attachmentStoragePath?: string | null;
+  attachmentMimeType?: string | null;
+  attachmentSizeBytes?: Int64String | null;
+  attachmentWidth?: number | null;
+  attachmentHeight?: number | null;
+  attachmentDurationMs?: number | null;
+  expiresAt?: TimestampString | null;
+  isSaved: boolean;
 }
 
 export interface Follow_Key {
@@ -142,6 +174,9 @@ export interface ListChatMessagesByConversationData {
     attachmentWidth?: number | null;
     attachmentHeight?: number | null;
     attachmentDurationMs?: number | null;
+    expiresAt?: TimestampString | null;
+    isStarred: boolean;
+    isSaved: boolean;
     createdAt: TimestampString;
     updatedAt: TimestampString;
   } & ChatMessage_Key)[];
@@ -189,6 +224,21 @@ export interface ListChatParticipantsByMembershipVariables {
   limit: number;
 }
 
+export interface ListExpiredChatMessagesData {
+  chatMessages: ({
+    id: UUIDString;
+    tenantId: UUIDString;
+    conversationId: UUIDString;
+    senderUserId: UUIDString;
+    attachmentStoragePath?: string | null;
+  } & ChatMessage_Key)[];
+}
+
+export interface ListExpiredChatMessagesVariables {
+  now: TimestampString;
+  limit: number;
+}
+
 export interface MarketListingContact_Key {
   id: string;
   __typename?: 'MarketListingContact_Key';
@@ -232,6 +282,11 @@ export interface ModerationCase_Key {
 export interface PostMedia_Key {
   id: UUIDString;
   __typename?: 'PostMedia_Key';
+}
+
+export interface PostSave_Key {
+  id: UUIDString;
+  __typename?: 'PostSave_Key';
 }
 
 export interface Post_Key {
@@ -289,6 +344,17 @@ export interface Tenant_Key {
   __typename?: 'Tenant_Key';
 }
 
+export interface UpdateChatMessageLifecycleData {
+  chatMessage_update?: ChatMessage_Key | null;
+}
+
+export interface UpdateChatMessageLifecycleVariables {
+  id: UUIDString;
+  expiresAt?: TimestampString | null;
+  isStarred: boolean;
+  isSaved: boolean;
+}
+
 export interface UserActivity_Key {
   id: UUIDString;
   __typename?: 'UserActivity_Key';
@@ -328,4 +394,19 @@ export function listChatMessagesByConversation(vars: ListChatMessagesByConversat
 export function listChatMessageReactionsByConversation(dc: DataConnect, vars: ListChatMessageReactionsByConversationVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListChatMessageReactionsByConversationData>>;
 /** Generated Node Admin SDK operation action function for the 'ListChatMessageReactionsByConversation' Query. Allow users to pass in custom DataConnect instances. */
 export function listChatMessageReactionsByConversation(vars: ListChatMessageReactionsByConversationVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListChatMessageReactionsByConversationData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListExpiredChatMessages' Query. Allow users to execute without passing in DataConnect. */
+export function listExpiredChatMessages(dc: DataConnect, vars: ListExpiredChatMessagesVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListExpiredChatMessagesData>>;
+/** Generated Node Admin SDK operation action function for the 'ListExpiredChatMessages' Query. Allow users to pass in custom DataConnect instances. */
+export function listExpiredChatMessages(vars: ListExpiredChatMessagesVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListExpiredChatMessagesData>>;
+
+/** Generated Node Admin SDK operation action function for the 'CreateChatMessage' Mutation. Allow users to execute without passing in DataConnect. */
+export function createChatMessage(dc: DataConnect, vars: CreateChatMessageVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateChatMessageData>>;
+/** Generated Node Admin SDK operation action function for the 'CreateChatMessage' Mutation. Allow users to pass in custom DataConnect instances. */
+export function createChatMessage(vars: CreateChatMessageVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateChatMessageData>>;
+
+/** Generated Node Admin SDK operation action function for the 'UpdateChatMessageLifecycle' Mutation. Allow users to execute without passing in DataConnect. */
+export function updateChatMessageLifecycle(dc: DataConnect, vars: UpdateChatMessageLifecycleVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateChatMessageLifecycleData>>;
+/** Generated Node Admin SDK operation action function for the 'UpdateChatMessageLifecycle' Mutation. Allow users to pass in custom DataConnect instances. */
+export function updateChatMessageLifecycle(vars: UpdateChatMessageLifecycleVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateChatMessageLifecycleData>>;
 
