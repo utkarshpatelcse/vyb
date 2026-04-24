@@ -296,7 +296,7 @@ function clearGoogleRedirectIntent() {
   window.sessionStorage.removeItem(GOOGLE_REDIRECT_INTENT_KEY);
 }
 
-async function waitForResolvedFirebaseUser(auth: AuthWithStateReady, timeoutMs = 3000) {
+async function waitForResolvedFirebaseUser(auth: AuthWithStateReady, timeoutMs = 10000) {
   if (typeof window === "undefined") {
     return auth.currentUser;
   }
@@ -339,6 +339,22 @@ function navigateAfterAuth(nextPath: string) {
   if (typeof window !== "undefined") {
     window.location.assign(nextPath);
   }
+}
+
+function isIosStandaloneMode() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const standalone =
+    window.matchMedia("(display-mode: standalone)").matches ||
+    (typeof navigator !== "undefined" && "standalone" in navigator && Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
+  const userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent.toLowerCase();
+  const isIosDevice =
+    /iphone|ipad|ipod/.test(userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+  return standalone && isIosDevice;
 }
 
 function buildEmailVerificationActionSettings() {
@@ -755,12 +771,7 @@ export function DevSessionCard({
   }
 
   function shouldPreferGoogleRedirect() {
-    if (typeof window === "undefined") {
-      return false;
-    }
-
-    const standalone = window.matchMedia("(display-mode: standalone)").matches;
-    return standalone;
+    return isIosStandaloneMode();
   }
 
   async function handleGoogleAuth() {

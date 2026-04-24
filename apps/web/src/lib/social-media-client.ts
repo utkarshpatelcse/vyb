@@ -1,5 +1,8 @@
 "use client";
 
+import { onAuthStateChanged, type User } from "firebase/auth";
+import { getFirebaseClientAuth } from "./firebase-client";
+
 export type UploadedSocialMediaAsset = {
   mediaType: "image" | "video";
   mimeType: string;
@@ -21,6 +24,8 @@ const VIDEO_COMPRESSION_FRAME_RATE = 30;
 const VIDEO_AUDIO_BITRATE = 96_000;
 const MIN_VIDEO_BITRATE = 350_000;
 const MAX_VIDEO_BITRATE = 2_500_000;
+const DIRECT_BACKEND_UPLOAD_THRESHOLD_BYTES = 4 * 1024 * 1024;
+const DIRECT_BACKEND_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ?? "";
 
 function getMediaType(file: File) {
   if (file.type.startsWith("video/")) {
@@ -74,6 +79,134 @@ function computeVideoBitrate(targetBytes: number, durationSeconds: number, bitra
 
 function canCompressVideoInBrowser() {
   return typeof document !== "undefined" && typeof MediaRecorder !== "undefined";
+}
+
+function canTryDirectBackendUpload(file: File) {
+  const mediaType = getMediaType(file);
+  if (!mediaType || !DIRECT_BACKEND_API_BASE_URL) {
+    return false;
+  }
+
+  return mediaType === "video" || file.size > DIRECT_BACKEND_UPLOAD_THRESHOLD_BYTES;
+}
+
+function formatUploadFailureMessage(status: number, fallback = "We could not upload this media right now.") {
+  if (!status) {
+    return fallback;
+  }
+
+  return `${fallback} (status: ${status})`;
+}
+
+async function readUploadPayload(response: Response) {
+  return (await response.json().catch(() => null)) as
+    | {
+        asset?: UploadedSocialMediaAsset;
+        error?: {
+          message?: string;
+        };
+      }
+    | null;
+}
+
+async function readFileAsBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onerror = () => {
+      reject(new Error("We could not prepare this media for direct upload."));
+    };
+
+    reader.onload = () => {
+      if (typeof reader.result !== "string") {
+        reject(new Error("We could not prepare this media for direct upload."));
+        return;
+      }
+
+      const markerIndex = reader.result.indexOf(",");
+      resolve(markerIndex === -1 ? reader.result : reader.result.slice(markerIndex + 1));
+    };
+
+    reader.readAsDataURL(file);
+  });
+}
+
+async function waitForFirebaseUploadUser(timeoutMs = 4000) {
+  const auth = await getFirebaseClientAuth();
+
+  if (auth.currentUser) {
+    return auth.currentUser;
+  }
+
+  return new Promise<User | null>((resolve) => {
+    const timeoutId = window.setTimeout(() => {
+      unsubscribe();
+      resolve(auth.currentUser);
+    }, timeoutMs);
+
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (user) => {
+        window.clearTimeout(timeoutId);
+        unsubscribe();
+        resolve(user);
+      },
+      () => {
+        window.clearTimeout(timeoutId);
+        unsubscribe();
+        resolve(auth.currentUser);
+      }
+    );
+  });
+}
+
+async function uploadSocialMediaAssetDirect(file: File, intent: "post" | "story" | "vibe") {
+  const activeUser = await waitForFirebaseUploadUser();
+
+  if (!activeUser) {
+    throw new Error("Your authenticated session is not ready yet. Please retry the upload once.");
+  }
+
+  const [idToken, base64Data] = await Promise.all([activeUser.getIdToken(), readFileAsBase64(file)]);
+  const response = await fetch(`${DIRECT_BACKEND_API_BASE_URL}/v1/social-media/upload`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${idToken}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      intent,
+      fileName: file.name || `social-upload-${Date.now()}`,
+      mimeType: file.type || "application/octet-stream",
+      base64Data
+    })
+  });
+  const payload = await readUploadPayload(response);
+
+  if (!response.ok || !payload?.asset) {
+    throw new Error(
+      payload?.error?.message ?? formatUploadFailureMessage(response.status, "We could not upload this media right now.")
+    );
+  }
+
+  return payload.asset;
+}
+
+async function uploadSocialMediaAssetViaWebRoute(file: File, intent: "post" | "story" | "vibe") {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("intent", intent);
+
+  const response = await fetch("/api/social-media", {
+    method: "POST",
+    body: formData
+  });
+  const payload = await readUploadPayload(response);
+
+  return {
+    response,
+    payload
+  };
 }
 
 async function loadVideoElement(file: File) {
@@ -283,26 +416,24 @@ export async function prepareSocialUploadFile(
 }
 
 export async function uploadSocialMediaAsset(file: File, intent: "post" | "story" | "vibe") {
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("intent", intent);
+  if (canTryDirectBackendUpload(file)) {
+    try {
+      return await uploadSocialMediaAssetDirect(file, intent);
+    } catch {
+      // Fall back to the web route when direct upload auth has not hydrated yet.
+    }
+  }
 
-  const response = await fetch("/api/social-media", {
-    method: "POST",
-    body: formData
-  });
+  const { response, payload } = await uploadSocialMediaAssetViaWebRoute(file, intent);
 
-  const payload = (await response.json().catch(() => null)) as
-    | {
-        asset?: UploadedSocialMediaAsset;
-        error?: {
-          message?: string;
-        };
-      }
-    | null;
+  if ((!response.ok || !payload?.asset) && response.status === 413 && canTryDirectBackendUpload(file)) {
+    return uploadSocialMediaAssetDirect(file, intent);
+  }
 
   if (!response.ok || !payload?.asset) {
-    throw new Error(payload?.error?.message ?? "We could not upload this media right now.");
+    throw new Error(
+      payload?.error?.message ?? formatUploadFailureMessage(response.status, "We could not upload this media right now.")
+    );
   }
 
   return payload.asset;
