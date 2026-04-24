@@ -19,7 +19,7 @@ const routeHandlers = [handleIdentityRoute, handleCampusRoute, handleSocialRoute
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
-  const context = createRequestContext(request);
+  const context = await createRequestContext(request);
   const startedAt = Date.now();
   const actorLabel = context.actor ? `${context.actor.id}:${context.actor.email}` : "anonymous";
 
