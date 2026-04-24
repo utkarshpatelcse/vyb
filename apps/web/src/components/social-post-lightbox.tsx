@@ -108,11 +108,11 @@ export function SocialPostLightbox({
           <div className="vyb-post-lightbox-actions">
             <button
               type="button"
-              className={`vyb-campus-compose-primary vyb-post-lightbox-pill${post.viewerReactionType === "like" ? " is-active" : ""}`}
+              className={`vyb-campus-compose-primary vyb-post-lightbox-pill${post.viewerReactionType ? " is-active" : ""}`}
               disabled={isLiking}
               onClick={onLike}
             >
-              {post.viewerReactionType === "like" ? "Liked" : "Like"}
+              {post.viewerReactionType ? "Reacted" : "React"}
             </button>
             <button type="button" className="vyb-campus-compose-secondary vyb-post-lightbox-pill" onClick={onOpenComments}>
               Comments
@@ -133,7 +133,7 @@ export function SocialPostLightbox({
 
           <div className="vyb-post-lightbox-copy">
             <button type="button" className="vyb-post-lightbox-stat" onClick={onOpenLikes}>
-              {formatMetric(post.reactions)} likes
+              {formatMetric(post.reactions)} reactions
             </button>
             <span>{formatMetric(post.comments)} comments</span>
             <p>

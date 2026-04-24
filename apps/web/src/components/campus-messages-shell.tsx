@@ -10,7 +10,7 @@ import type {
   UserSearchItem
 } from "@vyb/contracts";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CampusAvatarContent } from "./campus-avatar";
 import {
@@ -40,6 +40,14 @@ type MessageActionAnchor = {
   top: number;
   left: number;
   width: number;
+};
+type PendingSharedPost = {
+  id: string;
+  authorUsername: string;
+  title: string;
+  body: string;
+  mediaUrl: string | null;
+  mediaKind: "image" | "video" | null;
 };
 const DISMISSED_DECRYPTION_WARNING_STORAGE_PREFIX = "vyb-chat-dismissed-decryption-warning";
 const CHAT_REACTION_OPTIONS = [
@@ -88,6 +96,17 @@ function isDeletedChatMessage(message: ChatMessageRecord) {
 
 function getDeletedMessageLabel(isOwnMessage: boolean) {
   return isOwnMessage ? "Your message has been deleted." : "This message has been deleted.";
+}
+
+function getPendingSharedPostSnippet(post: PendingSharedPost) {
+  const title = post.title.trim();
+  const body = post.body.trim();
+
+  if (title && body && title !== body) {
+    return `${title} • ${body}`;
+  }
+
+  return body || title || `Post from @${post.authorUsername}`;
 }
 
 function timeAgo(dateString: string) {
@@ -429,6 +448,7 @@ export function CampusMessagesShell({
   initialViewerIdentity?: ChatIdentitySummary | null;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const [startingChat, setStartingChat] = useState<string | null>(null);
@@ -441,6 +461,7 @@ export function CampusMessagesShell({
   const [conversationLoading, setConversationLoading] = useState(Boolean(initialConversationId && !initialConversation && !activeConversationError));
   const [conversationError, setConversationError] = useState<string | null>(activeConversationError);
   const [draftMessage, setDraftMessage] = useState("");
+  const [pendingSharedPost, setPendingSharedPost] = useState<PendingSharedPost | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [realtimeState, setRealtimeState] = useState<RealtimeState>(initialConversationId ? "connecting" : "idle");
@@ -469,6 +490,7 @@ export function CampusMessagesShell({
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const requestRef = useRef(0);
+  const appliedShareIntentRef = useRef<string | null>(null);
   const isMountedRef = useRef(false);
   const composerFocusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -752,6 +774,7 @@ export function CampusMessagesShell({
   useEffect(() => {
     setActiveConversationId(initialConversationId);
     setDraftMessage("");
+    setPendingSharedPost(null);
     setSendError(null);
     setRealtimeState(initialConversationId ? "connecting" : "idle");
 
@@ -781,6 +804,51 @@ export function CampusMessagesShell({
       preserveActiveConversation: false
     });
   }, [activeConversationError, initialConversation, initialConversationId]);
+
+  useEffect(() => {
+    const conversationId = activeConversationId ?? initialConversationId;
+    const draft = searchParams.get("draft");
+    const sharedPostId = searchParams.get("sharedPostId");
+
+    if (!conversationId || (!draft && !sharedPostId)) {
+      return;
+    }
+
+    const shareIntentKey = [
+      conversationId,
+      draft ?? "",
+      sharedPostId ?? "",
+      searchParams.get("sharedPostAuthor") ?? "",
+      searchParams.get("sharedPostTitle") ?? "",
+      searchParams.get("sharedPostBody") ?? "",
+      searchParams.get("sharedPostMediaUrl") ?? "",
+      searchParams.get("sharedPostMediaKind") ?? ""
+    ].join("|");
+
+    if (appliedShareIntentRef.current === shareIntentKey) {
+      return;
+    }
+
+    if (draft) {
+      setDraftMessage((current) => (current.trim().length > 0 ? current : draft));
+    }
+
+    if (sharedPostId) {
+      const mediaKind = searchParams.get("sharedPostMediaKind");
+      setPendingSharedPost({
+        id: sharedPostId,
+        authorUsername: searchParams.get("sharedPostAuthor") ?? "campus",
+        title: searchParams.get("sharedPostTitle") ?? "",
+        body: searchParams.get("sharedPostBody") ?? "",
+        mediaUrl: searchParams.get("sharedPostMediaUrl") || null,
+        mediaKind: mediaKind === "image" || mediaKind === "video" ? mediaKind : null
+      });
+    }
+
+    appliedShareIntentRef.current = shareIntentKey;
+    focusComposerSoon();
+    router.replace(`/messages/${encodeURIComponent(conversationId)}`);
+  }, [activeConversationId, initialConversationId, router, searchParams]);
 
   async function ensureChatIdentity() {
     if (viewerIdentity && localChatKey && isStoredChatKeyCompatible(localChatKey, viewerIdentity)) {
@@ -2058,6 +2126,7 @@ export function CampusMessagesShell({
       }
 
       setDraftMessage("");
+      setPendingSharedPost(null);
       setReplyingToMessageId(null);
       focusComposerSoon();
     } catch {
@@ -2837,6 +2906,39 @@ export function CampusMessagesShell({
 
                     {sendError && (
                       <p className="spm-chat-compose-error" role="alert">{sendError}</p>
+                    )}
+
+                    {pendingSharedPost && (
+                      <div className="spm-chat-compose-share">
+                        {pendingSharedPost.mediaUrl ? (
+                          <div className="spm-chat-compose-share-media" aria-hidden="true">
+                            {pendingSharedPost.mediaKind === "video" ? (
+                              <video src={pendingSharedPost.mediaUrl} muted playsInline preload="metadata" />
+                            ) : (
+                              <img src={pendingSharedPost.mediaUrl} alt="Shared post preview" loading="lazy" />
+                            )}
+                          </div>
+                        ) : (
+                          <div className="spm-chat-compose-share-badge" aria-hidden="true">
+                            Post
+                          </div>
+                        )}
+
+                        <div className="spm-chat-compose-share-copy">
+                          <strong>Sharing a post</strong>
+                          <span>@{pendingSharedPost.authorUsername}</span>
+                          <p>{getPendingSharedPostSnippet(pendingSharedPost)}</p>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="spm-chat-compose-reply-clear"
+                          onClick={() => setPendingSharedPost(null)}
+                          aria-label="Cancel shared post"
+                        >
+                          <IconClose />
+                        </button>
+                      </div>
                     )}
 
                     {replyingToMessage && (

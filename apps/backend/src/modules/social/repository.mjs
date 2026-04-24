@@ -35,6 +35,8 @@ import { listProfilesByTenant } from "../identity/profile-repository.mjs";
 
 const TENANT_SCAN_LIMIT = 5000;
 const FEED_SCAN_MULTIPLIER = 4;
+const SAVE_LOOKUP_LIMIT = 8;
+const INACTIVE_POST_REACTION_TYPE = "__inactive__";
 const INACTIVE_COMMENT_REACTION_TYPE = "__inactive__";
 
 const EXTENDED_COMMENT_FIELDS = `
@@ -119,6 +121,92 @@ const GET_COMMENT_REACTION_BY_KEY_QUERY = `
       reactionType
       createdAt
       updatedAt
+    }
+  }
+`;
+
+const LIST_POST_SAVES_BY_TENANT_QUERY = `
+  query ListActivePostSavesByTenant($tenantId: UUID!, $limit: Int!) {
+    postSaves(
+      where: { tenantId: { eq: $tenantId }, deletedAt: { isNull: true } }
+      orderBy: [{ createdAt: DESC }]
+      limit: $limit
+    ) {
+      id
+      tenantId
+      postId
+      userId
+      createdAt
+      deletedAt
+    }
+  }
+`;
+
+const LIST_POST_SAVES_BY_USER_AND_POST_QUERY = `
+  query ListActivePostSavesByUserAndPost($tenantId: UUID!, $postId: UUID!, $userId: UUID!, $limit: Int!) {
+    postSaves(
+      where: {
+        tenantId: { eq: $tenantId }
+        postId: { eq: $postId }
+        userId: { eq: $userId }
+        deletedAt: { isNull: true }
+      }
+      orderBy: [{ createdAt: DESC }]
+      limit: $limit
+    ) {
+      id
+      tenantId
+      postId
+      userId
+      createdAt
+      deletedAt
+    }
+  }
+`;
+
+const LIST_POST_SAVES_BY_POST_QUERY = `
+  query ListActivePostSavesByPost($postId: UUID!, $limit: Int!) {
+    postSaves(
+      where: { postId: { eq: $postId }, deletedAt: { isNull: true } }
+      orderBy: [{ createdAt: DESC }]
+      limit: $limit
+    ) {
+      id
+      postId
+      userId
+      createdAt
+      deletedAt
+    }
+  }
+`;
+
+const CREATE_POST_SAVE_MUTATION = `
+  mutation CreatePostSave($id: UUID!, $tenantId: UUID!, $postId: UUID!, $userId: UUID!) {
+    postSave_insert(
+      data: {
+        id: $id
+        tenantId: $tenantId
+        postId: $postId
+        userId: $userId
+        createdAt_expr: "request.time"
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
+
+const SOFT_DELETE_POST_SAVE_MUTATION = `
+  mutation SoftDeletePostSave($id: UUID!) {
+    postSave_update(
+      key: { id: $id }
+      data: {
+        deletedAt_expr: "request.time"
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
     }
   }
 `;
@@ -428,8 +516,50 @@ async function persistMediaAsset({
   };
 }
 
-async function buildPostCountMaps(tenantId, postIds, viewerMembershipId = null) {
-  const [commentsResponse, reactionsResponse] = await Promise.all([
+async function buildPostSaveMaps(tenantId, postIds, viewerUserId = null) {
+  const idSet = new Set(postIds);
+  const saves = new Map();
+  const viewerSaved = new Map();
+
+  for (const postId of idSet) {
+    saves.set(postId, 0);
+  }
+
+  if (!tenantId || idSet.size === 0) {
+    return {
+      saves,
+      viewerSaved
+    };
+  }
+
+  const response = await getSocialDc().executeGraphqlRead(LIST_POST_SAVES_BY_TENANT_QUERY, {
+    operationName: "ListActivePostSavesByTenant",
+    variables: {
+      tenantId,
+      limit: TENANT_SCAN_LIMIT
+    }
+  });
+
+  for (const item of response.data.postSaves ?? []) {
+    if (!idSet.has(item.postId)) {
+      continue;
+    }
+
+    saves.set(item.postId, Number(saves.get(item.postId) ?? 0) + 1);
+
+    if (viewerUserId && item.userId === viewerUserId) {
+      viewerSaved.set(item.postId, true);
+    }
+  }
+
+  return {
+    saves,
+    viewerSaved
+  };
+}
+
+async function buildPostCountMaps(tenantId, postIds, viewerMembershipId = null, viewerUserId = null) {
+  const [commentsResponse, reactionsResponse, saveMaps] = await Promise.all([
     listCommentsByTenantQuery(getSocialDc(), {
       tenantId,
       limit: TENANT_SCAN_LIMIT
@@ -437,7 +567,8 @@ async function buildPostCountMaps(tenantId, postIds, viewerMembershipId = null) 
     listReactionsByTenantQuery(getSocialDc(), {
       tenantId,
       limit: TENANT_SCAN_LIMIT
-    })
+    }),
+    buildPostSaveMaps(tenantId, postIds, viewerUserId)
   ]);
 
   const idSet = new Set(postIds);
@@ -453,6 +584,10 @@ async function buildPostCountMaps(tenantId, postIds, viewerMembershipId = null) 
   }
 
   for (const item of reactionsResponse.data.reactions) {
+    if ((item.reactionType ?? "like") === INACTIVE_POST_REACTION_TYPE) {
+      continue;
+    }
+
     if (!idSet.has(item.postId)) {
       continue;
     }
@@ -466,7 +601,9 @@ async function buildPostCountMaps(tenantId, postIds, viewerMembershipId = null) 
   return {
     comments,
     reactions,
-    viewerReactions
+    viewerReactions,
+    saves: saveMaps.saves,
+    viewerSaved: saveMaps.viewerSaved
   };
 }
 
@@ -485,7 +622,9 @@ async function countReactionsByPost(postId) {
     limit: TENANT_SCAN_LIMIT
   });
 
-  return response.data.reactions.length;
+  return response.data.reactions.filter(
+    (item) => (item.reactionType ?? "like") !== INACTIVE_POST_REACTION_TYPE
+  ).length;
 }
 
 async function buildStoryReactionMaps(tenantId, storyIds, viewerMembershipId = null) {
@@ -618,6 +757,8 @@ function mapPostRecord(item, counts = null, profileMap = null) {
     status: item.status ?? "published",
     reactions: Number(counts?.reactions?.get(item.id) ?? 0),
     comments: Number(counts?.comments?.get(item.id) ?? 0),
+    savedCount: Number(counts?.saves?.get(item.id) ?? 0),
+    isSaved: Boolean(counts?.viewerSaved?.get(item.id)),
     viewerReactionType: counts?.viewerReactions?.get(item.id) ?? null,
     createdAt: toIsoString(item.createdAt),
     author: {
@@ -678,7 +819,7 @@ function mapConnectionProfile(profile, viewerFollowingIds = null, viewerUserId =
   };
 }
 
-async function mapPostList(records, viewerMembershipId = null, profileMap = null) {
+async function mapPostList(records, viewerMembershipId = null, viewerUserId = null, profileMap = null) {
   if (records.length === 0) {
     return [];
   }
@@ -686,7 +827,8 @@ async function mapPostList(records, viewerMembershipId = null, profileMap = null
   const counts = await buildPostCountMaps(
     records[0].tenantId,
     records.map((item) => item.id),
-    viewerMembershipId
+    viewerMembershipId,
+    viewerUserId
   );
 
   return records.map((item) => mapPostRecord(item, counts, profileMap));
@@ -698,7 +840,8 @@ export async function listPosts({
   limit,
   placement = "feed",
   userId = null,
-  viewerMembershipId = null
+  viewerMembershipId = null,
+  viewerUserId = null
 }) {
   const normalizedPlacement = normalizePlacement(placement);
   const effectiveLimit = communityId ? Math.max(limit * FEED_SCAN_MULTIPLIER, limit) : limit;
@@ -725,11 +868,18 @@ export async function listPosts({
     filtered.map((item) => item.authorUserId)
   );
 
-  return mapPostList(filtered, viewerMembershipId, profileMap);
+  return mapPostList(filtered, viewerMembershipId, viewerUserId, profileMap);
 }
 
-export async function listPostsByUser({ tenantId, userId, limit = 24, placement = "feed", viewerMembershipId = null }) {
-  return listPosts({ tenantId, userId, limit, placement, viewerMembershipId });
+export async function listPostsByUser({
+  tenantId,
+  userId,
+  limit = 24,
+  placement = "feed",
+  viewerMembershipId = null,
+  viewerUserId = null
+}) {
+  return listPosts({ tenantId, userId, limit, placement, viewerMembershipId, viewerUserId });
 }
 
 export async function countPostsByUser({ tenantId, userId, placement = "feed" }) {
@@ -743,17 +893,21 @@ export async function countPostsByUser({ tenantId, userId, placement = "feed" })
   return response.data.posts.length;
 }
 
-export async function findPostById(postId, { tenantId = null, viewerMembershipId = null } = {}) {
+export async function findPostById(postId, { tenantId = null, viewerMembershipId = null, viewerUserId = null } = {}) {
   const response = await getPostByIdQuery(getSocialDc(), { id: postId });
   const item = response.data.post;
   if (!item || item.status === "removed" || (tenantId && item.tenantId !== tenantId)) {
     return null;
   }
 
+  const saveMaps = await buildPostSaveMaps(item.tenantId, [item.id], viewerUserId);
+
   const counts = {
     comments: new Map([[item.id, await countCommentsByPost(item.id)]]),
     reactions: new Map([[item.id, await countReactionsByPost(item.id)]]),
-    viewerReactions: new Map()
+    viewerReactions: new Map(),
+    saves: saveMaps.saves,
+    viewerSaved: saveMaps.viewerSaved
   };
 
   if (viewerMembershipId) {
@@ -761,7 +915,7 @@ export async function findPostById(postId, { tenantId = null, viewerMembershipId
       reactionKey: buildReactionKey(item.id, viewerMembershipId)
     });
     const current = existing.data.reactions[0] ?? null;
-    if (current) {
+    if (current && (current.reactionType ?? "like") !== INACTIVE_POST_REACTION_TYPE) {
       counts.viewerReactions.set(item.id, current.reactionType ?? "like");
     }
   }
@@ -835,6 +989,8 @@ export async function createPost(payload) {
     status: "published",
     reactions: 0,
     comments: 0,
+    savedCount: 0,
+    isSaved: false,
     createdAt: new Date().toISOString(),
     author: {
       userId: payload.userId,
@@ -917,11 +1073,17 @@ export async function upsertReaction(payload) {
   const reactionKey = buildReactionKey(payload.postId, payload.membershipId);
   const existing = await getReactionByKeyQuery(getSocialDc(), { reactionKey });
   const current = existing.data.reactions[0] ?? null;
+  const currentReactionType = current?.reactionType ?? null;
+  const isRemovingReaction =
+    currentReactionType !== null &&
+    currentReactionType !== INACTIVE_POST_REACTION_TYPE &&
+    currentReactionType === payload.reactionType;
+  const nextReactionType = isRemovingReaction ? INACTIVE_POST_REACTION_TYPE : payload.reactionType;
 
   if (current) {
     await updateReactionMutation(getSocialDc(), {
       id: current.id,
-      reactionType: payload.reactionType
+      reactionType: nextReactionType
     });
   } else {
     await createReactionMutation(getSocialDc(), {
@@ -929,17 +1091,17 @@ export async function upsertReaction(payload) {
       reactionKey,
       postId: payload.postId,
       membershipId: payload.membershipId,
-      reactionType: payload.reactionType
+      reactionType: nextReactionType
     });
   }
 
   return {
     postId: payload.postId,
     membershipId: payload.membershipId,
-    reactionType: payload.reactionType,
+    reactionType: isRemovingReaction ? null : payload.reactionType,
     aggregateCount: await countReactionsByPost(payload.postId),
-    active: true,
-    viewerReactionType: payload.reactionType
+    active: !isRemovingReaction,
+    viewerReactionType: isRemovingReaction ? null : payload.reactionType
   };
 }
 
@@ -949,13 +1111,67 @@ export async function listPostReactions({ postId, limit = 100 }) {
     limit
   });
 
-  return response.data.reactions.map((item) => ({
-    id: item.id,
-    postId: item.postId,
-    membershipId: item.membershipId,
-    reactionType: item.reactionType ?? "like",
-    createdAt: toIsoString(item.createdAt)
-  }));
+  return response.data.reactions
+    .filter((item) => (item.reactionType ?? "like") !== INACTIVE_POST_REACTION_TYPE)
+    .map((item) => ({
+      id: item.id,
+      postId: item.postId,
+      membershipId: item.membershipId,
+      reactionType: item.reactionType ?? "like",
+      createdAt: toIsoString(item.createdAt)
+    }));
+}
+
+async function countPostSavesByPost(tenantId, postId) {
+  const response = await getSocialDc().executeGraphqlRead(LIST_POST_SAVES_BY_POST_QUERY, {
+    operationName: "ListActivePostSavesByPost",
+    variables: {
+      postId,
+      limit: TENANT_SCAN_LIMIT
+    }
+  });
+
+  return (response.data.postSaves ?? []).length;
+}
+
+export async function togglePostSave({ tenantId, postId, userId }) {
+  const existing = await getSocialDc().executeGraphqlRead(LIST_POST_SAVES_BY_USER_AND_POST_QUERY, {
+    operationName: "ListActivePostSavesByUserAndPost",
+    variables: {
+      tenantId,
+      postId,
+      userId,
+      limit: SAVE_LOOKUP_LIMIT
+    }
+  });
+  const current = existing.data.postSaves?.[0] ?? null;
+  let isSaved = false;
+
+  if (current) {
+    await getSocialDc().executeGraphql(SOFT_DELETE_POST_SAVE_MUTATION, {
+      operationName: "SoftDeletePostSave",
+      variables: {
+        id: current.id
+      }
+    });
+  } else {
+    await getSocialDc().executeGraphql(CREATE_POST_SAVE_MUTATION, {
+      operationName: "CreatePostSave",
+      variables: {
+        id: randomUUID(),
+        tenantId,
+        postId,
+        userId
+      }
+    });
+    isSaved = true;
+  }
+
+  return {
+    postId,
+    savedCount: await countPostSavesByPost(tenantId, postId),
+    isSaved
+  };
 }
 
 export async function upsertCommentReaction(payload) {
@@ -1049,7 +1265,7 @@ export async function findCommentById(commentId, { tenantId = null, viewerMember
   return mapCommentRecord(item, reactionMaps);
 }
 
-export async function updatePost(postId, payload, { tenantId = null, viewerMembershipId = null } = {}) {
+export async function updatePost(postId, payload, { tenantId = null, viewerMembershipId = null, viewerUserId = null } = {}) {
   await getSocialDc().executeGraphql(UPDATE_POST_MUTATION, {
     operationName: "UpdatePost",
     variables: {
@@ -1060,7 +1276,7 @@ export async function updatePost(postId, payload, { tenantId = null, viewerMembe
     }
   });
 
-  return findPostById(postId, { tenantId, viewerMembershipId });
+  return findPostById(postId, { tenantId, viewerMembershipId, viewerUserId });
 }
 
 export async function findStoryById(storyId, { tenantId = null, viewerUserId = null, viewerMembershipId = null } = {}) {

@@ -217,6 +217,15 @@ query ListTenantMembershipProfilesByTenant($tenantId: UUID!, $limit: Int!) @auth
   }
 }
 
+query GetCampusEventStoreByTenant($id: UUID!) @auth(level: NO_ACCESS) {
+  campusEventStore(key: { id: $id }) {
+    id
+    tenantId
+    eventsJson
+    updatedAt
+  }
+}
+
 mutation CreateTenant($name: String!, $slug: String!, $status: String!) @auth(level: NO_ACCESS) @transaction {
   tenant_insert(
     data: {
@@ -310,6 +319,28 @@ mutation CreateCommunityMembership(
       role: $role
       joinedAt_expr: "request.time"
       createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation CreateCampusEventStore($id: UUID!, $tenantId: UUID!, $eventsJson: String!) @auth(level: NO_ACCESS) @transaction {
+  campusEventStore_insert(
+    data: {
+      id: $id
+      tenantId: $tenantId
+      eventsJson: $eventsJson
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation UpdateCampusEventStore($id: UUID!, $eventsJson: String!) @auth(level: NO_ACCESS) @transaction {
+  campusEventStore_update(
+    key: { id: $id }
+    data: {
+      eventsJson: $eventsJson
       updatedAt_expr: "request.time"
     }
   )

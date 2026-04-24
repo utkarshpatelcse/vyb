@@ -84,6 +84,16 @@ type Reaction @table(name: "reactions", singular: "reaction", plural: "reactions
   deletedAt: Timestamp @col(name: "deleted_at")
 }
 
+type PostSave @table(name: "post_saves", singular: "postSave", plural: "postSaves", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  tenant: Tenant!
+  post: Post!
+  userId: UUID! @col(name: "user_id")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
 type Story @table(name: "stories", singular: "story", plural: "stories", key: ["id"]) {
   id: UUID! @default(expr: "uuidV4()")
   tenant: Tenant!
@@ -163,6 +173,11 @@ extend type CommentReaction {
 extend type Reaction {
   postId: UUID!
   membershipId: UUID!
+}
+
+extend type PostSave {
+  tenantId: UUID!
+  postId: UUID!
 }
 
 extend type Story {

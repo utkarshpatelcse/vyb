@@ -1519,6 +1519,72 @@
   white-space: nowrap;
 }
 
+.spm-chat-compose-share {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+  margin: 0 0 0.7rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 1rem;
+  background: var(--spm-glass);
+  border: 1px solid var(--spm-border);
+}
+
+.spm-chat-compose-share-media,
+.spm-chat-compose-share-badge {
+  width: 3.35rem;
+  height: 3.35rem;
+  flex-shrink: 0;
+  border-radius: 0.95rem;
+  overflow: hidden;
+  border: 1px solid var(--spm-border);
+}
+
+.spm-chat-compose-share-media img,
+.spm-chat-compose-share-media video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.spm-chat-compose-share-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--spm-accent) 16%, transparent);
+  color: color-mix(in srgb, var(--spm-accent) 84%, white);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.spm-chat-compose-share-copy {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.spm-chat-compose-share-copy strong {
+  color: color-mix(in srgb, var(--spm-accent) 72%, white);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.spm-chat-compose-share-copy span {
+  color: color-mix(in srgb, var(--spm-muted) 86%, transparent);
+  font-size: 0.76rem;
+}
+
+.spm-chat-compose-share-copy p {
+  margin: 0;
+  color: var(--spm-text);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 .spm-chat-compose-reply {
   display: flex;
   align-items: flex-start;
@@ -1748,6 +1814,17 @@
 
   .spm-chat-compose-form {
     gap: 0.65rem;
+  }
+
+  .spm-chat-compose-share {
+    gap: 0.7rem;
+    padding: 0.72rem 0.8rem;
+  }
+
+  .spm-chat-compose-share-media,
+  .spm-chat-compose-share-badge {
+    width: 3rem;
+    height: 3rem;
   }
 
   .spm-chat-compose-avatar {

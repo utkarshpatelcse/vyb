@@ -1,6 +1,6 @@
 "use client";
 
-import type { FeedCard, PostLikerItem, StoryCard, UserSearchItem } from "@vyb/contracts";
+import type { FeedCard, PostLikerItem, ReactionKind, StoryCard, UserSearchItem } from "@vyb/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
@@ -8,6 +8,8 @@ import { CampusAvatarContent, useResolvedAvatarUrl } from "./campus-avatar";
 import { SocialPostActionSheet } from "./social-post-action-sheet";
 import { SocialPostLightbox } from "./social-post-lightbox";
 import { SocialPostLikersSheet } from "./social-post-likers-sheet";
+import { SocialPostRepostSheet } from "./social-post-repost-sheet";
+import { SocialPostShareSheet } from "./social-post-share-sheet";
 import { SocialThreadSheet } from "./social-thread-sheet";
 import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
 import { SignOutButton } from "./sign-out-button";
@@ -272,6 +274,17 @@ function BookmarkIcon() {
   );
 }
 
+function RepostIcon() {
+  return (
+    <IconBase>
+      <path d="M17 3l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3 7h18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M7 13l-4 4 4 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M21 17H3" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </IconBase>
+  );
+}
+
 function MenuIcon() {
   return (
     <IconBase>
@@ -338,6 +351,38 @@ function getProfileHref(username: string, viewerUsername: string) {
   return username === viewerUsername ? "/dashboard" : `/u/${encodeURIComponent(username)}`;
 }
 
+function truncateText(value: string, maxLength: number) {
+  const trimmed = value.trim();
+  if (trimmed.length <= maxLength) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, maxLength).trimEnd()}...`;
+}
+
+function buildInternalShareDraft(post: FeedCard) {
+  const caption = truncateText(post.body || post.title || `Post from @${post.author.username}`, 140);
+  return `${caption}\n\n${window.location.origin}${window.location.pathname}#post-${post.id}`;
+}
+
+const POST_REACTION_OPTIONS: Array<{
+  kind: ReactionKind;
+  label: string;
+  symbol: string;
+  tone: string;
+}> = [
+  { kind: "like", label: "Like", symbol: "👍", tone: "like" },
+  { kind: "fire", label: "Fire", symbol: "🔥", tone: "fire" },
+  { kind: "support", label: "Support", symbol: "👏", tone: "support" },
+  { kind: "love", label: "Love", symbol: "❤️", tone: "love" },
+  { kind: "insight", label: "Insight", symbol: "💡", tone: "insight" },
+  { kind: "funny", label: "Funny", symbol: "😂", tone: "funny" }
+];
+
+function getPostReactionMeta(reactionType: ReactionKind | null | undefined) {
+  return POST_REACTION_OPTIONS.find((item) => item.kind === reactionType) ?? POST_REACTION_OPTIONS[0];
+}
+
 export function CampusHomeShell({
   viewerName,
   viewerUsername,
@@ -375,10 +420,20 @@ export function CampusHomeShell({
   const [actionPost, setActionPost] = useState<FeedCard | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [repostComposerPost, setRepostComposerPost] = useState<FeedCard | null>(null);
+  const [sharePost, setSharePost] = useState<FeedCard | null>(null);
+  const [shareBusyUsername, setShareBusyUsername] = useState<string | null>(null);
+  const [shareMessage, setShareMessage] = useState<string | null>(null);
+  const [repostBusyPostId, setRepostBusyPostId] = useState<string | null>(null);
+  const [saveBusyPostId, setSaveBusyPostId] = useState<string | null>(null);
+  const [reactionTrayPostId, setReactionTrayPostId] = useState<string | null>(null);
   const storyVideoRef = useRef<HTMLVideoElement | null>(null);
   const storyHoldTimeoutRef = useRef<number | null>(null);
   const storyPointerDownAtRef = useRef<number>(0);
   const storyPointerZoneRef = useRef<"left" | "center" | "right">("center");
+  const reactionHoldTimeoutRef = useRef<number | null>(null);
+  const suppressReactionClickPostIdRef = useRef<string | null>(null);
+  const reactionShellRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const storyGroups = useMemo(() => buildStoryRailGroups(storyFeed, viewerUsername), [storyFeed, viewerUsername]);
   const storySequence = useMemo(() => storyGroups.flatMap((group) => group.items), [storyGroups]);
@@ -448,8 +503,30 @@ export function CampusHomeShell({
   useEffect(() => {
     return () => {
       clearStoryHoldTimer();
+      clearReactionHoldTimer();
     };
   }, []);
+
+  useEffect(() => {
+    if (!reactionTrayPostId) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const reactionShell = reactionShellRefs.current[reactionTrayPostId];
+      if (reactionShell?.contains(event.target as Node)) {
+        return;
+      }
+
+      suppressReactionClickPostIdRef.current = null;
+      setReactionTrayPostId(null);
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [reactionTrayPostId]);
 
   useEffect(() => {
     if (!selectedStory) {
@@ -550,7 +627,8 @@ export function CampusHomeShell({
   const createPostHref = "/create?kind=post&from=%2Fhome";
   const createStoryHref = "/create?kind=story&from=%2Fhome";
 
-  function syncMirroredPost(postId: string, updater: (post: FeedCard) => FeedCard) {
+  function syncPostEverywhere(postId: string, updater: (post: FeedCard) => FeedCard) {
+    engagement.setPosts((current) => current.map((post) => (post.id === postId ? updater(post) : post)));
     setVibeStrip((current) => current.map((post) => (post.id === postId ? updater(post) : post)));
     setLightboxPost((current) => (current?.id === postId ? updater(current) : current));
     setLikesPost((current) => (current?.id === postId ? updater(current) : current));
@@ -564,18 +642,18 @@ export function CampusHomeShell({
     setActionPost((current) => (current?.id === postId ? null : current));
   }
 
-  async function handlePostLike(post: FeedCard, triggerBurst = false) {
-    if (triggerBurst) {
+  async function handlePostReaction(post: FeedCard, reactionType: ReactionKind = "like", triggerBurst = false) {
+    if (triggerBurst && reactionType === "like") {
       setHeartBurstPostId(post.id);
     }
 
-    const reaction = await engagement.react(post.id);
+    const reaction = await engagement.react(post.id, reactionType);
     if (!reaction) {
-      setFlashMessage("We could not update that like right now.");
+      setFlashMessage("We could not update that reaction right now.");
       return;
     }
 
-    syncMirroredPost(post.id, (current) => ({
+    syncPostEverywhere(post.id, (current) => ({
       ...current,
       reactions: reaction.aggregateCount,
       viewerReactionType: (reaction.viewerReactionType ?? null) as FeedCard["viewerReactionType"]
@@ -614,7 +692,7 @@ export function CampusHomeShell({
         | null;
 
       if (!response.ok) {
-        setLikesMessage(payload?.error?.message ?? "We could not load the like list right now.");
+        setLikesMessage(payload?.error?.message ?? "We could not load the reaction list right now.");
         return;
       }
 
@@ -623,57 +701,64 @@ export function CampusHomeShell({
         [post.id]: payload?.items ?? []
       }));
     } catch {
-      setLikesMessage("We could not load the like list right now.");
+      setLikesMessage("We could not load the reaction list right now.");
     } finally {
       setLikesLoadingPostId(null);
     }
   }
 
-  async function handleDirectRepost(post: FeedCard, placement: "feed" | "vibe" = "feed") {
-    setActionBusy(true);
+  async function handleTogglePostSave(post: FeedCard) {
+    setSaveBusyPostId(post.id);
     setActionMessage(null);
 
     try {
-      const response = await fetch(`/api/posts/${encodeURIComponent(post.id)}/repost`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json"
-        },
-        body: JSON.stringify({ placement })
+      const response = await fetch(`/api/posts/${encodeURIComponent(post.id)}/save`, {
+        method: "PUT"
       });
       const payload = (await response.json().catch(() => null)) as
         | {
-            item?: FeedCard;
+            postId?: string;
+            savedCount?: number;
+            isSaved?: boolean;
             error?: {
               message?: string;
             };
           }
         | null;
 
-      if (!response.ok || !payload?.item) {
-        setActionMessage(payload?.error?.message ?? "We could not repost this right now.");
+      if (!response.ok || typeof payload?.savedCount !== "number" || typeof payload?.isSaved !== "boolean") {
+        const nextMessage = payload?.error?.message ?? "We could not update your saved posts right now.";
+        setActionMessage(nextMessage);
+        setFlashMessage(nextMessage);
         return;
       }
 
-      if (payload.item.placement === "feed") {
-        engagement.prependPost(payload.item);
-      } else {
-        setVibeStrip((current) => [payload.item!, ...current].slice(0, 10));
-      }
-
-      setActionPost(null);
-      setFlashMessage("Reposted to your campus lane.");
-      router.refresh();
+      syncPostEverywhere(post.id, (current) => ({
+        ...current,
+        savedCount: payload.savedCount ?? current.savedCount,
+        isSaved: payload.isSaved ?? current.isSaved
+      }));
+      setFlashMessage(payload.isSaved ? "Post saved." : "Post removed from saved.");
     } catch {
-      setActionMessage("We could not repost this right now.");
+      setActionMessage("We could not update your saved posts right now.");
+      setFlashMessage("We could not update your saved posts right now.");
     } finally {
-      setActionBusy(false);
+      setSaveBusyPostId(null);
     }
   }
 
-  async function handleQuoteRepost(post: FeedCard, quote: string, placement: "feed" | "vibe" = "feed") {
+  function openRepostComposer(post: FeedCard) {
+    setReactionTrayPostId(null);
+    setActionMessage(null);
+    setActionPost(null);
+    setRepostComposerPost(post);
+  }
+
+  async function handleSubmitRepost(post: FeedCard, repostPayload: { quote: string; placement: "feed" | "vibe" }) {
     setActionBusy(true);
     setActionMessage(null);
+    setReactionTrayPostId(null);
+    setRepostBusyPostId(post.id);
 
     try {
       const response = await fetch(`/api/posts/${encodeURIComponent(post.id)}/repost`, {
@@ -682,11 +767,11 @@ export function CampusHomeShell({
           "content-type": "application/json"
         },
         body: JSON.stringify({
-          quote,
-          placement
+          placement: repostPayload.placement,
+          quote: repostPayload.quote.trim() || undefined
         })
       });
-      const payload = (await response.json().catch(() => null)) as
+      const responsePayload = (await response.json().catch(() => null)) as
         | {
             item?: FeedCard;
             error?: {
@@ -695,23 +780,25 @@ export function CampusHomeShell({
           }
         | null;
 
-      if (!response.ok || !payload?.item) {
-        setActionMessage(payload?.error?.message ?? "We could not quote repost this right now.");
+      if (!response.ok || !responsePayload?.item) {
+        setActionMessage(responsePayload?.error?.message ?? "We could not repost this right now.");
         return;
       }
 
-      if (payload.item.placement === "feed") {
-        engagement.prependPost(payload.item);
+      if (responsePayload.item.placement === "feed") {
+        engagement.prependPost(responsePayload.item);
       } else {
-        setVibeStrip((current) => [payload.item!, ...current].slice(0, 10));
+        setVibeStrip((current) => [responsePayload.item!, ...current].slice(0, 10));
       }
 
       setActionPost(null);
-      setFlashMessage("Your quote repost is now live.");
+      setRepostComposerPost(null);
+      setFlashMessage(repostPayload.quote.trim() ? "Your repost is now live." : "Reposted to your campus lane.");
       router.refresh();
     } catch {
-      setActionMessage("We could not quote repost this right now.");
+      setActionMessage("We could not repost this right now.");
     } finally {
+      setRepostBusyPostId(null);
       setActionBusy(false);
     }
   }
@@ -792,10 +879,106 @@ export function CampusHomeShell({
     try {
       await navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}#post-${post.id}`);
       setActionPost(null);
-      setFlashMessage("Page link copied.");
+      setFlashMessage("Share link copied.");
     } catch {
       setActionMessage("We could not copy that link right now.");
     }
+  }
+
+  function handleSharePost(post: FeedCard) {
+    setShareMessage(null);
+    setActionPost(null);
+    setSharePost(post);
+  }
+
+  async function handleShareToChat(post: FeedCard, username: string) {
+    const normalizedUsername = username.trim().replace(/^@+/u, "");
+
+    if (!normalizedUsername) {
+      setShareMessage("Enter a valid username first.");
+      return;
+    }
+
+    setShareBusyUsername(normalizedUsername);
+    setShareMessage(null);
+
+    try {
+      const response = await fetch("/api/chats", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ recipientUsername: normalizedUsername })
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            conversation?: {
+              id?: string;
+            };
+            error?: {
+              message?: string;
+            };
+          }
+        | null;
+
+      if (!response.ok || !payload?.conversation?.id) {
+        setShareMessage(payload?.error?.message ?? "We could not open that chat right now.");
+        return;
+      }
+
+      const shareParams = new URLSearchParams({
+        draft: buildInternalShareDraft(post),
+        sharedPostId: post.id,
+        sharedPostAuthor: post.author.username,
+        sharedPostTitle: truncateText(post.title || "", 80),
+        sharedPostBody: truncateText(post.body || "", 140),
+        sharedPostMediaUrl: post.media?.[0]?.url ?? post.mediaUrl ?? "",
+        sharedPostMediaKind: post.media?.[0]?.kind ?? (post.mediaUrl ? (post.kind === "video" ? "video" : "image") : "")
+      });
+
+      setSharePost(null);
+      router.push(`/messages/${encodeURIComponent(payload.conversation.id)}?${shareParams.toString()}`);
+    } catch {
+      setShareMessage("Network issue while opening that chat.");
+    } finally {
+      setShareBusyUsername(null);
+    }
+  }
+
+  function clearReactionHoldTimer() {
+    if (reactionHoldTimeoutRef.current !== null) {
+      window.clearTimeout(reactionHoldTimeoutRef.current);
+      reactionHoldTimeoutRef.current = null;
+    }
+  }
+
+  function handleReactionButtonPointerDown(postId: string) {
+    clearReactionHoldTimer();
+    reactionHoldTimeoutRef.current = window.setTimeout(() => {
+      suppressReactionClickPostIdRef.current = postId;
+      setReactionTrayPostId(postId);
+      reactionHoldTimeoutRef.current = null;
+    }, 320);
+  }
+
+  function handleReactionButtonPointerCancel() {
+    clearReactionHoldTimer();
+  }
+
+  function handleReactionButtonClick(post: FeedCard) {
+    if (suppressReactionClickPostIdRef.current === post.id) {
+      suppressReactionClickPostIdRef.current = null;
+      return;
+    }
+
+    setReactionTrayPostId(null);
+    void handlePostReaction(post, "like");
+  }
+
+  function handleReactionOptionSelect(post: FeedCard, reactionType: ReactionKind) {
+    setReactionTrayPostId(null);
+    suppressReactionClickPostIdRef.current = null;
+    void handlePostReaction(post, reactionType);
   }
 
   function openStoryGroup(group: StoryRailGroup) {
@@ -990,8 +1173,7 @@ export function CampusHomeShell({
         return;
       }
 
-      engagement.replacePost(data.item);
-      syncMirroredPost(post.id, () => data.item!);
+      syncPostEverywhere(post.id, () => data.item!);
       setActionPost(null);
       setFlashMessage(post.placement === "vibe" ? "Vibe updated." : "Post updated.");
       router.refresh();
@@ -1128,6 +1310,7 @@ export function CampusHomeShell({
                 : post.mediaUrl
                 ? [{ url: post.mediaUrl, kind: post.kind === "video" ? "video" as const : "image" as const }]
                 : [];
+              const reactionMeta = getPostReactionMeta(post.viewerReactionType);
 
               return (
               <div key={post.id} className="vyb-campus-feed-item">
@@ -1174,13 +1357,13 @@ export function CampusHomeShell({
                   {mediaItems.length > 0 && (
                     <div
                       className="fc-media"
-                      onDoubleClick={() => void handlePostLike(post, true)}
+                      onDoubleClick={() => void handlePostReaction(post, "like", true)}
                     >
                       <MediaCarousel
                         items={mediaItems}
                         alt={post.body || post.title || "Post media"}
                         onClick={() => void openPostLightbox(post)}
-                        onDoubleTap={() => void handlePostLike(post, true)}
+                        onDoubleTap={() => void handlePostReaction(post, "like", true)}
                         showHeartBurst={heartBurstPostId === post.id}
                         heartBurstNode={
                           <span className="vyb-heart-pulse" aria-hidden="true">
@@ -1194,15 +1377,47 @@ export function CampusHomeShell({
                   {/* ── Actions ── */}
                   <div className="fc-actions">
                     <div className="fc-actions-left">
-                      <button
-                        type="button"
-                        className={`fc-action-btn ${post.viewerReactionType === "like" ? "is-active" : ""}`}
-                        disabled={engagement.loadingPostId === post.id}
-                        onClick={() => void handlePostLike(post)}
+                      <div
+                        ref={(node) => {
+                          reactionShellRefs.current[post.id] = node;
+                        }}
+                        className={`fc-reaction-shell${reactionTrayPostId === post.id ? " is-open" : ""}`}
                       >
-                        <HeartIcon />
-                        <span>{formatMetric(post.reactions)}</span>
-                      </button>
+                        <button
+                          type="button"
+                          className={`fc-action-btn is-reaction-btn reaction-${reactionMeta.tone}${post.viewerReactionType ? " is-active" : ""}`}
+                          disabled={engagement.loadingPostId === post.id}
+                          aria-label={
+                            post.viewerReactionType
+                              ? `${reactionMeta.label} reaction selected. Hold to change reaction.`
+                              : "React to this post. Hold to choose more reactions."
+                          }
+                          onPointerDown={() => handleReactionButtonPointerDown(post.id)}
+                          onPointerUp={handleReactionButtonPointerCancel}
+                          onPointerCancel={handleReactionButtonPointerCancel}
+                          onPointerLeave={handleReactionButtonPointerCancel}
+                          onContextMenu={(event) => event.preventDefault()}
+                          onClick={() => handleReactionButtonClick(post)}
+                        >
+                          <span className="fc-action-symbol" aria-hidden="true">{reactionMeta.symbol}</span>
+                          <span>{formatMetric(post.reactions)}</span>
+                        </button>
+
+                        <div className="fc-reaction-tray" role="menu" aria-label="Choose a reaction">
+                          {POST_REACTION_OPTIONS.map((option) => (
+                            <button
+                              key={option.kind}
+                              type="button"
+                              className={`fc-reaction-option reaction-${option.tone}${post.viewerReactionType === option.kind ? " is-selected" : ""}`}
+                              aria-label={option.label}
+                              title={option.label}
+                              onClick={() => handleReactionOptionSelect(post, option.kind)}
+                            >
+                              <span aria-hidden="true">{option.symbol}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <button
                         type="button"
                         className="fc-action-btn"
@@ -1214,9 +1429,28 @@ export function CampusHomeShell({
                       <button
                         type="button"
                         className="fc-action-btn"
-                        onClick={() => { setActionMessage(null); setActionPost(post); }}
+                        onClick={() => handleSharePost(post)}
                       >
                         <ShareIcon />
+                        <span>Share</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="fc-action-btn"
+                        disabled={repostBusyPostId === post.id}
+                        onClick={() => openRepostComposer(post)}
+                      >
+                        <RepostIcon />
+                        <span>{repostBusyPostId === post.id ? "..." : "Repost"}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`fc-action-btn${post.isSaved ? " is-active is-save-active" : ""}`}
+                        disabled={saveBusyPostId === post.id}
+                        onClick={() => void handleTogglePostSave(post)}
+                      >
+                        <BookmarkIcon />
+                        <span>{saveBusyPostId === post.id ? "..." : post.isSaved ? "Saved" : "Save"}</span>
                       </button>
                     </div>
                   </div>
@@ -1520,7 +1754,7 @@ export function CampusHomeShell({
         onClose={() => setLightboxPost(null)}
         onLike={() => {
           if (lightboxPost) {
-            void handlePostLike(lightboxPost, true);
+            void handlePostReaction(lightboxPost, "like", true);
           }
         }}
         onOpenComments={() => {
@@ -1563,14 +1797,9 @@ export function CampusHomeShell({
             void openPostLightbox(actionPost);
           }
         }}
-        onDirectRepost={() => {
+        onOpenRepostComposer={() => {
           if (actionPost) {
-            void handleDirectRepost(actionPost, "feed");
-          }
-        }}
-        onQuoteRepost={(quote) => {
-          if (actionPost) {
-            void handleQuoteRepost(actionPost, quote, "feed");
+            openRepostComposer(actionPost);
           }
         }}
         onEdit={(payload) => {
@@ -1591,6 +1820,43 @@ export function CampusHomeShell({
         onCopyLink={() => {
           if (actionPost) {
             void handleCopyPostLink(actionPost);
+          }
+        }}
+      />
+
+      <SocialPostRepostSheet
+        post={repostComposerPost}
+        viewerName={viewerName}
+        viewerUsername={viewerUsername}
+        isBusy={actionBusy}
+        message={actionMessage}
+        onClose={() => {
+          if (!actionBusy) {
+            setRepostComposerPost(null);
+            setActionMessage(null);
+          }
+        }}
+        onSubmit={(payload) => {
+          if (repostComposerPost) {
+            void handleSubmitRepost(repostComposerPost, payload);
+          }
+        }}
+      />
+
+      <SocialPostShareSheet
+        post={sharePost}
+        suggestedUsers={recommendedUsers}
+        busyUsername={shareBusyUsername}
+        message={shareMessage}
+        onClose={() => {
+          if (!shareBusyUsername) {
+            setSharePost(null);
+            setShareMessage(null);
+          }
+        }}
+        onShare={(username) => {
+          if (sharePost) {
+            void handleShareToChat(sharePost, username);
           }
         }}
       />

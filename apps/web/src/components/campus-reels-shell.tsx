@@ -1244,14 +1244,9 @@ export function CampusReelsShell({
             void openPostLightbox(actionPost);
           }
         }}
-        onDirectRepost={() => {
+        onOpenRepostComposer={() => {
           if (actionPost) {
             void handleDirectRepost(actionPost);
-          }
-        }}
-        onQuoteRepost={(quote) => {
-          if (actionPost) {
-            void handleQuoteRepost(actionPost, quote);
           }
         }}
         onEdit={(payload) => {

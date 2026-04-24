@@ -1,6 +1,6 @@
 "use client";
 
-import type { CommentItem, FeedCard, ReactionResponse } from "@vyb/contracts";
+import type { CommentItem, FeedCard, ReactionKind, ReactionResponse } from "@vyb/contracts";
 import { useEffect, useMemo, useState } from "react";
 
 type CommentMediaKind = "gif" | "sticker";
@@ -76,14 +76,18 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
     setThreadMessage(null);
   }
 
-  async function react(postId: string) {
+  async function react(postId: string, reactionType: ReactionKind = "like") {
     const currentPost = posts.find((item) => item.id === postId) ?? null;
     if (!currentPost) {
       return null;
     }
-    const isRemovingLike = currentPost.viewerReactionType === "like";
-    const optimisticReactionCount = Math.max(0, currentPost.reactions + (isRemovingLike ? -1 : 1));
-    const optimisticViewerReaction = isRemovingLike ? null : "like";
+    const currentReactionType = currentPost.viewerReactionType;
+    const isRemovingReaction = currentReactionType === reactionType;
+    const optimisticReactionCount = Math.max(
+      0,
+      currentPost.reactions + (currentReactionType ? (isRemovingReaction ? -1 : 0) : 1)
+    );
+    const optimisticViewerReaction = isRemovingReaction ? null : reactionType;
 
     setLoadingPostId(postId);
     setThreadMessage(null);
@@ -106,7 +110,7 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
           "content-type": "application/json"
         },
         body: JSON.stringify({
-          reactionType: "like"
+          reactionType
         })
       });
       const payload = (await response.json().catch(() => null)) as
@@ -131,7 +135,9 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
           )
         );
         setThreadMessage(
-          payload && "error" in payload ? payload.error?.message ?? "We could not update that like right now." : "We could not update that like right now."
+          payload && "error" in payload
+            ? payload.error?.message ?? "We could not update that reaction right now."
+            : "We could not update that reaction right now."
         );
         return null;
       }
@@ -160,7 +166,7 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
             : post
         )
       );
-      setThreadMessage("We could not update that like right now.");
+      setThreadMessage("We could not update that reaction right now.");
       return null;
     } finally {
       setLoadingPostId(null);

@@ -29,9 +29,9 @@ import type {
   UpsertCampusEventRegistrationRequest,
   UpsertCampusEventRegistrationResponse
 } from "@vyb/contracts";
+import { getFirebaseDataConnect } from "@vyb/config";
 import type { DevSession } from "./dev-session";
 import { deleteEventMediaAssets } from "./events-media-server";
-import { getFirebaseAdminDatabase } from "./firebase-admin-server";
 import type { EventViewerIdentity } from "./events-types";
 
 type StoredRegistration = CampusEventRegistration;
@@ -65,10 +65,62 @@ type EventStore = {
   events: StoredEvent[];
 };
 
+type CampusEventStoreRecord = {
+  id: string;
+  tenantId: string;
+  eventsJson: string;
+  updatedAt?: string | null;
+};
+
 const defaultStore: EventStore = {
   events: []
 };
-const EVENTS_STORE_ROOT = "campus-event-stores";
+const campusConnectorConfig = {
+  connector: "campus",
+  serviceId: "vyb",
+  location: "asia-south1"
+} as const;
+
+const GET_CAMPUS_EVENT_STORE_QUERY = `
+  query GetCampusEventStoreByTenant($id: UUID!) {
+    campusEventStore(key: { id: $id }) {
+      id
+      tenantId
+      eventsJson
+      updatedAt
+    }
+  }
+`;
+
+const CREATE_CAMPUS_EVENT_STORE_MUTATION = `
+  mutation CreateCampusEventStore($id: UUID!, $tenantId: UUID!, $eventsJson: String!) {
+    campusEventStore_insert(
+      data: {
+        id: $id
+        tenantId: $tenantId
+        eventsJson: $eventsJson
+        createdAt_expr: "request.time"
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
+
+const UPDATE_CAMPUS_EVENT_STORE_MUTATION = `
+  mutation UpdateCampusEventStore($id: UUID!, $eventsJson: String!) {
+    campusEventStore_update(
+      key: { id: $id }
+      data: {
+        eventsJson: $eventsJson
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
 
 const seedMediaByCategory: Record<string, string> = {
   Cultural: "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=1200&q=80&auto=format&fit=crop",
@@ -654,8 +706,8 @@ function toCampusEvent(event: StoredEvent, viewer?: Pick<DevSession, "userId">):
   };
 }
 
-function getStoreRef(tenantId: string) {
-  return getFirebaseAdminDatabase().ref(`${EVENTS_STORE_ROOT}/${tenantId}`);
+function getCampusEventsDc() {
+  return getFirebaseDataConnect(campusConnectorConfig);
 }
 
 function normalizeStore(raw: unknown, tenantId: string): EventStore {
@@ -673,6 +725,68 @@ function serializeStore(store: EventStore) {
   };
 }
 
+function parseStoreJson(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+async function readStoreRecord(tenantId: string) {
+  const response = await getCampusEventsDc().executeGraphqlRead(GET_CAMPUS_EVENT_STORE_QUERY, {
+    operationName: "GetCampusEventStoreByTenant",
+    variables: {
+      id: tenantId
+    }
+  });
+
+  const data = response.data as {
+    campusEventStore?: CampusEventStoreRecord | null;
+  };
+
+  return data.campusEventStore ?? null;
+}
+
+async function writeStoreRecord(tenantId: string, store: EventStore, exists: boolean) {
+  const dc = getCampusEventsDc();
+  const eventsJson = JSON.stringify(serializeStore(store));
+
+  if (exists) {
+    await dc.executeGraphql(UPDATE_CAMPUS_EVENT_STORE_MUTATION, {
+      operationName: "UpdateCampusEventStore",
+      variables: {
+        id: tenantId,
+        eventsJson
+      }
+    });
+    return;
+  }
+
+  try {
+    await dc.executeGraphql(CREATE_CAMPUS_EVENT_STORE_MUTATION, {
+      operationName: "CreateCampusEventStore",
+      variables: {
+        id: tenantId,
+        tenantId,
+        eventsJson
+      }
+    });
+  } catch (error) {
+    await dc.executeGraphql(UPDATE_CAMPUS_EVENT_STORE_MUTATION, {
+      operationName: "UpdateCampusEventStore",
+      variables: {
+        id: tenantId,
+        eventsJson
+      }
+    });
+  }
+}
+
 function seedTenantStoreIfEmpty(store: EventStore, tenantId: string) {
   if (store.events.some((event) => event.tenantId === tenantId)) {
     return false;
@@ -683,8 +797,8 @@ function seedTenantStoreIfEmpty(store: EventStore, tenantId: string) {
 }
 
 async function loadStore(tenantId: string) {
-  const snapshot = await getStoreRef(tenantId).get();
-  return normalizeStore(snapshot.val(), tenantId);
+  const record = await readStoreRecord(tenantId);
+  return normalizeStore(parseStoreJson(record?.eventsJson), tenantId);
 }
 
 async function transactStore<T>(
@@ -694,36 +808,23 @@ async function transactStore<T>(
     changed?: boolean;
   }
 ) {
-  const storeRef = getStoreRef(tenantId);
   let finalStore = clone(defaultStore);
   let finalResult: T | undefined;
   let shouldPersist = false;
+  const existingRecord = await readStoreRecord(tenantId);
+  const store = normalizeStore(parseStoreJson(existingRecord?.eventsJson), tenantId);
+  const outcome = mutate(store);
 
-  const transaction = await storeRef.transaction(
-    (current) => {
-      const store = normalizeStore(current, tenantId);
-      const outcome = mutate(store);
-
-      finalStore = store;
-      finalResult = outcome.result;
-      shouldPersist = outcome.changed !== false;
-
-      if (!shouldPersist) {
-        return undefined;
-      }
-
-      return serializeStore(store);
-    },
-    undefined,
-    false
-  );
+  finalStore = store;
+  finalResult = outcome.result;
+  shouldPersist = outcome.changed !== false;
 
   if (finalResult === undefined) {
     throw new Error("We could not complete the event update.");
   }
 
-  if (shouldPersist && !transaction.committed) {
-    throw new Error("We could not save the latest event changes.");
+  if (shouldPersist) {
+    await writeStoreRecord(tenantId, store, Boolean(existingRecord));
   }
 
   return {

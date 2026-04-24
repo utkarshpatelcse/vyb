@@ -218,6 +218,63 @@ query GetReactionByKey($reactionKey: String!) @auth(level: NO_ACCESS) {
   }
 }
 
+query ListActivePostSavesByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  postSaves(
+    where: {
+      tenantId: { eq: $tenantId }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    postId
+    userId
+    createdAt
+  }
+}
+
+query ListActivePostSavesByUserAndPost(
+  $tenantId: UUID!
+  $postId: UUID!
+  $userId: UUID!
+  $limit: Int!
+) @auth(level: NO_ACCESS) {
+  postSaves(
+    where: {
+      tenantId: { eq: $tenantId }
+      postId: { eq: $postId }
+      userId: { eq: $userId }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    postId
+    userId
+    createdAt
+  }
+}
+
+query ListActivePostSavesByPost($postId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  postSaves(
+    where: {
+      postId: { eq: $postId }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    postId
+    userId
+    createdAt
+  }
+}
+
 query ListStoriesByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
   stories(
     where: { tenantId: { eq: $tenantId }, deletedAt: { isNull: true } }
@@ -534,6 +591,34 @@ mutation UpdateReaction($id: UUID!, $reactionType: String!) @auth(level: NO_ACCE
     key: { id: $id }
     data: {
       reactionType: $reactionType
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation CreatePostSave(
+  $id: UUID!
+  $tenantId: UUID!
+  $postId: UUID!
+  $userId: UUID!
+) @auth(level: NO_ACCESS) @transaction {
+  postSave_insert(
+    data: {
+      id: $id
+      tenantId: $tenantId
+      postId: $postId
+      userId: $userId
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation SoftDeletePostSave($id: UUID!) @auth(level: NO_ACCESS) @transaction {
+  postSave_update(
+    key: { id: $id }
+    data: {
+      deletedAt_expr: "request.time"
       updatedAt_expr: "request.time"
     }
   )

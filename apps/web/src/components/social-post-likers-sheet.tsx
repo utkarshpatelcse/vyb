@@ -16,12 +16,29 @@ export function SocialPostLikersSheet({ post, items, isLoading, message, onClose
     return null;
   }
 
+  function getReactionSymbol(reactionType: PostLikerItem["reactionType"]) {
+    switch (reactionType) {
+      case "fire":
+        return "🔥";
+      case "support":
+        return "👏";
+      case "love":
+        return "❤️";
+      case "insight":
+        return "💡";
+      case "funny":
+        return "😂";
+      default:
+        return "👍";
+    }
+  }
+
   return (
     <div className="vyb-post-likers-backdrop" role="presentation" onClick={onClose}>
-      <div className="vyb-post-likers-sheet" role="dialog" aria-modal="true" aria-label="Liked by" onClick={(event) => event.stopPropagation()}>
+      <div className="vyb-post-likers-sheet" role="dialog" aria-modal="true" aria-label="Post reactions" onClick={(event) => event.stopPropagation()}>
         <div className="vyb-post-likers-head">
           <div>
-            <strong>Liked by campus</strong>
+            <strong>Reactions from campus</strong>
             <span>{post.title || "Campus post"}</span>
           </div>
           <button type="button" className="vyb-campus-compose-secondary" onClick={onClose}>
@@ -30,8 +47,8 @@ export function SocialPostLikersSheet({ post, items, isLoading, message, onClose
         </div>
 
         <div className="vyb-post-likers-list">
-          {isLoading ? <p className="vyb-post-likers-state">Loading likes...</p> : null}
-          {!isLoading && items.length === 0 ? <p className="vyb-post-likers-state">No likes yet.</p> : null}
+          {isLoading ? <p className="vyb-post-likers-state">Loading reactions...</p> : null}
+          {!isLoading && items.length === 0 ? <p className="vyb-post-likers-state">No reactions yet.</p> : null}
 
           {items.map((item) => (
             <article key={`${item.membershipId}-${item.reactedAt}`} className="vyb-post-likers-item">
@@ -48,6 +65,9 @@ export function SocialPostLikersSheet({ post, items, isLoading, message, onClose
                 <strong>{item.displayName}</strong>
                 <span>@{item.username}</span>
               </div>
+              <span className="vyb-post-likers-reaction" aria-label={item.reactionType}>
+                {getReactionSymbol(item.reactionType)}
+              </span>
             </article>
           ))}
         </div>

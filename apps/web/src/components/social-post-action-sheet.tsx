@@ -10,15 +10,14 @@ type SocialPostActionSheetProps = {
   message: string | null;
   onClose: () => void;
   onOpenDetail: () => void;
-  onDirectRepost: () => void;
-  onQuoteRepost: (quote: string) => void;
+  onOpenRepostComposer: () => void;
   onEdit: (payload: { title: string | null; body: string; location: string | null }) => void;
   onDelete: () => void;
   onReport: (reason: string) => void;
   onCopyLink: () => void;
 };
 
-type SheetMode = "menu" | "quote" | "report" | "edit";
+type SheetMode = "menu" | "report" | "edit";
 
 export function SocialPostActionSheet({
   post,
@@ -27,8 +26,7 @@ export function SocialPostActionSheet({
   message,
   onClose,
   onOpenDetail,
-  onDirectRepost,
-  onQuoteRepost,
+  onOpenRepostComposer,
   onEdit,
   onDelete,
   onReport,
@@ -67,17 +65,8 @@ export function SocialPostActionSheet({
               <button type="button" onClick={onOpenDetail}>
                 View full post
               </button>
-              <button type="button" onClick={onDirectRepost} disabled={isBusy}>
-                {isBusy ? "Working..." : "Direct repost"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setDraft("");
-                  setMode("quote");
-                }}
-              >
-                Quote repost
+              <button type="button" onClick={onOpenRepostComposer} disabled={isBusy}>
+                {isBusy ? "Working..." : "Repost this post"}
               </button>
               {isOwner ? (
                 <button
@@ -92,7 +81,7 @@ export function SocialPostActionSheet({
                 </button>
               ) : null}
               <button type="button" onClick={onCopyLink}>
-                Copy page link
+                Share link
               </button>
               {isOwner ? (
                 <button type="button" className="is-danger" onClick={onDelete} disabled={isBusy}>
@@ -116,13 +105,11 @@ export function SocialPostActionSheet({
           <>
             <div className="vyb-post-actions-head">
               <div>
-                <strong>{mode === "quote" ? "Quote repost" : mode === "edit" ? "Edit post" : "Report post"}</strong>
+                <strong>{mode === "edit" ? "Edit post" : "Report post"}</strong>
                 <span>
-                  {mode === "quote"
-                    ? "Add your take before reposting."
-                    : mode === "edit"
-                      ? "Update the caption and location for this post."
-                      : "Tell us what is wrong with this post."}
+                  {mode === "edit"
+                    ? "Update the caption and location for this post."
+                    : "Tell us what is wrong with this post."}
                 </span>
               </div>
               <button type="button" className="vyb-campus-compose-secondary" onClick={() => setMode("menu")}>
@@ -131,11 +118,11 @@ export function SocialPostActionSheet({
             </div>
 
             <label className="vyb-post-actions-field">
-              <span>{mode === "quote" ? "Your caption" : mode === "edit" ? "Caption" : "Reason"}</span>
+              <span>{mode === "edit" ? "Caption" : "Reason"}</span>
               <textarea
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
-                placeholder={mode === "quote" ? "Write your quote..." : mode === "edit" ? "Update your caption..." : "Explain the issue..."}
+                placeholder={mode === "edit" ? "Update your caption..." : "Explain the issue..."}
                 rows={4}
                 disabled={isBusy}
               />
@@ -162,11 +149,6 @@ export function SocialPostActionSheet({
                 type="button"
                 className="vyb-campus-compose-primary"
                 onClick={() => {
-                  if (mode === "quote") {
-                    onQuoteRepost(draft);
-                    return;
-                  }
-
                   if (mode === "edit") {
                     const nextBody = draft.trim();
                     onEdit({
@@ -184,7 +166,7 @@ export function SocialPostActionSheet({
                   (mode === "edit" ? draft.trim().length < 2 : draft.trim().length < 3)
                 }
               >
-                {isBusy ? "Working..." : mode === "quote" ? "Repost now" : mode === "edit" ? "Save changes" : "Submit report"}
+                {isBusy ? "Working..." : mode === "edit" ? "Save changes" : "Submit report"}
               </button>
             </div>
           </>

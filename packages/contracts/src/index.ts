@@ -4,7 +4,7 @@ export type ResourceType = "notes" | "pyq" | "guide";
 export type PostKind = "text" | "image" | "video";
 export type PublishStatus = "draft" | "pending" | "published" | "removed";
 export type FeedPlacement = "feed" | "vibe";
-export type ReactionKind = "fire" | "support" | "like";
+export type ReactionKind = "fire" | "support" | "like" | "love" | "insight" | "funny";
 export type StoryReactionKind = "like";
 
 export interface ServiceHealth {
@@ -187,6 +187,8 @@ export interface FeedCard {
   status: PublishStatus;
   reactions: number;
   comments: number;
+  savedCount: number;
+  isSaved: boolean;
   viewerReactionType: ReactionKind | null;
   createdAt: string;
   author: {
@@ -405,6 +407,12 @@ export interface RepostPostRequest {
 
 export interface RepostPostResponse {
   item: FeedCard;
+}
+
+export interface TogglePostSaveResponse {
+  postId: string;
+  savedCount: number;
+  isSaved: boolean;
 }
 
 export interface CreateReportRequest {

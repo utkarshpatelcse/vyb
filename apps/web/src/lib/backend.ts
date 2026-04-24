@@ -46,6 +46,7 @@ import type {
   StoryReactionResponse,
   ToggleMarketSaveRequest,
   ToggleMarketSaveResponse,
+  TogglePostSaveResponse,
   SendChatMessageRequest,
   SendChatMessageResponse,
   UploadEncryptedChatAttachmentResponse,
@@ -514,6 +515,15 @@ export async function getPostLikes(viewer: DevSession, postId: string, limit = 5
 
 export async function repostCampusPost(viewer: DevSession, postId: string, payload: RepostPostRequest) {
   return postBackendJson<RepostPostResponse>(`/v1/posts/${encodeURIComponent(postId)}/repost`, payload, viewer);
+}
+
+export async function toggleCampusPostSave(viewer: DevSession, postId: string) {
+  return mutateBackendJson<TogglePostSaveResponse>(
+    `/v1/posts/${encodeURIComponent(postId)}/save`,
+    "PUT",
+    {},
+    viewer
+  );
 }
 
 export async function deleteCampusPost(viewer: DevSession, postId: string) {

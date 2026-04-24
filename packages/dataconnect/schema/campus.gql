@@ -73,6 +73,15 @@ type CommunityMembership
   deletedAt: Timestamp @col(name: "deleted_at")
 }
 
+type CampusEventStore
+  @table(name: "campus_event_stores", singular: "campusEventStore", plural: "campusEventStores", key: ["id"]) {
+  id: UUID!
+  tenant: Tenant!
+  eventsJson: String! @col(name: "events_json")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+}
+
 extend type TenantDomain {
   tenantId: UUID!
 }
@@ -90,4 +99,8 @@ extend type Community {
 extend type CommunityMembership {
   communityId: UUID!
   membershipId: UUID!
+}
+
+extend type CampusEventStore {
+  tenantId: UUID!
 }
