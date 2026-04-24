@@ -1833,6 +1833,23 @@ export function CampusProfileShell({
                 </div>
               </section>
 
+              <section className="vyb-insta-settings-section">
+                <h3>Chat Privacy</h3>
+                <div className="vyb-insta-settings-link-card-wrap">
+                  <Link
+                    href="/profile/settings/chat-privacy"
+                    className="vyb-insta-settings-link-card"
+                    onClick={() => setSettingsOpen(false)}
+                  >
+                    <div>
+                      <strong>Privacy & Chat Identity</strong>
+                      <span>Open the dedicated E2EE module for secure session status, PIN backup, recovery phrase access, and device restore.</span>
+                    </div>
+                    <span className="vyb-insta-settings-link-arrow" aria-hidden="true">Open</span>
+                  </Link>
+                </div>
+              </section>
+
               {/* SUPPORT & LOGOUT */}
               <section className="vyb-insta-settings-section borderless">
                 <div className="vyb-insta-support-actions">

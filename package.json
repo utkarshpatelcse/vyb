@@ -13,6 +13,9 @@
     "dc:deploy": "node scripts/run-firebase-cli.mjs deploy --only dataconnect",
     "dc:deploy:other-device": "powershell -ExecutionPolicy Bypass -File scripts/deploy-dataconnect-other-device.ps1",
     "bootstrap:tenant": "node scripts/bootstrap-dataconnect.mjs",
+    "chat:janitor": "node scripts/chat-janitor.mjs",
+    "chat:reset": "node scripts/chat-reset.mjs",
+    "chat:security-validate": "node scripts/validate-chat-security.mjs",
     "build": "turbo run build",
     "check": "turbo run check"
   },

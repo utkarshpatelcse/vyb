@@ -1,10 +1,18 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { createChatConversation, getChatInbox } from "../../../src/lib/backend";
+import { createChatConversation, getChatInbox, isBackendRequestError } from "../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../src/lib/dev-session";
 
 function buildError(status: number, code: string, message: string) {
   return NextResponse.json({ error: { code, message } }, { status });
+}
+
+function buildChatError(error: unknown, fallbackCode: string, fallbackMessage: string) {
+  if (isBackendRequestError(error)) {
+    return buildError(error.statusCode, error.code, error.message);
+  }
+
+  return buildError(500, fallbackCode, error instanceof Error ? error.message : fallbackMessage);
 }
 
 export async function GET() {
@@ -21,7 +29,7 @@ export async function GET() {
       }
     });
   } catch (error) {
-    return buildError(500, "CHAT_INBOX_FAILED", error instanceof Error ? error.message : "We could not load chats.");
+    return buildChatError(error, "CHAT_INBOX_FAILED", "We could not load chats.");
   }
 }
 
@@ -40,6 +48,6 @@ export async function POST(request: Request) {
   try {
     return NextResponse.json(await createChatConversation(viewer, payload));
   } catch (error) {
-    return buildError(500, "CHAT_CREATE_FAILED", error instanceof Error ? error.message : "We could not open this chat.");
+    return buildChatError(error, "CHAT_CREATE_FAILED", "We could not open this chat.");
   }
 }

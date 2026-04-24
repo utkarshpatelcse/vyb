@@ -21,6 +21,7 @@ import type {
   DeletePostResponse,
   FeedListResponse,
   GetChatKeyBackupResponse,
+  GetChatKeyBackupPinAttemptResponse,
   ListCoursesResponse,
   ListResourcesResponse,
   MarkChatReadResponse,
@@ -50,6 +51,8 @@ import type {
   SendChatMessageRequest,
   SendChatMessageResponse,
   UploadEncryptedChatAttachmentResponse,
+  UpdateChatMessageLifecycleRequest,
+  UpdateChatMessageLifecycleResponse,
   UpdateMarketListingRequest,
   UpdateMarketListingResponse,
   UpdateMarketRequestRequest,
@@ -60,6 +63,8 @@ import type {
   UpsertChatKeyBackupResponse,
   UpsertChatIdentityRequest,
   UpsertChatIdentityResponse,
+  RecordChatKeyBackupPinAttemptResponse,
+  ClearChatKeyBackupPinAttemptResponse,
   UpdateUsernameRequest,
   UpdateUsernameResponse,
   UserSearchResponse
@@ -78,6 +83,18 @@ export type UploadedSocialMediaAsset = {
 const API_BASE_URL =
   process.env.VYB_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 const INTERNAL_API_KEY = process.env.VYB_INTERNAL_API_KEY ?? "local-vyb-internal-key";
+
+export class BackendRequestError extends Error {
+  statusCode: number;
+  code: string;
+
+  constructor(statusCode: number, code: string, message: string) {
+    super(message);
+    this.name = "BackendRequestError";
+    this.statusCode = statusCode;
+    this.code = code;
+  }
+}
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -102,6 +119,32 @@ function buildBackendHeaders(viewer?: DevSession): Record<string, string> {
 
 async function readResponseJson<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
+}
+
+async function buildBackendRequestError(response: Response, path: string) {
+  const fallbackMessage = `Backend request failed for ${path} with ${response.status}`;
+
+  try {
+    const payload = (await response.json()) as {
+      error?: {
+        code?: string;
+        message?: string;
+      };
+    };
+
+    return new BackendRequestError(
+      response.status,
+      payload?.error?.code?.trim() || "BACKEND_REQUEST_FAILED",
+      payload?.error?.message?.trim() || fallbackMessage
+    );
+  } catch {
+    const text = await response.text().catch(() => "");
+    return new BackendRequestError(response.status, "BACKEND_REQUEST_FAILED", text || fallbackMessage);
+  }
+}
+
+export function isBackendRequestError(error: unknown): error is BackendRequestError {
+  return error instanceof BackendRequestError;
 }
 
 async function requestBackendResponse(
@@ -174,7 +217,7 @@ export async function fetchBackendJson<T>(
   });
 
   if (!response.ok) {
-    throw new Error(`Backend request failed for ${path} with ${response.status}`);
+    throw await buildBackendRequestError(response, path);
   }
 
   return readResponseJson<T>(response);
@@ -199,8 +242,7 @@ export async function postBackendJson<TResponse>(
       });
 
       if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || `Backend request failed for ${path} with ${response.status}`);
+        throw await buildBackendRequestError(response, path);
       }
 
       return readResponseJson<TResponse>(response);
@@ -232,8 +274,7 @@ export async function mutateBackendJson<TResponse>(
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `Backend request failed for ${path} with ${response.status}`);
+    throw await buildBackendRequestError(response, path);
   }
 
   return readResponseJson<TResponse>(response);
@@ -412,8 +453,7 @@ export async function updateViewerUsername(viewer: DevSession, payload: UpdateUs
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `Backend request failed for /v1/profile/username with ${response.status}`);
+    throw await buildBackendRequestError(response, "/v1/profile/username");
   }
 
   return readResponseJson<UpdateUsernameResponse>(response);
@@ -678,6 +718,18 @@ export async function upsertChatKeyBackup(viewer: DevSession, payload: UpsertCha
   return mutateBackendJson<UpsertChatKeyBackupResponse>("/v1/chats/key-backup", "PUT", payload, viewer);
 }
 
+export async function getChatKeyBackupPinAttempts(viewer: DevSession) {
+  return fetchBackendJson<GetChatKeyBackupPinAttemptResponse>("/v1/chats/key-backup/attempts", viewer);
+}
+
+export async function recordChatKeyBackupPinAttempt(viewer: DevSession) {
+  return mutateBackendJson<RecordChatKeyBackupPinAttemptResponse>("/v1/chats/key-backup/attempts", "PUT", {}, viewer);
+}
+
+export async function clearChatKeyBackupPinAttempts(viewer: DevSession) {
+  return mutateBackendJson<ClearChatKeyBackupPinAttemptResponse>("/v1/chats/key-backup/attempts", "DELETE", {}, viewer);
+}
+
 export async function markChatRead(viewer: DevSession, conversationId: string, messageId: string) {
   return mutateBackendJson<MarkChatReadResponse>(
     `/v1/chats/${encodeURIComponent(conversationId)}/read`,
@@ -700,6 +752,19 @@ export async function deleteChatMessage(viewer: DevSession, messageId: string, p
   return mutateBackendJson<DeleteChatMessageResponse>(
     `/v1/chats/messages/${encodeURIComponent(messageId)}`,
     "DELETE",
+    payload,
+    viewer
+  );
+}
+
+export async function updateChatMessageLifecycle(
+  viewer: DevSession,
+  messageId: string,
+  payload: UpdateChatMessageLifecycleRequest
+) {
+  return mutateBackendJson<UpdateChatMessageLifecycleResponse>(
+    `/v1/chats/messages/${encodeURIComponent(messageId)}/lifecycle`,
+    "PUT",
     payload,
     viewer
   );

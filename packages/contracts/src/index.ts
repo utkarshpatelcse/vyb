@@ -510,8 +510,10 @@ export interface ActivityListResponse {
 }
 
 export type ChatConversationKind = "direct";
-export type ChatMessageKind = "text" | "image" | "vibe_card" | "deal_card" | "system";
+export type ChatMessageKind = "text" | "image" | "vibe_card" | "event_card" | "deal_card" | "profile_card" | "system";
 export type ChatSeedType = "deal" | "vibe";
+export type ChatMessageTtlKey = "instant" | "1h" | "24h" | "7d" | "30d" | "90d";
+export type ChatShareCardKind = Extract<ChatMessageKind, "vibe_card" | "event_card" | "deal_card" | "profile_card">;
 
 export interface ChatIdentitySummary {
   id: string;
@@ -544,15 +546,36 @@ export interface ChatEncryptedAttachment {
   height?: number | null;
 }
 
-export interface ChatVibeCardPayload {
+export interface ChatCardPayloadBase {
+  version?: number;
+  type?: ChatShareCardKind;
+  caption?: string | null;
+}
+
+export interface ChatVibeCardPayload extends ChatCardPayloadBase {
   postId: string;
   title: string;
   body: string;
   mediaUrl: string | null;
+  thumbnailUrl?: string | null;
   authorUsername: string;
+  authorDisplayName?: string | null;
 }
 
-export interface ChatDealCardPayload {
+export interface ChatEventCardPayload extends ChatCardPayloadBase {
+  eventId: string;
+  title: string;
+  club: string;
+  location: string;
+  startsAt: string;
+  passLabel: string;
+  responseMode: CampusEventResponseMode;
+  imageUrl?: string | null;
+  description?: string | null;
+  hostUsername?: string | null;
+}
+
+export interface ChatDealCardPayload extends ChatCardPayloadBase {
   targetType: "listing" | "request";
   targetId: string;
   title: string;
@@ -561,7 +584,26 @@ export interface ChatDealCardPayload {
   campusSpot: string;
   counterpartUsername: string;
   counterpartDisplayName: string;
+  imageUrl?: string | null;
+  description?: string | null;
 }
+
+export interface ChatProfileCardPayload extends ChatCardPayloadBase {
+  userId: string;
+  username: string;
+  displayName: string;
+  course: string;
+  stream: string;
+  bio?: string | null;
+  avatarUrl?: string | null;
+  collegeName?: string | null;
+}
+
+export type ChatShareCardPayload =
+  | ChatVibeCardPayload
+  | ChatEventCardPayload
+  | ChatDealCardPayload
+  | ChatProfileCardPayload;
 
 export interface ChatMessageReactionItem {
   membershipId: string;
@@ -582,6 +624,9 @@ export interface ChatMessageRecord {
   replyToMessageId: string | null;
   attachment: ChatEncryptedAttachment | null;
   createdAt: string;
+  expiresAt: string | null;
+  isStarred: boolean;
+  isSaved: boolean;
   reactions: ChatMessageReactionItem[];
 }
 
@@ -644,6 +689,7 @@ export interface SendChatMessageRequest {
   cipherAlgorithm: string;
   replyToMessageId?: string | null;
   attachment?: ChatEncryptedAttachment | null;
+  durationKey?: ChatMessageTtlKey;
 }
 
 export interface SendChatMessageResponse {
@@ -694,6 +740,17 @@ export interface DeleteChatMessageResponse {
   conversationPreview: ChatConversationPreview;
 }
 
+export interface UpdateChatMessageLifecycleRequest {
+  durationKey?: ChatMessageTtlKey;
+  isStarred?: boolean;
+  isSaved?: boolean;
+}
+
+export interface UpdateChatMessageLifecycleResponse {
+  item: ChatMessageRecord;
+  conversationPreview: ChatConversationPreview;
+}
+
 export interface UpsertChatIdentityRequest {
   publicKey: string;
   algorithm: string;
@@ -715,6 +772,17 @@ export interface ChatKeyBackupRecord {
   iv: string;
   iterations: number;
   updatedAt: string;
+  credentialType?: "legacy_recovery_code" | "pin_and_phrase";
+  pinWrappedPrivateKey?: string;
+  pinSalt?: string;
+  pinIv?: string;
+  pinIterations?: number;
+  recoveryWrappedPrivateKey?: string;
+  recoverySalt?: string;
+  recoveryIv?: string;
+  recoveryIterations?: number;
+  pinWrappedRecoveryPhrase?: string;
+  pinRecoveryPhraseIv?: string;
 }
 
 export interface GetChatKeyBackupResponse {
@@ -725,6 +793,27 @@ export interface UpsertChatKeyBackupRequest extends ChatKeyBackupRecord {}
 
 export interface UpsertChatKeyBackupResponse {
   backup: ChatKeyBackupRecord;
+}
+
+export interface ChatServerPinAttemptState {
+  attempts: number;
+  lockedUntil: string | null;
+  updatedAt: string;
+  maxAttempts: number;
+  remainingAttempts: number;
+  isLocked: boolean;
+}
+
+export interface GetChatKeyBackupPinAttemptResponse {
+  attemptState: ChatServerPinAttemptState;
+}
+
+export interface RecordChatKeyBackupPinAttemptResponse {
+  attemptState: ChatServerPinAttemptState;
+}
+
+export interface ClearChatKeyBackupPinAttemptResponse {
+  attemptState: ChatServerPinAttemptState;
 }
 
 export interface UploadEncryptedChatAttachmentRequest {

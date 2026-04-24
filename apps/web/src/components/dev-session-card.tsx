@@ -15,8 +15,10 @@ import {
   signInWithRedirect,
   signOut,
   updateProfile,
+  type Auth,
   type User
 } from "firebase/auth";
+import { clearChatVault } from "../lib/chat-e2ee";
 import { createGoogleProvider, getFirebaseClientAuth, isFirebaseClientConfigured } from "../lib/firebase-client";
 import {
   getCollegeEmailMessage,
@@ -296,6 +298,11 @@ function clearGoogleRedirectIntent() {
   window.sessionStorage.removeItem(GOOGLE_REDIRECT_INTENT_KEY);
 }
 
+async function secureFirebaseSignOut(auth: Auth) {
+  await clearChatVault();
+  await signOut(auth);
+}
+
 async function waitForResolvedFirebaseUser(auth: AuthWithStateReady, timeoutMs = 3000) {
   if (typeof window === "undefined") {
     return auth.currentUser;
@@ -516,7 +523,7 @@ export function DevSessionCard({
 
         if (usesPasswordProvider && !activeUser.emailVerified) {
           await sendEmailVerification(activeUser).catch(() => undefined);
-          await signOut(auth).catch(() => undefined);
+          await secureFirebaseSignOut(auth).catch(() => undefined);
           clearGoogleRedirectIntent();
           safeSetFeedback(
             buildFeedback({
@@ -547,7 +554,7 @@ export function DevSessionCard({
       } catch (error) {
         if (isFirebaseClientConfigured()) {
           const auth = await getFirebaseClientAuth();
-          await signOut(auth).catch(() => undefined);
+          await secureFirebaseSignOut(auth).catch(() => undefined);
         }
         clearGoogleRedirectIntent();
 
@@ -706,7 +713,7 @@ export function DevSessionCard({
             code: "EMAIL_NOT_VERIFIED"
           })
         );
-        await signOut(auth);
+        await secureFirebaseSignOut(auth);
         return;
       }
 
@@ -726,7 +733,7 @@ export function DevSessionCard({
         code === "EMAIL_NOT_VERIFIED"
       ) {
         const auth = await getFirebaseClientAuth();
-        await signOut(auth).catch(() => undefined);
+        await secureFirebaseSignOut(auth).catch(() => undefined);
       }
 
       if (isExpectedAuthIssue(code)) {
@@ -809,7 +816,7 @@ export function DevSessionCard({
 
       if (isFirebaseClientConfigured()) {
         const auth = await getFirebaseClientAuth();
-        await signOut(auth).catch(() => undefined);
+        await secureFirebaseSignOut(auth).catch(() => undefined);
       }
 
       if (code === "auth/popup-blocked" || code === "auth/operation-not-supported-in-this-environment") {
@@ -914,7 +921,7 @@ export function DevSessionCard({
     try {
       if (isFirebaseClientConfigured()) {
         const auth = await getFirebaseClientAuth();
-        await signOut(auth).catch(() => undefined);
+        await secureFirebaseSignOut(auth);
       }
 
       await fetch("/api/auth/session", {
@@ -925,6 +932,8 @@ export function DevSessionCard({
       setPassword("");
       setConfirmPassword("");
       router.refresh();
+    } catch (error) {
+      setFeedback(buildErrorFeedback(error, "Sign out blocked", "Secure chat vault could not be wiped. Close other VYB tabs and try again."));
     } finally {
       setIsBusy(false);
     }
@@ -1097,3 +1106,7 @@ export function DevSessionCard({
     </div>
   );
 }
+
+
+
+

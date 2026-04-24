@@ -17,6 +17,17 @@ const END_TO_END_CHAT_ALGORITHM = "ECDH-P256/AES-GCM";
 const CHAT_KEY_BACKUP_WRAPPING_ALGORITHM = "PBKDF2-SHA-256/AES-GCM";
 const CHAT_DELETE_FOR_EVERYONE_WINDOW_MS = 30 * 60 * 1000;
 const CHAT_HIDDEN_MESSAGE_LIMIT = 2000;
+const CHAT_KEY_BACKUP_PIN_MAX_ATTEMPTS = 5;
+const CHAT_KEY_BACKUP_PIN_LOCKOUT_MS = 60 * 60 * 1000;
+const CHAT_DEFAULT_MESSAGE_TTL_KEY = "30d";
+const CHAT_MESSAGE_TTL_OPTIONS = new Map([
+  ["instant", 0],
+  ["1h", 60 * 60 * 1000],
+  ["24h", 24 * 60 * 60 * 1000],
+  ["7d", 7 * 24 * 60 * 60 * 1000],
+  ["30d", 30 * 24 * 60 * 60 * 1000],
+  ["90d", 90 * 24 * 60 * 60 * 1000]
+]);
 const CHAT_DELETED_MESSAGE_ALGORITHM = "deleted";
 const CHAT_DELETED_MESSAGE_MARKER = "__vyb_chat_deleted__";
 const CHAT_ALLOWED_REACTION_EMOJIS = new Set([
@@ -36,6 +47,26 @@ const CHAT_ALLOWED_REACTION_EMOJIS = new Set([
 const CHAT_REACTION_EMOJIS = new Set(["❤️", "🔥", "😂", "😍", "👍", "😮", "😢", "👏"]);
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
 const MAX_ENCRYPTED_CHAT_IMAGE_BYTES = 12 * 1024 * 1024;
+const CHAT_ATTACHMENT_STORAGE_PATH_PATTERN =
+  /^chat\/([^/]+)\/users\/([^/]+)\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.bin$/iu;
+
+class ChatSecurityError extends Error {
+  constructor(statusCode, code, message) {
+    super(message);
+    this.name = "ChatSecurityError";
+    this.statusCode = statusCode;
+    this.code = code;
+  }
+}
+
+export function getChatErrorResponse(error, fallbackCode = "CHAT_FAILED") {
+  const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 502;
+  return {
+    statusCode,
+    code: typeof error?.code === "string" ? error.code : fallbackCode,
+    message: error instanceof Error ? error.message : "Chat service is unavailable right now."
+  };
+}
 
 const GET_CHAT_IDENTITY_BY_USER_QUERY = `
   query GetChatIdentityByUser($tenantId: UUID!, $userId: UUID!) {
@@ -177,6 +208,9 @@ const LIST_CHAT_MESSAGES_BY_CONVERSATION_QUERY = `
       attachmentWidth
       attachmentHeight
       attachmentDurationMs
+      expiresAt
+      isStarred
+      isSaved
       createdAt
       updatedAt
     }
@@ -210,6 +244,9 @@ const GET_CHAT_MESSAGE_BY_ID_QUERY = `
       attachmentWidth
       attachmentHeight
       attachmentDurationMs
+      expiresAt
+      isStarred
+      isSaved
       createdAt
       updatedAt
     }
@@ -371,6 +408,8 @@ const CREATE_CHAT_MESSAGE_MUTATION = `
     $attachmentWidth: Int
     $attachmentHeight: Int
     $attachmentDurationMs: Int
+    $expiresAt: Timestamp
+    $isSaved: Boolean!
   ) {
     chatMessage_insert(
       data: {
@@ -392,7 +431,90 @@ const CREATE_CHAT_MESSAGE_MUTATION = `
         attachmentWidth: $attachmentWidth
         attachmentHeight: $attachmentHeight
         attachmentDurationMs: $attachmentDurationMs
+        expiresAt: $expiresAt
+        isSaved: $isSaved
+        isStarred: false
       }
+    ) {
+      id
+    }
+  }
+`;
+
+const LIST_EXPIRED_CHAT_MESSAGES_QUERY = `
+  query ListExpiredChatMessages($now: Timestamp!, $limit: Int!) {
+    chatMessages(
+      where: {
+        deletedAt: { isNull: true }
+        expiresAt: { lte: $now }
+      }
+      orderBy: [{ expiresAt: ASC }]
+      limit: $limit
+    ) {
+      id
+      tenantId
+      conversationId
+      senderUserId
+      attachmentStoragePath
+    }
+  }
+`;
+
+const LIST_ACTIVE_CHAT_REACTIONS_BY_TENANT_QUERY = `
+  query ListActiveChatReactionsByTenant($tenantId: UUID!, $limit: Int!) {
+    chatMessageReactions(
+      where: {
+        tenantId: { eq: $tenantId }
+        deletedAt: { isNull: true }
+      }
+      orderBy: [{ createdAt: ASC }]
+      limit: $limit
+    ) {
+      id
+    }
+  }
+`;
+
+const LIST_ACTIVE_CHAT_MESSAGES_BY_TENANT_QUERY = `
+  query ListActiveChatMessagesByTenant($tenantId: UUID!, $limit: Int!) {
+    chatMessages(
+      where: {
+        tenantId: { eq: $tenantId }
+        deletedAt: { isNull: true }
+      }
+      orderBy: [{ createdAt: ASC }]
+      limit: $limit
+    ) {
+      id
+      attachmentStoragePath
+    }
+  }
+`;
+
+const LIST_ACTIVE_CHAT_PARTICIPANTS_BY_TENANT_QUERY = `
+  query ListActiveChatParticipantsByTenant($tenantId: UUID!, $limit: Int!) {
+    chatParticipants(
+      where: {
+        tenantId: { eq: $tenantId }
+        deletedAt: { isNull: true }
+      }
+      orderBy: [{ createdAt: ASC }]
+      limit: $limit
+    ) {
+      id
+    }
+  }
+`;
+
+const LIST_ACTIVE_CHAT_CONVERSATIONS_BY_TENANT_QUERY = `
+  query ListActiveChatConversationsByTenant($tenantId: UUID!, $limit: Int!) {
+    chatConversations(
+      where: {
+        tenantId: { eq: $tenantId }
+        deletedAt: { isNull: true }
+      }
+      orderBy: [{ createdAt: ASC }]
+      limit: $limit
     ) {
       id
     }
@@ -457,6 +579,41 @@ const MARK_CHAT_MESSAGE_DELETED_FOR_EVERYONE_MUTATION = `
         attachmentWidth: null
         attachmentHeight: null
         attachmentDurationMs: null
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
+
+const SOFT_DELETE_CHAT_MESSAGE_MUTATION = `
+  mutation SoftDeleteChatMessage($id: UUID!) {
+    chatMessage_update(
+      key: { id: $id }
+      data: {
+        deletedAt_expr: "request.time"
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
+
+const UPDATE_CHAT_MESSAGE_LIFECYCLE_MUTATION = `
+  mutation UpdateChatMessageLifecycle(
+    $id: UUID!
+    $expiresAt: Timestamp
+    $isStarred: Boolean!
+    $isSaved: Boolean!
+  ) {
+    chatMessage_update(
+      key: { id: $id }
+      data: {
+        expiresAt: $expiresAt
+        isStarred: $isStarred
+        isSaved: $isSaved
         updatedAt_expr: "request.time"
       }
     ) {
@@ -548,6 +705,36 @@ const UPDATE_CHAT_CONVERSATION_LAST_MESSAGE_CLEAR_MUTATION = `
   }
 `;
 
+const SOFT_DELETE_CHAT_PARTICIPANT_MUTATION = `
+  mutation SoftDeleteChatParticipant($id: UUID!) {
+    chatParticipant_update(
+      key: { id: $id }
+      data: {
+        deletedAt_expr: "request.time"
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
+
+const SOFT_DELETE_CHAT_CONVERSATION_MUTATION = `
+  mutation SoftDeleteChatConversation($id: UUID!) {
+    chatConversation_update(
+      key: { id: $id }
+      data: {
+        lastMessageId: null
+        lastMessageAt: null
+        deletedAt_expr: "request.time"
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
+
 function getChatDc() {
   return getFirebaseDataConnect(CHAT_CONNECTOR_CONFIG);
 }
@@ -563,6 +750,58 @@ function toIsoString(value) {
 
 function normalizeString(value) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function normalizeBoolean(value) {
+  return value === true;
+}
+
+function normalizeTimestamp(value) {
+  const normalized = normalizeString(value);
+  if (!normalized) {
+    return null;
+  }
+
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function resolveDurationKey(value, fallbackKey = CHAT_DEFAULT_MESSAGE_TTL_KEY) {
+  const durationKey = normalizeString(value) ?? fallbackKey;
+  if (!CHAT_MESSAGE_TTL_OPTIONS.has(durationKey)) {
+    throw new ChatSecurityError(
+      400,
+      "INVALID_TTL",
+      `Choose a supported expiry timer: ${[...CHAT_MESSAGE_TTL_OPTIONS.keys()].join(", ")}.`
+    );
+  }
+
+  return durationKey;
+}
+
+function assertNoClientExpiryTimestamp(payload) {
+  if (Object.prototype.hasOwnProperty.call(payload ?? {}, "expiresAt")) {
+    throw new ChatSecurityError(400, "CLIENT_EXPIRY_FORBIDDEN", "Send durationKey instead of a client-side expiresAt timestamp.");
+  }
+}
+
+function buildExpiryFromDurationKey(durationKey, now = Date.now()) {
+  const durationMs = CHAT_MESSAGE_TTL_OPTIONS.get(durationKey);
+  return new Date(now + durationMs).toISOString();
+}
+
+function resolveMessageExpiry(payload) {
+  assertNoClientExpiryTimestamp(payload);
+  return buildExpiryFromDurationKey(resolveDurationKey(payload?.durationKey));
+}
+
+function resolveLifecycleExpiry(payload, currentMessage) {
+  assertNoClientExpiryTimestamp(payload);
+  if (!Object.prototype.hasOwnProperty.call(payload ?? {}, "durationKey")) {
+    return currentMessage.expiresAt ? toIsoString(currentMessage.expiresAt) : buildExpiryFromDurationKey(CHAT_DEFAULT_MESSAGE_TTL_KEY);
+  }
+
+  return buildExpiryFromDurationKey(resolveDurationKey(payload.durationKey, null));
 }
 
 function buildChatIdentityKey(tenantId, userId) {
@@ -589,8 +828,130 @@ function buildChatHiddenMessageStoragePath(tenantId, userId) {
   return `chat/${tenantId}/users/${userId}/hidden-messages.json`;
 }
 
+function buildChatKeyBackupPinAttemptStoragePath(tenantId, userId) {
+  return `chat/${tenantId}/users/${userId}/e2ee-pin-attempts.json`;
+}
+
 function buildEncryptedAttachmentDownloadUrl(bucketName, storagePath, token) {
   return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
+}
+
+function parseChatAttachmentStoragePath(storagePath) {
+  const normalized = normalizeString(storagePath);
+  if (!normalized) {
+    return null;
+  }
+
+  const match = normalized.match(CHAT_ATTACHMENT_STORAGE_PATH_PATTERN);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    storagePath: normalized,
+    tenantId: match[1],
+    userId: match[2],
+    assetId: match[3]
+  };
+}
+
+async function runInBatches(items, batchSize, handler) {
+  for (let index = 0; index < items.length; index += batchSize) {
+    const batch = items.slice(index, index + batchSize);
+    await Promise.all(batch.map((item) => handler(item)));
+  }
+}
+
+function assertVerifiedChatAttachmentPath(storagePath, { tenantId, userId } = {}) {
+  const parsed = parseChatAttachmentStoragePath(storagePath);
+  if (!parsed) {
+    throw new ChatSecurityError(400, "INVALID_ATTACHMENT_PATH", "Chat attachment storage path is not server-issued.");
+  }
+
+  if (tenantId && parsed.tenantId !== tenantId) {
+    throw new ChatSecurityError(403, "ATTACHMENT_TENANT_MISMATCH", "This attachment does not belong to your campus.");
+  }
+
+  if (userId && parsed.userId !== userId) {
+    throw new ChatSecurityError(403, "ATTACHMENT_OWNER_MISMATCH", "This attachment does not belong to your account.");
+  }
+
+  return parsed;
+}
+
+function normalizeDimension(value) {
+  return Number.isFinite(Number(value)) ? Math.max(1, Math.round(Number(value))) : null;
+}
+
+async function verifyAttachmentOwnership(viewer, attachment, messageKind) {
+  if (!attachment) {
+    if (messageKind === "image") {
+      throw new ChatSecurityError(400, "IMAGE_ATTACHMENT_REQUIRED", "Image chat messages require a verified encrypted attachment.");
+    }
+
+    return null;
+  }
+
+  if (messageKind !== "image") {
+    throw new ChatSecurityError(400, "ATTACHMENT_KIND_MISMATCH", "Only image chat messages can include encrypted attachments.");
+  }
+
+  const storagePath = normalizeString(attachment.storagePath);
+  const parsed = assertVerifiedChatAttachmentPath(storagePath, {
+    tenantId: viewer.tenantId,
+    userId: viewer.userId
+  });
+  const file = getChatBucket().file(parsed.storagePath);
+  const [exists] = await file.exists();
+  if (!exists) {
+    throw new ChatSecurityError(404, "ATTACHMENT_NOT_FOUND", "Upload the encrypted attachment before sending the message.");
+  }
+
+  const [metadata] = await file.getMetadata();
+  const customMetadata = metadata?.metadata ?? {};
+  if (customMetadata.purpose && customMetadata.purpose !== "chat_attachment_v1") {
+    throw new ChatSecurityError(403, "ATTACHMENT_PURPOSE_MISMATCH", "This storage object is not a chat attachment.");
+  }
+
+  if (customMetadata.ownerTenantId && customMetadata.ownerTenantId !== viewer.tenantId) {
+    throw new ChatSecurityError(403, "ATTACHMENT_TENANT_MISMATCH", "This attachment does not belong to your campus.");
+  }
+
+  if (customMetadata.ownerUserId && customMetadata.ownerUserId !== viewer.userId) {
+    throw new ChatSecurityError(403, "ATTACHMENT_OWNER_MISMATCH", "This attachment does not belong to your account.");
+  }
+
+  if (customMetadata.assetId && customMetadata.assetId !== parsed.assetId) {
+    throw new ChatSecurityError(403, "ATTACHMENT_ASSET_MISMATCH", "This attachment metadata does not match its storage path.");
+  }
+
+  const token = normalizeString(customMetadata.firebaseStorageDownloadTokens)?.split(",")[0]?.trim();
+  const mimeType = normalizeString(customMetadata.originalMimeType) ?? normalizeString(attachment.mimeType);
+  if (!token || !mimeType || !IMAGE_MIME_TYPES.has(mimeType)) {
+    throw new ChatSecurityError(400, "INVALID_ATTACHMENT_METADATA", "Encrypted attachment metadata is incomplete.");
+  }
+
+  return {
+    kind: "image",
+    url: buildEncryptedAttachmentDownloadUrl(getChatBucket().name, parsed.storagePath, token),
+    storagePath: parsed.storagePath,
+    mimeType,
+    sizeBytes: Number(metadata.size ?? attachment.sizeBytes ?? 0),
+    width: normalizeDimension(attachment.width),
+    height: normalizeDimension(attachment.height)
+  };
+}
+
+function canJanitorDeleteAttachment(message) {
+  try {
+    assertVerifiedChatAttachmentPath(message.attachmentStoragePath, {
+      tenantId: message.tenantId,
+      userId: message.senderUserId
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function normalizeEmoji(value) {
@@ -616,6 +977,22 @@ function normalizeHiddenMessageState(payload) {
   };
 }
 
+function normalizeChatKeyBackupPinAttemptState(payload) {
+  const now = Date.now();
+  const attempts = Number.isFinite(Number(payload?.attempts)) ? Math.max(0, Math.round(Number(payload.attempts))) : 0;
+  const lockedUntil = payload?.lockedUntil ? toIsoString(payload.lockedUntil) : null;
+  const isLocked = Boolean(lockedUntil && new Date(lockedUntil).getTime() > now);
+
+  return {
+    attempts: isLocked ? attempts : 0,
+    lockedUntil: isLocked ? lockedUntil : null,
+    updatedAt: toIsoString(payload?.updatedAt),
+    maxAttempts: CHAT_KEY_BACKUP_PIN_MAX_ATTEMPTS,
+    remainingAttempts: isLocked ? 0 : Math.max(0, CHAT_KEY_BACKUP_PIN_MAX_ATTEMPTS - attempts),
+    isLocked
+  };
+}
+
 function normalizeChatKeyBackup(payload) {
   if (!payload || typeof payload !== "object") {
     return null;
@@ -630,6 +1007,12 @@ function normalizeChatKeyBackup(payload) {
   const salt = normalizeString(payload.salt);
   const iv = normalizeString(payload.iv);
   const iterations = Number.isFinite(Number(payload.iterations)) ? Math.max(100000, Math.round(Number(payload.iterations))) : 250000;
+  const credentialType =
+    payload.credentialType === "pin_and_phrase" || payload.credentialType === "legacy_recovery_code"
+      ? payload.credentialType
+      : payload.version >= 2
+        ? "pin_and_phrase"
+        : "legacy_recovery_code";
 
   if (!publicKey || !wrappedPrivateKey || !salt || !iv) {
     return null;
@@ -645,7 +1028,20 @@ function normalizeChatKeyBackup(payload) {
     salt,
     iv,
     iterations,
-    updatedAt: toIsoString(payload.updatedAt)
+    updatedAt: toIsoString(payload.updatedAt),
+    credentialType,
+    pinWrappedPrivateKey: normalizeString(payload.pinWrappedPrivateKey),
+    pinSalt: normalizeString(payload.pinSalt),
+    pinIv: normalizeString(payload.pinIv),
+    pinIterations: Number.isFinite(Number(payload.pinIterations)) ? Math.max(100000, Math.round(Number(payload.pinIterations))) : null,
+    recoveryWrappedPrivateKey: normalizeString(payload.recoveryWrappedPrivateKey),
+    recoverySalt: normalizeString(payload.recoverySalt),
+    recoveryIv: normalizeString(payload.recoveryIv),
+    recoveryIterations: Number.isFinite(Number(payload.recoveryIterations))
+      ? Math.max(100000, Math.round(Number(payload.recoveryIterations)))
+      : null,
+    pinWrappedRecoveryPhrase: normalizeString(payload.pinWrappedRecoveryPhrase),
+    pinRecoveryPhraseIv: normalizeString(payload.pinRecoveryPhraseIv)
   };
 }
 
@@ -678,7 +1074,15 @@ function mapChatMessage(item, reactionsByMessageId = new Map()) {
     senderUserId: item.senderUserId,
     senderMembershipId: item.senderMembershipId,
     senderIdentityId: item.senderIdentityId,
-    messageKind: item.messageKind === "image" || item.messageKind === "vibe_card" || item.messageKind === "deal_card" || item.messageKind === "system" ? item.messageKind : "text",
+    messageKind:
+      item.messageKind === "image" ||
+      item.messageKind === "vibe_card" ||
+      item.messageKind === "event_card" ||
+      item.messageKind === "deal_card" ||
+      item.messageKind === "profile_card" ||
+      item.messageKind === "system"
+        ? item.messageKind
+        : "text",
     cipherText: item.cipherText,
     cipherIv: item.cipherIv,
     cipherAlgorithm: item.cipherAlgorithm,
@@ -696,6 +1100,9 @@ function mapChatMessage(item, reactionsByMessageId = new Map()) {
           }
         : null,
     createdAt: toIsoString(item.createdAt),
+    expiresAt: item.expiresAt ? toIsoString(item.expiresAt) : null,
+    isStarred: normalizeBoolean(item.isStarred),
+    isSaved: normalizeBoolean(item.isSaved),
     reactions: isDeletedForEveryone ? [] : reactionsByMessageId.get(item.id) ?? []
   };
 }
@@ -831,6 +1238,66 @@ async function listChatMessageReactionsByConversation(conversationId) {
   return Array.isArray(response.data.chatMessageReactions) ? response.data.chatMessageReactions : [];
 }
 
+async function listExpiredChatMessages(limit = CHAT_MESSAGE_LIMIT * 10) {
+  const response = await getChatDc().executeGraphqlRead(LIST_EXPIRED_CHAT_MESSAGES_QUERY, {
+    operationName: "ListExpiredChatMessages",
+    variables: {
+      now: new Date().toISOString(),
+      limit
+    }
+  });
+
+  return Array.isArray(response.data.chatMessages) ? response.data.chatMessages : [];
+}
+
+async function listActiveChatReactionsByTenant(tenantId, limit = CHAT_MESSAGE_LIMIT * 10) {
+  const response = await getChatDc().executeGraphqlRead(LIST_ACTIVE_CHAT_REACTIONS_BY_TENANT_QUERY, {
+    operationName: "ListActiveChatReactionsByTenant",
+    variables: {
+      tenantId,
+      limit
+    }
+  });
+
+  return Array.isArray(response.data.chatMessageReactions) ? response.data.chatMessageReactions : [];
+}
+
+async function listActiveChatMessagesByTenant(tenantId, limit = CHAT_MESSAGE_LIMIT * 10) {
+  const response = await getChatDc().executeGraphqlRead(LIST_ACTIVE_CHAT_MESSAGES_BY_TENANT_QUERY, {
+    operationName: "ListActiveChatMessagesByTenant",
+    variables: {
+      tenantId,
+      limit
+    }
+  });
+
+  return Array.isArray(response.data.chatMessages) ? response.data.chatMessages : [];
+}
+
+async function listActiveChatParticipantsByTenant(tenantId, limit = CHAT_MESSAGE_LIMIT * 10) {
+  const response = await getChatDc().executeGraphqlRead(LIST_ACTIVE_CHAT_PARTICIPANTS_BY_TENANT_QUERY, {
+    operationName: "ListActiveChatParticipantsByTenant",
+    variables: {
+      tenantId,
+      limit
+    }
+  });
+
+  return Array.isArray(response.data.chatParticipants) ? response.data.chatParticipants : [];
+}
+
+async function listActiveChatConversationsByTenant(tenantId, limit = CHAT_MESSAGE_LIMIT * 10) {
+  const response = await getChatDc().executeGraphqlRead(LIST_ACTIVE_CHAT_CONVERSATIONS_BY_TENANT_QUERY, {
+    operationName: "ListActiveChatConversationsByTenant",
+    variables: {
+      tenantId,
+      limit
+    }
+  });
+
+  return Array.isArray(response.data.chatConversations) ? response.data.chatConversations : [];
+}
+
 function buildReactionsMap(items) {
   const reactionsByMessageId = new Map();
 
@@ -845,6 +1312,14 @@ function buildReactionsMap(items) {
   }
 
   return reactionsByMessageId;
+}
+
+function isChatMessageExpired(message, now = Date.now()) {
+  if (!message?.expiresAt) {
+    return false;
+  }
+
+  return new Date(message.expiresAt).getTime() <= now;
 }
 
 async function buildConversationPreview(viewer, conversation, viewerParticipant, peerParticipant, hiddenMessageIds = new Set()) {
@@ -1017,6 +1492,74 @@ export async function upsertChatKeyBackup(viewer, payload) {
   };
 }
 
+async function getChatKeyBackupPinAttemptStateFile(viewer) {
+  const storagePath = buildChatKeyBackupPinAttemptStoragePath(viewer.tenantId, viewer.userId);
+  const file = getChatBucket().file(storagePath);
+  const [exists] = await file.exists();
+
+  if (!exists) {
+    return normalizeChatKeyBackupPinAttemptState(null);
+  }
+
+  try {
+    const [buffer] = await file.download();
+    return normalizeChatKeyBackupPinAttemptState(JSON.parse(buffer.toString("utf8")));
+  } catch {
+    return normalizeChatKeyBackupPinAttemptState(null);
+  }
+}
+
+async function saveChatKeyBackupPinAttemptState(viewer, state) {
+  const nextState = normalizeChatKeyBackupPinAttemptState(state);
+  const storagePath = buildChatKeyBackupPinAttemptStoragePath(viewer.tenantId, viewer.userId);
+  await getChatBucket().file(storagePath).save(Buffer.from(JSON.stringify(nextState), "utf8"), {
+    resumable: false,
+    metadata: {
+      contentType: "application/json; charset=utf-8",
+      cacheControl: "private, max-age=0, no-cache"
+    }
+  });
+
+  return nextState;
+}
+
+export async function getChatKeyBackupPinAttemptState(viewer) {
+  return {
+    attemptState: await getChatKeyBackupPinAttemptStateFile(viewer)
+  };
+}
+
+export async function recordFailedChatKeyBackupPinAttempt(viewer) {
+  const current = await getChatKeyBackupPinAttemptStateFile(viewer);
+  const now = new Date();
+  if (current.isLocked && current.lockedUntil) {
+    return {
+      attemptState: current
+    };
+  }
+
+  const attempts = current.attempts + 1;
+  const lockedUntil = attempts >= CHAT_KEY_BACKUP_PIN_MAX_ATTEMPTS
+    ? new Date(now.getTime() + CHAT_KEY_BACKUP_PIN_LOCKOUT_MS).toISOString()
+    : null;
+
+  return {
+    attemptState: await saveChatKeyBackupPinAttemptState(viewer, {
+      attempts,
+      lockedUntil,
+      updatedAt: now.toISOString()
+    })
+  };
+}
+
+export async function clearChatKeyBackupPinAttemptState(viewer) {
+  const storagePath = buildChatKeyBackupPinAttemptStoragePath(viewer.tenantId, viewer.userId);
+  await getChatBucket().file(storagePath).delete({ ignoreNotFound: true });
+  return {
+    attemptState: normalizeChatKeyBackupPinAttemptState(null)
+  };
+}
+
 async function getHiddenChatMessageState(viewer) {
   const storagePath = buildChatHiddenMessageStoragePath(viewer.tenantId, viewer.userId);
   const file = getChatBucket().file(storagePath);
@@ -1049,11 +1592,7 @@ async function saveHiddenChatMessageState(viewer, state) {
 }
 
 function applyViewerHiddenMessageFilter(rawMessages, hiddenMessageIds) {
-  if (!hiddenMessageIds?.size) {
-    return rawMessages;
-  }
-
-  return rawMessages.filter((message) => !hiddenMessageIds.has(message.id));
+  return rawMessages.filter((message) => !hiddenMessageIds?.has(message.id) && !isChatMessageExpired(message));
 }
 
 async function getLastVisibleMessageRaw(conversationId, hiddenMessageIds) {
@@ -1097,7 +1636,7 @@ export async function listChatInbox(viewer) {
   ]);
   const hiddenMessageIds = new Set(hiddenState.hiddenMessageIds);
 
-  const previews = await Promise.all(
+  const previewResults = await Promise.allSettled(
     viewerParticipants.map(async (viewerParticipant) => {
       const access = await resolveConversationAccess(viewer, viewerParticipant.conversationId);
       if (!access) {
@@ -1107,10 +1646,23 @@ export async function listChatInbox(viewer) {
       return buildConversationPreview(viewer, access.conversation, access.viewerParticipant, access.peerParticipant, hiddenMessageIds);
     })
   );
+  const previews = previewResults.flatMap((result, index) => {
+    if (result.status === "fulfilled") {
+      return result.value ? [result.value] : [];
+    }
+
+    console.warn("[chat] inbox_preview_skipped", {
+      tenantId: viewer.tenantId,
+      userId: viewer.userId,
+      conversationId: viewerParticipants[index]?.conversationId ?? null,
+      message: result.reason instanceof Error ? result.reason.message : "Unknown inbox preview failure"
+    });
+    return [];
+  });
 
   return {
     viewer: buildViewerSummary(viewer, viewerIdentity),
-    items: previews.filter(Boolean).sort((left, right) => new Date(right.lastActivityAt).getTime() - new Date(left.lastActivityAt).getTime())
+    items: previews.sort((left, right) => new Date(right.lastActivityAt).getTime() - new Date(left.lastActivityAt).getTime())
   };
 }
 
@@ -1279,13 +1831,19 @@ export async function sendChatMessage(viewer, conversationId, payload) {
   }
 
   const messageKind =
-    payload.messageKind === "image" || payload.messageKind === "vibe_card" || payload.messageKind === "deal_card" || payload.messageKind === "system"
+    payload.messageKind === "image" ||
+    payload.messageKind === "vibe_card" ||
+    payload.messageKind === "event_card" ||
+    payload.messageKind === "deal_card" ||
+    payload.messageKind === "profile_card" ||
+    payload.messageKind === "system"
       ? payload.messageKind
       : "text";
   const cipherText = normalizeString(payload.cipherText);
   const cipherIv = normalizeString(payload.cipherIv);
   const cipherAlgorithm = normalizeString(payload.cipherAlgorithm) ?? END_TO_END_CHAT_ALGORITHM;
   const replyToMessageId = normalizeString(payload.replyToMessageId) ?? null;
+  const expiresAt = resolveMessageExpiry(payload);
 
   if (!cipherText || !cipherIv) {
     throw new Error("Message payload is incomplete.");
@@ -1299,7 +1857,11 @@ export async function sendChatMessage(viewer, conversationId, payload) {
   }
 
   const messageId = randomUUID();
-  const attachment = payload.attachment && typeof payload.attachment === "object" ? payload.attachment : null;
+  const attachment = await verifyAttachmentOwnership(
+    viewer,
+    payload.attachment && typeof payload.attachment === "object" ? payload.attachment : null,
+    messageKind
+  );
 
   await getChatDc().executeGraphql(CREATE_CHAT_MESSAGE_MUTATION, {
     operationName: "CreateChatMessage",
@@ -1321,7 +1883,9 @@ export async function sendChatMessage(viewer, conversationId, payload) {
       attachmentSizeBytes: attachment?.sizeBytes ?? null,
       attachmentWidth: attachment?.width ?? null,
       attachmentHeight: attachment?.height ?? null,
-      attachmentDurationMs: null
+      attachmentDurationMs: null,
+      expiresAt,
+      isSaved: false
     }
   });
 
@@ -1629,6 +2193,205 @@ export async function deleteChatMessage(viewer, messageId, scope) {
   };
 }
 
+export async function updateChatMessageLifecycle(viewer, messageId, payload) {
+  const message = await getChatMessageById(messageId);
+  if (!message || message.tenantId !== viewer.tenantId) {
+    throw new Error("We could not find that message.");
+  }
+
+  const access = await resolveConversationAccess(viewer, message.conversationId);
+  if (!access) {
+    throw new Error("You can only update messages inside your own conversations.");
+  }
+
+  if (message.cipherAlgorithm === CHAT_DELETED_MESSAGE_ALGORITHM) {
+    throw new Error("Deleted messages cannot be starred or rescheduled.");
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload ?? {}, "durationKey") && message.senderMembershipId !== viewer.membershipId) {
+    throw new ChatSecurityError(403, "TTL_OWNER_REQUIRED", "Only the sender can change a message expiry timer.");
+  }
+
+  const expiresAt = resolveLifecycleExpiry(payload, message);
+  const isStarred =
+    typeof payload?.isStarred === "boolean" ? payload.isStarred : normalizeBoolean(message.isStarred);
+  const isSaved =
+    typeof payload?.isSaved === "boolean" ? payload.isSaved : normalizeBoolean(message.isSaved);
+
+  await getChatDc().executeGraphql(UPDATE_CHAT_MESSAGE_LIFECYCLE_MUTATION, {
+    operationName: "UpdateChatMessageLifecycle",
+    variables: {
+      id: messageId,
+      expiresAt,
+      isStarred,
+      isSaved
+    }
+  });
+
+  const [updatedMessageRaw, rawReactions] = await Promise.all([
+    getChatMessageById(messageId),
+    listChatMessageReactionsByConversation(message.conversationId)
+  ]);
+  const reactionsByMessageId = buildReactionsMap(rawReactions);
+  const updatedMessage = mapChatMessage(updatedMessageRaw, reactionsByMessageId);
+  if (!updatedMessage) {
+    throw new Error("We could not reload that message after updating it.");
+  }
+  const hiddenState = await getHiddenChatMessageState(viewer);
+  const preview = await buildConversationPreview(
+    viewer,
+    access.conversation,
+    access.viewerParticipant,
+    access.peerParticipant,
+    new Set(hiddenState.hiddenMessageIds)
+  );
+
+  emitChatRealtimeEvent({
+    conversationId: message.conversationId,
+    type: "chat.sync",
+    payload: {
+      conversationId: message.conversationId,
+      messageId,
+      lifecycle: {
+        expiresAt,
+        isStarred,
+        isSaved
+      }
+    }
+  });
+
+  return {
+    item: updatedMessage,
+    conversationPreview: preview
+  };
+}
+
+export async function clearExpiredChatMessages() {
+  const expiredMessages = await listExpiredChatMessages();
+  if (expiredMessages.length === 0) {
+    return {
+      deletedCount: 0,
+      storageDeletedCount: 0,
+      affectedConversationIds: []
+    };
+  }
+
+  const affectedConversationIds = new Set();
+  let storageDeletedCount = 0;
+
+  await Promise.all(
+    expiredMessages.map(async (message) => {
+      if (message.attachmentStoragePath && canJanitorDeleteAttachment(message)) {
+        await getChatBucket()
+          .file(message.attachmentStoragePath)
+          .delete({ ignoreNotFound: true });
+        storageDeletedCount += 1;
+      }
+
+      await getChatDc().executeGraphql(SOFT_DELETE_CHAT_MESSAGE_MUTATION, {
+        operationName: "SoftDeleteChatMessage",
+        variables: {
+          id: message.id
+        }
+      });
+
+      affectedConversationIds.add(message.conversationId);
+    })
+  );
+
+  await Promise.all([...affectedConversationIds].map((conversationId) => syncConversationLastMessage(conversationId)));
+
+  for (const conversationId of affectedConversationIds) {
+    emitChatRealtimeEvent({
+      conversationId,
+      type: "chat.sync",
+      payload: {
+        conversationId,
+        reason: "expired_messages_deleted",
+        deletedCount: expiredMessages.filter((message) => message.conversationId === conversationId).length
+      }
+    });
+  }
+
+  return {
+    deletedCount: expiredMessages.length,
+    storageDeletedCount,
+    affectedConversationIds: [...affectedConversationIds]
+  };
+}
+
+export async function resetTenantChatData(tenantId) {
+  const normalizedTenantId = normalizeString(tenantId);
+  if (!normalizedTenantId) {
+    throw new Error("A tenant id is required to reset chat data.");
+  }
+
+  const [reactions, messages, participants, conversations] = await Promise.all([
+    listActiveChatReactionsByTenant(normalizedTenantId),
+    listActiveChatMessagesByTenant(normalizedTenantId),
+    listActiveChatParticipantsByTenant(normalizedTenantId),
+    listActiveChatConversationsByTenant(normalizedTenantId)
+  ]);
+
+  const storagePaths = Array.from(
+    new Set(
+      messages
+        .map((message) => normalizeString(message.attachmentStoragePath))
+        .filter(Boolean)
+        .filter((storagePath) => parseChatAttachmentStoragePath(storagePath)?.tenantId === normalizedTenantId)
+    )
+  );
+
+  await runInBatches(storagePaths, 20, async (storagePath) => {
+    await getChatBucket().file(storagePath).delete({ ignoreNotFound: true });
+  });
+
+  await runInBatches(reactions, 50, async (reaction) => {
+    await getChatDc().executeGraphql(SOFT_DELETE_CHAT_MESSAGE_REACTION_MUTATION, {
+      operationName: "SoftDeleteChatMessageReaction",
+      variables: {
+        id: reaction.id
+      }
+    });
+  });
+
+  await runInBatches(messages, 50, async (message) => {
+    await getChatDc().executeGraphql(SOFT_DELETE_CHAT_MESSAGE_MUTATION, {
+      operationName: "SoftDeleteChatMessage",
+      variables: {
+        id: message.id
+      }
+    });
+  });
+
+  await runInBatches(participants, 50, async (participant) => {
+    await getChatDc().executeGraphql(SOFT_DELETE_CHAT_PARTICIPANT_MUTATION, {
+      operationName: "SoftDeleteChatParticipant",
+      variables: {
+        id: participant.id
+      }
+    });
+  });
+
+  await runInBatches(conversations, 50, async (conversation) => {
+    await getChatDc().executeGraphql(SOFT_DELETE_CHAT_CONVERSATION_MUTATION, {
+      operationName: "SoftDeleteChatConversation",
+      variables: {
+        id: conversation.id
+      }
+    });
+  });
+
+  return {
+    tenantId: normalizedTenantId,
+    deletedReactionCount: reactions.length,
+    deletedMessageCount: messages.length,
+    deletedParticipantCount: participants.length,
+    deletedConversationCount: conversations.length,
+    storageDeletedCount: storagePaths.length
+  };
+}
+
 export async function uploadEncryptedChatAttachment(viewer, payload) {
   const fileName = normalizeString(payload.fileName) ?? "chat-attachment.bin";
   const mimeType = normalizeString(payload.mimeType);
@@ -1659,6 +2422,10 @@ export async function uploadEncryptedChatAttachment(viewer, payload) {
       cacheControl: "private, max-age=31536000, immutable",
       metadata: {
         firebaseStorageDownloadTokens: token,
+        purpose: "chat_attachment_v1",
+        ownerTenantId: viewer.tenantId,
+        ownerUserId: viewer.userId,
+        assetId,
         originalMimeType: mimeType,
         originalFileName: fileName
       }

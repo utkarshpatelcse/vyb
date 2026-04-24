@@ -107,6 +107,9 @@ query ListChatMessagesByConversation($conversationId: UUID!, $limit: Int!) @auth
     attachmentWidth
     attachmentHeight
     attachmentDurationMs
+    expiresAt
+    isStarred
+    isSaved
     createdAt
     updatedAt
   }
@@ -128,5 +131,92 @@ query ListChatMessageReactionsByConversation($conversationId: UUID!, $limit: Int
     emoji
     createdAt
     updatedAt
+  }
+}
+
+query ListExpiredChatMessages($now: Timestamp!, $limit: Int!) @auth(level: NO_ACCESS) {
+  chatMessages(
+    where: {
+      deletedAt: { isNull: true }
+      expiresAt: { lte: $now }
+    }
+    orderBy: [{ expiresAt: ASC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    conversationId
+    senderUserId
+    attachmentStoragePath
+  }
+}
+
+mutation CreateChatMessage(
+  $id: UUID!
+  $tenantId: UUID!
+  $conversationId: UUID!
+  $senderMembershipId: UUID!
+  $senderUserId: UUID!
+  $senderIdentityId: UUID!
+  $messageKind: String!
+  $cipherText: String!
+  $cipherIv: String!
+  $cipherAlgorithm: String!
+  $replyToMessageId: UUID
+  $attachmentUrl: String
+  $attachmentStoragePath: String
+  $attachmentMimeType: String
+  $attachmentSizeBytes: Int64
+  $attachmentWidth: Int
+  $attachmentHeight: Int
+  $attachmentDurationMs: Int
+  $expiresAt: Timestamp
+  $isSaved: Boolean!
+) @auth(level: NO_ACCESS) {
+  chatMessage_insert(
+    data: {
+      id: $id
+      tenantId: $tenantId
+      conversationId: $conversationId
+      senderMembershipId: $senderMembershipId
+      senderUserId: $senderUserId
+      senderIdentityId: $senderIdentityId
+      messageKind: $messageKind
+      cipherText: $cipherText
+      cipherIv: $cipherIv
+      cipherAlgorithm: $cipherAlgorithm
+      replyToMessageId: $replyToMessageId
+      attachmentUrl: $attachmentUrl
+      attachmentStoragePath: $attachmentStoragePath
+      attachmentMimeType: $attachmentMimeType
+      attachmentSizeBytes: $attachmentSizeBytes
+      attachmentWidth: $attachmentWidth
+      attachmentHeight: $attachmentHeight
+      attachmentDurationMs: $attachmentDurationMs
+      expiresAt: $expiresAt
+      isSaved: $isSaved
+      isStarred: false
+    }
+  ) {
+    id
+  }
+}
+
+mutation UpdateChatMessageLifecycle(
+  $id: UUID!
+  $expiresAt: Timestamp
+  $isStarred: Boolean!
+  $isSaved: Boolean!
+) @auth(level: NO_ACCESS) {
+  chatMessage_update(
+    key: { id: $id }
+    data: {
+      expiresAt: $expiresAt
+      isStarred: $isStarred
+      isSaved: $isSaved
+      updatedAt_expr: "request.time"
+    }
+  ) {
+    id
   }
 }

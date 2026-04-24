@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { sendChatMessage } from "../../../../../src/lib/backend";
-import { readDevSessionFromCookieStore } from "../../../../../src/lib/dev-session";
+import { updateChatMessageLifecycle } from "../../../../../../src/lib/backend";
+import { readDevSessionFromCookieStore } from "../../../../../../src/lib/dev-session";
 
 function buildError(status: number, code: string, message: string) {
   return NextResponse.json({ error: { code, message } }, { status });
@@ -22,11 +22,11 @@ function buildChatError(error: unknown, fallbackCode: string, fallbackMessage: s
   return buildError(statusCode, code, error instanceof Error ? error.message : fallbackMessage);
 }
 
-export async function POST(request: Request, { params }: { params: Promise<{ conversationId: string }> }) {
+export async function PUT(request: Request, { params }: { params: Promise<{ messageId: string }> }) {
   const viewer = readDevSessionFromCookieStore(await cookies());
 
   if (!viewer) {
-    return buildError(401, "UNAUTHENTICATED", "You must sign in before sending a chat message.");
+    return buildError(401, "UNAUTHENTICATED", "You must sign in before updating a chat message.");
   }
 
   const payload = await request.json().catch(() => null);
@@ -34,11 +34,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ con
     return buildError(400, "INVALID_JSON", "Request body must be valid JSON.");
   }
 
-  const { conversationId } = await params;
+  const { messageId } = await params;
 
   try {
-    return NextResponse.json(await sendChatMessage(viewer, conversationId, payload), { status: 201 });
+    return NextResponse.json(await updateChatMessageLifecycle(viewer, messageId, payload));
   } catch (error) {
-    return buildChatError(error, "CHAT_SEND_FAILED", "We could not send this message.");
+    return buildChatError(error, "CHAT_LIFECYCLE_FAILED", "We could not update that message.");
   }
 }

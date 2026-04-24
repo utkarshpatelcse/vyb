@@ -1,12 +1,23 @@
 "use client";
 
 import type {
+  CampusEventsDashboardResponse,
   ChatConversationPreview,
   ChatConversationResponse,
+  ChatDealCardPayload,
+  ChatEventCardPayload,
   ChatIdentitySummary,
   ChatKeyBackupRecord,
+  ChatMessageKind,
   ChatMessageRecord,
+  ChatProfileCardPayload,
+  ChatShareCardKind,
+  ChatShareCardPayload,
+  ChatMessageTtlKey,
+  ChatVibeCardPayload,
   DeleteChatMessageScope,
+  FeedListResponse,
+  MarketDashboardResponse,
   UserSearchItem
 } from "@vyb/contracts";
 import Link from "next/link";
@@ -20,19 +31,25 @@ import {
   decryptChatText,
   encryptChatText,
   encryptStoredChatKeyMaterialForBackup,
-  formatRecoveryCode,
-  generateRecoveryCode,
+  generateRecoveryPhrase,
   hasChatCipherEnvelope,
   isE2eeCipherAlgorithm,
+  isValidRecoveryPhrase,
+  isValidSecurityPin,
   isStoredChatKeyCompatible,
+  loadChatPinAttemptState,
   loadStoredChatKeyMaterial,
-  loadStoredRecoveryCode,
+  normalizeRecoveryPhrase,
+  normalizeSecurityPin,
+  recordFailedChatPinAttempt,
+  clearChatPinAttemptState,
   saveStoredChatKeyMaterial,
-  saveStoredRecoveryCode,
   syncStoredChatKeyIdentity,
+  type ChatPinAttemptState,
   type StoredChatKeyMaterial
 } from "../lib/chat-e2ee";
 import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
+import { MessageCardRenderer } from "./message-card-renderer";
 
 type ActiveConversation = ChatConversationResponse["conversation"];
 type RealtimeState = "idle" | "offline" | "connecting" | "reconnecting" | "live";
@@ -40,6 +57,10 @@ type MessageActionAnchor = {
   top: number;
   left: number;
   width: number;
+};
+type PendingShareCard = {
+  kind: ChatShareCardKind;
+  payload: ChatShareCardPayload;
 };
 type PendingSharedPost = {
   id: string;
@@ -49,6 +70,8 @@ type PendingSharedPost = {
   mediaUrl: string | null;
   mediaKind: "image" | "video" | null;
 };
+type ShareMenuTab = "deals" | "events" | "vibes" | "profiles";
+type ShareMenuCollections = Record<ShareMenuTab, PendingShareCard[]>;
 const DISMISSED_DECRYPTION_WARNING_STORAGE_PREFIX = "vyb-chat-dismissed-decryption-warning";
 const CHAT_REACTION_OPTIONS = [
   "\u2764\uFE0F",
@@ -66,6 +89,14 @@ const CHAT_REACTION_OPTIONS = [
 ] as const;
 const DELETE_FOR_EVERYONE_WINDOW_MS = 30 * 60 * 1000;
 const CHAT_DELETED_MESSAGE_ALGORITHM = "deleted";
+const CHAT_TTL_OPTIONS = [
+  { value: "instant", label: "Instant", durationMs: 0 },
+  { value: "1h", label: "1h", durationMs: 60 * 60 * 1000 },
+  { value: "24h", label: "24h", durationMs: 24 * 60 * 60 * 1000 },
+  { value: "7d", label: "7d", durationMs: 7 * 24 * 60 * 60 * 1000 },
+  { value: "30d", label: "30d", durationMs: 30 * 24 * 60 * 60 * 1000 },
+  { value: "90d", label: "90d", durationMs: 90 * 24 * 60 * 60 * 1000 }
+] as const satisfies Array<{ value: ChatMessageTtlKey; label: string; durationMs: number }>;
 
 function getDismissedDecryptionWarningStorageKey(userId: string) {
   return `${DISMISSED_DECRYPTION_WARNING_STORAGE_PREFIX}:${userId}`;
@@ -81,8 +112,12 @@ function getMessageFallbackLabel(message: ChatMessageRecord) {
       return "Shared a photo";
     case "vibe_card":
       return "Shared a vibe";
+    case "event_card":
+      return "Shared an event";
     case "deal_card":
       return "Shared a market deal";
+    case "profile_card":
+      return "Shared a profile";
     case "system":
       return "System update";
     default:
@@ -92,6 +127,14 @@ function getMessageFallbackLabel(message: ChatMessageRecord) {
 
 function isDeletedChatMessage(message: ChatMessageRecord) {
   return message.cipherAlgorithm === CHAT_DELETED_MESSAGE_ALGORITHM;
+}
+
+function isExpiredChatMessage(message: ChatMessageRecord) {
+  if (!message.expiresAt) {
+    return false;
+  }
+
+  return new Date(message.expiresAt).getTime() <= Date.now();
 }
 
 function getDeletedMessageLabel(isOwnMessage: boolean) {
@@ -107,6 +150,100 @@ function getPendingSharedPostSnippet(post: PendingSharedPost) {
   }
 
   return body || title || `Post from @${post.authorUsername}`;
+}
+
+function isShareCardKind(value: ChatMessageKind): value is ChatShareCardKind {
+  return value === "vibe_card" || value === "event_card" || value === "deal_card" || value === "profile_card";
+}
+
+function isCardPayloadRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function parseShareCardPayload(kind: ChatMessageKind, plaintext: string | null | undefined): ChatShareCardPayload | null {
+  if (!isShareCardKind(kind) || !plaintext?.trim()) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(plaintext) as Record<string, unknown>;
+    if (!isCardPayloadRecord(parsed)) {
+      return null;
+    }
+
+    const payloadType = typeof parsed.type === "string" ? parsed.type : kind;
+    if (payloadType !== kind) {
+      return null;
+    }
+
+    return parsed as unknown as ChatShareCardPayload;
+  } catch {
+    return null;
+  }
+}
+
+function serializeShareCardPayload(card: PendingShareCard, caption: string | null) {
+  return JSON.stringify({
+    version: 1,
+    type: card.kind,
+    ...card.payload,
+    caption: caption?.trim() || null
+  });
+}
+
+function getShareCardPreviewText(kind: ChatShareCardKind, payload: ChatShareCardPayload | null) {
+  if (!payload) {
+    switch (kind) {
+      case "vibe_card":
+        return "Shared a vibe";
+      case "event_card":
+        return "Shared an event";
+      case "deal_card":
+        return "Shared a market deal";
+      case "profile_card":
+        return "Shared a profile";
+      default:
+        return "Shared a card";
+    }
+  }
+
+  if (payload.caption?.trim()) {
+    return payload.caption.trim();
+  }
+
+  switch (kind) {
+    case "vibe_card":
+      return (payload as ChatVibeCardPayload).title || "Shared a vibe";
+    case "event_card":
+      return (payload as ChatEventCardPayload).title || "Shared an event";
+    case "deal_card":
+      return (payload as ChatDealCardPayload).title || "Shared a market deal";
+    case "profile_card":
+      return `Profile: ${(payload as ChatProfileCardPayload).displayName || (payload as ChatProfileCardPayload).username}`;
+    default:
+      return "Shared a card";
+  }
+}
+
+function getPendingShareCardSnippet(card: PendingShareCard) {
+  return getShareCardPreviewText(card.kind, card.payload);
+}
+
+function buildShareMenuCollections(): ShareMenuCollections {
+  return {
+    deals: [],
+    events: [],
+    vibes: [],
+    profiles: []
+  };
+}
+
+function formatCurrencyLabel(amount: number | null | undefined, fallback: string | null | undefined) {
+  if (typeof amount === "number" && Number.isFinite(amount) && amount > 0) {
+    return `Rs ${Math.round(amount).toLocaleString("en-IN")}`;
+  }
+
+  return fallback?.trim() || "Open offer";
 }
 
 function timeAgo(dateString: string) {
@@ -141,6 +278,27 @@ function formatMessageTime(dateString: string) {
   });
 }
 
+
+function formatLockoutCountdown(milliseconds: number) {
+  const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function formatExpiryLabel(dateString: string) {
+  return new Date(dateString).toLocaleDateString("en-IN", { month: "short", day: "numeric" });
+}
+
+function normalizeTtlDurationKey(value: string): ChatMessageTtlKey | null {
+  const option = CHAT_TTL_OPTIONS.find((item) => item.value === value);
+  if (!option) {
+    return null;
+  }
+
+  return option.value;
+}
+
 function getConversationPreviewLabel(
   item: ChatConversationPreview,
   plaintextByMessageId: Record<string, string>
@@ -157,8 +315,12 @@ function getConversationPreviewLabel(
       return { text: text || "Photo", isMarket: false };
     case "vibe_card":
       return { text: text || "Shared a vibe", isMarket: false };
+    case "event_card":
+      return { text: text || "Shared an event", isMarket: false };
     case "deal_card":
       return { text: text || "Market deal", isMarket: true };
+    case "profile_card":
+      return { text: text || "Shared a profile", isMarket: false };
     case "system":
       return { text: text || "System update", isMarket: false };
     default:
@@ -176,6 +338,11 @@ function getMessageBody(
   }
 
   if (plaintextOverride?.trim()) {
+    const cardPayload = parseShareCardPayload(message.messageKind, plaintextOverride);
+    if (cardPayload && isShareCardKind(message.messageKind)) {
+      return getShareCardPreviewText(message.messageKind, cardPayload);
+    }
+
     return plaintextOverride;
   }
 
@@ -355,6 +522,23 @@ function IconTrash() {
   );
 }
 
+function IconClock() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function IconStar() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m12 3 2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7L6.8 19l1-5.8-4.2-4.1 5.8-.8L12 3Z" />
+    </svg>
+  );
+}
+
 function IconMore() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -370,6 +554,15 @@ function IconClose() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M18 6 6 18" />
       <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+
+function IconPlus() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
     </svg>
   );
 }
@@ -461,7 +654,7 @@ export function CampusMessagesShell({
   const [conversationLoading, setConversationLoading] = useState(Boolean(initialConversationId && !initialConversation && !activeConversationError));
   const [conversationError, setConversationError] = useState<string | null>(activeConversationError);
   const [draftMessage, setDraftMessage] = useState("");
-  const [pendingSharedPost, setPendingSharedPost] = useState<PendingSharedPost | null>(null);
+  const [pendingShareCard, setPendingShareCard] = useState<PendingShareCard | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [realtimeState, setRealtimeState] = useState<RealtimeState>(initialConversationId ? "connecting" : "idle");
@@ -472,12 +665,23 @@ export function CampusMessagesShell({
   const [syncingKeyBackup, setSyncingKeyBackup] = useState(false);
   const [restoringKeyBackup, setRestoringKeyBackup] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
+  const [securityPin, setSecurityPin] = useState("");
+  const [confirmSecurityPin, setConfirmSecurityPin] = useState("");
   const [restoreRecoveryCode, setRestoreRecoveryCode] = useState("");
+  const [pinAttemptState, setPinAttemptState] = useState<ChatPinAttemptState | null>(null);
+  const [lockoutNow, setLockoutNow] = useState(() => Date.now());
   const [recoveryCodeVisible, setRecoveryCodeVisible] = useState(false);
+  const [backupPanelOpen, setBackupPanelOpen] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [keySetupError, setKeySetupError] = useState<string | null>(null);
   const [decryptionWarning, setDecryptionWarning] = useState<string | null>(null);
   const [messagePlaintextById, setMessagePlaintextById] = useState<Record<string, string>>({});
+  const [shareMenuOpen, setShareMenuOpen] = useState(false);
+  const [shareMenuTab, setShareMenuTab] = useState<ShareMenuTab>("deals");
+  const [shareMenuLoading, setShareMenuLoading] = useState(false);
+  const [shareMenuError, setShareMenuError] = useState<string | null>(null);
+  const [shareMenuCollections, setShareMenuCollections] = useState<ShareMenuCollections>(() => buildShareMenuCollections());
+  const [activeVibePreview, setActiveVibePreview] = useState<ChatVibeCardPayload | null>(null);
   const [replyingToMessageId, setReplyingToMessageId] = useState<string | null>(null);
   const [selectedMessageActionId, setSelectedMessageActionId] = useState<string | null>(null);
   const [selectedMessageDeleteForEveryoneAllowed, setSelectedMessageDeleteForEveryoneAllowed] = useState(false);
@@ -496,6 +700,7 @@ export function CampusMessagesShell({
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTapRef = useRef<{ messageId: string; timestamp: number } | null>(null);
   const longPressTriggeredRef = useRef(false);
+  const lastScreenshotAlertRef = useRef(0);
   const swipeGestureRef = useRef<{
     messageId: string;
     startX: number;
@@ -603,10 +808,6 @@ export function CampusMessagesShell({
   }
 
   useEffect(() => {
-    setRecoveryCode(loadStoredRecoveryCode(viewerUserId));
-  }, [viewerUserId]);
-
-  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
@@ -624,6 +825,36 @@ export function CampusMessagesShell({
       setDismissedDecryptionWarningIds({});
     }
   }, [viewerUserId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      const state = await loadChatPinAttemptState(viewerUserId);
+      if (!cancelled) {
+        setPinAttemptState(state);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [viewerUserId]);
+
+  useEffect(() => {
+    if (!pinAttemptState?.lockedUntil) {
+      return;
+    }
+
+    setLockoutNow(Date.now());
+    const intervalId = window.setInterval(() => {
+      setLockoutNow(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [pinAttemptState?.lockedUntil]);
 
   useEffect(() => {
     let cancelled = false;
@@ -668,34 +899,46 @@ export function CampusMessagesShell({
   }, [viewerIdentity]);
 
   useEffect(() => {
-    const stored = loadStoredChatKeyMaterial(viewerUserId);
-    if (!viewerIdentity) {
+    let cancelled = false;
+
+    void (async () => {
+      const stored = await loadStoredChatKeyMaterial(viewerUserId);
+      if (cancelled) {
+        return;
+      }
+
+      if (!viewerIdentity) {
+        setLocalChatKey(stored);
+        setKeySetupError(null);
+        return;
+      }
+
+      if (stored && isStoredChatKeyCompatible(stored, viewerIdentity)) {
+        const synced = (await syncStoredChatKeyIdentity(viewerUserId, viewerIdentity)) ?? stored;
+        if (!cancelled) {
+          setLocalChatKey(synced);
+          setKeySetupError(null);
+        }
+        return;
+      }
+
       setLocalChatKey(stored);
-      setKeySetupError(null);
-      return;
-    }
+      if (!remoteKeyBackupLoaded) {
+        setKeySetupError("Checking your encrypted key backup...");
+        return;
+      }
 
-    if (stored && isStoredChatKeyCompatible(stored, viewerIdentity)) {
-      const synced = syncStoredChatKeyIdentity(viewerUserId, viewerIdentity) ?? stored;
-      setLocalChatKey(synced);
-      setKeySetupError(null);
-      return;
-    }
+      if (remoteKeyBackup) {
+        setKeySetupError("Enter your 6-digit security PIN or 24-word recovery phrase on this device to restore your E2EE key.");
+        return;
+      }
 
-    setLocalChatKey(stored);
-    if (!remoteKeyBackupLoaded) {
-      setKeySetupError("Checking your encrypted key backup...");
-      return;
-    }
+      setKeySetupError("Set a 6-digit security PIN on your original device to create an encrypted key backup.");
+    })();
 
-    if (remoteKeyBackup) {
-      setKeySetupError("Enter your recovery code on this device to restore your E2EE key.");
-      return;
-    }
-
-    setKeySetupError(
-      "This account has E2EE chats, but no encrypted key backup is saved yet. Open the original device once to create the backup."
-    );
+    return () => {
+      cancelled = true;
+    };
   }, [remoteKeyBackup, remoteKeyBackupLoaded, viewerIdentity, viewerUserId]);
 
   async function loadConversationDetail(
@@ -730,6 +973,11 @@ export function CampusMessagesShell({
         }
 
         if (!preserveActiveConversation || !activeConversationRef.current || activeConversationRef.current.id !== conversationId) {
+          if (response.status === 404 || response.status >= 500) {
+            setConversations((current) => current.filter((item) => item.id !== conversationId));
+            setActiveConversationId(null);
+            router.replace("/messages");
+          }
           setActiveConversation(null);
           setConversationError(data?.error?.message ?? "We could not load that chat right now.");
         }
@@ -760,6 +1008,9 @@ export function CampusMessagesShell({
     } catch {
       if (requestRef.current === requestId) {
         if (!preserveActiveConversation || !activeConversationRef.current || activeConversationRef.current.id !== conversationId) {
+          setConversations((current) => current.filter((item) => item.id !== conversationId));
+          setActiveConversationId(null);
+          router.replace("/messages");
           setActiveConversation(null);
           setConversationError("Network issue while opening the chat.");
         }
@@ -774,7 +1025,7 @@ export function CampusMessagesShell({
   useEffect(() => {
     setActiveConversationId(initialConversationId);
     setDraftMessage("");
-    setPendingSharedPost(null);
+    setPendingShareCard(null);
     setSendError(null);
     setRealtimeState(initialConversationId ? "connecting" : "idle");
 
@@ -835,13 +1086,16 @@ export function CampusMessagesShell({
 
     if (sharedPostId) {
       const mediaKind = searchParams.get("sharedPostMediaKind");
-      setPendingSharedPost({
-        id: sharedPostId,
-        authorUsername: searchParams.get("sharedPostAuthor") ?? "campus",
-        title: searchParams.get("sharedPostTitle") ?? "",
-        body: searchParams.get("sharedPostBody") ?? "",
-        mediaUrl: searchParams.get("sharedPostMediaUrl") || null,
-        mediaKind: mediaKind === "image" || mediaKind === "video" ? mediaKind : null
+      setPendingShareCard({
+        kind: "vibe_card",
+        payload: {
+          postId: sharedPostId,
+          title: searchParams.get("sharedPostTitle") ?? "Shared vibe",
+          body: searchParams.get("sharedPostBody") ?? "",
+          mediaUrl: searchParams.get("sharedPostMediaUrl") || null,
+          thumbnailUrl: searchParams.get("sharedPostMediaUrl") || null,
+          authorUsername: searchParams.get("sharedPostAuthor") ?? "campus"
+        }
       });
     }
 
@@ -857,17 +1111,17 @@ export function CampusMessagesShell({
     }
 
     if (viewerIdentity) {
-      const stored = loadStoredChatKeyMaterial(viewerUserId);
+      const stored = await loadStoredChatKeyMaterial(viewerUserId);
       if (stored && isStoredChatKeyCompatible(stored, viewerIdentity)) {
-        const synced = syncStoredChatKeyIdentity(viewerUserId, viewerIdentity) ?? stored;
+        const synced = (await syncStoredChatKeyIdentity(viewerUserId, viewerIdentity)) ?? stored;
         setLocalChatKey(synced);
         setKeySetupError(null);
         return true;
       }
 
       const message = remoteKeyBackup
-        ? "Restore your E2EE key with the recovery code to continue on this device."
-        : "This account has E2EE chats, but no encrypted key backup exists yet. Open the original device once to create the backup.";
+        ? "Restore your E2EE key from Settings / Security with your 6-digit PIN or 24-word recovery phrase to continue on this device."
+        : "This account has E2EE chats, but no encrypted key backup exists yet. Open Settings / Security on the original device once to create the backup.";
       setLocalChatKey(stored);
       setKeySetupError(message);
       setSendError(message);
@@ -886,9 +1140,9 @@ export function CampusMessagesShell({
       try {
         const stored =
           localChatKey ??
-          loadStoredChatKeyMaterial(viewerUserId) ??
+          (await loadStoredChatKeyMaterial(viewerUserId)) ??
           (await createStoredChatKeyMaterial(viewerUserId));
-        saveStoredChatKeyMaterial(stored);
+        await saveStoredChatKeyMaterial(stored);
         setLocalChatKey(stored);
 
         const response = await fetchChatEndpoint("/api/chats/keys", {
@@ -918,14 +1172,14 @@ export function CampusMessagesShell({
           return false;
         }
 
-        const synced = syncStoredChatKeyIdentity(viewerUserId, nextIdentity) ?? {
+        const synced = (await syncStoredChatKeyIdentity(viewerUserId, nextIdentity)) ?? {
           ...stored,
           identityId: nextIdentity.id,
           algorithm: nextIdentity.algorithm,
           keyVersion: nextIdentity.keyVersion,
           updatedAt: nextIdentity.updatedAt
         };
-        saveStoredChatKeyMaterial(synced);
+        await saveStoredChatKeyMaterial(synced);
         setLocalChatKey(synced);
         setViewerIdentity(nextIdentity);
         return true;
@@ -942,9 +1196,14 @@ export function CampusMessagesShell({
     return pending;
   }
 
-  async function syncEncryptedKeyBackup(material: StoredChatKeyMaterial, nextRecoveryCode?: string | null) {
-    const effectiveRecoveryCode = formatRecoveryCode(nextRecoveryCode ?? recoveryCode ?? "");
-    if (!effectiveRecoveryCode || !viewerIdentity || !isStoredChatKeyCompatible(material, viewerIdentity)) {
+  async function syncEncryptedKeyBackup(
+    material: StoredChatKeyMaterial,
+    nextPin?: string | null,
+    nextRecoveryPhrase?: string | null
+  ) {
+    const effectivePin = normalizeSecurityPin(nextPin ?? securityPin);
+    const effectiveRecoveryPhrase = normalizeRecoveryPhrase(nextRecoveryPhrase ?? recoveryCode ?? "");
+    if (!isValidSecurityPin(effectivePin) || !viewerIdentity || !isStoredChatKeyCompatible(material, viewerIdentity)) {
       return;
     }
 
@@ -952,7 +1211,11 @@ export function CampusMessagesShell({
     setSyncingKeyBackup(true);
 
     try {
-      const encryptedBackup = await encryptStoredChatKeyMaterialForBackup(material, effectiveRecoveryCode);
+      const encryptedBackup = await encryptStoredChatKeyMaterialForBackup(material, {
+        pin: effectivePin,
+        userSalt: viewerUserId,
+        recoveryPhrase: effectiveRecoveryPhrase || undefined
+      });
       const response = await fetchChatEndpoint("/api/chats/key-backup", {
         method: "PUT",
         headers: { "content-type": "application/json" },
@@ -970,8 +1233,7 @@ export function CampusMessagesShell({
 
       setRemoteKeyBackup((data?.backup as ChatKeyBackupRecord | null | undefined) ?? encryptedBackup);
       setRemoteKeyBackupLoaded(true);
-      setRecoveryCode(effectiveRecoveryCode);
-      saveStoredRecoveryCode(viewerUserId, effectiveRecoveryCode);
+      setRecoveryCode(effectiveRecoveryPhrase || recoveryCode);
     } catch (error) {
       setSendError(error instanceof Error ? error.message : "We could not save your encrypted key backup.");
     } finally {
@@ -994,29 +1256,148 @@ export function CampusMessagesShell({
     setSendError(null);
 
     try {
-      const restored = await decryptStoredChatKeyMaterialFromBackup(remoteKeyBackup, restoreRecoveryCode);
-      if (!isStoredChatKeyCompatible(restored, viewerIdentity)) {
-        throw new Error("This recovery code restored a different key than the one linked to this account.");
+      const restoreSecret = restoreRecoveryCode.trim();
+      const isRecoveryPhraseAttempt = isValidRecoveryPhrase(restoreSecret);
+      const currentAttemptState = await loadChatPinAttemptState(viewerUserId);
+      setPinAttemptState(currentAttemptState);
+
+      if (
+        currentAttemptState.lockedUntil &&
+        new Date(currentAttemptState.lockedUntil).getTime() > Date.now() &&
+        !isRecoveryPhraseAttempt
+      ) {
+        setSendError(`Too many wrong PIN attempts. Try again in ${formatLockoutCountdown(new Date(currentAttemptState.lockedUntil).getTime() - Date.now())} or use the 24-word recovery phrase.`);
+        return;
       }
 
-      const synced = syncStoredChatKeyIdentity(viewerUserId, viewerIdentity) ?? {
+      const restored = await decryptStoredChatKeyMaterialFromBackup(remoteKeyBackup, restoreSecret);
+      if (!isStoredChatKeyCompatible(restored, viewerIdentity)) {
+        throw new Error("That secret restored a different key than the one linked to this account.");
+      }
+
+      const synced = (await syncStoredChatKeyIdentity(viewerUserId, viewerIdentity)) ?? {
         ...restored,
         identityId: viewerIdentity.id,
         algorithm: viewerIdentity.algorithm,
         keyVersion: viewerIdentity.keyVersion,
         updatedAt: viewerIdentity.updatedAt
       };
-      saveStoredChatKeyMaterial(synced);
-      saveStoredRecoveryCode(viewerUserId, restoreRecoveryCode);
-      setLocalChatKey(synced);
-      setRecoveryCode(formatRecoveryCode(restoreRecoveryCode));
+      await saveStoredChatKeyMaterial(synced);
+      const hardened = await loadStoredChatKeyMaterial(viewerUserId);
+      await clearChatPinAttemptState(viewerUserId);
+      setPinAttemptState(await loadChatPinAttemptState(viewerUserId));
+      setLocalChatKey(hardened ?? synced);
+      setRecoveryCode(null);
       setRestoreRecoveryCode("");
       setRecoveryCodeVisible(false);
       setKeySetupError(null);
     } catch (error) {
+      const wasPinAttempt = isValidSecurityPin(restoreRecoveryCode);
+      if (wasPinAttempt) {
+        const nextAttemptState = await recordFailedChatPinAttempt(viewerUserId);
+        setPinAttemptState(nextAttemptState);
+        if (nextAttemptState.lockedUntil) {
+          setSendError(`Too many wrong PIN attempts. Try again in ${formatLockoutCountdown(new Date(nextAttemptState.lockedUntil).getTime() - Date.now())} or use the 24-word recovery phrase.`);
+          return;
+        }
+
+        setSendError(`Wrong PIN. ${Math.max(0, 5 - nextAttemptState.attempts)} attempts left before this device locks for 1 hour.`);
+        return;
+      }
+
       setSendError(error instanceof Error ? error.message : "We could not restore your encrypted key backup.");
     } finally {
       setRestoringKeyBackup(false);
+    }
+  }
+
+  async function handleCreateEncryptedKeyBackup() {
+    if (!viewerIdentity || !localChatKey || !isStoredChatKeyCompatible(localChatKey, viewerIdentity)) {
+      setSendError("Set up your secure chat identity on this device first.");
+      return;
+    }
+
+    const normalizedPin = normalizeSecurityPin(securityPin);
+    const normalizedConfirmPin = normalizeSecurityPin(confirmSecurityPin);
+    if (!isValidSecurityPin(normalizedPin)) {
+      setSendError("Choose a 6-digit security PIN before backing up this device.");
+      return;
+    }
+
+    if (normalizedPin !== normalizedConfirmPin) {
+      setSendError("Your security PIN confirmation does not match.");
+      return;
+    }
+
+    const nextRecoveryPhrase = recoveryCode ?? generateRecoveryPhrase();
+    setRecoveryCode(nextRecoveryPhrase);
+    setRecoveryCodeVisible(true);
+    setSendError(null);
+    await syncEncryptedKeyBackup(localChatKey, normalizedPin, nextRecoveryPhrase);
+    setSecurityPin("");
+    setConfirmSecurityPin("");
+  }
+
+  async function sendScreenshotAlert() {
+    const now = Date.now();
+    if (now - lastScreenshotAlertRef.current < 90_000) {
+      return;
+    }
+
+    const conversation = activeConversationRef.current;
+    const conversationId = conversation?.id;
+    const peerIdentity = conversation?.peer.publicKey ?? null;
+    if (!conversationId || !peerIdentity) {
+      return;
+    }
+
+    const currentLocalKey = localChatKey ?? (await loadStoredChatKeyMaterial(viewerUserId));
+    if (!currentLocalKey) {
+      return;
+    }
+
+    lastScreenshotAlertRef.current = now;
+    const body = `Suspected screenshot: ${viewerName} may have captured this chat.`;
+
+    try {
+      const encryptedPayload = await encryptChatText(body, currentLocalKey, peerIdentity);
+      const response = await fetchChatEndpoint(`/api/chats/${encodeURIComponent(conversationId)}/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          messageKind: "system",
+          ...encryptedPayload
+        })
+      });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        return;
+      }
+
+      const item =
+        data?.item && typeof data.item === "object"
+          ? (data.item as ChatMessageRecord)
+          : null;
+      const conversationPreview =
+        data?.conversationPreview && typeof data.conversationPreview === "object"
+          ? (data.conversationPreview as ChatConversationPreview)
+          : null;
+
+      if (item) {
+        setMessagePlaintextById((current) => ({ ...current, [item.id]: body }));
+        setActiveConversation((current) =>
+          current && current.id === conversationId
+            ? { ...current, messages: [...current.messages, item] }
+            : current
+        );
+      }
+
+      if (conversationPreview) {
+        setConversations((current) => upsertConversationItem(current, conversationPreview));
+      }
+    } catch {
+      lastScreenshotAlertRef.current = 0;
     }
   }
 
@@ -1050,6 +1431,32 @@ export function CampusMessagesShell({
   }, [activeConversation]);
 
   useEffect(() => {
+    if (!activeConversationId) {
+      return;
+    }
+
+    function handleKeyUp(event: KeyboardEvent) {
+      if (event.key === "PrintScreen") {
+        void sendScreenshotAlert();
+      }
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "hidden") {
+        void sendScreenshotAlert();
+      }
+    }
+
+    window.addEventListener("keyup", handleKeyUp);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("keyup", handleKeyUp);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [activeConversationId, localChatKey, viewerName, viewerUserId]);
+
+  useEffect(() => {
     if (replyingToMessageId && !messageMap.has(replyingToMessageId)) {
       setReplyingToMessageId(null);
     }
@@ -1070,26 +1477,11 @@ export function CampusMessagesShell({
       return;
     }
 
-    const storedRecoveryCode = recoveryCode ?? loadStoredRecoveryCode(viewerUserId);
-    if (storedRecoveryCode && !recoveryCode) {
-      setRecoveryCode(storedRecoveryCode);
-    }
-
     if (remoteKeyBackup?.publicKey === viewerIdentity.publicKey) {
       keyBackupSyncIdentityRef.current = viewerIdentity.publicKey;
       return;
     }
-
-    const currentRecoveryCode = storedRecoveryCode ?? generateRecoveryCode();
-    if (!storedRecoveryCode) {
-      setRecoveryCode(currentRecoveryCode);
-    }
-
-    if (keyBackupSyncIdentityRef.current !== viewerIdentity.publicKey) {
-      void syncEncryptedKeyBackup(localChatKey, currentRecoveryCode);
-      setRecoveryCodeVisible(true);
-    }
-  }, [localChatKey, recoveryCode, remoteKeyBackup, remoteKeyBackupLoaded, syncingKeyBackup, viewerIdentity, viewerUserId]);
+  }, [localChatKey, remoteKeyBackup, remoteKeyBackupLoaded, syncingKeyBackup, viewerIdentity]);
 
   useEffect(() => {
     if (!localChatKey) {
@@ -1943,6 +2335,67 @@ export function CampusMessagesShell({
     }
   }
 
+  async function handleUpdateMessageLifecycle(payload: {
+    durationKey?: ChatMessageTtlKey;
+    isStarred?: boolean;
+    isSaved?: boolean;
+  }) {
+    if (!selectedMessageAction || isDeletedChatMessage(selectedMessageAction)) {
+      return;
+    }
+
+    setMessageActionBusy(true);
+    setMessageActionError(null);
+
+    try {
+      const response = await fetchChatEndpoint(`/api/chats/messages/${encodeURIComponent(selectedMessageAction.id)}/lifecycle`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        setMessageActionError(data?.error?.message ?? "We could not update that message.");
+        return;
+      }
+
+      const updatedMessage =
+        data?.item && typeof data.item === "object"
+          ? (data.item as ChatMessageRecord)
+          : null;
+      const conversationPreview =
+        data?.conversationPreview && typeof data.conversationPreview === "object"
+          ? (data.conversationPreview as ChatConversationPreview)
+          : null;
+
+      if (updatedMessage) {
+        setActiveConversation((current) =>
+          current
+            ? {
+                ...current,
+                messages: isExpiredChatMessage(updatedMessage)
+                  ? current.messages.filter((message) => message.id !== updatedMessage.id)
+                  : current.messages.map((message) => (message.id === updatedMessage.id ? updatedMessage : message))
+              }
+            : current
+        );
+      }
+
+      if (conversationPreview) {
+        setConversations((current) => upsertConversationItem(current, conversationPreview));
+      }
+
+      setSelectedMessageActionId(null);
+      setSelectedMessageDeleteForEveryoneAllowed(false);
+      setSelectedMessageActionAnchor(null);
+    } catch {
+      setMessageActionError("Network issue while updating that message.");
+    } finally {
+      setMessageActionBusy(false);
+    }
+  }
+
   async function handleDeleteMessage(scope: DeleteChatMessageScope) {
     if (!selectedMessageAction) {
       return;
@@ -2049,13 +2502,217 @@ export function CampusMessagesShell({
     }
   }
 
-  async function handleSendMessage(event?: React.FormEvent<HTMLFormElement>) {
-    event?.preventDefault();
+  async function loadShareMenuOptions() {
+    if (shareMenuLoading) {
+      return;
+    }
 
-    const conversationId = activeConversation?.id;
-    const nextMessage = draftMessage.trim();
+    setShareMenuLoading(true);
+    setShareMenuError(null);
+
+    try {
+      const [marketResponse, eventsResponse, vibesResponse] = await Promise.all([
+        fetchChatEndpoint("/api/market"),
+        fetchChatEndpoint("/api/events"),
+        fetchChatEndpoint("/api/vibes")
+      ]);
+      const [marketData, eventsData, vibesData] = await Promise.all([
+        marketResponse.json().catch(() => null) as Promise<MarketDashboardResponse | null>,
+        eventsResponse.json().catch(() => null) as Promise<CampusEventsDashboardResponse | null>,
+        vibesResponse.json().catch(() => null) as Promise<FeedListResponse | null>
+      ]);
+
+      const nextCollections = buildShareMenuCollections();
+
+      if (marketResponse.ok && marketData) {
+        nextCollections.deals = [
+          ...marketData.viewerActiveListings.map((listing) => ({
+            kind: "deal_card" as const,
+            payload: {
+              targetType: "listing" as const,
+              targetId: listing.id,
+              title: listing.title,
+              amountLabel: formatCurrencyLabel(listing.priceAmount, null),
+              category: listing.category,
+              campusSpot: listing.campusSpot ?? listing.location ?? "",
+              counterpartUsername: listing.seller.username,
+              counterpartDisplayName: listing.seller.displayName,
+              imageUrl: listing.media[0]?.url ?? null,
+              description: listing.description
+            }
+          })),
+          ...marketData.viewerActiveRequests.map((request) => ({
+            kind: "deal_card" as const,
+            payload: {
+              targetType: "request" as const,
+              targetId: request.id,
+              title: request.title,
+              amountLabel: formatCurrencyLabel(request.budgetAmount ?? null, request.budgetLabel ?? null),
+              category: request.category,
+              campusSpot: request.tag ?? "",
+              counterpartUsername: request.requester.username,
+              counterpartDisplayName: request.requester.displayName,
+              imageUrl: request.media[0]?.url ?? null,
+              description: request.detail
+            }
+          }))
+        ];
+      }
+
+      if (eventsResponse.ok && eventsData) {
+        nextCollections.events = eventsData.hostedEvents.map((event) => ({
+          kind: "event_card" as const,
+          payload: {
+            eventId: event.id,
+            title: event.title,
+            club: event.club,
+            location: event.location,
+            startsAt: event.startsAt,
+            passLabel: event.passLabel,
+            responseMode: event.responseMode,
+            imageUrl: event.media[0]?.url ?? null,
+            description: event.description,
+            hostUsername: event.host.username
+          }
+        }));
+      }
+
+      if (vibesResponse.ok && vibesData) {
+        nextCollections.vibes = vibesData.items
+          .filter((item) => item.userId === viewerUserId)
+          .map((item) => ({
+            kind: "vibe_card" as const,
+            payload: {
+              postId: item.id,
+              title: item.title || "Campus vibe",
+              body: item.body,
+              mediaUrl: item.media.find((media) => media.kind === "video")?.url ?? item.mediaUrl,
+              thumbnailUrl: item.media[0]?.url ?? item.mediaUrl,
+              authorUsername: item.author.username,
+              authorDisplayName: item.author.displayName
+            }
+          }));
+      }
+
+      nextCollections.profiles = [
+        {
+          kind: "profile_card" as const,
+          payload: {
+            userId: viewerUserId,
+            username: viewerUsername,
+            displayName: viewerName,
+            course: "Campus member",
+            stream: collegeName,
+            bio: `${viewerName} on ${collegeName}`,
+            avatarUrl: null,
+            collegeName
+          }
+        },
+        ...(activePeer
+          ? [{
+              kind: "profile_card" as const,
+              payload: {
+                userId: activePeer.userId,
+                username: activePeer.username,
+                displayName: activePeer.displayName,
+                course: activePeer.course ?? "Campus member",
+                stream: activePeer.stream ?? collegeName,
+                bio: [activePeer.course, activePeer.stream].filter(Boolean).join(" • ") || `Student at ${collegeName}`,
+                avatarUrl: activePeer.avatarUrl ?? null,
+                collegeName
+              }
+            }]
+          : [])
+      ];
+
+      setShareMenuCollections(nextCollections);
+
+      const firstTabWithItems =
+        (Object.entries(nextCollections).find((entry) => entry[1].length > 0)?.[0] as ShareMenuTab | undefined) ?? "deals";
+      setShareMenuTab(firstTabWithItems);
+    } catch {
+      setShareMenuError("We could not load your share menu right now.");
+    } finally {
+      setShareMenuLoading(false);
+    }
+  }
+
+  async function dispatchEncryptedMessage({
+    conversationId,
+    plaintext,
+    messageKind,
+    replyToMessageId
+  }: {
+    conversationId: string;
+    plaintext: string;
+    messageKind: ChatMessageKind;
+    replyToMessageId?: string | null;
+  }) {
     const peerIdentity = activeConversation?.peer.publicKey ?? null;
-    if (!conversationId || !nextMessage || sending) {
+    const chatReady = await ensureChatIdentity();
+    if (!chatReady) {
+      throw new Error(keySetupError ?? "Secure chat is not ready on this device.");
+    }
+
+    const currentLocalKey = localChatKey ?? (await loadStoredChatKeyMaterial(viewerUserId));
+    if (!currentLocalKey) {
+      throw new Error("This device is missing your private E2EE key.");
+    }
+
+    if (!peerIdentity) {
+      throw new Error("This user has not finished setting up E2EE chat yet.");
+    }
+
+    const encryptedPayload = await encryptChatText(plaintext, currentLocalKey, peerIdentity);
+    const response = await fetchChatEndpoint(`/api/chats/${encodeURIComponent(conversationId)}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        messageKind,
+        replyToMessageId: replyToMessageId ?? null,
+        durationKey: "30d",
+        ...encryptedPayload
+      })
+    });
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error("Your session expired on this browser. Sign in again before sending messages.");
+      }
+
+      throw new Error(data?.error?.message ?? "We could not send this message.");
+    }
+
+    const sentMessage = data?.item as ChatMessageRecord | undefined;
+    const conversationPreview = data?.conversationPreview as ChatConversationPreview | undefined;
+
+    if (sentMessage) {
+      messageIdsRef.current.add(sentMessage.id);
+      setMessagePlaintextById((current) => ({
+        ...current,
+        [sentMessage.id]: plaintext
+      }));
+      setActiveConversation((current) =>
+        current && current.id === conversationId
+          ? {
+              ...current,
+              messages: [...current.messages, sentMessage]
+            }
+          : current
+      );
+    }
+
+    if (conversationPreview) {
+      setConversations((current) => upsertConversationItem(current, { ...conversationPreview, unreadCount: 0 }));
+    }
+
+    return sentMessage ?? null;
+  }
+
+  async function handleDealInterested(payload: ChatDealCardPayload) {
+    const conversationId = activeConversation?.id;
+    if (!conversationId || sending) {
       return;
     }
 
@@ -2063,74 +2720,50 @@ export function CampusMessagesShell({
     setSendError(null);
 
     try {
-      const chatReady = await ensureChatIdentity();
-      if (!chatReady) {
-        return;
-      }
-
-      const currentLocalKey = localChatKey ?? loadStoredChatKeyMaterial(viewerUserId);
-      if (!currentLocalKey) {
-        setSendError("This device is missing your private E2EE key.");
-        return;
-      }
-
-      if (!peerIdentity) {
-        setSendError("This user has not finished setting up E2EE chat yet.");
-        return;
-      }
-
-      const encryptedPayload = await encryptChatText(nextMessage, currentLocalKey, peerIdentity);
-
-      const response = await fetchChatEndpoint(`/api/chats/${encodeURIComponent(conversationId)}/messages`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          messageKind: "text",
-          replyToMessageId: replyingToMessageId,
-          ...encryptedPayload
-        })
+      await dispatchEncryptedMessage({
+        conversationId,
+        plaintext: `I am interested in ${payload.title}. Is it still available?`,
+        messageKind: "text"
       });
-      const data = await response.json().catch(() => null);
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : "We could not send your interest reply.");
+    } finally {
+      setSending(false);
+    }
+  }
 
-      if (!response.ok) {
-        if (response.status === 401) {
-          setSendError("Your session expired on this browser. Sign in again before sending messages.");
-          return;
-        }
+  async function handleSendMessage(event?: React.FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
 
-        setSendError(data?.error?.message ?? "We could not send this message.");
-        return;
-      }
+    const conversationId = activeConversation?.id;
+    const nextMessage = draftMessage.trim();
+    const hasPendingShare = Boolean(pendingShareCard);
+    if (!conversationId || (!nextMessage && !hasPendingShare) || sending) {
+      return;
+    }
 
-      const sentMessage = data?.item as ChatMessageRecord | undefined;
-      const conversationPreview = data?.conversationPreview as ChatConversationPreview | undefined;
+    setSending(true);
+    setSendError(null);
 
-      if (sentMessage) {
-        messageIdsRef.current.add(sentMessage.id);
-        setMessagePlaintextById((current) => ({
-          ...current,
-          [sentMessage.id]: nextMessage
-        }));
-        setActiveConversation((current) =>
-          current && current.id === conversationId
-            ? {
-                ...current,
-                messages: [...current.messages, sentMessage]
-              }
-            : current
-        );
-      }
-
-      if (conversationPreview) {
-        setConversations((current) => upsertConversationItem(current, { ...conversationPreview, unreadCount: 0 }));
-      }
+    try {
+      const outgoingText = pendingShareCard
+        ? serializeShareCardPayload(pendingShareCard, nextMessage || null)
+        : nextMessage;
+      const outgoingMessageKind: ChatMessageKind = pendingShareCard ? pendingShareCard.kind : "text";
+      await dispatchEncryptedMessage({
+        conversationId,
+        plaintext: outgoingText,
+        messageKind: outgoingMessageKind,
+        replyToMessageId: replyingToMessageId
+      });
 
       setDraftMessage("");
-      setPendingSharedPost(null);
+      setPendingShareCard(null);
+      setShareMenuOpen(false);
       setReplyingToMessageId(null);
       focusComposerSoon();
-    } catch {
-      setSendError("Network error. Please try again in a moment.");
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : "Network error. Please try again in a moment.");
     } finally {
       setSending(false);
     }
@@ -2148,9 +2781,21 @@ export function CampusMessagesShell({
   const showDecryptionWarning = Boolean(
     decryptionWarning && activeConversationId && !dismissedDecryptionWarningIds[activeConversationId]
   );
-  const formattedRecoveryCode = recoveryCode ? formatRecoveryCode(recoveryCode) : "";
+  const formattedRecoveryCode = recoveryCode ?? "";
+  const activePinLockoutUntil =
+    pinAttemptState?.lockedUntil && new Date(pinAttemptState.lockedUntil).getTime() > lockoutNow
+      ? pinAttemptState.lockedUntil
+      : null;
+  const activePinLockoutRemainingMs = activePinLockoutUntil
+    ? Math.max(0, new Date(activePinLockoutUntil).getTime() - lockoutNow)
+    : 0;
+  const activePinLockoutCountdown = activePinLockoutRemainingMs
+    ? formatLockoutCountdown(activePinLockoutRemainingMs)
+    : "";
   const showRecoveryRestoreCard = Boolean(viewerIdentity && remoteKeyBackup && !hasCompatibleLocalChatKey);
-  const showRecoveryCodeCard = Boolean(viewerIdentity && hasCompatibleLocalChatKey && formattedRecoveryCode && recoveryCodeVisible);
+  const showPinSetupCard = Boolean(viewerIdentity && hasCompatibleLocalChatKey && remoteKeyBackupLoaded && !remoteKeyBackup);
+  const shouldShowBackupCards = Boolean(showPinSetupCard || showRecoveryRestoreCard);
+  const activeShareCards = shareMenuCollections[shareMenuTab];
   const activePeerStatus = activePeer ? getStatusRing(activePeer.userId) : "away";
   const activePeerInitials = activePeer ? getInitials(activePeer.displayName) : "";
   const activePeerMeta = activePeer
@@ -2166,6 +2811,27 @@ export function CampusMessagesShell({
           : realtimeState === "connecting"
             ? "Syncing"
             : "Paused";
+  const renderBackupPanel = shouldShowBackupCards ? (
+    <div className="spm-chat-key-card" role="status">
+      <strong>{showRecoveryRestoreCard ? "Restore this device from settings" : "Create your secure backup from settings"}</strong>
+      <span>
+        {showRecoveryRestoreCard
+          ? "Your account already has an encrypted cloud backup. Open Security Settings to restore this device with your PIN or 24-word phrase."
+          : "PIN setup, recovery phrase access, and backup rotation now live in Security Settings so you can manage them without opening a specific chat."}
+      </span>
+      {activePinLockoutUntil ? (
+        <div className="spm-chat-lockout" role="alert">
+          <strong>Too many attempts. Try again in {activePinLockoutCountdown}</strong>
+          <span>The lockout is now also tracked on the server side for secure backup actions.</span>
+        </div>
+      ) : null}
+      <div className="spm-chat-key-actions">
+        <Link href="/profile/settings/chat-privacy" className="spm-chat-key-button">
+          Open Security Settings
+        </Link>
+      </div>
+    </div>
+  ) : null;
 
   const navItems = buildPrimaryCampusNav("messages", { unreadCount });
 
@@ -2378,14 +3044,10 @@ export function CampusMessagesShell({
               <IconShield />
               {localChatKey && viewerIdentity ? "E2EE ready" : "Secure chat"}
             </div>
-            {viewerIdentity && hasCompatibleLocalChatKey && formattedRecoveryCode && (
-              <button
-                type="button"
-                className="spm-e2ee-link"
-                onClick={() => setRecoveryCodeVisible((current) => !current)}
-              >
-                {recoveryCodeVisible ? "Hide recovery key" : "Show recovery key"}
-              </button>
+            {viewerIdentity && hasCompatibleLocalChatKey && (
+              <Link href="/profile/settings/chat-privacy" className="spm-e2ee-link">
+                {remoteKeyBackup ? "Manage secure backup" : "Create secure backup"}
+              </Link>
             )}
             <span>{collegeName}</span>
           </div>
@@ -2406,62 +3068,7 @@ export function CampusMessagesShell({
                 End-to-end encrypted by Vyb
               </div>
 
-              {(showRecoveryCodeCard || showRecoveryRestoreCard) && (
-                <div className="spm-chat-key-card" role="status">
-                  {showRecoveryCodeCard && (
-                    <>
-                      <strong>Save this recovery key</strong>
-                      <span>Use it on another device to restore your end-to-end encrypted chats.</span>
-                      <code>{formattedRecoveryCode}</code>
-                      <div className="spm-chat-key-actions">
-                        <button
-                          type="button"
-                          className="spm-chat-key-button"
-                          onClick={() => {
-                            void navigator.clipboard?.writeText(formattedRecoveryCode);
-                          }}
-                        >
-                          Copy key
-                        </button>
-                        <button
-                          type="button"
-                          className="spm-chat-key-button spm-chat-key-button-ghost"
-                          onClick={() => setRecoveryCodeVisible(false)}
-                        >
-                          Saved it
-                        </button>
-                      </div>
-                    </>
-                  )}
-
-                  {showRecoveryRestoreCard && (
-                    <>
-                      <strong>Restore your encrypted key</strong>
-                      <span>Enter the recovery key from your original device to unlock the same E2EE chats here.</span>
-                      <div className="spm-chat-key-restore">
-                        <input
-                          value={restoreRecoveryCode}
-                          onChange={(event) => setRestoreRecoveryCode(event.target.value)}
-                          placeholder="Enter recovery key"
-                          autoCapitalize="characters"
-                          spellCheck={false}
-                          aria-label="Enter your encrypted chat recovery key"
-                        />
-                        <button
-                          type="button"
-                          className="spm-chat-key-button"
-                          onClick={() => {
-                            void handleRestoreEncryptedKeyBackup();
-                          }}
-                          disabled={!restoreRecoveryCode.trim() || restoringKeyBackup}
-                        >
-                          {restoringKeyBackup ? "Restoring..." : "Restore key"}
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
+              {renderBackupPanel}
             </div>
           )}
 
@@ -2503,6 +3110,11 @@ export function CampusMessagesShell({
                 )}
 
                 <div className="spm-chat-header-actions">
+                  {viewerIdentity && hasCompatibleLocalChatKey && (
+                    <Link href="/profile/settings/chat-privacy" className="spm-chat-header-link">
+                      Security
+                    </Link>
+                  )}
                   <span className={`spm-chat-live-pill spm-chat-live-pill-${realtimeState}`}>
                     {realtimeLabel}
                   </span>
@@ -2550,62 +3162,7 @@ export function CampusMessagesShell({
 
               {activeConversation && (
                 <>
-                  {(showRecoveryCodeCard || showRecoveryRestoreCard) && (
-                    <div className="spm-chat-key-card" role="status">
-                      {showRecoveryCodeCard && (
-                        <>
-                          <strong>Save this recovery key</strong>
-                          <span>Use it on your phone or another laptop to restore your end-to-end encrypted chats.</span>
-                          <code>{formattedRecoveryCode}</code>
-                          <div className="spm-chat-key-actions">
-                            <button
-                              type="button"
-                              className="spm-chat-key-button"
-                              onClick={() => {
-                                void navigator.clipboard?.writeText(formattedRecoveryCode);
-                              }}
-                            >
-                              Copy key
-                            </button>
-                            <button
-                              type="button"
-                              className="spm-chat-key-button spm-chat-key-button-ghost"
-                              onClick={() => setRecoveryCodeVisible(false)}
-                            >
-                              Saved it
-                            </button>
-                          </div>
-                        </>
-                      )}
-
-                      {showRecoveryRestoreCard && (
-                        <>
-                          <strong>Restore your encrypted key</strong>
-                          <span>Enter the recovery key from your original device to unlock the same E2EE chats here.</span>
-                          <div className="spm-chat-key-restore">
-                            <input
-                              value={restoreRecoveryCode}
-                              onChange={(event) => setRestoreRecoveryCode(event.target.value)}
-                              placeholder="Enter recovery key"
-                              autoCapitalize="characters"
-                              spellCheck={false}
-                              aria-label="Enter your encrypted chat recovery key"
-                            />
-                            <button
-                              type="button"
-                              className="spm-chat-key-button"
-                              onClick={() => {
-                                void handleRestoreEncryptedKeyBackup();
-                              }}
-                              disabled={!restoreRecoveryCode.trim() || restoringKeyBackup}
-                            >
-                              {restoringKeyBackup ? "Restoring..." : "Restore key"}
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
+                  {renderBackupPanel}
 
                   <div className="spm-chat-thread" ref={threadRef}>
                     {messageTimeline.length === 0 ? (
@@ -2637,6 +3194,14 @@ export function CampusMessagesShell({
                         const receiptLabel = isOwnMessage && !isDeletedMessage ? (isSeenByPeer ? "Seen" : "Sent") : null;
                         const swipeOffsetX = swipeReplyPreview?.messageId === message.id ? swipeReplyPreview.offsetX : 0;
                         const showSwipeReplyCue = Math.abs(swipeOffsetX) >= 10;
+                        const messageCardPayload = parseShareCardPayload(message.messageKind, messagePlaintextById[message.id]);
+                        const showMessageCard = isShareCardKind(message.messageKind);
+                        const showCardCaption = Boolean(messageCardPayload?.caption?.trim());
+                        const isCardDecrypting =
+                          showMessageCard &&
+                          isE2eeCipherAlgorithm(message.cipherAlgorithm) &&
+                          !messagePlaintextById[message.id] &&
+                          !isDeletedMessage;
 
                         return (
                           <div
@@ -2700,9 +3265,27 @@ export function CampusMessagesShell({
                                 </div>
                               )}
 
-                              <p className="spm-chat-message-text">
-                                {getMessageBody(message, messagePlaintextById[message.id], { isOwnMessage })}
-                              </p>
+                              {showMessageCard ? (
+                                <>
+                                  <MessageCardRenderer
+                                    kind={message.messageKind as ChatShareCardKind}
+                                    payload={messageCardPayload}
+                                    isOwnMessage={isOwnMessage}
+                                    isDecrypting={isCardDecrypting}
+                                    onInterestedDeal={handleDealInterested}
+                                    onWatchVibe={(payload) => setActiveVibePreview(payload)}
+                                    onOpenEvent={() => router.push("/events")}
+                                    onOpenProfile={(payload) => router.push(`/u/${encodeURIComponent(payload.username)}`)}
+                                  />
+                                  {showCardCaption && (
+                                    <p className="spm-chat-message-text">{messageCardPayload?.caption?.trim()}</p>
+                                  )}
+                                </>
+                              ) : (
+                                <p className="spm-chat-message-text">
+                                  {getMessageBody(message, messagePlaintextById[message.id], { isOwnMessage })}
+                                </p>
+                              )}
 
                               <div className="spm-chat-message-meta">
                                 {reactionSummary ? (
@@ -2712,6 +3295,12 @@ export function CampusMessagesShell({
                                   <span className={`spm-chat-receipt${isSeenByPeer ? " is-seen" : ""}`}>
                                     {isSeenByPeer ? <IconDoubleCheck /> : <IconCheck />}
                                     {receiptLabel}
+                                  </span>
+                                ) : null}
+                              {message.expiresAt ? (
+                                <span className="spm-chat-expiry-pill" title={`Expires ${formatExpiryLabel(message.expiresAt)}`}>
+                                  <IconClock />
+                                  {formatExpiryLabel(message.expiresAt)}
                                   </span>
                                 ) : null}
                                 <span suppressHydrationWarning>{formatMessageTime(message.createdAt)}</span>
@@ -2823,6 +3412,47 @@ export function CampusMessagesShell({
                         )}
 
                         <div className="spm-chat-action-list">
+                          {!selectedMessageActionIsDeleted && (
+                            <>
+                              <button
+                                type="button"
+                                className="spm-chat-action-button"
+                                onClick={() => {
+                                  void handleUpdateMessageLifecycle({
+                                    isStarred: !selectedMessageAction.isStarred,
+                                    isSaved: !selectedMessageAction.isSaved
+                                  });
+                                }}
+                                disabled={messageActionBusy}
+                              >
+                                <IconStar />
+                                {selectedMessageAction.isStarred || selectedMessageAction.isSaved ? "Unstar message" : "Star message"}
+                              </button>
+
+                              <label className="spm-chat-action-select">
+                                <span>Set expiry</span>
+                                <select
+                                  defaultValue=""
+                                  disabled={messageActionBusy}
+                                  onChange={(event) => {
+                                    const durationKey = normalizeTtlDurationKey(event.target.value);
+                                    if (durationKey) {
+                                      void handleUpdateMessageLifecycle({ durationKey });
+                                    }
+                                  }}
+                                  aria-label="Set message expiry"
+                                >
+                                  <option value="" disabled>Choose timer</option>
+                                  {CHAT_TTL_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            </>
+                          )}
+
                           {selectedMessageActionIsOwn && selectedMessageDeleteForEveryoneAllowed && (
                             <button
                               type="button"
@@ -2908,33 +3538,119 @@ export function CampusMessagesShell({
                       <p className="spm-chat-compose-error" role="alert">{sendError}</p>
                     )}
 
-                    {pendingSharedPost && (
+                    {shareMenuOpen && (
+                      <div className="spm-chat-share-menu">
+                        <div className="spm-chat-share-menu-head">
+                          <strong>Share into chat</strong>
+                          <button
+                            type="button"
+                            className="spm-chat-compose-reply-clear"
+                            onClick={() => setShareMenuOpen(false)}
+                            aria-label="Close share menu"
+                          >
+                            <IconClose />
+                          </button>
+                        </div>
+                        <div className="spm-chat-share-menu-tabs" role="tablist" aria-label="Share menu sections">
+                          {([
+                            ["deals", "Deals"],
+                            ["events", "Events"],
+                            ["vibes", "Vibes"],
+                            ["profiles", "Profiles"]
+                          ] as const).map(([tab, label]) => (
+                            <button
+                              key={tab}
+                              type="button"
+                              className={`spm-chat-share-menu-tab${shareMenuTab === tab ? " is-active" : ""}`}
+                              onClick={() => setShareMenuTab(tab)}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        {shareMenuError && <p className="spm-chat-compose-error">{shareMenuError}</p>}
+                        {shareMenuLoading ? (
+                          <div className="spm-chat-share-menu-list">
+                            {Array.from({ length: 3 }).map((_, index) => (
+                              <div key={`share-skeleton-${index}`} className="spm-chat-share-item spm-chat-share-item-skeleton" aria-hidden="true">
+                                <span className="spm-chat-share-item-thumb" />
+                                <div className="spm-chat-share-item-copy">
+                                  <strong />
+                                  <span />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : activeShareCards.length > 0 ? (
+                          <div className="spm-chat-share-menu-list">
+                            {activeShareCards.map((card) => (
+                              <button
+                                key={`${card.kind}:${getPendingShareCardSnippet(card)}`}
+                                type="button"
+                                className={`spm-chat-share-item${pendingShareCard === card ? " is-active" : ""}`}
+                                onClick={() => {
+                                  setPendingShareCard(card);
+                                  setShareMenuOpen(false);
+                                  focusComposerSoon();
+                                }}
+                              >
+                                <span className="spm-chat-share-item-thumb">
+                                  {card.kind === "profile_card"
+                                    ? "U"
+                                    : card.kind === "event_card"
+                                      ? "E"
+                                      : card.kind === "deal_card"
+                                        ? "M"
+                                        : "V"}
+                                </span>
+                                <span className="spm-chat-share-item-copy">
+                                  <strong>{getShareCardPreviewText(card.kind, card.payload)}</strong>
+                                  <span>{card.kind.replace("_card", "").replace("_", " ")}</span>
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="spm-chat-compose-note">Nothing ready to share from this section yet.</p>
+                        )}
+                      </div>
+                    )}
+
+                    {pendingShareCard && (
                       <div className="spm-chat-compose-share">
-                        {pendingSharedPost.mediaUrl ? (
+                        {(pendingShareCard.kind === "vibe_card" && (((pendingShareCard.payload as ChatVibeCardPayload).thumbnailUrl ?? (pendingShareCard.payload as ChatVibeCardPayload).mediaUrl))) ||
+                        (pendingShareCard.kind === "event_card" && (pendingShareCard.payload as ChatEventCardPayload).imageUrl) ||
+                        (pendingShareCard.kind === "deal_card" && (pendingShareCard.payload as ChatDealCardPayload).imageUrl) ? (
                           <div className="spm-chat-compose-share-media" aria-hidden="true">
-                            {pendingSharedPost.mediaKind === "video" ? (
-                              <video src={pendingSharedPost.mediaUrl} muted playsInline preload="metadata" />
-                            ) : (
-                              <img src={pendingSharedPost.mediaUrl} alt="Shared post preview" loading="lazy" />
-                            )}
+                            <img
+                              src={
+                                pendingShareCard.kind === "vibe_card"
+                                  ? ((pendingShareCard.payload as ChatVibeCardPayload).thumbnailUrl ?? (pendingShareCard.payload as ChatVibeCardPayload).mediaUrl ?? "")
+                                  : pendingShareCard.kind === "event_card"
+                                    ? ((pendingShareCard.payload as ChatEventCardPayload).imageUrl ?? "")
+                                    : ((pendingShareCard.payload as ChatDealCardPayload).imageUrl ?? "")
+                              }
+                              alt="Shared card preview"
+                              loading="lazy"
+                            />
                           </div>
                         ) : (
                           <div className="spm-chat-compose-share-badge" aria-hidden="true">
-                            Post
+                            Card
                           </div>
                         )}
 
                         <div className="spm-chat-compose-share-copy">
-                          <strong>Sharing a post</strong>
-                          <span>@{pendingSharedPost.authorUsername}</span>
-                          <p>{getPendingSharedPostSnippet(pendingSharedPost)}</p>
+                          <strong>Sharing a {pendingShareCard.kind.replace("_card", "").replace("_", " ")}</strong>
+                          <span>{pendingShareCard.kind === "profile_card" ? `@${(pendingShareCard.payload as ChatProfileCardPayload).username}` : "Encrypted preview"}</span>
+                          <p>{getPendingShareCardSnippet(pendingShareCard)}</p>
                         </div>
 
                         <button
                           type="button"
                           className="spm-chat-compose-reply-clear"
-                          onClick={() => setPendingSharedPost(null)}
-                          aria-label="Cancel shared post"
+                          onClick={() => setPendingShareCard(null)}
+                          aria-label="Cancel shared card"
                         >
                           <IconClose />
                         </button>
@@ -2973,6 +3689,21 @@ export function CampusMessagesShell({
                         />
                       </div>
 
+                      <button
+                        type="button"
+                        className="spm-chat-share-trigger"
+                        aria-label="Open share menu"
+                        onClick={() => {
+                          const nextOpen = !shareMenuOpen;
+                          setShareMenuOpen(nextOpen);
+                          if (nextOpen && shareMenuCollections.deals.length === 0 && shareMenuCollections.events.length === 0 && shareMenuCollections.vibes.length === 0) {
+                            void loadShareMenuOptions();
+                          }
+                        }}
+                      >
+                        <IconPlus />
+                      </button>
+
                       <label className="spm-chat-compose-box">
                         <textarea
                           ref={composerRef}
@@ -2992,8 +3723,8 @@ export function CampusMessagesShell({
 
                       <button
                         type="submit"
-                        className={`spm-chat-send${draftMessage.trim() ? " spm-chat-send-active" : ""}`}
-                        disabled={!draftMessage.trim() || sending}
+                        className={`spm-chat-send${draftMessage.trim() || pendingShareCard ? " spm-chat-send-active" : ""}`}
+                        disabled={(!draftMessage.trim() && !pendingShareCard) || sending}
                         aria-label="Send message"
                       >
                         {sending || creatingChatIdentity ? <span className="spm-search-spinner" aria-hidden="true" /> : <IconSend />}
@@ -3007,7 +3738,76 @@ export function CampusMessagesShell({
         </section>
       </div>
 
+      {activeVibePreview && (
+        <div
+          className="spm-vibe-preview-backdrop"
+          role="presentation"
+          onClick={() => setActiveVibePreview(null)}
+        >
+          <div
+            className="spm-vibe-preview-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={activeVibePreview.title || "Vibe preview"}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="spm-vibe-preview-head">
+              <div>
+                <strong>{activeVibePreview.title || "Campus vibe"}</strong>
+                <span>@{activeVibePreview.authorUsername}</span>
+              </div>
+              <button
+                type="button"
+                className="spm-chat-action-close"
+                onClick={() => setActiveVibePreview(null)}
+                aria-label="Close vibe preview"
+              >
+                <IconClose />
+              </button>
+            </div>
+            {activeVibePreview.mediaUrl ? (
+              <video
+                className="spm-vibe-preview-video"
+                src={activeVibePreview.mediaUrl}
+                poster={activeVibePreview.thumbnailUrl ?? undefined}
+                controls
+                autoPlay
+                playsInline
+              />
+            ) : (
+              <div className="spm-vibe-preview-empty">
+                <span>Video preview unavailable.</span>
+              </div>
+            )}
+            {activeVibePreview.body?.trim() && (
+              <p className="spm-vibe-preview-copy">{activeVibePreview.body}</p>
+            )}
+            <div className="spm-vibe-preview-actions">
+              <button
+                type="button"
+                className="spm-chat-key-button spm-chat-key-button-ghost"
+                onClick={() => {
+                  setActiveVibePreview(null);
+                  router.push("/vibes");
+                }}
+              >
+                Open vibes feed
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <CampusMobileNavigation navItems={navItems} />
     </main>
   );
 }
+
+
+
+
+
+
+
+
+

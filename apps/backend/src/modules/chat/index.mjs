@@ -6,13 +6,18 @@ import {
   canAccessChatConversation,
   createOrGetDirectConversation,
   getChatConversation,
+  getChatErrorResponse,
   getChatKeyBackup,
+  getChatKeyBackupPinAttemptState,
   listChatInbox,
   markChatConversationRead,
   migrateChatConversationEncryption,
   reactToChatMessage,
+  recordFailedChatKeyBackupPinAttempt,
   sendChatMessage,
+  updateChatMessageLifecycle,
   uploadEncryptedChatAttachment,
+  clearChatKeyBackupPinAttemptState,
   upsertChatKeyBackup,
   upsertChatIdentity
 } from "./repository.mjs";
@@ -32,17 +37,19 @@ function buildChatViewer(resolved, profile) {
 }
 
 function sendChatFailure(response, scope, resolved, error) {
-  console.error(`[chat] ${scope}:failed`, {
+  const failure = getChatErrorResponse(error, `${scope.toUpperCase()}_FAILED`);
+  const logger = failure.statusCode >= 500 ? console.error : console.warn;
+  logger(`[chat] ${scope}:failed`, {
     tenantId: resolved?.live?.tenant?.id ?? null,
     userId: resolved?.live?.user?.id ?? null,
-    message: error instanceof Error ? error.message : "unknown"
+    message: failure.message
   });
 
   sendError(
     response,
-    502,
-    `${scope.toUpperCase()}_FAILED`,
-    error instanceof Error ? error.message : "Chat service is unavailable right now."
+    failure.statusCode,
+    failure.code,
+    failure.message
   );
 }
 
@@ -164,6 +171,33 @@ export async function handleChatRoute({ request, response, url, context }) {
     return true;
   }
 
+  if (request.method === "GET" && url.pathname === "/v1/chats/key-backup/attempts") {
+    try {
+      sendJson(response, 200, await getChatKeyBackupPinAttemptState(viewer));
+    } catch (error) {
+      sendChatFailure(response, "chat_key_backup_attempts_fetch", resolved, error);
+    }
+    return true;
+  }
+
+  if (request.method === "PUT" && url.pathname === "/v1/chats/key-backup/attempts") {
+    try {
+      sendJson(response, 200, await recordFailedChatKeyBackupPinAttempt(viewer));
+    } catch (error) {
+      sendChatFailure(response, "chat_key_backup_attempts_record", resolved, error);
+    }
+    return true;
+  }
+
+  if (request.method === "DELETE" && url.pathname === "/v1/chats/key-backup/attempts") {
+    try {
+      sendJson(response, 200, await clearChatKeyBackupPinAttemptState(viewer));
+    } catch (error) {
+      sendChatFailure(response, "chat_key_backup_attempts_clear", resolved, error);
+    }
+    return true;
+  }
+
   if (request.method === "POST" && url.pathname === "/v1/chats/media/upload") {
     const payload = await readJson(request);
     if (!payload || typeof payload !== "object") {
@@ -274,6 +308,22 @@ export async function handleChatRoute({ request, response, url, context }) {
       sendJson(response, 200, await reactToChatMessage(viewer, reactionMatch[1], emoji));
     } catch (error) {
       sendChatFailure(response, "chat_reaction", resolved, error);
+    }
+    return true;
+  }
+
+  const lifecycleMatch = url.pathname.match(/^\/v1\/chats\/messages\/([^/]+)\/lifecycle$/);
+  if (request.method === "PUT" && lifecycleMatch) {
+    const payload = await readJson(request);
+    if (!payload || typeof payload !== "object") {
+      sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+      return true;
+    }
+
+    try {
+      sendJson(response, 200, await updateChatMessageLifecycle(viewer, lifecycleMatch[1], payload));
+    } catch (error) {
+      sendChatFailure(response, "chat_lifecycle", resolved, error);
     }
     return true;
   }

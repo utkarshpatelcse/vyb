@@ -1,10 +1,18 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { getChatConversation } from "../../../../src/lib/backend";
+import { getChatConversation, isBackendRequestError } from "../../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../../src/lib/dev-session";
 
 function buildError(status: number, code: string, message: string) {
   return NextResponse.json({ error: { code, message } }, { status });
+}
+
+function buildChatError(error: unknown, fallbackCode: string, fallbackMessage: string) {
+  if (isBackendRequestError(error)) {
+    return buildError(error.statusCode, error.code, error.message);
+  }
+
+  return buildError(500, fallbackCode, error instanceof Error ? error.message : fallbackMessage);
 }
 
 export async function GET(_request: Request, { params }: { params: Promise<{ conversationId: string }> }) {
@@ -23,6 +31,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ con
       }
     });
   } catch (error) {
-    return buildError(500, "CHAT_DETAIL_FAILED", error instanceof Error ? error.message : "We could not load that chat.");
+    return buildChatError(error, "CHAT_DETAIL_FAILED", "We could not load that chat.");
   }
 }

@@ -11,6 +11,7 @@ const MAX_SOCIAL_VIDEO_BYTES = 40 * 1024 * 1024;
 
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"]);
 const VIDEO_MIME_TYPES = new Set(["video/mp4", "video/webm", "video/quicktime"]);
+const SOCIAL_MEDIA_CACHE_CONTROL = "public, max-age=31536000, immutable";
 
 function buildDownloadUrl(bucketName: string, storagePath: string, token: string) {
   return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
@@ -94,10 +95,27 @@ function extensionFromMimeType(mimeType: string, fallback = "bin") {
   return explicit[mimeType] ?? mimeType.split("/")[1] ?? fallback;
 }
 
+function resolveMaxBytesForMediaType(mediaType: "image" | "video") {
+  return mediaType === "video" ? MAX_SOCIAL_VIDEO_BYTES : MAX_SOCIAL_IMAGE_BYTES;
+}
+
 function ensureStorageConfigured() {
   if (!getConfiguredStorageBucket()) {
     throw new Error("Firebase Storage is not configured yet.");
   }
+}
+
+export function canDirectUploadSocialMediaFromClient() {
+  loadWorkspaceRootEnv();
+
+  return Boolean(
+    process.env.NEXT_PUBLIC_FIREBASE_API_KEY &&
+      process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN &&
+      process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID &&
+      process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET &&
+      process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID &&
+      process.env.NEXT_PUBLIC_FIREBASE_APP_ID
+  );
 }
 
 function isFirebaseStorageFailure(error: unknown) {
@@ -159,6 +177,57 @@ export function inferSocialMediaContentType(storagePath: string) {
   return byExtension[extension] ?? "application/octet-stream";
 }
 
+export function planSocialMediaAssetUpload(input: {
+  tenantId: string;
+  userId: string;
+  intent: "post" | "story" | "vibe";
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}) {
+  const mimeType = normalizeMimeType(input.mimeType || "application/octet-stream");
+  const mediaType = getSocialMediaKind(mimeType);
+
+  if (!mediaType) {
+    throw new Error("Only image and video uploads are supported right now.");
+  }
+
+  if (!Number.isFinite(input.sizeBytes) || input.sizeBytes <= 0) {
+    throw new Error("Upload payload is empty.");
+  }
+
+  const maxBytes = resolveMaxBytesForMediaType(mediaType);
+  if (input.sizeBytes > maxBytes) {
+    throw new Error(
+      mediaType === "video"
+        ? "Video is still too large after optimization. Keep it under 40 MB."
+        : "Image is too large right now. Keep it under 4 MB."
+    );
+  }
+
+  const { assetType, placement } = resolveAssetType(input.intent);
+  const assetId = randomUUID();
+  const extension = extensionFromMimeType(mimeType, mediaType === "video" ? "mp4" : "jpg");
+  const originalFileName = sanitizeFileName(input.fileName || `${assetType}.${extension}`, `${assetType}.${extension}`);
+  const storagePath = `social/${input.tenantId}/${assetType}/${placement}/${input.userId}/${assetId}.${extension}`;
+
+  return {
+    mediaType,
+    mimeType,
+    sizeBytes: input.sizeBytes,
+    originalFileName,
+    storagePath,
+    cacheControl: SOCIAL_MEDIA_CACHE_CONTROL,
+    customMetadata: {
+      tenant_id: input.tenantId,
+      uploader_id: input.userId,
+      origin_module: "social",
+      upload_intent: input.intent,
+      original_file_name: originalFileName
+    }
+  };
+}
+
 async function persistLocalSocialMediaAsset(input: {
   buffer: Buffer;
   mimeType: string;
@@ -186,56 +255,53 @@ export async function persistSocialMediaAsset(input: {
 }) {
   ensureStorageConfigured();
 
-  const mimeType = normalizeMimeType(input.file.type || "application/octet-stream");
-  const mediaType = getSocialMediaKind(mimeType);
-
-  if (!mediaType) {
-    throw new Error("Only image and video uploads are supported right now.");
-  }
+  const uploadPlan = planSocialMediaAssetUpload({
+    tenantId: input.tenantId,
+    userId: input.userId,
+    intent: input.intent,
+    fileName: input.file.name,
+    mimeType: input.file.type || "application/octet-stream",
+    sizeBytes: input.file.size
+  });
 
   const buffer = Buffer.from(await input.file.arrayBuffer());
   if (buffer.byteLength <= 0) {
     throw new Error("Upload payload is empty.");
   }
 
-  const maxBytes = mediaType === "video" ? MAX_SOCIAL_VIDEO_BYTES : MAX_SOCIAL_IMAGE_BYTES;
+  const maxBytes = resolveMaxBytesForMediaType(uploadPlan.mediaType);
   if (buffer.byteLength > maxBytes) {
     throw new Error(
-      mediaType === "video"
+      uploadPlan.mediaType === "video"
         ? "Video is still too large after optimization. Keep it under 40 MB."
         : "Image is too large right now. Keep it under 4 MB."
     );
   }
 
-  const { assetType, placement } = resolveAssetType(input.intent);
-  const assetId = randomUUID();
   const token = randomUUID();
-  const extension = extensionFromMimeType(mimeType, mediaType === "video" ? "mp4" : "jpg");
-  const originalFileName = sanitizeFileName(input.file.name || `${assetType}.${extension}`, `${assetType}.${extension}`);
-  const storagePath = `social/${input.tenantId}/${assetType}/${placement}/${input.userId}/${assetId}.${extension}`;
 
   try {
     ensureStorageConfigured();
 
     const bucket = getFirebaseAdminStorageBucket();
-    await bucket.file(storagePath).save(buffer, {
+    await bucket.file(uploadPlan.storagePath).save(buffer, {
       resumable: false,
       metadata: {
-        contentType: mimeType,
-        cacheControl: "public, max-age=31536000, immutable",
+        contentType: uploadPlan.mimeType,
+        cacheControl: uploadPlan.cacheControl,
         metadata: {
           firebaseStorageDownloadTokens: token,
-          originalFileName
+          ...uploadPlan.customMetadata
         }
       }
     });
 
     return {
-      mediaType,
-      mimeType,
+      mediaType: uploadPlan.mediaType,
+      mimeType: uploadPlan.mimeType,
       sizeBytes: buffer.byteLength,
-      storagePath,
-      url: buildDownloadUrl(bucket.name, storagePath, token)
+      storagePath: uploadPlan.storagePath,
+      url: buildDownloadUrl(bucket.name, uploadPlan.storagePath, token)
     };
   } catch (error) {
     if (!isFirebaseStorageFailure(error)) {
@@ -246,15 +312,15 @@ export async function persistSocialMediaAsset(input: {
       tenantId: input.tenantId,
       userId: input.userId,
       intent: input.intent,
-      fileName: originalFileName,
+      fileName: uploadPlan.originalFileName,
       message: error instanceof Error ? error.message : "unknown"
     });
 
     return persistLocalSocialMediaAsset({
       buffer,
-      mimeType,
-      mediaType,
-      storagePath
+      mimeType: uploadPlan.mimeType,
+      mediaType: uploadPlan.mediaType,
+      storagePath: uploadPlan.storagePath
     });
   }
 }

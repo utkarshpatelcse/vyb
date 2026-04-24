@@ -1,11 +1,24 @@
 "use client";
 
+import { onAuthStateChanged, type User } from "firebase/auth";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { getFirebaseClientAuth, getFirebaseClientStorage, isFirebaseClientConfigured } from "./firebase-client";
+
 export type UploadedSocialMediaAsset = {
   mediaType: "image" | "video";
   mimeType: string;
   sizeBytes: number;
   storagePath: string;
   url: string;
+};
+
+type SocialMediaDirectUploadPlan = {
+  storagePath: string;
+  mediaType: "image" | "video";
+  mimeType: string;
+  sizeBytes: number;
+  cacheControl?: string;
+  customMetadata?: Record<string, string>;
 };
 
 type VideoFrameCallback = (now: number, metadata: VideoFrameCallbackMetadata) => void;
@@ -292,6 +305,78 @@ export async function uploadSocialMediaAsset(
     debugStage?: string;
   }
 ) {
+  const prepareResponse = await fetch("/api/social-media", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(options?.debugTaskId ? { "x-vyb-debug-task-id": options.debugTaskId } : {}),
+      ...(options?.debugStage ? { "x-vyb-debug-stage": "Prepare" } : {})
+    },
+    body: JSON.stringify({
+      intent,
+      fileName: file.name,
+      mimeType: file.type,
+      sizeBytes: file.size
+    })
+  });
+
+  const preparePayload = (await prepareResponse.json().catch(() => null)) as
+    | {
+        uploadStrategy?: "firebase-client" | "server-proxy";
+        directUpload?: SocialMediaDirectUploadPlan | null;
+        error?: {
+          code?: string;
+          message?: string;
+          requestId?: string;
+        };
+      }
+    | null;
+
+  if (!prepareResponse.ok) {
+    const message = preparePayload?.error?.message ?? "We could not prepare this media for upload.";
+    const requestId = preparePayload?.error?.requestId ? `, request: ${preparePayload.error.requestId}` : "";
+    throw new Error(`${message} (stage: prepare, status: ${prepareResponse.status}${requestId})`);
+  }
+
+  if (preparePayload?.uploadStrategy === "firebase-client" && preparePayload.directUpload) {
+    if (!isFirebaseClientConfigured()) {
+      throw new Error("Firebase web storage is not configured for direct uploads.");
+    }
+
+    const auth = await getFirebaseClientAuth();
+    const currentUser =
+      auth.currentUser ??
+      (await new Promise<User | null>((resolve) => {
+        const timeout = window.setTimeout(() => resolve(null), 4000);
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+          window.clearTimeout(timeout);
+          unsubscribe();
+          resolve(user);
+        });
+      }));
+
+    if (!currentUser) {
+      throw new Error("Your upload session expired. Sign in again and retry.");
+    }
+
+    const storage = getFirebaseClientStorage();
+    const storageRef = ref(storage, preparePayload.directUpload.storagePath);
+    const uploadSnapshot = await uploadBytes(storageRef, file, {
+      contentType: preparePayload.directUpload.mimeType,
+      cacheControl: preparePayload.directUpload.cacheControl,
+      customMetadata: preparePayload.directUpload.customMetadata
+    });
+    const url = await getDownloadURL(uploadSnapshot.ref);
+
+    return {
+      mediaType: preparePayload.directUpload.mediaType,
+      mimeType: preparePayload.directUpload.mimeType,
+      sizeBytes: file.size,
+      storagePath: preparePayload.directUpload.storagePath,
+      url
+    };
+  }
+
   const formData = new FormData();
   formData.append("file", file);
   formData.append("intent", intent);

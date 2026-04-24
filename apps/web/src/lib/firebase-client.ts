@@ -2,9 +2,11 @@
 
 import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, browserLocalPersistence, setPersistence, type Auth } from "firebase/auth";
+import { getStorage, type FirebaseStorage } from "firebase/storage";
 
 let firebaseApp: FirebaseApp | null = null;
 let firebaseAuth: Auth | null = null;
+let firebaseStorage: FirebaseStorage | null = null;
 
 function readConfig() {
   return {
@@ -52,6 +54,15 @@ export async function getFirebaseClientAuth() {
   firebaseAuth = getAuth(getFirebaseClientApp());
   await setPersistence(firebaseAuth, browserLocalPersistence);
   return firebaseAuth;
+}
+
+export function getFirebaseClientStorage() {
+  if (firebaseStorage) {
+    return firebaseStorage;
+  }
+
+  firebaseStorage = getStorage(getFirebaseClientApp());
+  return firebaseStorage;
 }
 
 export function createGoogleProvider() {
