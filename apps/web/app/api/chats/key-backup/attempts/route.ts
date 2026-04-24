@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import {
   clearChatKeyBackupPinAttempts,
   getChatKeyBackupPinAttempts,
+  isBackendRequestError,
   recordChatKeyBackupPinAttempt
 } from "../../../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../../../src/lib/dev-session";
@@ -21,6 +22,10 @@ export async function GET() {
   try {
     return NextResponse.json(await getChatKeyBackupPinAttempts(viewer));
   } catch (error) {
+    if (isBackendRequestError(error)) {
+      return buildError(error.statusCode, error.code, error.message);
+    }
+
     return buildError(
       500,
       "CHAT_KEY_BACKUP_ATTEMPTS_FETCH_FAILED",
@@ -39,6 +44,10 @@ export async function PUT() {
   try {
     return NextResponse.json(await recordChatKeyBackupPinAttempt(viewer));
   } catch (error) {
+    if (isBackendRequestError(error)) {
+      return buildError(error.statusCode, error.code, error.message);
+    }
+
     return buildError(
       500,
       "CHAT_KEY_BACKUP_ATTEMPTS_RECORD_FAILED",
@@ -57,6 +66,10 @@ export async function DELETE() {
   try {
     return NextResponse.json(await clearChatKeyBackupPinAttempts(viewer));
   } catch (error) {
+    if (isBackendRequestError(error)) {
+      return buildError(error.statusCode, error.code, error.message);
+    }
+
     return buildError(
       500,
       "CHAT_KEY_BACKUP_ATTEMPTS_CLEAR_FAILED",

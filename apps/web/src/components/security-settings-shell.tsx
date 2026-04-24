@@ -6,6 +6,7 @@ import type {
   ChatServerPinAttemptState
 } from "@vyb/contracts";
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
 import { ChatPrivacyUI } from "./chat-privacy-ui";
 import {
@@ -32,6 +33,8 @@ type SecuritySettingsShellProps = {
   collegeName: string;
   initialViewerIdentity: ChatIdentitySummary | null;
   initialBackup: ChatKeyBackupRecord | null;
+  initialIntent?: "create-identity" | "create-backup" | "restore-device" | null;
+  returnTo?: string | null;
   loadError?: string | null;
 };
 
@@ -87,8 +90,11 @@ export function SecuritySettingsShell({
   collegeName,
   initialViewerIdentity,
   initialBackup,
+  initialIntent = null,
+  returnTo = null,
   loadError
 }: SecuritySettingsShellProps) {
+  const router = useRouter();
   const [viewerIdentity, setViewerIdentity] = useState<ChatIdentitySummary | null>(initialViewerIdentity);
   const [localChatKey, setLocalChatKey] = useState<StoredChatKeyMaterial | null>(null);
   const [remoteKeyBackup, setRemoteKeyBackup] = useState<ChatKeyBackupRecord | null>(initialBackup);
@@ -106,6 +112,7 @@ export function SecuritySettingsShell({
   const [restoreSecret, setRestoreSecret] = useState("");
   const [revealedRecoveryPhrase, setRevealedRecoveryPhrase] = useState<string | null>(null);
   const localKeyRef = useRef<StoredChatKeyMaterial | null>(null);
+  const intentHandledRef = useRef<string | null>(null);
 
   useEffect(() => {
     localKeyRef.current = localChatKey;
@@ -192,6 +199,51 @@ export function SecuritySettingsShell({
     ? formatLockoutCountdown(new Date(activeLockoutUntil).getTime() - Date.now())
     : "";
 
+  useEffect(() => {
+    if (!initialIntent) {
+      intentHandledRef.current = null;
+      return;
+    }
+
+    const intentKey = [
+      initialIntent,
+      viewerIdentity ? "identity" : "no-identity",
+      hasCompatibleLocalChatKey ? "local-ready" : "local-missing",
+      hasRemoteBackup ? "backup-ready" : "backup-missing"
+    ].join("|");
+
+    if (intentHandledRef.current === intentKey) {
+      return;
+    }
+
+    if (initialIntent === "create-identity" && !viewerIdentity && !busyAction) {
+      intentHandledRef.current = intentKey;
+      void handleCreateIdentity();
+      return;
+    }
+
+    if (initialIntent === "create-backup" && hasCompatibleLocalChatKey && !hasRemoteBackup && !activeModal) {
+      intentHandledRef.current = intentKey;
+      setActiveModal("create-backup");
+      return;
+    }
+
+    if (initialIntent === "restore-device" && hasRemoteBackup && !hasCompatibleLocalChatKey) {
+      intentHandledRef.current = intentKey;
+      setPageError("Restore this browser first with your 6-digit PIN or 24-word recovery phrase, then return to chats.");
+    }
+  }, [activeModal, busyAction, hasCompatibleLocalChatKey, hasRemoteBackup, initialIntent, viewerIdentity]);
+
+  useEffect(() => {
+    if (hasCompatibleLocalChatKey) {
+      setPageError((current) =>
+        current === "Restore this browser first with your 6-digit PIN or 24-word recovery phrase, then return to chats."
+          ? null
+          : current
+      );
+    }
+  }, [hasCompatibleLocalChatKey]);
+
   function resetFeedback() {
     setPageError(null);
     setPageSuccess(null);
@@ -236,13 +288,21 @@ export function SecuritySettingsShell({
       return synced;
     }
 
+    if (viewerIdentity) {
+      if (remoteKeyBackup) {
+        throw new Error(
+          "This account already has an older secure chat setup. If you know that PIN, restore this browser below. If you never created a PIN, this old setup needs to be reset before starting fresh."
+        );
+      }
+
+      throw new Error(
+        "This account already has an older secure chat identity but this browser does not have the matching local key. Reset the old chat setup before creating a fresh one."
+      );
+    }
+
     const material = stored ?? (await createStoredChatKeyMaterial(viewerUserId));
     await saveStoredChatKeyMaterial(material);
     setLocalChatKey(material);
-
-    if (viewerIdentity) {
-      return material;
-    }
 
     const data = await fetchSecurityJson<{ identity: ChatIdentitySummary }>("/api/chats/keys", {
       method: "PUT",
@@ -319,7 +379,12 @@ export function SecuritySettingsShell({
 
     try {
       await ensureChatIdentityReady();
-      setPageSuccess("Secure chat identity is ready on this device.");
+      if (initialIntent && !remoteKeyBackup) {
+        setActiveModal("create-backup");
+        setPageSuccess("Secure chat identity is ready. Set your first 6-digit PIN now.");
+      } else {
+        setPageSuccess("Secure chat identity is ready on this device.");
+      }
     } catch (error) {
       setPageError(error instanceof Error ? error.message : "We could not create your secure chat identity.");
     } finally {
@@ -458,6 +523,11 @@ export function SecuritySettingsShell({
       setLocalChatKey(hardened ?? synced);
       setRestoreSecret("");
       setPageSuccess("Secure session restored on this device.");
+      if (returnTo) {
+        window.setTimeout(() => {
+          router.replace(returnTo);
+        }, 160);
+      }
     } catch (error) {
       setPageError(error instanceof Error ? error.message : "We could not restore your local secure session.");
     } finally {
@@ -531,6 +601,8 @@ export function SecuritySettingsShell({
             void handleRestoreLocalKey();
           }}
           lastBackupUpdatedLabel={formatUpdatedAt(remoteKeyBackup?.updatedAt ?? null)}
+          backToHref={returnTo ?? "/messages"}
+          backToLabel={returnTo ? "Continue to chats" : "Back to chats"}
         />
       </section>
 

@@ -626,7 +626,8 @@ export function CampusMessagesShell({
   initialConversationId = null,
   initialConversation = null,
   activeConversationError = null,
-  initialViewerIdentity = null
+  initialViewerIdentity = null,
+  initialRemoteKeyBackup = null
 }: {
   viewerUserId: string;
   viewerMembershipId: string;
@@ -639,12 +640,14 @@ export function CampusMessagesShell({
   initialConversation?: ActiveConversation | null;
   activeConversationError?: string | null;
   initialViewerIdentity?: ChatIdentitySummary | null;
+  initialRemoteKeyBackup?: ChatKeyBackupRecord | null;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const [startingChat, setStartingChat] = useState<string | null>(null);
+  const startingChatRef = useRef<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ChatConversationPreview[]>(() =>
     initialConversation ? upsertConversationItem(initialItems, buildConversationPreview(initialConversation)) : initialItems
@@ -660,8 +663,9 @@ export function CampusMessagesShell({
   const [realtimeState, setRealtimeState] = useState<RealtimeState>(initialConversationId ? "connecting" : "idle");
   const [viewerIdentity, setViewerIdentity] = useState<ChatIdentitySummary | null>(initialViewerIdentity);
   const [localChatKey, setLocalChatKey] = useState<StoredChatKeyMaterial | null>(null);
-  const [remoteKeyBackup, setRemoteKeyBackup] = useState<ChatKeyBackupRecord | null>(null);
-  const [remoteKeyBackupLoaded, setRemoteKeyBackupLoaded] = useState(false);
+  const [localChatKeyLoaded, setLocalChatKeyLoaded] = useState(false);
+  const [remoteKeyBackup, setRemoteKeyBackup] = useState<ChatKeyBackupRecord | null>(initialRemoteKeyBackup);
+  const [remoteKeyBackupLoaded, setRemoteKeyBackupLoaded] = useState(Boolean(initialViewerIdentity));
   const [syncingKeyBackup, setSyncingKeyBackup] = useState(false);
   const [restoringKeyBackup, setRestoringKeyBackup] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
@@ -710,6 +714,7 @@ export function CampusMessagesShell({
   const chatIdentityPromiseRef = useRef<Promise<boolean> | null>(null);
   const sessionProbePromiseRef = useRef<Promise<boolean | null> | null>(null);
   const keyBackupSyncIdentityRef = useRef<string | null>(null);
+  const setupRedirectedRef = useRef(false);
   const migratingMessageIdsRef = useRef<Set<string>>(new Set());
   const messageIdsRef = useRef<Set<string>>(new Set(initialConversation?.messages.map((message) => message.id) ?? []));
   const activeConversationRef = useRef<ActiveConversation | null>(initialConversation);
@@ -743,6 +748,11 @@ export function CampusMessagesShell({
   useEffect(() => {
     setViewerIdentity(initialViewerIdentity);
   }, [initialViewerIdentity]);
+
+  useEffect(() => {
+    setRemoteKeyBackup(initialRemoteKeyBackup);
+    setRemoteKeyBackupLoaded(Boolean(initialViewerIdentity));
+  }, [initialRemoteKeyBackup, initialViewerIdentity]);
 
   async function probeBrowserSession() {
     if (sessionProbePromiseRef.current) {
@@ -901,6 +911,8 @@ export function CampusMessagesShell({
   useEffect(() => {
     let cancelled = false;
 
+    setLocalChatKeyLoaded(false);
+
     void (async () => {
       const stored = await loadStoredChatKeyMaterial(viewerUserId);
       if (cancelled) {
@@ -910,6 +922,7 @@ export function CampusMessagesShell({
       if (!viewerIdentity) {
         setLocalChatKey(stored);
         setKeySetupError(null);
+        setLocalChatKeyLoaded(true);
         return;
       }
 
@@ -918,6 +931,7 @@ export function CampusMessagesShell({
         if (!cancelled) {
           setLocalChatKey(synced);
           setKeySetupError(null);
+          setLocalChatKeyLoaded(true);
         }
         return;
       }
@@ -925,15 +939,18 @@ export function CampusMessagesShell({
       setLocalChatKey(stored);
       if (!remoteKeyBackupLoaded) {
         setKeySetupError("Checking your encrypted key backup...");
+        setLocalChatKeyLoaded(true);
         return;
       }
 
       if (remoteKeyBackup) {
         setKeySetupError("Enter your 6-digit security PIN or 24-word recovery phrase on this device to restore your E2EE key.");
+        setLocalChatKeyLoaded(true);
         return;
       }
 
       setKeySetupError("Set a 6-digit security PIN on your original device to create an encrypted key backup.");
+      setLocalChatKeyLoaded(true);
     })();
 
     return () => {
@@ -2465,18 +2482,35 @@ export function CampusMessagesShell({
   }
 
   async function handleStartChat(username: string) {
-    if (startingChat) return;
+    if (startingChatRef.current) return;
 
+    startingChatRef.current = username;
     setStartingChat(username);
     setStartError(null);
 
     try {
-      const response = await fetchChatEndpoint("/api/chats", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ recipientUsername: username })
-      });
-      const data = await response.json().catch(() => null);
+      const openChat = async (attempt = 0) => {
+        const response = await fetchChatEndpoint("/api/chats", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ recipientUsername: username })
+        });
+        const data = await response.json().catch(() => null);
+
+        if (
+          response.status === 409 &&
+          attempt < 2 &&
+          (data?.error?.code === "CHAT_CREATE_CONFLICT" ||
+            data?.error?.message === "This chat was created in another request. Please try opening it again.")
+        ) {
+          await new Promise((resolve) => window.setTimeout(resolve, 650 + attempt * 550));
+          return openChat(attempt + 1);
+        }
+
+        return { response, data };
+      };
+
+      const { response, data } = await openChat();
 
       if (!response.ok) {
         if (response.status === 401) {
@@ -2498,6 +2532,7 @@ export function CampusMessagesShell({
     } catch {
       setStartError("Network error. Please check your connection.");
     } finally {
+      startingChatRef.current = null;
       setStartingChat(null);
     }
   }
@@ -2795,6 +2830,13 @@ export function CampusMessagesShell({
   const showRecoveryRestoreCard = Boolean(viewerIdentity && remoteKeyBackup && !hasCompatibleLocalChatKey);
   const showPinSetupCard = Boolean(viewerIdentity && hasCompatibleLocalChatKey && remoteKeyBackupLoaded && !remoteKeyBackup);
   const shouldShowBackupCards = Boolean(showPinSetupCard || showRecoveryRestoreCard);
+  const chatSetupIntent = !viewerIdentity
+    ? "create-identity"
+    : !hasCompatibleLocalChatKey && remoteKeyBackup
+      ? "restore-device"
+      : hasCompatibleLocalChatKey && remoteKeyBackupLoaded && !remoteKeyBackup
+        ? "create-backup"
+        : null;
   const activeShareCards = shareMenuCollections[shareMenuTab];
   const activePeerStatus = activePeer ? getStatusRing(activePeer.userId) : "away";
   const activePeerInitials = activePeer ? getInitials(activePeer.displayName) : "";
@@ -2834,6 +2876,32 @@ export function CampusMessagesShell({
   ) : null;
 
   const navItems = buildPrimaryCampusNav("messages", { unreadCount });
+
+  useEffect(() => {
+    if (!chatSetupIntent) {
+      setupRedirectedRef.current = false;
+      return;
+    }
+
+    if (!remoteKeyBackupLoaded && chatSetupIntent !== "create-identity") {
+      return;
+    }
+
+    if (!localChatKeyLoaded) {
+      return;
+    }
+
+    if (setupRedirectedRef.current) {
+      return;
+    }
+
+    setupRedirectedRef.current = true;
+    const params = new URLSearchParams({
+      intent: chatSetupIntent,
+      returnTo: "/messages"
+    });
+    router.replace(`/profile/settings/chat-privacy?${params.toString()}`);
+  }, [chatSetupIntent, localChatKeyLoaded, remoteKeyBackupLoaded, router]);
 
   return (
     <main className="spm-page">

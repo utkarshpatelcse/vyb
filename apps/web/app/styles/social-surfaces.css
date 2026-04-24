@@ -927,6 +927,7 @@
   padding: 1rem;
   background: rgba(7, 8, 14, 0.8);
   backdrop-filter: blur(16px);
+  overscroll-behavior: contain;
 }
 
 .vyb-post-likers-backdrop,
@@ -1010,6 +1011,8 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: #11131b;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
 }
 
 .vyb-post-likers-sheet,

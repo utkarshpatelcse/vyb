@@ -5,7 +5,28 @@ import { getChatInbox, getChatKeyBackup, getViewerProfile } from "../../../../sr
 import { getDisplayCollegeName } from "../../../../src/lib/college-access";
 import { readDevSessionFromCookieStore } from "../../../../src/lib/dev-session";
 
-export default async function ChatPrivacyPage() {
+function normalizeIntent(value: string | string[] | undefined) {
+  if (value === "create-identity" || value === "create-backup" || value === "restore-device") {
+    return value;
+  }
+
+  return null;
+}
+
+function normalizeReturnTo(value: string | string[] | undefined) {
+  if (typeof value !== "string" || !value.startsWith("/")) {
+    return null;
+  }
+
+  return value;
+}
+
+export default async function ChatPrivacyPage({
+  searchParams
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const resolvedSearchParams = (await searchParams) ?? {};
   const viewer = readDevSessionFromCookieStore(await cookies());
 
   if (!viewer) {
@@ -47,6 +68,8 @@ export default async function ChatPrivacyPage() {
       collegeName={getDisplayCollegeName(profile.collegeName)}
       initialViewerIdentity={inboxResult.value.viewer.activeIdentity}
       initialBackup={backupResult.value.backup}
+      initialIntent={normalizeIntent(resolvedSearchParams.intent)}
+      returnTo={normalizeReturnTo(resolvedSearchParams.returnTo)}
       loadError={inboxResult.error ?? backupResult.error}
     />
   );

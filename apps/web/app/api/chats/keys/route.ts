@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { upsertChatIdentity } from "../../../../src/lib/backend";
+import { isBackendRequestError, upsertChatIdentity } from "../../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../../src/lib/dev-session";
 
 function buildError(status: number, code: string, message: string) {
@@ -22,6 +22,10 @@ export async function PUT(request: Request) {
   try {
     return NextResponse.json(await upsertChatIdentity(viewer, payload));
   } catch (error) {
+    if (isBackendRequestError(error)) {
+      return buildError(error.statusCode, error.code, error.message);
+    }
+
     return buildError(500, "CHAT_KEY_FAILED", error instanceof Error ? error.message : "We could not publish your chat key.");
   }
 }

@@ -42,6 +42,15 @@ export function SocialPostRepostSheet({
     setPlacement(post?.placement === "vibe" ? "vibe" : "feed");
   }, [post?.id, post?.placement]);
 
+  useEffect(() => {
+    if (post) {
+      document.body.style.overflow = "hidden";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [post]);
+
   const previewMedia = useMemo(() => {
     if (!post) {
       return null;

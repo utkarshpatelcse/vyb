@@ -42,6 +42,15 @@ export function SocialPostActionSheet({
     setLocationDraft(post?.location ?? "");
   }, [post?.id]);
 
+  useEffect(() => {
+    if (post) {
+      document.body.style.overflow = "hidden";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [post]);
+
   if (!post) {
     return null;
   }

@@ -63,6 +63,15 @@ export function SocialPostShareSheet({
     setCopyStatus(null);
   }, [post?.id]);
 
+  useEffect(() => {
+    if (post) {
+      document.body.style.overflow = "hidden";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [post]);
+
   const normalizedQuery = normalizeUsername(query).toLowerCase();
   const filteredUsers = useMemo(() => {
     const ranked = suggestedUsers.filter((item) => {

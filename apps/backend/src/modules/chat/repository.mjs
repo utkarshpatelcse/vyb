@@ -216,6 +216,71 @@ const LIST_CHAT_MESSAGES_BY_CONVERSATION_QUERY = `
     }
   }
 `;
+const GET_ANY_CHAT_PARTICIPANT_BY_KEY_QUERY = `
+  query GetAnyChatParticipantByKey($chatParticipantKey: String!) {
+    chatParticipants(
+      where: {
+        chatParticipantKey: { eq: $chatParticipantKey }
+      }
+      limit: 1
+    ) {
+      id
+      tenantId
+      conversationId
+      membershipId
+      userId
+      lastReadMessageId
+      lastReadAt
+      createdAt
+      updatedAt
+      deletedAt
+    }
+  }
+`;
+const GET_ANY_CHAT_CONVERSATION_BY_KEY_QUERY = `
+  query GetAnyChatConversationByKey($conversationKey: String!) {
+    chatConversations(
+      where: {
+        conversationKey: { eq: $conversationKey }
+      }
+      limit: 1
+    ) {
+      id
+      tenantId
+      conversationKey
+      kind
+      createdByUserId
+      lastMessageId
+      lastMessageAt
+      createdAt
+      updatedAt
+      deletedAt
+    }
+  }
+`;
+
+const GET_ANY_CHAT_IDENTITY_BY_USER_QUERY = `
+  query GetAnyChatIdentityByUser($tenantId: UUID!, $userId: UUID!) {
+    chatIdentities(
+      where: {
+        tenantId: { eq: $tenantId }
+        userId: { eq: $userId }
+      }
+      orderBy: [{ updatedAt: DESC }]
+      limit: 1
+    ) {
+      id
+      tenantId
+      userId
+      membershipId
+      publicKey
+      algorithm
+      keyVersion
+      updatedAt
+      deletedAt
+    }
+  }
+`;
 
 const GET_CHAT_MESSAGE_BY_ID_QUERY = `
   query GetChatMessageById($messageId: UUID!) {
@@ -335,6 +400,7 @@ const UPDATE_CHAT_IDENTITY_MUTATION = `
         publicKey: $publicKey
         algorithm: $algorithm
         keyVersion: $keyVersion
+        deletedAt: null
         lastPublishedAt_expr: "request.time"
         updatedAt_expr: "request.time"
       }
@@ -381,6 +447,34 @@ const CREATE_CHAT_PARTICIPANT_MUTATION = `
         conversationId: $conversationId
         membershipId: $membershipId
         userId: $userId
+      }
+    ) {
+      id
+    }
+  }
+`;
+const RESTORE_CHAT_CONVERSATION_MUTATION = `
+  mutation RestoreChatConversation($id: UUID!) {
+    chatConversation_update(
+      key: { id: $id }
+      data: {
+        deletedAt: null
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
+
+const RESTORE_CHAT_PARTICIPANT_MUTATION = `
+  mutation RestoreChatParticipant($id: UUID!, $membershipId: UUID!) {
+    chatParticipant_update(
+      key: { id: $id }
+      data: {
+        membershipId: $membershipId
+        deletedAt: null
+        updatedAt_expr: "request.time"
       }
     ) {
       id
@@ -517,6 +611,22 @@ const LIST_ACTIVE_CHAT_CONVERSATIONS_BY_TENANT_QUERY = `
       limit: $limit
     ) {
       id
+    }
+  }
+`;
+
+const LIST_ACTIVE_CHAT_IDENTITIES_BY_TENANT_QUERY = `
+  query ListActiveChatIdentitiesByTenant($tenantId: UUID!, $limit: Int!) {
+    chatIdentities(
+      where: {
+        tenantId: { eq: $tenantId }
+        deletedAt: { isNull: true }
+      }
+      orderBy: [{ createdAt: ASC }]
+      limit: $limit
+    ) {
+      id
+      userId
     }
   }
 `;
@@ -735,6 +845,20 @@ const SOFT_DELETE_CHAT_CONVERSATION_MUTATION = `
   }
 `;
 
+const SOFT_DELETE_CHAT_IDENTITY_MUTATION = `
+  mutation SoftDeleteChatIdentity($id: UUID!) {
+    chatIdentity_update(
+      key: { id: $id }
+      data: {
+        deletedAt_expr: "request.time"
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
+
 function getChatDc() {
   return getFirebaseDataConnect(CHAT_CONNECTOR_CONFIG);
 }
@@ -812,8 +936,133 @@ function buildConversationKey(userIdA, userIdB) {
   return [userIdA, userIdB].sort().join(":");
 }
 
+function isDuplicateConversationKeyError(error) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes("chat_conversations_conversationkey_uidx") || message.includes("conversationkey_uidx");
+}
+
+function isDuplicateParticipantKeyError(error) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes("chat_participants_chatparticipantkey_uidx") || message.includes("chatparticipantkey_uidx");
+}
+
+async function waitForDirectConversation(conversationKey, retries = 6) {
+  for (let attempt = 0; attempt < retries; attempt += 1) {
+    const conversation = await getChatConversationByKey(conversationKey);
+    if (conversation) {
+      return conversation;
+    }
+
+    if (attempt < retries - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 80 * (attempt + 1)));
+    }
+  }
+
+  return null;
+}
+
+async function waitForConversationAccess(viewer, conversationId, retries = 12) {
+  for (let attempt = 0; attempt < retries; attempt += 1) {
+    const access = await resolveConversationAccess(viewer, conversationId);
+    if (access) {
+      return access;
+    }
+
+    if (attempt < retries - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 120 * (attempt + 1)));
+    }
+  }
+
+  return null;
+}
+
+async function waitForDirectConversationAccess(viewer, conversationKey, retries = 18) {
+  let lastConversation = null;
+
+  for (let attempt = 0; attempt < retries; attempt += 1) {
+    const conversation = await getChatConversationByKey(conversationKey);
+    if (conversation) {
+      lastConversation = conversation;
+      const access = await resolveConversationAccess(viewer, conversation.id);
+      if (access) {
+        return access;
+      }
+    }
+
+    if (attempt < retries - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 120 * (attempt + 1)));
+    }
+  }
+
+  if (!lastConversation) {
+    return null;
+  }
+
+  return waitForConversationAccess(viewer, lastConversation.id, 8);
+}
+
 function buildChatParticipantKey(conversationId, userId) {
   return `${conversationId}:${userId}`;
+}
+
+async function ensureChatParticipantRecord({ tenantId, conversationId, membershipId, userId }) {
+  const chatParticipantKey = buildChatParticipantKey(conversationId, userId);
+
+  try {
+    await getChatDc().executeGraphql(CREATE_CHAT_PARTICIPANT_MUTATION, {
+      operationName: "CreateChatParticipant",
+      variables: {
+        id: randomUUID(),
+        chatParticipantKey,
+        tenantId,
+        conversationId,
+        membershipId,
+        userId
+      }
+    });
+  } catch (error) {
+    if (!isDuplicateParticipantKeyError(error)) {
+      throw error;
+    }
+
+    const existing = await getAnyChatParticipantByKey(chatParticipantKey);
+    if (!existing?.id) {
+      throw error;
+    }
+
+    await getChatDc().executeGraphql(RESTORE_CHAT_PARTICIPANT_MUTATION, {
+      operationName: "RestoreChatParticipant",
+      variables: {
+        id: existing.id,
+        membershipId
+      }
+    });
+  }
+}
+
+async function ensureDirectConversationParticipants(viewer, recipientProfile, conversationId) {
+  await Promise.all([
+    ensureChatParticipantRecord({
+      tenantId: viewer.tenantId,
+      conversationId,
+      membershipId: viewer.membershipId,
+      userId: viewer.userId
+    }),
+    ensureChatParticipantRecord({
+      tenantId: viewer.tenantId,
+      conversationId,
+      membershipId: recipientProfile.membershipId,
+      userId: recipientProfile.userId
+    })
+  ]);
 }
 
 function buildChatMessageReactionKey(messageId, membershipId) {
@@ -1057,7 +1306,8 @@ function mapChatIdentity(item) {
     publicKey: item.publicKey,
     algorithm: item.algorithm,
     keyVersion: Number(item.keyVersion ?? 1),
-    updatedAt: toIsoString(item.updatedAt)
+    updatedAt: toIsoString(item.updatedAt),
+    deletedAt: item.deletedAt ? toIsoString(item.deletedAt) : null
   };
 }
 
@@ -1153,6 +1403,18 @@ async function getChatIdentityByUser({ tenantId, userId }) {
   return mapChatIdentity(response.data.chatIdentities?.[0] ?? null);
 }
 
+async function getAnyChatIdentityByUser({ tenantId, userId }) {
+  const response = await getChatDc().executeGraphqlRead(GET_ANY_CHAT_IDENTITY_BY_USER_QUERY, {
+    operationName: "GetAnyChatIdentityByUser",
+    variables: {
+      tenantId,
+      userId
+    }
+  });
+
+  return mapChatIdentity(response.data.chatIdentities?.[0] ?? null);
+}
+
 async function getChatConversationById(conversationId) {
   const response = await getChatDc().executeGraphqlRead(GET_CHAT_CONVERSATION_BY_ID_QUERY, {
     operationName: "GetChatConversationById",
@@ -1167,6 +1429,17 @@ async function getChatConversationById(conversationId) {
 async function getChatConversationByKey(conversationKey) {
   const response = await getChatDc().executeGraphqlRead(GET_CHAT_CONVERSATION_BY_KEY_QUERY, {
     operationName: "GetChatConversationByKey",
+    variables: {
+      conversationKey
+    }
+  });
+
+  return response.data.chatConversations?.[0] ?? null;
+}
+
+async function getAnyChatConversationByKey(conversationKey) {
+  const response = await getChatDc().executeGraphqlRead(GET_ANY_CHAT_CONVERSATION_BY_KEY_QUERY, {
+    operationName: "GetAnyChatConversationByKey",
     variables: {
       conversationKey
     }
@@ -1286,6 +1559,17 @@ async function listActiveChatParticipantsByTenant(tenantId, limit = CHAT_MESSAGE
   return Array.isArray(response.data.chatParticipants) ? response.data.chatParticipants : [];
 }
 
+async function getAnyChatParticipantByKey(chatParticipantKey) {
+  const response = await getChatDc().executeGraphqlRead(GET_ANY_CHAT_PARTICIPANT_BY_KEY_QUERY, {
+    operationName: "GetAnyChatParticipantByKey",
+    variables: {
+      chatParticipantKey
+    }
+  });
+
+  return response.data.chatParticipants?.[0] ?? null;
+}
+
 async function listActiveChatConversationsByTenant(tenantId, limit = CHAT_MESSAGE_LIMIT * 10) {
   const response = await getChatDc().executeGraphqlRead(LIST_ACTIVE_CHAT_CONVERSATIONS_BY_TENANT_QUERY, {
     operationName: "ListActiveChatConversationsByTenant",
@@ -1296,6 +1580,18 @@ async function listActiveChatConversationsByTenant(tenantId, limit = CHAT_MESSAG
   });
 
   return Array.isArray(response.data.chatConversations) ? response.data.chatConversations : [];
+}
+
+async function listActiveChatIdentitiesByTenant(tenantId, limit = CHAT_MESSAGE_LIMIT * 10) {
+  const response = await getChatDc().executeGraphqlRead(LIST_ACTIVE_CHAT_IDENTITIES_BY_TENANT_QUERY, {
+    operationName: "ListActiveChatIdentitiesByTenant",
+    variables: {
+      tenantId,
+      limit
+    }
+  });
+
+  return Array.isArray(response.data.chatIdentities) ? response.data.chatIdentities : [];
 }
 
 function buildReactionsMap(items) {
@@ -1393,17 +1689,21 @@ export async function upsertChatIdentity(viewer, payload) {
   const keyVersion = Number.isInteger(payload.keyVersion) && payload.keyVersion > 0 ? payload.keyVersion : 1;
 
   if (!publicKey) {
-    throw new Error("A public key is required to set up secure chat.");
+    throw new ChatSecurityError(400, "INVALID_PUBLIC_KEY", "A public key is required to set up secure chat.");
   }
 
-  const existing = await getChatIdentityByUser({
+  const existing = await getAnyChatIdentityByUser({
     tenantId: viewer.tenantId,
     userId: viewer.userId
   });
 
   if (existing) {
-    if (existing.publicKey !== publicKey) {
-      throw new Error("This account already has an encrypted chat key. Restore the original private key on this device instead of creating a new one.");
+    if (!existing.deletedAt && existing.publicKey !== publicKey) {
+      throw new ChatSecurityError(
+        409,
+        "CHAT_KEY_ALREADY_EXISTS",
+        "This account already has an encrypted chat key. Restore the original private key on this device instead of creating a new one."
+      );
     }
 
     await getChatDc().executeGraphql(UPDATE_CHAT_IDENTITY_MUTATION, {
@@ -1463,7 +1763,7 @@ export async function getChatKeyBackup(viewer) {
 export async function upsertChatKeyBackup(viewer, payload) {
   const backup = normalizeChatKeyBackup(payload);
   if (!backup) {
-    throw new Error("Encrypted key backup payload is incomplete.");
+    throw new ChatSecurityError(400, "INVALID_KEY_BACKUP", "Encrypted key backup payload is incomplete.");
   }
 
   const viewerIdentity = await getChatIdentityByUser({
@@ -1471,11 +1771,11 @@ export async function upsertChatKeyBackup(viewer, payload) {
     userId: viewer.userId
   });
   if (!viewerIdentity) {
-    throw new Error("Set up end-to-end encrypted chat before backing up keys.");
+    throw new ChatSecurityError(409, "CHAT_KEY_REQUIRED", "Set up end-to-end encrypted chat before backing up keys.");
   }
 
   if (backup.publicKey !== viewerIdentity.publicKey) {
-    throw new Error("Encrypted key backup does not match your active E2EE identity.");
+    throw new ChatSecurityError(409, "BACKUP_IDENTITY_MISMATCH", "Encrypted key backup does not match your active E2EE identity.");
   }
 
   const storagePath = buildChatKeyBackupStoragePath(viewer.tenantId, viewer.userId);
@@ -1682,71 +1982,84 @@ export async function createOrGetDirectConversation(viewer, input) {
         : null;
 
   if (!recipientProfile) {
-    throw new Error("We could not find that campus profile.");
+    throw new ChatSecurityError(404, "RECIPIENT_NOT_FOUND", "We could not find that campus profile.");
   }
 
   if (recipientProfile.userId === viewer.userId) {
-    throw new Error("You cannot open a direct chat with yourself.");
+    throw new ChatSecurityError(400, "SELF_CHAT_NOT_ALLOWED", "You cannot open a direct chat with yourself.");
   }
 
   const conversationKey = buildConversationKey(viewer.userId, recipientProfile.userId);
-  let conversation = await getChatConversationByKey(conversationKey);
+  let conversation = await waitForDirectConversation(conversationKey, 2);
+  const anyConversation = conversation ?? (await getAnyChatConversationByKey(conversationKey));
   let created = false;
+
+  if (!conversation && anyConversation?.id) {
+    await getChatDc().executeGraphql(RESTORE_CHAT_CONVERSATION_MUTATION, {
+      operationName: "RestoreChatConversation",
+      variables: {
+        id: anyConversation.id
+      }
+    });
+    conversation = (await getChatConversationById(anyConversation.id)) ?? anyConversation;
+  }
 
   if (!conversation) {
     const conversationId = randomUUID();
-    await getChatDc().executeGraphql(CREATE_CHAT_CONVERSATION_MUTATION, {
-      operationName: "CreateChatConversation",
-      variables: {
-        id: conversationId,
-        conversationKey,
-        tenantId: viewer.tenantId,
-        createdByUserId: viewer.userId
+    try {
+      await getChatDc().executeGraphql(CREATE_CHAT_CONVERSATION_MUTATION, {
+        operationName: "CreateChatConversation",
+        variables: {
+          id: conversationId,
+          conversationKey,
+          tenantId: viewer.tenantId,
+          createdByUserId: viewer.userId
+        }
+      });
+
+      await ensureDirectConversationParticipants(viewer, recipientProfile, conversationId);
+
+      conversation = await getChatConversationById(conversationId);
+      created = true;
+    } catch (error) {
+      if (!isDuplicateConversationKeyError(error)) {
+        throw error;
       }
-    });
 
-    await Promise.all([
-      getChatDc().executeGraphql(CREATE_CHAT_PARTICIPANT_MUTATION, {
-        operationName: "CreateChatParticipant",
-        variables: {
-          id: randomUUID(),
-          chatParticipantKey: buildChatParticipantKey(conversationId, viewer.userId),
-          tenantId: viewer.tenantId,
-          conversationId,
-          membershipId: viewer.membershipId,
-          userId: viewer.userId
-        }
-      }),
-      getChatDc().executeGraphql(CREATE_CHAT_PARTICIPANT_MUTATION, {
-        operationName: "CreateChatParticipant",
-        variables: {
-          id: randomUUID(),
-          chatParticipantKey: buildChatParticipantKey(conversationId, recipientProfile.userId),
-          tenantId: viewer.tenantId,
-          conversationId,
-          membershipId: recipientProfile.membershipId,
-          userId: recipientProfile.userId
-        }
-      })
-    ]);
+      const duplicateConversation =
+        (await waitForDirectConversation(conversationKey, 6)) ??
+        (await getAnyChatConversationByKey(conversationKey));
+      if (!duplicateConversation) {
+        throw new ChatSecurityError(
+          409,
+          "CHAT_CREATE_CONFLICT",
+          "This chat was created in another request. Please try opening it again."
+        );
+      }
 
-    conversation = await getChatConversationById(conversationId);
-    created = true;
+      if (duplicateConversation.deletedAt) {
+        await getChatDc().executeGraphql(RESTORE_CHAT_CONVERSATION_MUTATION, {
+          operationName: "RestoreChatConversation",
+          variables: {
+            id: duplicateConversation.id
+          }
+        });
+        conversation = (await getChatConversationById(duplicateConversation.id)) ?? duplicateConversation;
+      } else {
+        conversation = duplicateConversation;
+      }
+    }
   }
 
-  const access = await resolveConversationAccess(viewer, conversation.id);
-  if (!access) {
-    throw new Error("We could not open this conversation right now.");
+  if (conversation) {
+    await ensureDirectConversationParticipants(viewer, recipientProfile, conversation.id);
   }
 
-  const [peerProfile, peerIdentity, viewerIdentity] = await Promise.all([
-    getProfileByUserId({
-      tenantId: viewer.tenantId,
-      userId: access.peerParticipant.userId
-    }),
+  const access = conversation ? await waitForConversationAccess(viewer, conversation.id, created ? 8 : 8) : null;
+  const [peerIdentity, viewerIdentity] = await Promise.all([
     getChatIdentityByUser({
       tenantId: viewer.tenantId,
-      userId: access.peerParticipant.userId
+      userId: recipientProfile.userId
     }),
     getChatIdentityByUser({
       tenantId: viewer.tenantId,
@@ -1754,13 +2067,35 @@ export async function createOrGetDirectConversation(viewer, input) {
     })
   ]);
 
+  if (!conversation) {
+    throw new Error("We could not open this conversation right now.");
+  }
+
+  if (!access) {
+    return {
+      created,
+      conversation: {
+        id: conversation.id,
+        tenantId: conversation.tenantId,
+        kind: "direct",
+        peer: buildPeerSummary(recipientProfile, peerIdentity),
+        messages: [],
+        lastReadMessageId: null,
+        lastReadAt: null,
+        peerLastReadMessageId: null,
+        peerLastReadAt: null
+      },
+      viewerIdentity
+    };
+  }
+
   return {
     created,
     conversation: {
       id: access.conversation.id,
       tenantId: access.conversation.tenantId,
       kind: "direct",
-      peer: buildPeerSummary(peerProfile, peerIdentity),
+      peer: buildPeerSummary(recipientProfile, peerIdentity),
       messages: [],
       lastReadMessageId: access.viewerParticipant.lastReadMessageId ?? null,
       lastReadAt: access.viewerParticipant.lastReadAt ? toIsoString(access.viewerParticipant.lastReadAt) : null,
@@ -2326,19 +2661,34 @@ export async function resetTenantChatData(tenantId) {
     throw new Error("A tenant id is required to reset chat data.");
   }
 
-  const [reactions, messages, participants, conversations] = await Promise.all([
+  const [reactions, messages, participants, conversations, identities] = await Promise.all([
     listActiveChatReactionsByTenant(normalizedTenantId),
     listActiveChatMessagesByTenant(normalizedTenantId),
     listActiveChatParticipantsByTenant(normalizedTenantId),
-    listActiveChatConversationsByTenant(normalizedTenantId)
+    listActiveChatConversationsByTenant(normalizedTenantId),
+    listActiveChatIdentitiesByTenant(normalizedTenantId)
   ]);
 
   const storagePaths = Array.from(
     new Set(
-      messages
-        .map((message) => normalizeString(message.attachmentStoragePath))
-        .filter(Boolean)
-        .filter((storagePath) => parseChatAttachmentStoragePath(storagePath)?.tenantId === normalizedTenantId)
+      [
+        ...messages
+          .map((message) => normalizeString(message.attachmentStoragePath))
+          .filter(Boolean)
+          .filter((storagePath) => parseChatAttachmentStoragePath(storagePath)?.tenantId === normalizedTenantId),
+        ...identities.flatMap((identity) => {
+          const userId = normalizeString(identity.userId);
+          if (!userId) {
+            return [];
+          }
+
+          return [
+            buildChatKeyBackupStoragePath(normalizedTenantId, userId),
+            buildChatKeyBackupPinAttemptStoragePath(normalizedTenantId, userId),
+            buildChatHiddenMessageStoragePath(normalizedTenantId, userId)
+          ];
+        })
+      ]
     )
   );
 
@@ -2382,12 +2732,22 @@ export async function resetTenantChatData(tenantId) {
     });
   });
 
+  await runInBatches(identities, 50, async (identity) => {
+    await getChatDc().executeGraphql(SOFT_DELETE_CHAT_IDENTITY_MUTATION, {
+      operationName: "SoftDeleteChatIdentity",
+      variables: {
+        id: identity.id
+      }
+    });
+  });
+
   return {
     tenantId: normalizedTenantId,
     deletedReactionCount: reactions.length,
     deletedMessageCount: messages.length,
     deletedParticipantCount: participants.length,
     deletedConversationCount: conversations.length,
+    deletedIdentityCount: identities.length,
     storageDeletedCount: storagePaths.length
   };
 }

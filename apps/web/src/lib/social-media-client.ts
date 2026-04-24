@@ -305,6 +305,40 @@ export async function uploadSocialMediaAsset(
     debugStage?: string;
   }
 ) {
+  const uploadViaServerProxy = async () => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("intent", intent);
+
+    const response = await fetch("/api/social-media", {
+      method: "POST",
+      headers: {
+        ...(options?.debugTaskId ? { "x-vyb-debug-task-id": options.debugTaskId } : {}),
+        ...(options?.debugStage ? { "x-vyb-debug-stage": options.debugStage } : {})
+      },
+      body: formData
+    });
+
+    const payload = (await response.json().catch(() => null)) as
+      | {
+          asset?: UploadedSocialMediaAsset;
+          error?: {
+            code?: string;
+            message?: string;
+            requestId?: string;
+          };
+        }
+      | null;
+
+    if (!response.ok || !payload?.asset) {
+      const message = payload?.error?.message ?? "We could not upload this media right now.";
+      const requestId = payload?.error?.requestId ? `, request: ${payload.error.requestId}` : "";
+      throw new Error(`${message} (stage: upload, status: ${response.status}${requestId})`);
+    }
+
+    return payload.asset;
+  };
+
   const prepareResponse = await fetch("/api/social-media", {
     method: "POST",
     headers: {
@@ -356,56 +390,39 @@ export async function uploadSocialMediaAsset(
       }));
 
     if (!currentUser) {
-      throw new Error("Your upload session expired. Sign in again and retry.");
+      console.warn("[social-media-client] direct upload skipped because Firebase auth user is unavailable; falling back to server upload.", {
+        intent,
+        taskId: options?.debugTaskId ?? null
+      });
+      return uploadViaServerProxy();
     }
 
-    const storage = getFirebaseClientStorage();
-    const storageRef = ref(storage, preparePayload.directUpload.storagePath);
-    const uploadSnapshot = await uploadBytes(storageRef, file, {
-      contentType: preparePayload.directUpload.mimeType,
-      cacheControl: preparePayload.directUpload.cacheControl,
-      customMetadata: preparePayload.directUpload.customMetadata
-    });
-    const url = await getDownloadURL(uploadSnapshot.ref);
+    try {
+      const storage = getFirebaseClientStorage();
+      const storageRef = ref(storage, preparePayload.directUpload.storagePath);
+      const uploadSnapshot = await uploadBytes(storageRef, file, {
+        contentType: preparePayload.directUpload.mimeType,
+        cacheControl: preparePayload.directUpload.cacheControl,
+        customMetadata: preparePayload.directUpload.customMetadata
+      });
+      const url = await getDownloadURL(uploadSnapshot.ref);
 
-    return {
-      mediaType: preparePayload.directUpload.mediaType,
-      mimeType: preparePayload.directUpload.mimeType,
-      sizeBytes: file.size,
-      storagePath: preparePayload.directUpload.storagePath,
-      url
-    };
+      return {
+        mediaType: preparePayload.directUpload.mediaType,
+        mimeType: preparePayload.directUpload.mimeType,
+        sizeBytes: file.size,
+        storagePath: preparePayload.directUpload.storagePath,
+        url
+      };
+    } catch (error) {
+      console.warn("[social-media-client] direct upload failed; falling back to server upload.", {
+        intent,
+        taskId: options?.debugTaskId ?? null,
+        message: error instanceof Error ? error.message : "unknown"
+      });
+      return uploadViaServerProxy();
+    }
   }
 
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("intent", intent);
-
-  const response = await fetch("/api/social-media", {
-    method: "POST",
-    headers: {
-      ...(options?.debugTaskId ? { "x-vyb-debug-task-id": options.debugTaskId } : {}),
-      ...(options?.debugStage ? { "x-vyb-debug-stage": options.debugStage } : {})
-    },
-    body: formData
-  });
-
-  const payload = (await response.json().catch(() => null)) as
-    | {
-        asset?: UploadedSocialMediaAsset;
-        error?: {
-          code?: string;
-          message?: string;
-          requestId?: string;
-        };
-      }
-    | null;
-
-  if (!response.ok || !payload?.asset) {
-    const message = payload?.error?.message ?? "We could not upload this media right now.";
-    const requestId = payload?.error?.requestId ? `, request: ${payload.error.requestId}` : "";
-    throw new Error(`${message} (stage: upload, status: ${response.status}${requestId})`);
-  }
-
-  return payload.asset;
+  return uploadViaServerProxy();
 }
