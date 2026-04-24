@@ -208,9 +208,6 @@ const LIST_CHAT_MESSAGES_BY_CONVERSATION_QUERY = `
       attachmentWidth
       attachmentHeight
       attachmentDurationMs
-      expiresAt
-      isStarred
-      isSaved
       createdAt
       updatedAt
     }
@@ -309,9 +306,6 @@ const GET_CHAT_MESSAGE_BY_ID_QUERY = `
       attachmentWidth
       attachmentHeight
       attachmentDurationMs
-      expiresAt
-      isStarred
-      isSaved
       createdAt
       updatedAt
     }
@@ -502,8 +496,6 @@ const CREATE_CHAT_MESSAGE_MUTATION = `
     $attachmentWidth: Int
     $attachmentHeight: Int
     $attachmentDurationMs: Int
-    $expiresAt: Timestamp
-    $isSaved: Boolean!
   ) {
     chatMessage_insert(
       data: {
@@ -525,9 +517,6 @@ const CREATE_CHAT_MESSAGE_MUTATION = `
         attachmentWidth: $attachmentWidth
         attachmentHeight: $attachmentHeight
         attachmentDurationMs: $attachmentDurationMs
-        expiresAt: $expiresAt
-        isSaved: $isSaved
-        isStarred: false
       }
     ) {
       id
@@ -1317,6 +1306,8 @@ function mapChatMessage(item, reactionsByMessageId = new Map()) {
   }
 
   const isDeletedForEveryone = item.cipherAlgorithm === CHAT_DELETED_MESSAGE_ALGORITHM;
+  const createdAt = toIsoString(item.createdAt);
+  const fallbackExpiresAt = buildExpiryFromDurationKey(CHAT_DEFAULT_MESSAGE_TTL_KEY, new Date(createdAt).getTime());
 
   return {
     id: item.id,
@@ -1349,8 +1340,8 @@ function mapChatMessage(item, reactionsByMessageId = new Map()) {
             height: item.attachmentHeight ?? null
           }
         : null,
-    createdAt: toIsoString(item.createdAt),
-    expiresAt: item.expiresAt ? toIsoString(item.expiresAt) : null,
+    createdAt,
+    expiresAt: item.expiresAt ? toIsoString(item.expiresAt) : fallbackExpiresAt,
     isStarred: normalizeBoolean(item.isStarred),
     isSaved: normalizeBoolean(item.isSaved),
     reactions: isDeletedForEveryone ? [] : reactionsByMessageId.get(item.id) ?? []
