@@ -1453,17 +1453,51 @@
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
+  display: inline-block;
+}
+
+.spm-chat-message-text::after {
+  content: '\00a0';
+  display: inline-block;
+  width: 3.5rem;
 }
 
 .spm-chat-message-meta {
+  position: absolute;
+  bottom: 0.6rem;
+  right: 1rem;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: 0.3rem;
   color: rgba(255, 255, 255, 0.5);
-  font-size: 0.75rem;
+  font-size: 0.65rem;
   font-weight: 600;
-  margin-top: 0.2rem;
+}
+
+.spm-chat-receipt-dot-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  outline: none;
+}
+
+.spm-chat-receipt-text {
+  display: none;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.spm-chat-receipt-dot-wrapper:focus .spm-chat-receipt-text,
+.spm-chat-receipt-dot-wrapper:active .spm-chat-receipt-text {
+  display: inline-block;
+}
+
+.spm-chat-receipt-dot-wrapper:focus .spm-chat-receipt-dot,
+.spm-chat-receipt-dot-wrapper:active .spm-chat-receipt-dot {
+  display: none;
 }
 
 .spm-chat-bubble-self .spm-chat-message-meta {

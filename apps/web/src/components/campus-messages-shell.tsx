@@ -728,6 +728,7 @@ export function CampusMessagesShell({
   const [messageActionBusy, setMessageActionBusy] = useState(false);
   const [messageActionError, setMessageActionError] = useState<string | null>(null);
   const [chatSettingsOpen, setChatSettingsOpen] = useState(false);
+  const [showE2eeAssurance, setShowE2eeAssurance] = useState(false);
   const [defaultDurationKey, setDefaultDurationKey] = useState<ChatMessageTtlKey>("30d");
   const [dismissedDecryptionWarningIds, setDismissedDecryptionWarningIds] = useState<Record<string, true>>({});
   const [creatingChatIdentity, setCreatingChatIdentity] = useState(false);
@@ -3233,9 +3234,13 @@ export function CampusMessagesShell({
                         {activePeer.displayName}
                       </strong>
                       <div className="spm-chat-peer-status-row">
-                        <span className="spm-chat-lock-pill-mini">
+                        <span 
+                          className="spm-chat-lock-pill-mini" 
+                          onClick={(e) => { e.preventDefault(); setShowE2eeAssurance(!showE2eeAssurance); }}
+                          style={{ cursor: 'pointer' }}
+                        >
                           <IconShield />
-                          {isE2eeReadyForActiveConversation ? "E2EE" : "Secure"}
+                          {showE2eeAssurance ? "Your chat is end-to-end encrypted." : (isE2eeReadyForActiveConversation ? "E2EE" : "Secure")}
                         </span>
                         <span style={{ opacity: 0.5 }}>•</span>
                         <span className={`spm-chat-live-pill-mini spm-chat-live-pill-${realtimeState}`}>
@@ -3457,14 +3462,10 @@ export function CampusMessagesShell({
                                 ) : null}
                                 <span suppressHydrationWarning>{formatMessageTime(message.createdAt)}</span>
                                 {receiptLabel ? (
-                                  <span className="spm-chat-receipt-dot" style={{
-                                    width: '6px',
-                                    height: '6px',
-                                    borderRadius: '50%',
-                                    backgroundColor: isSeenByPeer ? '#10b981' : '#9ca3af',
-                                    display: 'inline-block',
-                                    marginLeft: '4px'
-                                  }} title={isSeenByPeer ? "Read" : "Sent"} />
+                                  <span className="spm-chat-receipt-dot-wrapper" tabIndex={0}>
+                                    <span className="spm-chat-receipt-dot" style={{ backgroundColor: isSeenByPeer ? '#10b981' : '#9ca3af' }} />
+                                    <span className="spm-chat-receipt-text" style={{ color: isSeenByPeer ? '#10b981' : '#9ca3af' }}>{isSeenByPeer ? "Read" : "Sent"}</span>
+                                  </span>
                                 ) : null}
                               </div>
                             </div>
