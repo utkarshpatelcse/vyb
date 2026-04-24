@@ -3887,10 +3887,11 @@ export function CampusMessagesShell({
                                 </p>
                               )}
 
+                              {reactionSummary ? (
+                                <span className="spm-chat-reaction-pill">{reactionSummary}</span>
+                              ) : null}
+
                               <div className="spm-chat-message-meta">
-                                {reactionSummary ? (
-                                  <span className="spm-chat-reaction-pill">{reactionSummary}</span>
-                                ) : null}
                                 {message.isStarred ? (
                                   <span className="spm-chat-flag-pill">
                                     <IconStar />
