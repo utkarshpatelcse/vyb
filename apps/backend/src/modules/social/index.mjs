@@ -20,14 +20,12 @@ import {
   followUser,
   getFollowStats,
   isFollowing,
-  listProfileConnections,
   listCommentsByPost,
   listPostReactions,
   listPosts,
   listPostsByUser,
   listStories,
   markStorySeen,
-  togglePostSave,
   unfollowUser,
   updatePost,
   upsertCommentReaction,
@@ -36,7 +34,7 @@ import {
 } from "./repository.mjs";
 
 const allowedPostKinds = new Set(["text", "image", "video"]);
-const allowedReactionTypes = new Set(["fire", "support", "like", "love", "insight", "funny"]);
+const allowedReactionTypes = new Set(["fire", "support", "like"]);
 const allowedStoryMediaTypes = new Set(["image", "video"]);
 const allowedCommentMediaTypes = new Set(["image", "gif", "sticker"]);
 
@@ -309,8 +307,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       limit,
       placement: "feed",
       userId: authorUserId ?? null,
-      viewerMembershipId: resolvedMembershipId,
-      viewerUserId: resolvedUserId
+      viewerMembershipId: resolvedMembershipId
     });
 
     sendJson(response, 200, {
@@ -344,8 +341,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       tenantId,
       limit,
       placement: "vibe",
-      viewerMembershipId: resolvedMembershipId,
-      viewerUserId: resolvedUserId
+      viewerMembershipId: resolvedMembershipId
     });
 
     sendJson(response, 200, {
@@ -609,49 +605,6 @@ export async function handleSocialRoute({ request, response, url, context }) {
     return true;
   }
 
-  const connectionsMatch = request.method === "GET" ? url.pathname.match(/^\/v1\/users\/([^/]+)\/(followers|following)$/) : null;
-  if (connectionsMatch) {
-    const tenantId = resolveTenantScope({
-      requestedTenantId: url.searchParams.get("tenantId"),
-      resolvedTenantId,
-      routeLabel: "profile-connections"
-    });
-    const limit = parseLimit(url.searchParams.get("limit"), 50);
-
-    if (!requireNonEmptyString(tenantId)) {
-      sendError(response, 400, "INVALID_TENANT", "tenantId is required.");
-      return true;
-    }
-
-    if (limit === null) {
-      sendError(response, 400, "INVALID_LIMIT", "limit must be an integer between 1 and 50.");
-      return true;
-    }
-
-    const profile = await getProfileByUsername({
-      tenantId,
-      username: decodeURIComponent(connectionsMatch[1])
-    });
-
-    if (!profile) {
-      sendError(response, 404, "USER_NOT_FOUND", "That campus profile was not found.");
-      return true;
-    }
-
-    sendJson(response, 200, {
-      profileUsername: profile.username,
-      scope: connectionsMatch[2],
-      items: await listProfileConnections({
-        tenantId,
-        targetUserId: profile.userId,
-        viewerUserId: resolvedUserId,
-        scope: connectionsMatch[2],
-        limit
-      })
-    });
-    return true;
-  }
-
   const publicProfileMatch = request.method === "GET" ? url.pathname.match(/^\/v1\/users\/([^/]+)$/) : null;
   if (publicProfileMatch) {
     const tenantId = resolveTenantScope({
@@ -684,16 +637,14 @@ export async function handleSocialRoute({ request, response, url, context }) {
         userId: profile.userId,
         limit: 24,
         placement: "feed",
-        viewerMembershipId: resolvedMembershipId,
-        viewerUserId: resolvedUserId
+        viewerMembershipId: resolvedMembershipId
       }),
       listPostsByUser({
         tenantId,
         userId: profile.userId,
         limit: 24,
         placement: "vibe",
-        viewerMembershipId: resolvedMembershipId,
-        viewerUserId: resolvedUserId
+        viewerMembershipId: resolvedMembershipId
       })
     ]);
     const posts = [...feedPosts, ...vibePosts].sort(
@@ -806,8 +757,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
   if (postLikesMatch) {
     const post = await findPostById(postLikesMatch[1], {
       tenantId: resolvedTenantId ?? null,
-      viewerMembershipId: resolvedMembershipId,
-      viewerUserId: resolvedUserId
+      viewerMembershipId: resolvedMembershipId
     });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
@@ -835,51 +785,6 @@ export async function handleSocialRoute({ request, response, url, context }) {
     return true;
   }
 
-  const savePostMatch = request.method === "PUT" ? url.pathname.match(/^\/v1\/posts\/([^/]+)\/save$/) : null;
-  if (savePostMatch) {
-    const post = await findPostById(savePostMatch[1], {
-      tenantId: resolvedTenantId ?? null,
-      viewerMembershipId: resolvedMembershipId,
-      viewerUserId: resolvedUserId
-    });
-    if (!post) {
-      sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
-      return true;
-    }
-
-    let item;
-    try {
-      item = await togglePostSave({
-        tenantId: post.tenantId,
-        postId: post.id,
-        userId: resolvedUserId
-      });
-    } catch (error) {
-      sendError(
-        response,
-        503,
-        "POST_SAVE_UNAVAILABLE",
-        error instanceof Error ? error.message : "Post saves are unavailable right now."
-      );
-      return true;
-    }
-
-    await logSocialActivity({
-      tenantId: post.tenantId,
-      membershipId: resolvedMembershipId,
-      activityType: item.isSaved ? (post.placement === "vibe" ? "vibe.saved" : "post.saved") : post.placement === "vibe" ? "vibe.unsaved" : "post.unsaved",
-      entityType: "post",
-      entityId: post.id,
-      metadata: {
-        placement: post.placement,
-        savedCount: item.savedCount
-      }
-    });
-
-    sendJson(response, 200, item);
-    return true;
-  }
-
   const repostMatch = request.method === "POST" ? url.pathname.match(/^\/v1\/posts\/([^/]+)\/repost$/) : null;
   if (repostMatch) {
     const payload = await readJson(request);
@@ -890,8 +795,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
 
     const post = await findPostById(repostMatch[1], {
       tenantId: resolvedTenantId ?? null,
-      viewerMembershipId: resolvedMembershipId,
-      viewerUserId: resolvedUserId
+      viewerMembershipId: resolvedMembershipId
     });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
@@ -944,8 +848,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
   if (deletePostMatch) {
     const post = await findPostById(deletePostMatch[1], {
       tenantId: resolvedTenantId ?? null,
-      viewerMembershipId: resolvedMembershipId,
-      viewerUserId: resolvedUserId
+      viewerMembershipId: resolvedMembershipId
     });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
@@ -984,8 +887,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
 
     const post = await findPostById(updatePostMatch[1], {
       tenantId: resolvedTenantId ?? null,
-      viewerMembershipId: resolvedMembershipId,
-      viewerUserId: resolvedUserId
+      viewerMembershipId: resolvedMembershipId
     });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
@@ -1020,8 +922,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       },
       {
         tenantId: post.tenantId,
-        viewerMembershipId: resolvedMembershipId,
-        viewerUserId: resolvedUserId
+        viewerMembershipId: resolvedMembershipId
       }
     );
 
@@ -1044,8 +945,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
   if (listCommentMatch) {
     const post = await findPostById(listCommentMatch[1], {
       tenantId: resolvedTenantId ?? null,
-      viewerMembershipId: resolvedMembershipId,
-      viewerUserId: resolvedUserId
+      viewerMembershipId: resolvedMembershipId
     });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
@@ -1085,8 +985,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
 
     const post = await findPostById(commentMatch[1], {
       tenantId: resolvedTenantId ?? null,
-      viewerMembershipId: resolvedMembershipId,
-      viewerUserId: resolvedUserId
+      viewerMembershipId: resolvedMembershipId
     });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
@@ -1214,17 +1113,16 @@ export async function handleSocialRoute({ request, response, url, context }) {
 
     const post = await findPostById(reactionMatch[1], {
       tenantId: resolvedTenantId ?? null,
-      viewerMembershipId: resolvedMembershipId,
-      viewerUserId: resolvedUserId
+      viewerMembershipId: resolvedMembershipId
     });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
       return true;
     }
 
-    const reactionType = payload?.reactionType ?? "like";
+    const reactionType = payload?.reactionType ?? "fire";
     if (!allowedReactionTypes.has(reactionType)) {
-      sendError(response, 400, "INVALID_REACTION", "reactionType must be like, fire, support, love, insight, or funny.");
+      sendError(response, 400, "INVALID_REACTION", "reactionType must be fire, support, or like.");
       return true;
     }
 
