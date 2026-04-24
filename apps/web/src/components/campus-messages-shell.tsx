@@ -813,7 +813,7 @@ export function CampusMessagesShell({
   const lastScreenshotAlertRef = useRef(0);
   const pendingDeleteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const swipeGestureRef = useRef<{
-    messageIds: string[];
+    messageId: string;
     startX: number;
     startY: number;
     isOwnMessage: boolean;
