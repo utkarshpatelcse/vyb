@@ -3,7 +3,7 @@
 import type { FeedCard, PostLikerItem, ReactionKind, StoryCard, UserSearchItem } from "@vyb/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { CampusAvatarContent, useResolvedAvatarUrl } from "./campus-avatar";
 import { SocialPostActionSheet } from "./social-post-action-sheet";
 import { SocialPostLightbox } from "./social-post-lightbox";
@@ -1030,6 +1030,11 @@ export function CampusHomeShell({
     });
   }
 
+  function closeStoryViewer() {
+    setStoryProgress(0);
+    setSelectedStoryIndex(null);
+  }
+
   function clearStoryHoldTimer() {
     if (storyHoldTimeoutRef.current !== null) {
       window.clearTimeout(storyHoldTimeoutRef.current);
@@ -1037,7 +1042,9 @@ export function CampusHomeShell({
     }
   }
 
-  function handleStoryPointerDown(zone: "left" | "center" | "right") {
+  function handleStoryPointerDown(event: ReactPointerEvent<HTMLButtonElement>, zone: "left" | "center" | "right") {
+    event.preventDefault();
+    event.stopPropagation();
     storyPointerZoneRef.current = zone;
     storyPointerDownAtRef.current = performance.now();
     clearStoryHoldTimer();
@@ -1046,10 +1053,10 @@ export function CampusHomeShell({
     }, 180);
   }
 
-  function handleStoryPointerUp() {
-    const pressDuration = performance.now() - storyPointerDownAtRef.current;
-    const activeZone = storyPointerZoneRef.current;
-    const wasLongPress = pressDuration >= 180;
+  function handleStoryPointerUp(event: ReactPointerEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    const wasLongPress = performance.now() - storyPointerDownAtRef.current >= 180;
 
     clearStoryHoldTimer();
     setIsStoryPaused(false);
@@ -1057,20 +1064,31 @@ export function CampusHomeShell({
     if (wasLongPress) {
       return;
     }
+  }
 
-    if (activeZone === "left") {
+  function handleStoryPointerCancel(event?: ReactPointerEvent<HTMLButtonElement>) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    clearStoryHoldTimer();
+    setIsStoryPaused(false);
+  }
+
+  function handleStoryZoneClick(event: ReactMouseEvent<HTMLButtonElement>, zone: "left" | "center" | "right") {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (performance.now() - storyPointerDownAtRef.current >= 180) {
+      return;
+    }
+
+    if (zone === "left") {
       moveStory(-1);
       return;
     }
 
-    if (activeZone === "right") {
+    if (zone === "right") {
       moveStory(1);
     }
-  }
-
-  function handleStoryPointerCancel() {
-    clearStoryHoldTimer();
-    setIsStoryPaused(false);
   }
 
   function handleStorySoundToggle() {
@@ -1583,7 +1601,7 @@ export function CampusHomeShell({
       <CampusMobileNavigation navItems={navItems} />
 
       {selectedStory ? (
-        <div className="vyb-story-viewer-backdrop" role="presentation" onClick={() => setSelectedStoryIndex(null)}>
+        <div className="vyb-story-viewer-backdrop" role="presentation" onClick={closeStoryViewer}>
           <div className="vyb-story-viewer" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             {selectedStory.mediaType === "image" ? (
               <div
@@ -1642,12 +1660,16 @@ export function CampusHomeShell({
                     {isStoryMuted ? <VolumeOffIcon /> : <VolumeOnIcon />}
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  className="vyb-story-viewer-close"
-                  aria-label="Close story viewer"
-                  onClick={() => setSelectedStoryIndex(null)}
-                >
+                  <button
+                    type="button"
+                    className="vyb-story-viewer-close"
+                    aria-label="Close story viewer"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      closeStoryViewer();
+                    }}
+                  >
                   <CloseIcon />
                 </button>
               </div>
@@ -1675,7 +1697,8 @@ export function CampusHomeShell({
                 <button
                   type="button"
                   aria-label="Previous story"
-                  onPointerDown={() => handleStoryPointerDown("left")}
+                  onClick={(event) => handleStoryZoneClick(event, "left")}
+                  onPointerDown={(event) => handleStoryPointerDown(event, "left")}
                   onPointerUp={handleStoryPointerUp}
                   onPointerCancel={handleStoryPointerCancel}
                   onPointerLeave={handleStoryPointerCancel}
@@ -1684,7 +1707,8 @@ export function CampusHomeShell({
                 <button
                   type="button"
                   aria-label="Pause story"
-                  onPointerDown={() => handleStoryPointerDown("center")}
+                  onClick={(event) => handleStoryZoneClick(event, "center")}
+                  onPointerDown={(event) => handleStoryPointerDown(event, "center")}
                   onPointerUp={handleStoryPointerUp}
                   onPointerCancel={handleStoryPointerCancel}
                   onPointerLeave={handleStoryPointerCancel}
@@ -1693,7 +1717,8 @@ export function CampusHomeShell({
                 <button
                   type="button"
                   aria-label="Next story"
-                  onPointerDown={() => handleStoryPointerDown("right")}
+                  onClick={(event) => handleStoryZoneClick(event, "right")}
+                  onPointerDown={(event) => handleStoryPointerDown(event, "right")}
                   onPointerUp={handleStoryPointerUp}
                   onPointerCancel={handleStoryPointerCancel}
                   onPointerLeave={handleStoryPointerCancel}

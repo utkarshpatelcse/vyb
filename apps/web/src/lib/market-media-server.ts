@@ -1,6 +1,8 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
 import type { MarketMediaAsset, MarketMediaKind, MarketTab } from "@vyb/contracts";
 import sharp from "sharp";
 import { getFirebaseAdminStorageBucket } from "./firebase-admin-server";
@@ -19,8 +21,71 @@ function buildDownloadUrl(bucketName: string, storagePath: string, token: string
   return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
 }
 
+function buildLocalDownloadUrl(storagePath: string) {
+  const encodedPath = storagePath
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+
+  return `/api/market/media/${encodedPath}`;
+}
+
 function normalizeMimeType(value: string) {
   return value.trim().toLowerCase();
+}
+
+function getConfiguredStorageBucket() {
+  loadWorkspaceRootEnv();
+  return process.env.FIREBASE_STORAGE_BUCKET ?? process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ?? null;
+}
+
+function getLocalMarketMediaRoot() {
+  loadWorkspaceRootEnv();
+
+  const configuredRoot =
+    process.env.VYB_LOCAL_MEDIA_ROOT ??
+    process.env.TMPDIR ??
+    process.env.TEMP ??
+    process.env.TMP ??
+    path.join(process.cwd(), ".tmp");
+
+  return path.join(configuredRoot, "vyb-market-media");
+}
+
+export function resolveLocalMarketMediaFilePath(storagePath: string) {
+  const rootPath = path.resolve(getLocalMarketMediaRoot());
+  const relativePath = storagePath
+    .split("/")
+    .filter(Boolean)
+    .join(path.sep);
+  const absolutePath = path.resolve(rootPath, relativePath);
+  const relativeCheck = path.relative(rootPath, absolutePath);
+
+  if (relativeCheck.startsWith("..") || path.isAbsolute(relativeCheck)) {
+    throw new Error("Invalid local market media path.");
+  }
+
+  return absolutePath;
+}
+
+export function inferLocalMarketMediaContentType(storagePath: string) {
+  const extension = path.extname(storagePath).toLowerCase();
+  const byExtension: Record<string, string> = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".heic": "image/heic",
+    ".heif": "image/heif",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+    ".mkv": "video/x-matroska"
+  };
+
+  return byExtension[extension] ?? "application/octet-stream";
 }
 
 function getMarketMediaKind(mimeType: string): MarketMediaKind | null {
@@ -94,11 +159,26 @@ function validateFile(file: File) {
 }
 
 function ensureStorageConfigured() {
-  loadWorkspaceRootEnv();
-
-  if (!process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET) {
+  if (!getConfiguredStorageBucket()) {
     throw new Error("Firebase Storage is not configured yet. Add NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET before uploading market media.");
   }
+}
+
+function isFirebaseStorageFailure(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("default credentials") ||
+    message.includes("could not load the default credentials") ||
+    message.includes("firebase storage is not configured") ||
+    message.includes("enoent") ||
+    message.includes("permission") ||
+    message.includes("unauthorized") ||
+    message.includes("invalid_grant")
+  );
 }
 
 export function getMaxMarketMediaItems() {
@@ -120,10 +200,30 @@ export async function deleteMarketMediaAssets(assets: MarketMediaAsset[]) {
     return;
   }
 
-  ensureStorageConfigured();
+  const localAssets = removable.filter((asset) => asset.url.startsWith("/api/market/media/"));
+  const remoteAssets = removable.filter((asset) => !asset.url.startsWith("/api/market/media/"));
 
-  const bucket = getFirebaseAdminStorageBucket();
-  await Promise.allSettled(removable.map((asset) => bucket.file(asset.storagePath as string).delete({ ignoreNotFound: true })));
+  await Promise.allSettled(
+    localAssets.map((asset) =>
+      rm(resolveLocalMarketMediaFilePath(asset.storagePath as string), {
+        force: true
+      }).catch(() => null)
+    )
+  );
+
+  if (remoteAssets.length === 0) {
+    return;
+  }
+
+  try {
+    ensureStorageConfigured();
+    const bucket = getFirebaseAdminStorageBucket();
+    await Promise.allSettled(remoteAssets.map((asset) => bucket.file(asset.storagePath as string).delete({ ignoreNotFound: true })));
+  } catch (error) {
+    if (!isFirebaseStorageFailure(error)) {
+      throw error;
+    }
+  }
 }
 
 async function compressMarketImageBuffer(buffer: Buffer, mimeType: string, fileName: string) {
@@ -193,6 +293,28 @@ async function compressMarketImageBuffer(buffer: Buffer, mimeType: string, fileN
   }
 }
 
+async function persistLocalMarketMediaAsset(input: {
+  buffer: Buffer;
+  kind: MarketMediaKind;
+  mimeType: string;
+  fileName: string;
+  storagePath: string;
+}) {
+  const filePath = resolveLocalMarketMediaFilePath(input.storagePath);
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, input.buffer);
+
+  return {
+    id: path.basename(input.storagePath, path.extname(input.storagePath)),
+    kind: input.kind,
+    url: buildLocalDownloadUrl(input.storagePath),
+    fileName: input.fileName,
+    mimeType: input.mimeType,
+    sizeBytes: input.buffer.byteLength,
+    storagePath: input.storagePath
+  } satisfies MarketMediaAsset;
+}
+
 export async function persistMarketMediaAssets(input: {
   tenantId: string;
   userId: string;
@@ -208,9 +330,6 @@ export async function persistMarketMediaAssets(input: {
     throw new Error(`You can upload up to ${MAX_MARKET_MEDIA_ITEMS} files in one market post.`);
   }
 
-  ensureStorageConfigured();
-
-  const bucket = getFirebaseAdminStorageBucket();
   const assets = await Promise.all(
     input.files.map(async (file) => {
       const { kind, mimeType } = validateFile(file);
@@ -229,31 +348,56 @@ export async function persistMarketMediaAssets(input: {
               compressed: false
             };
       const storagePath = `market/${input.tenantId}/${input.tab}/${input.userId}/${input.postId}/${assetId}.${prepared.extension}`;
-      const storageFile = bucket.file(storagePath);
+      try {
+        ensureStorageConfigured();
 
-      await storageFile.save(prepared.buffer, {
-        resumable: false,
-        metadata: {
-          contentType: prepared.mimeType,
-          cacheControl: "public, max-age=31536000, immutable",
+        const bucket = getFirebaseAdminStorageBucket();
+        const storageFile = bucket.file(storagePath);
+
+        await storageFile.save(prepared.buffer, {
+          resumable: false,
           metadata: {
-            firebaseStorageDownloadTokens: token,
-            originalFileName: sourceFileName,
-            sourceMimeType: mimeType,
-            compressed: prepared.compressed ? "true" : "false"
+            contentType: prepared.mimeType,
+            cacheControl: "public, max-age=31536000, immutable",
+            metadata: {
+              firebaseStorageDownloadTokens: token,
+              originalFileName: sourceFileName,
+              sourceMimeType: mimeType,
+              compressed: prepared.compressed ? "true" : "false"
+            }
           }
-        }
-      });
+        });
 
-      return {
-        id: assetId,
-        kind,
-        url: buildDownloadUrl(bucket.name, storagePath, token),
-        fileName: prepared.fileName,
-        mimeType: prepared.mimeType,
-        sizeBytes: prepared.buffer.byteLength,
-        storagePath
-      } satisfies MarketMediaAsset;
+        return {
+          id: assetId,
+          kind,
+          url: buildDownloadUrl(bucket.name, storagePath, token),
+          fileName: prepared.fileName,
+          mimeType: prepared.mimeType,
+          sizeBytes: prepared.buffer.byteLength,
+          storagePath
+        } satisfies MarketMediaAsset;
+      } catch (error) {
+        if (!isFirebaseStorageFailure(error)) {
+          throw error;
+        }
+
+        console.warn("[web/market-media] falling back to local media storage", {
+          tenantId: input.tenantId,
+          userId: input.userId,
+          tab: input.tab,
+          fileName: sourceFileName,
+          message: error instanceof Error ? error.message : "unknown"
+        });
+
+        return persistLocalMarketMediaAsset({
+          buffer: prepared.buffer,
+          kind,
+          mimeType: prepared.mimeType,
+          fileName: prepared.fileName,
+          storagePath
+        });
+      }
     })
   );
 

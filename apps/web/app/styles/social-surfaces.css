@@ -801,6 +801,10 @@
   cursor: pointer;
   padding: 0;
   touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  outline: none;
 }
 
 .vyb-story-viewer-message {

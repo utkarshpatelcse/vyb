@@ -1,5 +1,7 @@
 import "server-only";
 
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import type {
   CampusEvent,
   CampusEventActorSummary,
@@ -29,7 +31,6 @@ import type {
   UpsertCampusEventRegistrationRequest,
   UpsertCampusEventRegistrationResponse
 } from "@vyb/contracts";
-import { getFirebaseDataConnect } from "@vyb/config";
 import type { DevSession } from "./dev-session";
 import { deleteEventMediaAssets } from "./events-media-server";
 import type { EventViewerIdentity } from "./events-types";
@@ -75,52 +76,6 @@ type CampusEventStoreRecord = {
 const defaultStore: EventStore = {
   events: []
 };
-const campusConnectorConfig = {
-  connector: "campus",
-  serviceId: "vyb",
-  location: "asia-south1"
-} as const;
-
-const GET_CAMPUS_EVENT_STORE_QUERY = `
-  query GetCampusEventStoreByTenant($id: UUID!) {
-    campusEventStore(key: { id: $id }) {
-      id
-      tenantId
-      eventsJson
-      updatedAt
-    }
-  }
-`;
-
-const CREATE_CAMPUS_EVENT_STORE_MUTATION = `
-  mutation CreateCampusEventStore($id: UUID!, $tenantId: UUID!, $eventsJson: String!) {
-    campusEventStore_insert(
-      data: {
-        id: $id
-        tenantId: $tenantId
-        eventsJson: $eventsJson
-        createdAt_expr: "request.time"
-        updatedAt_expr: "request.time"
-      }
-    ) {
-      id
-    }
-  }
-`;
-
-const UPDATE_CAMPUS_EVENT_STORE_MUTATION = `
-  mutation UpdateCampusEventStore($id: UUID!, $eventsJson: String!) {
-    campusEventStore_update(
-      key: { id: $id }
-      data: {
-        eventsJson: $eventsJson
-        updatedAt_expr: "request.time"
-      }
-    ) {
-      id
-    }
-  }
-`;
 
 const seedMediaByCategory: Record<string, string> = {
   Cultural: "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=1200&q=80&auto=format&fit=crop",
@@ -706,8 +661,28 @@ function toCampusEvent(event: StoredEvent, viewer?: Pick<DevSession, "userId">):
   };
 }
 
-function getCampusEventsDc() {
-  return getFirebaseDataConnect(campusConnectorConfig);
+function getLocalEventsStoreRoot() {
+  const configuredRoot =
+    process.env.VYB_LOCAL_MEDIA_ROOT ??
+    process.env.TMPDIR ??
+    process.env.TEMP ??
+    process.env.TMP ??
+    path.join(process.cwd(), ".tmp");
+
+  return path.join(configuredRoot, "vyb-campus-events");
+}
+
+function resolveLocalEventsStorePath(tenantId: string) {
+  const rootPath = path.resolve(getLocalEventsStoreRoot());
+  const fileName = `${tenantId}.json`;
+  const absolutePath = path.resolve(rootPath, fileName);
+  const relativeCheck = path.relative(rootPath, absolutePath);
+
+  if (relativeCheck.startsWith("..") || path.isAbsolute(relativeCheck)) {
+    throw new Error("Invalid local events store path.");
+  }
+
+  return absolutePath;
 }
 
 function normalizeStore(raw: unknown, tenantId: string): EventStore {
@@ -738,53 +713,26 @@ function parseStoreJson(value: string | null | undefined) {
 }
 
 async function readStoreRecord(tenantId: string) {
-  const response = await getCampusEventsDc().executeGraphqlRead(GET_CAMPUS_EVENT_STORE_QUERY, {
-    operationName: "GetCampusEventStoreByTenant",
-    variables: {
-      id: tenantId
-    }
-  });
-
-  const data = response.data as {
-    campusEventStore?: CampusEventStoreRecord | null;
-  };
-
-  return data.campusEventStore ?? null;
-}
-
-async function writeStoreRecord(tenantId: string, store: EventStore, exists: boolean) {
-  const dc = getCampusEventsDc();
-  const eventsJson = JSON.stringify(serializeStore(store));
-
-  if (exists) {
-    await dc.executeGraphql(UPDATE_CAMPUS_EVENT_STORE_MUTATION, {
-      operationName: "UpdateCampusEventStore",
-      variables: {
-        id: tenantId,
-        eventsJson
-      }
-    });
-    return;
-  }
+  const filePath = resolveLocalEventsStorePath(tenantId);
 
   try {
-    await dc.executeGraphql(CREATE_CAMPUS_EVENT_STORE_MUTATION, {
-      operationName: "CreateCampusEventStore",
-      variables: {
-        id: tenantId,
-        tenantId,
-        eventsJson
-      }
-    });
-  } catch (error) {
-    await dc.executeGraphql(UPDATE_CAMPUS_EVENT_STORE_MUTATION, {
-      operationName: "UpdateCampusEventStore",
-      variables: {
-        id: tenantId,
-        eventsJson
-      }
-    });
+    const eventsJson = await readFile(filePath, "utf8");
+    return {
+      id: tenantId,
+      tenantId,
+      eventsJson
+    } satisfies CampusEventStoreRecord;
+  } catch {
+    return null;
   }
+}
+
+async function writeStoreRecord(tenantId: string, store: EventStore) {
+  const eventsJson = JSON.stringify(serializeStore(store));
+  const filePath = resolveLocalEventsStorePath(tenantId);
+
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, eventsJson, "utf8");
 }
 
 function seedTenantStoreIfEmpty(store: EventStore, tenantId: string) {
@@ -824,7 +772,7 @@ async function transactStore<T>(
   }
 
   if (shouldPersist) {
-    await writeStoreRecord(tenantId, store, Boolean(existingRecord));
+    await writeStoreRecord(tenantId, store);
   }
 
   return {
