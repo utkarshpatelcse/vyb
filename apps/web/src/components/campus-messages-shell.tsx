@@ -808,7 +808,7 @@ export function CampusMessagesShell({
   const isMountedRef = useRef(false);
   const composerFocusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastTapRef = useRef<{ messageIds: string[]; timestamp: number } | null>(null);
+  const lastTapRef = useRef<{ messageId: string; timestamp: number } | null>(null);
   const longPressTriggeredRef = useRef(false);
   const lastScreenshotAlertRef = useRef(0);
   const pendingDeleteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -826,7 +826,7 @@ export function CampusMessagesShell({
   const messageIdsRef = useRef<Set<string>>(new Set(initialConversation?.messages.map((message) => message.id) ?? []));
   const activeConversationRef = useRef<ActiveConversation | null>(initialConversation);
   const hasChatIdentity = Boolean(viewerIdentity);
-  const [swipeReplyPreview, setSwipeReplyPreview] = useState<{ messageIds: string[]; offsetX: number } | null>(null);
+  const [swipeReplyPreview, setSwipeReplyPreview] = useState<{ messageId: string; offsetX: number } | null>(null);
 
   const isSearching = query.trim().length > 0;
   const { results: searchResults, loading: searchLoading } = useUserSearch(query);
