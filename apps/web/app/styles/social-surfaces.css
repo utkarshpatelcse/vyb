@@ -5464,11 +5464,14 @@
    Chat Privacy – Modern Redesign
    =========================== */
 
+
+/* ===========================
+   Chat Privacy – Redesign (reference-matched)
+   =========================== */
+
 .vyb-chat-privacy-page {
   background: #020617;
-  background-image:
-    radial-gradient(circle at 50% -20%, #1e1b4b 0%, transparent 60%),
-    radial-gradient(circle at 80% 80%, rgba(20, 184, 166, 0.08), transparent 50%);
+  background-image: radial-gradient(circle at 50% -20%, #1e1b4b 0%, #020617 80%);
   min-height: 100dvh;
 }
 
@@ -5476,192 +5479,179 @@
   width: 100%;
   min-height: 100dvh;
   overflow-y: auto;
-  padding: 2rem 1.2rem 4rem;
+  padding: 2.5rem 1.2rem 4rem;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
 }
 
 .vyb-chat-privacy-shell {
-  width: min(100%, 600px);
-  margin: 0 auto;
+  width: min(100%, 580px);
   display: flex;
   flex-direction: column;
-  gap: 1.2rem;
+  gap: 1.5rem;
 }
 
-/* ---- HERO / HEADER ---- */
+/* ---- HEADER ---- */
 .vyb-chat-privacy-hero {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 1.5rem 1.6rem;
-  border-radius: 2rem;
-  background: rgba(15, 23, 42, 0.6);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  gap: 1.2rem;
 }
 
 .vyb-chat-privacy-hero-copy {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.2rem;
 }
 
 .vyb-chat-privacy-kicker {
-  font-size: 0.68rem;
+  font-size: 0.65rem;
   font-weight: 800;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.25em;
   text-transform: uppercase;
   color: #818cf8;
+  display: block;
+  margin-bottom: 0.3rem;
 }
 
 .vyb-chat-privacy-hero-copy h1 {
   margin: 0;
-  font-size: clamp(1.5rem, 5vw, 2.2rem);
+  font-size: 1.9rem;
   font-weight: 800;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
   background: linear-gradient(to right, #ffffff, #94a3b8);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  line-height: 1.15;
 }
 
 .vyb-chat-privacy-hero-copy p {
-  margin: 0;
-  font-size: 0.82rem;
-  color: rgba(226, 232, 240, 0.55);
-  line-height: 1.6;
-  max-width: 36ch;
+  display: none; /* keep clean like reference */
 }
 
+/* Hero status badge (top-right pill) */
 .vyb-chat-privacy-hero-status {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.25rem;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.2);
   flex-shrink: 0;
 }
 
 .vyb-chat-privacy-hero-status strong {
-  font-size: 0.82rem;
-  color: #f8fafc;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #34d399;
 }
 
 .vyb-chat-privacy-hero-status span,
 .vyb-chat-privacy-hero-status small {
-  font-size: 0.7rem;
-  color: rgba(203, 213, 225, 0.55);
-  line-height: 1.5;
-  text-align: right;
+  display: none;
 }
 
 /* ---- STATUS PILL ---- */
 .vyb-chat-privacy-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 0.8rem;
-  border-radius: 999px;
+  gap: 0.4rem;
   font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-weight: 900;
   text-transform: uppercase;
+  letter-spacing: 0.1em;
 }
 
-.vyb-chat-privacy-pill-ready {
-  background: rgba(16, 185, 129, 0.12);
-  border: 1px solid rgba(16, 185, 129, 0.25);
-  color: #34d399;
-}
-
-.vyb-chat-privacy-pill-restore {
-  background: rgba(245, 158, 11, 0.12);
-  border: 1px solid rgba(245, 158, 11, 0.25);
-  color: #fbbf24;
-}
-
-.vyb-chat-privacy-pill-setup {
-  background: rgba(239, 68, 68, 0.12);
-  border: 1px solid rgba(239, 68, 68, 0.25);
-  color: #f87171;
-}
+.vyb-chat-privacy-pill-ready   { color: #34d399; }
+.vyb-chat-privacy-pill-restore { color: #fbbf24; }
+.vyb-chat-privacy-pill-setup   { color: #f87171; }
 
 /* ---- PULSE DOT ---- */
 .vyb-chat-privacy-pulse {
-  width: 0.45rem;
-  height: 0.45rem;
+  display: inline-block;
+  width: 0.42rem;
+  height: 0.42rem;
   border-radius: 50%;
   flex-shrink: 0;
   animation: privacyPulse 2s ease-in-out infinite;
 }
 
-.vyb-chat-privacy-pulse-secured { background: #34d399; box-shadow: 0 0 6px #34d399; }
-.vyb-chat-privacy-pulse-warning { background: #fbbf24; box-shadow: 0 0 6px #fbbf24; }
-.vyb-chat-privacy-pulse-risk    { background: #f87171; box-shadow: 0 0 6px #f87171; }
+.vyb-chat-privacy-pulse-secured { background: #34d399; box-shadow: 0 0 5px #34d399; }
+.vyb-chat-privacy-pulse-warning { background: #fbbf24; box-shadow: 0 0 5px #fbbf24; }
+.vyb-chat-privacy-pulse-risk    { background: #f87171; box-shadow: 0 0 5px #f87171; }
 
 @keyframes privacyPulse {
   0%, 100% { opacity: 1; transform: scale(1); }
-  50%       { opacity: 0.55; transform: scale(1.3); }
+  50%       { opacity: 0.5; transform: scale(1.35); }
 }
 
-/* ---- SNAPSHOT STATS ROW ---- */
+/* ---- SNAPSHOT MINI STATS (3 cols) ---- */
 .vyb-chat-privacy-snapshot {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.7rem;
+  gap: 0.9rem;
 }
 
 .vyb-chat-privacy-snapshot-card {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  padding: 1rem 1.1rem;
-  border-radius: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 1.2rem 0.8rem;
+  border-radius: 1.8rem;
   background: rgba(15, 23, 42, 0.6);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-  transition: border-color 0.3s ease, transform 0.3s ease;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+  text-align: center;
+  transition: border-color 0.35s ease, transform 0.35s ease, box-shadow 0.35s ease;
 }
 
 .vyb-chat-privacy-snapshot-card:hover {
-  border-color: rgba(99, 102, 241, 0.35);
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 0 18px rgba(99, 102, 241, 0.1);
   transform: translateY(-2px);
 }
 
 .vyb-chat-privacy-snapshot-card span {
-  font-size: 0.64rem;
-  font-weight: 800;
-  letter-spacing: 0.18em;
+  font-size: 0.6rem;
+  font-weight: 700;
   text-transform: uppercase;
-  color: rgba(148, 163, 184, 0.7);
+  letter-spacing: 0.2em;
+  color: rgba(148, 163, 184, 0.6);
 }
 
 .vyb-chat-privacy-snapshot-card strong {
-  font-size: 0.88rem;
-  font-weight: 800;
-  color: #f8fafc;
+  font-size: 0.85rem;
+  font-weight: 900;
   font-style: italic;
+  color: #f8fafc;
 }
 
 .vyb-chat-privacy-snapshot-card small {
-  font-size: 0.68rem;
-  color: rgba(203, 213, 225, 0.5);
-  line-height: 1.4;
+  font-size: 0.62rem;
+  color: rgba(148, 163, 184, 0.45);
 }
 
-/* ---- SHARED BASE CARD ---- */
+/* ---- SHARED CARD BASE ---- */
 .vyb-chat-privacy-snapshot-card,
 .vyb-chat-privacy-status-card,
 .vyb-chat-privacy-card,
 .vyb-chat-privacy-next-step,
 .vyb-chat-privacy-banner {
-  border-radius: 1.5rem;
-  border: 1px solid rgba(148, 163, 184, 0.08);
   background: rgba(15, 23, 42, 0.6);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+  border-radius: 2rem;
+  transition: border-color 0.35s ease, box-shadow 0.35s ease, transform 0.35s ease;
 }
 
 /* ---- ACTION BUTTONS ---- */
@@ -5670,7 +5660,7 @@
 .vyb-chat-privacy-modal-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.7rem;
+  gap: 0.8rem;
 }
 
 .vyb-chat-privacy-primary,
@@ -5678,42 +5668,41 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 2.8rem;
-  padding: 0.75rem 1.3rem;
+  min-height: 2.7rem;
+  padding: 0.7rem 1.4rem;
   border-radius: 1rem;
   text-decoration: none;
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   cursor: pointer;
   transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
 .vyb-chat-privacy-primary {
   background: linear-gradient(135deg, #6366f1, #4338ca);
   color: #fff;
   border: none;
-  box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3);
+  box-shadow: 0 8px 20px rgba(99, 102, 241, 0.32);
 }
 
 .vyb-chat-privacy-primary:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 12px 28px rgba(99, 102, 241, 0.45);
+  transform: scale(1.02);
+  box-shadow: 0 12px 28px rgba(99, 102, 241, 0.5);
 }
 
-.vyb-chat-privacy-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.vyb-chat-privacy-primary:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .vyb-chat-privacy-ghost {
+  background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(226, 232, 240, 0.85);
-  background: rgba(255, 255, 255, 0.04);
+  color: rgba(226, 232, 240, 0.8);
 }
 
 .vyb-chat-privacy-ghost:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.18);
 }
 
@@ -5722,373 +5711,217 @@
   display: flex;
   align-items: flex-start;
   gap: 1rem;
-  padding: 1.1rem 1.3rem;
+  padding: 1.1rem 1.4rem;
+  border-radius: 1.3rem;
 }
 
-.vyb-chat-privacy-banner > svg { flex-shrink: 0; width: 1.2rem; height: 1.2rem; margin-top: 0.1rem; }
-.vyb-chat-privacy-banner div { display: flex; flex-direction: column; gap: 0.2rem; }
-.vyb-chat-privacy-banner strong { font-size: 0.88rem; }
-.vyb-chat-privacy-banner span { font-size: 0.8rem; color: rgba(226, 232, 240, 0.7); }
+.vyb-chat-privacy-banner > svg { flex-shrink: 0; width: 1.15rem; height: 1.15rem; margin-top: 0.1rem; }
+.vyb-chat-privacy-banner div  { display: flex; flex-direction: column; gap: 0.18rem; }
+.vyb-chat-privacy-banner strong { font-size: 0.85rem; }
+.vyb-chat-privacy-banner span   { font-size: 0.78rem; color: rgba(226, 232, 240, 0.65); }
 
-.vyb-chat-privacy-banner-error {
-  border-color: rgba(239, 68, 68, 0.25);
-  background: rgba(239, 68, 68, 0.08);
-  color: #f87171;
-}
+.vyb-chat-privacy-banner-error   { border-color: rgba(239,68,68,0.28);   background: rgba(239,68,68,0.08);   color: #f87171; }
+.vyb-chat-privacy-banner-success  { border-color: rgba(16,185,129,0.28);  background: rgba(16,185,129,0.08);  color: #34d399; }
+.vyb-chat-privacy-banner-warning  { border-color: rgba(245,158,11,0.28);  background: rgba(245,158,11,0.08);  color: #fbbf24; }
 
-.vyb-chat-privacy-banner-success {
-  border-color: rgba(16, 185, 129, 0.25);
-  background: rgba(16, 185, 129, 0.08);
-  color: #34d399;
-}
-
-.vyb-chat-privacy-banner-warning {
-  border-color: rgba(245, 158, 11, 0.25);
-  background: rgba(245, 158, 11, 0.08);
-  color: #fbbf24;
-}
-
-/* ---- NEXT STEP GUIDANCE ---- */
+/* ---- NEXT STEP ---- */
 .vyb-chat-privacy-next-step {
-  padding: 1.4rem 1.5rem;
+  padding: 1.6rem 1.8rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  border-radius: 2rem;
 }
 
-.vyb-chat-privacy-next-step-secured { border-color: rgba(16, 185, 129, 0.22); }
-.vyb-chat-privacy-next-step-warning { border-color: rgba(245, 158, 11, 0.22); }
-.vyb-chat-privacy-next-step-risk    { border-color: rgba(239, 68, 68, 0.22); }
+.vyb-chat-privacy-next-step:hover { border-color: rgba(99,102,241,0.35); box-shadow: 0 0 18px rgba(99,102,241,0.1); transform: translateY(-2px); }
+.vyb-chat-privacy-next-step-secured { border-color: rgba(16,185,129,0.2); }
+.vyb-chat-privacy-next-step-warning { border-color: rgba(245,158,11,0.2); }
+.vyb-chat-privacy-next-step-risk    { border-color: rgba(239,68,68,0.2); }
 
-.vyb-chat-privacy-next-step-copy { display: flex; flex-direction: column; gap: 0.35rem; }
-.vyb-chat-privacy-next-step-copy strong { font-size: 1rem; font-weight: 800; color: #f8fafc; }
-.vyb-chat-privacy-next-step-copy p { margin: 0; font-size: 0.82rem; color: rgba(203, 213, 225, 0.72); line-height: 1.6; }
+.vyb-chat-privacy-next-step-copy { display: flex; flex-direction: column; gap: 0.4rem; }
+.vyb-chat-privacy-next-step-copy strong { font-size: 1.05rem; font-weight: 800; font-style: italic; color: #f8fafc; letter-spacing: -0.02em; }
+.vyb-chat-privacy-next-step-copy p { margin: 0; font-size: 0.8rem; color: rgba(203,213,225,0.65); line-height: 1.65; }
 
 /* ---- STATUS GRID ---- */
-.vyb-chat-privacy-content { display: flex; flex-direction: column; gap: 1rem; }
+.vyb-chat-privacy-content { display: flex; flex-direction: column; gap: 1.2rem; }
 .vyb-chat-privacy-content-full { width: 100%; }
 
 .vyb-chat-privacy-status-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.7rem;
+  gap: 0.9rem;
 }
 
 .vyb-chat-privacy-status-card {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 1.1rem;
-  transition: border-color 0.3s ease, transform 0.3s ease;
+  gap: 0.55rem;
+  padding: 1.2rem 1.1rem;
+  border-radius: 1.8rem;
 }
 
-.vyb-chat-privacy-status-card:hover {
-  border-color: rgba(99, 102, 241, 0.35);
-  transform: translateY(-2px);
-}
+.vyb-chat-privacy-status-card:hover { border-color: rgba(99,102,241,0.35); transform: translateY(-2px); box-shadow: 0 0 18px rgba(99,102,241,0.1); }
 
-.vyb-chat-privacy-status-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
+.vyb-chat-privacy-status-head { display: flex; align-items: center; justify-content: space-between; }
 
 .vyb-chat-privacy-status-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 0.75rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem; border-radius: 0.7rem;
 }
+.vyb-chat-privacy-status-icon-secured { background: rgba(16,185,129,0.15); color: #34d399; }
+.vyb-chat-privacy-status-icon-warning { background: rgba(245,158,11,0.15); color: #fbbf24; }
+.vyb-chat-privacy-status-icon-risk    { background: rgba(239,68,68,0.15);  color: #f87171; }
 
-.vyb-chat-privacy-status-icon-secured { background: rgba(16, 185, 129, 0.15); color: #34d399; }
-.vyb-chat-privacy-status-icon-warning { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
-.vyb-chat-privacy-status-icon-risk    { background: rgba(239, 68, 68, 0.15);  color: #f87171; }
-
-.vyb-chat-privacy-icon { width: 1rem; height: 1rem; }
+.vyb-chat-privacy-icon { width: 0.95rem; height: 0.95rem; }
 
 .vyb-chat-privacy-status-title {
-  font-size: 0.64rem;
-  font-weight: 800;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: rgba(148, 163, 184, 0.7);
+  font-size: 0.62rem; font-weight: 800; letter-spacing: 0.14em;
+  text-transform: uppercase; color: rgba(148,163,184,0.65);
 }
-
-.vyb-chat-privacy-status-card strong {
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: #f8fafc;
-}
-
-.vyb-chat-privacy-status-card p {
-  margin: 0;
-  font-size: 0.72rem;
-  color: rgba(203, 213, 225, 0.6);
-  line-height: 1.5;
-}
+.vyb-chat-privacy-status-card strong { font-size: 0.82rem; font-weight: 700; color: #f8fafc; }
+.vyb-chat-privacy-status-card p { margin: 0; font-size: 0.7rem; color: rgba(203,213,225,0.55); line-height: 1.5; }
 
 /* ---- CARD GRID ---- */
-.vyb-chat-privacy-card-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
-}
+.vyb-chat-privacy-card-grid { display: flex; flex-direction: column; gap: 1rem; }
 
 .vyb-chat-privacy-card {
-  padding: 1.4rem 1.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-  transition: border-color 0.3s ease, transform 0.3s ease;
+  padding: 1.6rem 1.8rem;
+  display: flex; flex-direction: column; gap: 1rem;
+  border-radius: 2.2rem;
 }
 
-.vyb-chat-privacy-card:hover {
-  border-color: rgba(99, 102, 241, 0.3);
-  transform: translateY(-2px);
-}
+.vyb-chat-privacy-card:hover { border-color: rgba(99,102,241,0.35); transform: translateY(-2px); box-shadow: 0 0 18px rgba(99,102,241,0.1); }
 
 .vyb-chat-privacy-card-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;
 }
-
-.vyb-chat-privacy-card-head svg {
-  width: 1.3rem;
-  height: 1.3rem;
-  flex-shrink: 0;
-  color: rgba(165, 180, 252, 0.7);
-  margin-top: 0.1rem;
-}
-
-.vyb-chat-privacy-card-head div { display: flex; flex-direction: column; gap: 0.2rem; }
+.vyb-chat-privacy-card-head svg { width: 1.3rem; height: 1.3rem; flex-shrink: 0; color: rgba(165,180,252,0.65); margin-top: 0.12rem; }
+.vyb-chat-privacy-card-head > div { display: flex; flex-direction: column; gap: 0.2rem; }
 
 .vyb-chat-privacy-card-kicker {
-  font-size: 0.64rem;
-  font-weight: 800;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: #818cf8;
+  font-size: 0.62rem; font-weight: 800; letter-spacing: 0.15em;
+  text-transform: uppercase; color: #818cf8;
 }
 
 .vyb-chat-privacy-card > strong,
 .vyb-chat-privacy-card-head strong {
-  font-size: 1rem;
-  font-weight: 800;
-  font-style: italic;
-  color: #f8fafc;
-  letter-spacing: -0.01em;
+  font-size: 1.05rem; font-weight: 900; font-style: italic;
+  color: #f8fafc; letter-spacing: -0.02em;
 }
 
 .vyb-chat-privacy-card > p {
-  margin: 0;
-  font-size: 0.82rem;
-  color: rgba(203, 213, 225, 0.66);
-  line-height: 1.65;
+  margin: 0; font-size: 0.8rem;
+  color: rgba(148,163,184,0.75); line-height: 1.7;
 }
 
 /* ---- FIELD INPUT ---- */
-.vyb-chat-privacy-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
+.vyb-chat-privacy-field { display: flex; flex-direction: column; gap: 0.45rem; }
 
 .vyb-chat-privacy-field span {
-  font-size: 0.76rem;
-  font-weight: 700;
-  color: rgba(165, 180, 252, 0.85);
+  font-size: 0.72rem; font-weight: 700; color: rgba(165,180,252,0.8);
 }
 
 .vyb-chat-privacy-field input {
-  width: 100%;
-  padding: 0.85rem 1.1rem;
-  border-radius: 0.9rem;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #f8fafc;
-  font-size: 0.92rem;
-  outline: none;
-  transition: all 0.25s ease;
+  width: 100%; padding: 0.9rem 1.2rem;
+  border-radius: 1.2rem;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #f8fafc; font-size: 0.9rem; outline: none;
+  transition: all 0.3s ease;
 }
-
-.vyb-chat-privacy-field input::placeholder { color: rgba(148, 163, 184, 0.4); }
-
+.vyb-chat-privacy-field input::placeholder { color: rgba(148,163,184,0.35); }
 .vyb-chat-privacy-field input:focus {
-  border-color: rgba(99, 102, 241, 0.5);
-  background: rgba(255, 255, 255, 0.07);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+  border-color: rgba(99,102,241,0.5);
+  background: rgba(255,255,255,0.06);
+  box-shadow: 0 0 0 4px rgba(99,102,241,0.1);
 }
 
 /* ---- NOTE ---- */
 .vyb-chat-privacy-note {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  padding: 0.8rem 1rem;
-  border-radius: 0.8rem;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  font-size: 0.76rem;
-  color: rgba(203, 213, 225, 0.65);
-  line-height: 1.5;
+  display: flex; align-items: center; gap: 0.55rem;
+  padding: 0.75rem 1rem; border-radius: 1rem;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  font-size: 0.74rem; color: rgba(203,213,225,0.6); line-height: 1.5;
 }
 
 /* ---- MODAL ---- */
 .vyb-chat-privacy-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
   padding: 1.5rem;
-  background: rgba(2, 6, 23, 0.75);
-  backdrop-filter: blur(18px);
+  background: rgba(2,6,23,0.8);
+  backdrop-filter: blur(20px);
 }
 
 .vyb-chat-privacy-modal {
-  width: min(100%, 440px);
-  padding: 2rem;
-  border-radius: 2rem;
-  background: rgba(10, 16, 36, 0.92);
+  width: min(100%, 420px);
+  padding: 2.2rem 2.2rem 2rem;
+  border-radius: 3rem;
+  background: rgba(10,16,36,0.95);
   backdrop-filter: blur(28px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 32px 64px rgba(0, 0, 0, 0.6);
-  display: flex;
-  flex-direction: column;
-  gap: 1.4rem;
+  border: 1px solid rgba(255,255,255,0.1);
+  box-shadow: 0 32px 64px rgba(0,0,0,0.65);
+  display: flex; flex-direction: column; gap: 1.5rem;
 }
 
 .vyb-chat-privacy-modal-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;
 }
-
 .vyb-chat-privacy-modal-head > div { display: flex; flex-direction: column; gap: 0.3rem; }
-.vyb-chat-privacy-modal-head strong { font-size: 1.1rem; font-weight: 800; font-style: italic; color: #f8fafc; }
-.vyb-chat-privacy-modal-head p { margin: 0; font-size: 0.78rem; color: rgba(203, 213, 225, 0.62); line-height: 1.55; }
+.vyb-chat-privacy-modal-head strong { font-size: 1.15rem; font-weight: 900; font-style: italic; color: #f8fafc; letter-spacing: -0.02em; }
+.vyb-chat-privacy-modal-head p { margin: 0; font-size: 0.76rem; color: rgba(203,213,225,0.58); line-height: 1.6; }
 
 .vyb-chat-privacy-modal-close {
-  flex-shrink: 0;
-  width: 2rem;
-  height: 2rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.6);
-  cursor: pointer;
-  transition: all 0.2s ease;
+  flex-shrink: 0; width: 2rem; height: 2rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%; border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.55);
+  cursor: pointer; transition: all 0.2s ease;
 }
-
-.vyb-chat-privacy-modal-close svg { width: 0.9rem; height: 0.9rem; }
-.vyb-chat-privacy-modal-close:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+.vyb-chat-privacy-modal-close svg { width: 0.85rem; height: 0.85rem; }
+.vyb-chat-privacy-modal-close:hover { background: rgba(255,255,255,0.12); color: #fff; }
 
 .vyb-chat-privacy-modal-body { display: flex; flex-direction: column; gap: 1rem; }
 
-.vyb-chat-privacy-modal-actions {
-  display: flex;
-  gap: 0.7rem;
-  flex-wrap: nowrap;
-}
-
+.vyb-chat-privacy-modal-actions { display: flex; gap: 0.7rem; flex-wrap: nowrap; }
 .vyb-chat-privacy-modal-actions .vyb-chat-privacy-ghost,
-.vyb-chat-privacy-modal-actions .vyb-chat-privacy-primary {
-  flex: 1;
-}
+.vyb-chat-privacy-modal-actions .vyb-chat-privacy-primary { flex: 1; }
 
-/* ---- RECOVERY PHRASE REVEAL ---- */
-.vyb-chat-privacy-phrase-reveal {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.vyb-chat-privacy-phrase-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.5rem;
-}
-
-.vyb-chat-privacy-phrase-word {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  padding: 0.5rem 0.6rem;
-  border-radius: 0.7rem;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-.vyb-chat-privacy-phrase-word em {
-  font-style: normal;
-  font-size: 0.58rem;
-  color: rgba(148, 163, 184, 0.55);
-  font-weight: 700;
-}
-
-.vyb-chat-privacy-phrase-word strong {
-  font-size: 0.78rem;
-  color: #f8fafc;
-  font-weight: 700;
+/* ---- RECOVERY PHRASE ---- */
+.vyb-chat-privacy-phrase {
+  padding: 1.1rem 1.2rem; border-radius: 1rem;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  font-size: 0.85rem; color: #e2e8f0; line-height: 1.75;
+  font-family: monospace; word-spacing: 0.4em;
 }
 
 /* ---- RESPONSIVE ---- */
 @media (max-width: 600px) {
   .vyb-chat-privacy-main {
-    padding: 1rem 0.75rem 3rem;
+    padding: 1.2rem 0.8rem 3rem;
   }
 
-  .vyb-chat-privacy-hero {
-    flex-direction: column;
-    align-items: flex-start;
-    padding: 1.2rem;
-    border-radius: 1.5rem;
-  }
+  .vyb-chat-privacy-hero-copy h1 { font-size: 1.5rem; }
 
-  .vyb-chat-privacy-hero-status {
-    align-items: flex-start;
-  }
-
-  .vyb-chat-privacy-hero-status span,
-  .vyb-chat-privacy-hero-status small {
-    text-align: left;
-  }
-
-  .vyb-chat-privacy-snapshot {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.5rem;
-  }
-
-  .vyb-chat-privacy-snapshot-card {
-    padding: 0.8rem 0.9rem;
-    border-radius: 1.2rem;
-  }
-
+  .vyb-chat-privacy-snapshot,
   .vyb-chat-privacy-status-grid {
-    grid-template-columns: repeat(1, minmax(0, 1fr));
-    gap: 0.6rem;
-  }
-
-  .vyb-chat-privacy-card {
-    padding: 1.1rem 1.2rem;
-    border-radius: 1.2rem;
-  }
-
-  .vyb-chat-privacy-phrase-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.55rem;
   }
+
+  .vyb-chat-privacy-snapshot-card,
+  .vyb-chat-privacy-status-card {
+    padding: 0.9rem 0.7rem;
+    border-radius: 1.4rem;
+  }
+
+  .vyb-chat-privacy-card { padding: 1.2rem 1.2rem; border-radius: 1.6rem; }
+  .vyb-chat-privacy-next-step { padding: 1.2rem 1.2rem; border-radius: 1.6rem; }
 
   .vyb-chat-privacy-modal {
-    padding: 1.5rem;
-    border-radius: 1.5rem;
+    padding: 1.6rem 1.4rem;
+    border-radius: 2rem;
   }
 }

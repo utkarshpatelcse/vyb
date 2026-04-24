@@ -1650,6 +1650,14 @@ export function CampusMessagesShell({
     };
   }, [activeConversationId, localChatKey, viewerName, viewerUserId]);
 
+  // Auto-focus composer whenever a conversation is opened
+  useEffect(() => {
+    if (activeConversationId) {
+      focusComposerSoon();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeConversationId]);
+
   useEffect(() => {
     if (replyingToMessageId && !messageMap.has(replyingToMessageId)) {
       setReplyingToMessageId(null);
@@ -3841,6 +3849,7 @@ export function CampusMessagesShell({
                               onPointerMove={(event) => handleMessagePointerMove(message, event)}
                               onPointerUp={(event) => handleMessagePointerUp(message, event)}
                               onPointerCancel={handleMessagePointerCancel}
+                              onContextMenu={(e) => { e.preventDefault(); }}
                             >
                               <div
                                 className={`spm-chat-swipe-reply-cue${showSwipeReplyCue ? " is-visible" : ""}${isOwnMessage ? " spm-chat-swipe-reply-cue-self" : ""}`}

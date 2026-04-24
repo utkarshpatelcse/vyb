@@ -1380,6 +1380,8 @@
   -webkit-tap-highlight-color: transparent;
   overflow: visible;
   margin-bottom: 0.5rem;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .spm-chat-bubble-swipe-active {
