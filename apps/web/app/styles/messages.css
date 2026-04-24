@@ -5296,3 +5296,32 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
   }
 }
 
+\n
+body.chat-active .vyb-campus-bottom-nav,
+body.chat-active .spm-nav {
+  display: none !important;
+}
+\n
+.spm-chat-lock-pill-mini {
+  position: relative;
+}
+.spm-chat-e2ee-tooltip {
+  position: absolute;
+  top: 130%;
+  left: -50%;
+  width: max-content;
+  max-width: 200px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #a78bfa;
+  padding: 0.5rem 0.8rem;
+  border-radius: 0.5rem;
+  font-size: 0.65rem;
+  font-weight: 500;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+  z-index: 100;
+  white-space: normal;
+  text-align: left;
+  line-height: 1.4;
+  animation: popIn 0.2s ease;
+}

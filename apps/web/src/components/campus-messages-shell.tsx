@@ -763,6 +763,11 @@ export function CampusMessagesShell({
   const { results: searchResults, loading: searchLoading } = useUserSearch(query);
 
   useEffect(() => {
+    document.body.classList.add("chat-active");
+    return () => document.body.classList.remove("chat-active");
+  }, []);
+
+  useEffect(() => {
     isMountedRef.current = true;
 
     return () => {
@@ -3240,7 +3245,12 @@ export function CampusMessagesShell({
                           style={{ cursor: 'pointer' }}
                         >
                           <IconShield />
-                          {showE2eeAssurance ? "Your chat is end-to-end encrypted." : (isE2eeReadyForActiveConversation ? "E2EE" : "Secure")}
+                          {isE2eeReadyForActiveConversation ? "E2EE" : "Secure"}
+                          {showE2eeAssurance && (
+                            <span className="spm-chat-e2ee-tooltip">
+                              Your chat is end-to-end encrypted. No one outside of this chat, not even VYB, can read them.
+                            </span>
+                          )}
                         </span>
                         <span style={{ opacity: 0.5 }}>•</span>
                         <span className={`spm-chat-live-pill-mini spm-chat-live-pill-${realtimeState}`}>
@@ -3354,8 +3364,11 @@ export function CampusMessagesShell({
                           !messagePlaintextById[message.id] &&
                           !isDeletedMessage;
 
-                        const plaintext = messagePlaintextById[message.id] || message.text || "";
+                        let plaintext = messagePlaintextById[message.id] || message.text || "";
                         const isSystemMessage = message.messageKind === "system" || plaintext.includes("Suspected screenshot:");
+                        if (isSystemMessage) {
+                          plaintext = plaintext.replace("Suspected screenshot: ", "");
+                        }
                         const rowClass = isSystemMessage 
                           ? "spm-chat-message-row spm-chat-message-row-system" 
                           : `spm-chat-message-row${isOwnMessage ? " spm-chat-message-row-self" : ""}`;
@@ -3365,18 +3378,7 @@ export function CampusMessagesShell({
                             key={item.key}
                             className={rowClass}
                           >
-                            {!isOwnMessage && !isSystemMessage && (
-                              <div className="spm-chat-mini-avatar" aria-hidden="true">
-                                <CampusAvatarContent
-                                  userId={activePeer?.userId}
-                                  username={activePeer?.username}
-                                  displayName={activePeer?.displayName}
-                                  avatarUrl={activePeer?.avatarUrl ?? null}
-                                  fallback={activePeerInitials}
-                                  decorative
-                                />
-                              </div>
-                            )}
+
 
                             {!isOwnMessage && !isSystemMessage && (
                               <button
@@ -3482,15 +3484,7 @@ export function CampusMessagesShell({
                                 >
                                   <IconMore />
                                 </button>
-                                <div className="spm-chat-mini-avatar spm-chat-mini-avatar-self" aria-hidden="true">
-                                  <CampusAvatarContent
-                                    userId={viewerUserId}
-                                    username={viewerUsername}
-                                    displayName={viewerName}
-                                    fallback={getInitials(viewerName)}
-                                    decorative
-                                  />
-                                </div>
+
                               </>
                             )}
                           </div>
