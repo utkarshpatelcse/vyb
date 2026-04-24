@@ -73,6 +73,7 @@ type PendingSharedPost = {
 type ShareMenuTab = "deals" | "events" | "vibes" | "profiles";
 type ShareMenuCollections = Record<ShareMenuTab, PendingShareCard[]>;
 const DISMISSED_DECRYPTION_WARNING_STORAGE_PREFIX = "vyb-chat-dismissed-decryption-warning";
+const CHAT_DEFAULT_TTL_STORAGE_PREFIX = "vyb-chat-default-ttl";
 const CHAT_REACTION_OPTIONS = [
   "\u2764\uFE0F",
   "\uD83D\uDD25",
@@ -100,6 +101,10 @@ const CHAT_TTL_OPTIONS = [
 
 function getDismissedDecryptionWarningStorageKey(userId: string) {
   return `${DISMISSED_DECRYPTION_WARNING_STORAGE_PREFIX}:${userId}`;
+}
+
+function getDefaultTtlStorageKey(userId: string, conversationId: string) {
+  return `${CHAT_DEFAULT_TTL_STORAGE_PREFIX}:${userId}:${conversationId}`;
 }
 
 function getMessageFallbackLabel(message: ChatMessageRecord) {
@@ -290,6 +295,10 @@ function formatExpiryLabel(dateString: string) {
   return new Date(dateString).toLocaleDateString("en-IN", { month: "short", day: "numeric" });
 }
 
+function getTtlOptionLabel(durationKey: ChatMessageTtlKey) {
+  return CHAT_TTL_OPTIONS.find((item) => item.value === durationKey)?.label ?? "30d";
+}
+
 function normalizeTtlDurationKey(value: string): ChatMessageTtlKey | null {
   const option = CHAT_TTL_OPTIONS.find((item) => item.value === value);
   if (!option) {
@@ -411,6 +420,22 @@ function upsertConversationItem(
 ) {
   const remaining = items.filter((item) => item.id !== preview.id);
   return [preview, ...remaining];
+}
+
+function dedupeConversationItems(items: ChatConversationPreview[]) {
+  const seen = new Set<string>();
+  const deduped: ChatConversationPreview[] = [];
+
+  for (const item of items) {
+    if (!item?.id || seen.has(item.id)) {
+      continue;
+    }
+
+    seen.add(item.id);
+    deduped.push(item);
+  }
+
+  return deduped;
 }
 
 function IconHome() {
@@ -539,6 +564,14 @@ function IconStar() {
   );
 }
 
+function IconBookmark() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1Z" />
+    </svg>
+  );
+}
+
 function IconMore() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -650,7 +683,9 @@ export function CampusMessagesShell({
   const startingChatRef = useRef<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ChatConversationPreview[]>(() =>
-    initialConversation ? upsertConversationItem(initialItems, buildConversationPreview(initialConversation)) : initialItems
+    dedupeConversationItems(
+      initialConversation ? upsertConversationItem(initialItems, buildConversationPreview(initialConversation)) : initialItems
+    )
   );
   const [activeConversationId, setActiveConversationId] = useState<string | null>(initialConversationId);
   const [activeConversation, setActiveConversation] = useState<ActiveConversation | null>(initialConversation);
@@ -692,6 +727,8 @@ export function CampusMessagesShell({
   const [selectedMessageActionAnchor, setSelectedMessageActionAnchor] = useState<MessageActionAnchor | null>(null);
   const [messageActionBusy, setMessageActionBusy] = useState(false);
   const [messageActionError, setMessageActionError] = useState<string | null>(null);
+  const [chatSettingsOpen, setChatSettingsOpen] = useState(false);
+  const [defaultDurationKey, setDefaultDurationKey] = useState<ChatMessageTtlKey>("30d");
   const [dismissedDecryptionWarningIds, setDismissedDecryptionWarningIds] = useState<Record<string, true>>({});
   const [creatingChatIdentity, setCreatingChatIdentity] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -741,7 +778,9 @@ export function CampusMessagesShell({
 
   useEffect(() => {
     setConversations(
-      initialConversation ? upsertConversationItem(initialItems, buildConversationPreview(initialConversation)) : initialItems
+      dedupeConversationItems(
+        initialConversation ? upsertConversationItem(initialItems, buildConversationPreview(initialConversation)) : initialItems
+      )
     );
   }, [initialConversation, initialItems]);
 
@@ -753,6 +792,28 @@ export function CampusMessagesShell({
     setRemoteKeyBackup(initialRemoteKeyBackup);
     setRemoteKeyBackupLoaded(Boolean(initialViewerIdentity));
   }, [initialRemoteKeyBackup, initialViewerIdentity]);
+
+  useEffect(() => {
+    if (!activeConversationId || typeof window === "undefined") {
+      setDefaultDurationKey("30d");
+      return;
+    }
+
+    const stored = window.localStorage.getItem(getDefaultTtlStorageKey(viewerUserId, activeConversationId));
+    setDefaultDurationKey(normalizeTtlDurationKey(stored ?? "") ?? "30d");
+  }, [activeConversationId, viewerUserId]);
+
+  useEffect(() => {
+    if (!activeConversationId || typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(getDefaultTtlStorageKey(viewerUserId, activeConversationId), defaultDurationKey);
+  }, [activeConversationId, defaultDurationKey, viewerUserId]);
+
+  useEffect(() => {
+    setChatSettingsOpen(false);
+  }, [activeConversationId]);
 
   async function probeBrowserSession() {
     if (sessionProbePromiseRef.current) {
@@ -1420,7 +1481,7 @@ export function CampusMessagesShell({
 
   const visibleConversations = useMemo(() => {
     if (isSearching) return [];
-    return conversations;
+    return dedupeConversationItems(conversations);
   }, [conversations, isSearching]);
 
   const unreadCount = conversations.filter((item) => item.unreadCount > 0).length;
@@ -2705,7 +2766,7 @@ export function CampusMessagesShell({
       body: JSON.stringify({
         messageKind,
         replyToMessageId: replyToMessageId ?? null,
-        durationKey: "30d",
+        durationKey: defaultDurationKey,
         ...encryptedPayload
       })
     });
@@ -2845,7 +2906,7 @@ export function CampusMessagesShell({
     : collegeName;
   const realtimeLabel =
     realtimeState === "live"
-      ? "Live"
+      ? "Online"
       : realtimeState === "offline"
         ? "Offline"
         : realtimeState === "reconnecting"
@@ -3167,29 +3228,46 @@ export function CampusMessagesShell({
                       </div>
                       <span className={`spm-status-dot spm-status-${activePeerStatus}`} />
                     </div>
-                    <div className="spm-chat-peer-copy">
-                      <strong>{activePeer.displayName}</strong>
-                      <span>@{activePeer.username}</span>
-                      <span>{activePeerMeta}</span>
-                    </div>
+                    <Link href={`/u/${activePeer.username}`} className="spm-chat-peer-copy">
+                      <strong style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                        {activePeer.displayName}
+                      </strong>
+                      <div className="spm-chat-peer-status-row">
+                        <span className="spm-chat-lock-pill-mini">
+                          <IconShield />
+                          {isE2eeReadyForActiveConversation ? "E2EE" : "Secure"}
+                        </span>
+                        <span style={{ opacity: 0.5 }}>•</span>
+                        <span className={`spm-chat-live-pill-mini spm-chat-live-pill-${realtimeState}`}>
+                          {realtimeLabel}
+                        </span>
+                      </div>
+                    </Link>
                   </div>
                 ) : (
                   <div className="spm-chat-peer spm-chat-peer-skeleton" aria-hidden="true" />
                 )}
 
                 <div className="spm-chat-header-actions">
+                  <div className="spm-chat-header-desktop-only">
+                    <span className="spm-chat-ttl-pill" title="Default self-destruction timer for new messages in this chat">
+                      <IconClock />
+                      Auto {getTtlOptionLabel(defaultDurationKey)}
+                    </span>
+                  </div>
                   {viewerIdentity && hasCompatibleLocalChatKey && (
-                    <Link href="/profile/settings/chat-privacy" className="spm-chat-header-link">
-                      Security
+                    <Link href="/profile/settings/chat-privacy" className="spm-chat-header-link" aria-label="Security Settings">
+                      <IconShield />
                     </Link>
                   )}
-                  <span className={`spm-chat-live-pill spm-chat-live-pill-${realtimeState}`}>
-                    {realtimeLabel}
-                  </span>
-                  <span className="spm-chat-lock-pill">
-                    <IconShield />
-                    {isE2eeReadyForActiveConversation ? "E2EE" : "Secure"}
-                  </span>
+                  <button
+                    type="button"
+                    className="spm-chat-header-trigger"
+                    onClick={() => setChatSettingsOpen(true)}
+                    aria-label="Open chat settings"
+                  >
+                    <IconMore />
+                  </button>
                 </div>
               </header>
 
@@ -3271,12 +3349,18 @@ export function CampusMessagesShell({
                           !messagePlaintextById[message.id] &&
                           !isDeletedMessage;
 
+                        const plaintext = messagePlaintextById[message.id] || message.text || "";
+                        const isSystemMessage = message.messageKind === "system" || plaintext.includes("Suspected screenshot:");
+                        const rowClass = isSystemMessage 
+                          ? "spm-chat-message-row spm-chat-message-row-system" 
+                          : `spm-chat-message-row${isOwnMessage ? " spm-chat-message-row-self" : ""}`;
+
                         return (
                           <div
                             key={item.key}
-                            className={`spm-chat-message-row${isOwnMessage ? " spm-chat-message-row-self" : ""}`}
+                            className={rowClass}
                           >
-                            {!isOwnMessage && (
+                            {!isOwnMessage && !isSystemMessage && (
                               <div className="spm-chat-mini-avatar" aria-hidden="true">
                                 <CampusAvatarContent
                                   userId={activePeer?.userId}
@@ -3289,7 +3373,7 @@ export function CampusMessagesShell({
                               </div>
                             )}
 
-                            {!isOwnMessage && (
+                            {!isOwnMessage && !isSystemMessage && (
                               <button
                                 type="button"
                                 className="spm-chat-message-trigger"
@@ -3303,7 +3387,7 @@ export function CampusMessagesShell({
                             )}
 
                             <div
-                              className={`spm-chat-bubble${isOwnMessage ? " spm-chat-bubble-self" : ""}${message.messageKind === "system" ? " spm-chat-bubble-system" : ""}${showSwipeReplyCue ? " spm-chat-bubble-swipe-active" : ""}`}
+                              className={`spm-chat-bubble${isOwnMessage && !isSystemMessage ? " spm-chat-bubble-self" : ""}${isSystemMessage ? " spm-chat-bubble-system" : ""}${showSwipeReplyCue ? " spm-chat-bubble-swipe-active" : ""}`}
                               style={swipeOffsetX ? { transform: `translateX(${swipeOffsetX}px)` } : undefined}
                               onPointerDown={(event) => handleMessagePointerDown(message, isOwnMessage, event)}
                               onPointerMove={(event) => handleMessagePointerMove(message, event)}
@@ -3359,23 +3443,33 @@ export function CampusMessagesShell({
                                 {reactionSummary ? (
                                   <span className="spm-chat-reaction-pill">{reactionSummary}</span>
                                 ) : null}
-                                {receiptLabel ? (
-                                  <span className={`spm-chat-receipt${isSeenByPeer ? " is-seen" : ""}`}>
-                                    {isSeenByPeer ? <IconDoubleCheck /> : <IconCheck />}
-                                    {receiptLabel}
+                                {message.isStarred ? (
+                                  <span className="spm-chat-flag-pill">
+                                    <IconStar />
+                                    Starred
                                   </span>
                                 ) : null}
-                              {message.expiresAt ? (
-                                <span className="spm-chat-expiry-pill" title={`Expires ${formatExpiryLabel(message.expiresAt)}`}>
-                                  <IconClock />
-                                  {formatExpiryLabel(message.expiresAt)}
+                                {message.isSaved ? (
+                                  <span className="spm-chat-flag-pill">
+                                    <IconBookmark />
+                                    Saved
                                   </span>
                                 ) : null}
                                 <span suppressHydrationWarning>{formatMessageTime(message.createdAt)}</span>
+                                {receiptLabel ? (
+                                  <span className="spm-chat-receipt-dot" style={{
+                                    width: '6px',
+                                    height: '6px',
+                                    borderRadius: '50%',
+                                    backgroundColor: isSeenByPeer ? '#10b981' : '#9ca3af',
+                                    display: 'inline-block',
+                                    marginLeft: '4px'
+                                  }} title={isSeenByPeer ? "Read" : "Sent"} />
+                                ) : null}
                               </div>
                             </div>
 
-                            {isOwnMessage && (
+                            {isOwnMessage && !isSystemMessage && (
                               <>
                                 <button
                                   type="button"
@@ -3487,14 +3581,27 @@ export function CampusMessagesShell({
                                 className="spm-chat-action-button"
                                 onClick={() => {
                                   void handleUpdateMessageLifecycle({
-                                    isStarred: !selectedMessageAction.isStarred,
-                                    isSaved: !selectedMessageAction.isSaved
+                                    isStarred: !selectedMessageAction.isStarred
                                   });
                                 }}
                                 disabled={messageActionBusy}
                               >
                                 <IconStar />
-                                {selectedMessageAction.isStarred || selectedMessageAction.isSaved ? "Unstar message" : "Star message"}
+                                {selectedMessageAction.isStarred ? "Remove star" : "Star message"}
+                              </button>
+
+                              <button
+                                type="button"
+                                className="spm-chat-action-button"
+                                onClick={() => {
+                                  void handleUpdateMessageLifecycle({
+                                    isSaved: !selectedMessageAction.isSaved
+                                  });
+                                }}
+                                disabled={messageActionBusy}
+                              >
+                                <IconBookmark />
+                                {selectedMessageAction.isSaved ? "Remove save" : "Save message"}
                               </button>
 
                               <label className="spm-chat-action-select">
@@ -3565,6 +3672,56 @@ export function CampusMessagesShell({
                             Delete for everyone is available only for 30 minutes after sending.
                           </p>
                         )}
+                      </div>
+                    </div>
+                  )}
+
+                  {chatSettingsOpen && (
+                    <div
+                      className="spm-chat-action-backdrop"
+                      role="presentation"
+                      onClick={() => setChatSettingsOpen(false)}
+                    >
+                      <div
+                        className="spm-chat-action-sheet spm-chat-settings-sheet"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label="Chat settings"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <div className="spm-chat-action-head">
+                          <strong>Chat settings</strong>
+                          <button
+                            type="button"
+                            className="spm-chat-action-close"
+                            onClick={() => setChatSettingsOpen(false)}
+                            aria-label="Close chat settings"
+                          >
+                            <IconClose />
+                          </button>
+                        </div>
+
+                        <div className="spm-chat-settings-dropdown-wrapper" style={{ marginTop: '1rem' }}>
+                          <label style={{ display: 'block', fontSize: '0.8rem', color: 'rgba(255,255,255,0.7)', marginBottom: '0.5rem' }}>Auto-Destruct Time</label>
+                          <select 
+                            value={defaultDurationKey} 
+                            onChange={(e) => setDefaultDurationKey(e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '0.8rem',
+                              borderRadius: '0.8rem',
+                              background: 'rgba(255, 255, 255, 0.05)',
+                              border: '1px solid rgba(255, 255, 255, 0.1)',
+                              color: '#fff',
+                              outline: 'none',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {CHAT_TTL_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value} style={{ background: '#0f172a' }}>{option.label}</option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -3757,21 +3914,15 @@ export function CampusMessagesShell({
                         />
                       </div>
 
-                      <button
-                        type="button"
-                        className="spm-chat-share-trigger"
-                        aria-label="Open share menu"
-                        onClick={() => {
-                          const nextOpen = !shareMenuOpen;
-                          setShareMenuOpen(nextOpen);
-                          if (nextOpen && shareMenuCollections.deals.length === 0 && shareMenuCollections.events.length === 0 && shareMenuCollections.vibes.length === 0) {
-                            void loadShareMenuOptions();
-                          }
-                        }}
-                      >
+                      <label className="spm-chat-share-trigger" aria-label="Select Media" style={{ cursor: 'pointer' }}>
+                        <input
+                          type="file"
+                          style={{ display: "none" }}
+                          accept="image/*,video/*"
+                          onChange={() => alert("Media sharing coming soon!")}
+                        />
                         <IconPlus />
-                      </button>
-
+                      </label>
                       <label className="spm-chat-compose-box">
                         <textarea
                           ref={composerRef}
