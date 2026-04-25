@@ -1,3 +1,4 @@
+
 .spm-page {
   --spm-bg: var(--cl-color-ink);
   --spm-surface: var(--cl-surface-dark);
@@ -41,13 +42,14 @@
   --spm-shadow-neon: var(--cl-shadow-neon);
   position: relative;
   display: flex;
-  min-height: 100dvh;
+  height: 100dvh;
   background:
     radial-gradient(circle at 14% 14%, rgba(99, 102, 241, 0.16), transparent 28%),
     radial-gradient(circle at 82% 16%, rgba(20, 184, 166, 0.14), transparent 24%),
     radial-gradient(circle at 52% 100%, rgba(16, 185, 129, 0.1), transparent 32%),
     linear-gradient(180deg, var(--spm-bg) 0%, #101b31 45%, #0b1323 100%);
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
 /* Ambient deep-space blobs */
@@ -1256,6 +1258,7 @@
   gap: 1rem;
   scrollbar-width: thin;
   scrollbar-color: rgba(139, 92, 246, 0.3) transparent;
+  overscroll-behavior: contain;
 }
 
 .spm-chat-thread::-webkit-scrollbar {

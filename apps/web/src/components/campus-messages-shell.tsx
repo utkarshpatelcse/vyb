@@ -666,6 +666,23 @@ function useUserSearch(query: string) {
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+
+  useEffect(() => {
+    // Prevent dual scroll by locking body scroll when this page is mounted
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.width = '100%';
+    document.body.style.height = '100%';
+    
+    return () => {
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.width = '';
+      document.body.style.height = '';
+    };
+  }, []);
   useEffect(() => {
     let cancelled = false;
     const abortController = new AbortController();
@@ -837,9 +854,14 @@ export function CampusMessagesShell({
   }, []);
 
   useEffect(() => {
+    // Prevent dual scroll by locking body scroll when this page is mounted
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
     isMountedRef.current = true;
-
+    
     return () => {
+      document.body.style.overflow = "";
+      document.documentElement.style.overflow = "";
       isMountedRef.current = false;
       if (composerFocusTimeoutRef.current) {
         clearTimeout(composerFocusTimeoutRef.current);
