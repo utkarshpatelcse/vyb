@@ -1551,7 +1551,7 @@ export async function listStories({ tenantId, viewerUserId, viewerMembershipId =
   ]);
 
   const followingIds = new Set(followingResponse.data.follows.map((item) => item.followingUserId));
-  const latestByUser = new Map();
+  const records = [];
 
   for (const item of storyResponse.data.stories) {
     if (!isActiveStory(item)) {
@@ -1562,12 +1562,9 @@ export async function listStories({ tenantId, viewerUserId, viewerMembershipId =
       continue;
     }
 
-    if (!latestByUser.has(item.userId)) {
-      latestByUser.set(item.userId, item);
-    }
+    records.push(item);
   }
 
-  const records = Array.from(latestByUser.values());
   if (records.length === 0) {
     return [];
   }

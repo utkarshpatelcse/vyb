@@ -96,11 +96,16 @@ function canSafelyFallbackToServerProxy(file: File) {
   }
 
   const hostname = window.location.hostname.toLowerCase();
+  const isPrivateNetworkHost =
+    /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+    /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname);
   const isLocalHost =
     hostname === "localhost" ||
     hostname === "127.0.0.1" ||
     hostname === "::1" ||
-    hostname.endsWith(".local");
+    hostname.endsWith(".local") ||
+    isPrivateNetworkHost;
 
   return isLocalHost || file.size <= SERVER_PROXY_SAFE_UPLOAD_BYTES;
 }
@@ -424,6 +429,7 @@ export async function uploadSocialMediaAsset(
     }
 
     try {
+      await currentUser.getIdToken(true);
       const storage = getFirebaseClientStorage();
       const storageRef = ref(storage, preparePayload.directUpload.storagePath);
       const uploadSnapshot = await uploadBytes(storageRef, file, {
