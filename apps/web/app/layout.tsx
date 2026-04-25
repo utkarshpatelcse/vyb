@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 import "./feed-enhancements.css";
 import { BackgroundPublishManager } from "../src/components/background-publish-manager";
+import { ChatPresenceHeartbeat } from "../src/components/chat-presence-heartbeat";
 import { ServiceWorkerRegister } from "../src/components/service-worker-register";
 
 const themeBootScript = `
@@ -45,6 +46,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
       </head>
       <body>
         <ServiceWorkerRegister />
+        <ChatPresenceHeartbeat />
         <BackgroundPublishManager />
         {children}
       </body>

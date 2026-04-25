@@ -28,6 +28,7 @@ export async function POST(request: Request) {
   const width = formData.get("width");
   const height = formData.get("height");
   const durationMs = formData.get("durationMs");
+  const viewOnce = formData.get("viewOnce");
 
   if (!isFileEntry(file) || file.size <= 0) {
     return buildError(400, "INVALID_FILE", "Choose encrypted media before uploading.");
@@ -40,7 +41,8 @@ export async function POST(request: Request) {
       base64Data: Buffer.from(await file.arrayBuffer()).toString("base64"),
       width: typeof width === "string" ? Number(width) : null,
       height: typeof height === "string" ? Number(height) : null,
-      durationMs: typeof durationMs === "string" ? Number(durationMs) : null
+      durationMs: typeof durationMs === "string" ? Number(durationMs) : null,
+      viewOnce: viewOnce === "true"
     });
 
     return NextResponse.json(payload, { status: 201 });

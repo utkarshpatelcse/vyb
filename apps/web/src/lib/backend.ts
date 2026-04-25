@@ -3,6 +3,8 @@ import type {
   ActivityListResponse,
   ChatConversationResponse,
   ChatInboxResponse,
+  ChatPresenceHeartbeatRequest,
+  ChatPresenceHeartbeatResponse,
   CreateChatConversationRequest,
   CreateChatConversationResponse,
   ClientShellResponse,
@@ -739,6 +741,10 @@ export async function markChatRead(viewer: DevSession, conversationId: string, m
   );
 }
 
+export async function sendChatPresenceHeartbeat(viewer: DevSession, payload: ChatPresenceHeartbeatRequest) {
+  return mutateBackendJson<ChatPresenceHeartbeatResponse>("/v1/chats/presence/heartbeat", "POST", payload, viewer);
+}
+
 export async function reactToChatMessage(viewer: DevSession, messageId: string, emoji: string) {
   return mutateBackendJson<ReactToChatMessageResponse>(
     `/v1/chats/messages/${encodeURIComponent(messageId)}/reactions`,
@@ -783,6 +789,7 @@ export async function uploadEncryptedChatAttachment(
     width?: number | null;
     height?: number | null;
     durationMs?: number | null;
+    viewOnce?: boolean;
   }
 ) {
   return postBackendJson<UploadEncryptedChatAttachmentResponse>("/v1/chats/media/upload", payload, viewer);
