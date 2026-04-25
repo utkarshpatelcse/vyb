@@ -782,6 +782,7 @@ export async function uploadEncryptedChatAttachment(
     base64Data: string;
     width?: number | null;
     height?: number | null;
+    durationMs?: number | null;
   }
 ) {
   return postBackendJson<UploadEncryptedChatAttachmentResponse>("/v1/chats/media/upload", payload, viewer);

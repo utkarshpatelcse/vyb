@@ -537,13 +537,14 @@ export interface ChatPeerSummary {
 }
 
 export interface ChatEncryptedAttachment {
-  kind: "image";
+  kind: "image" | "video" | "audio";
   url: string;
   storagePath: string | null;
   mimeType: string;
   sizeBytes: number;
   width?: number | null;
   height?: number | null;
+  durationMs?: number | null;
 }
 
 export interface ChatCardPayloadBase {

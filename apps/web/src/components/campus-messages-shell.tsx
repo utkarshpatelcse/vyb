@@ -23,6 +23,7 @@ import type {
 } from "@vyb/contracts";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CampusAvatarContent } from "./campus-avatar";
 import {
@@ -74,12 +75,15 @@ type PendingSharedPost = {
 type ShareMenuTab = "deals" | "events" | "vibes" | "profiles";
 type ShareMenuCollections = Record<ShareMenuTab, PendingShareCard[]>;
 type PendingMediaAttachment = {
+  id: string;
   file: File;
   name: string;
   mimeType: string;
+  mediaKind: "image" | "video" | "audio";
   previewUrl: string;
   width: number | null;
   height: number | null;
+  durationMs: number | null;
 };
 type OutgoingReceiptState = "undelivered" | "sent" | "delivered" | "read";
 type PendingDeleteUndo = {
@@ -107,6 +111,9 @@ const CHAT_REACTION_OPTIONS = [
 const DELETE_FOR_EVERYONE_WINDOW_MS = 30 * 60 * 1000;
 const DELETE_UNDO_WINDOW_MS = 10 * 1000;
 const CHAT_DELETED_MESSAGE_ALGORITHM = "deleted";
+const CHAT_MAX_PENDING_MEDIA = 8;
+const CHAT_MEDIA_ACCEPT = "image/*,video/*";
+const SMART_COMPOSER_WAVEFORM_BARS = [7, 13, 18, 11, 20, 14, 9, 16, 12, 8, 19, 10] as const;
 const CHAT_TTL_OPTIONS = [
   { value: "instant", label: "Instant", durationMs: 0 },
   { value: "1h", label: "1h", durationMs: 60 * 60 * 1000 },
@@ -131,7 +138,11 @@ function getMessageFallbackLabel(message: ChatMessageRecord) {
 
   switch (message.messageKind) {
     case "image":
-      return "Shared a photo";
+      return message.attachment?.mimeType?.startsWith("audio/")
+        ? "Shared a voice note"
+        : message.attachment?.mimeType?.startsWith("video/")
+          ? "Shared a video"
+          : "Shared a photo";
     case "vibe_card":
       return "Shared a vibe";
     case "event_card":
@@ -313,6 +324,55 @@ async function readImageDimensions(objectUrl: string) {
   });
 }
 
+async function readVideoMetadata(objectUrl: string) {
+  if (typeof window === "undefined") {
+    return { width: null, height: null, durationMs: null };
+  }
+
+  return new Promise<{ width: number | null; height: number | null; durationMs: number | null }>((resolve) => {
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.muted = true;
+    video.playsInline = true;
+    video.onloadedmetadata = () => {
+      resolve({
+        width: video.videoWidth || null,
+        height: video.videoHeight || null,
+        durationMs: Number.isFinite(video.duration) ? Math.max(0, Math.round(video.duration * 1000)) : null
+      });
+    };
+    video.onerror = () => resolve({ width: null, height: null, durationMs: null });
+    video.src = objectUrl;
+  });
+}
+
+function isSupportedChatMediaMimeType(mimeType: string) {
+  return mimeType.startsWith("image/") || mimeType.startsWith("video/");
+}
+
+function formatRecordingTimer(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function buildPendingMediaId(file: File) {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(16).slice(2)}`;
+}
+
+function pickSupportedRecordingMimeType() {
+  if (typeof MediaRecorder === "undefined" || typeof MediaRecorder.isTypeSupported !== "function") {
+    return "";
+  }
+
+  const candidates = ["audio/webm", "audio/mp4", "audio/ogg", "audio/wav"];
+  return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) ?? "";
+}
+
 
 function formatLockoutCountdown(milliseconds: number) {
   const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
@@ -351,7 +411,16 @@ function getConversationPreviewLabel(
 
   switch (item.lastMessage.messageKind) {
     case "image":
-      return { text: text || "Photo", isMarket: false };
+      return {
+        text:
+          text ||
+          (item.lastMessage.attachment?.mimeType?.startsWith("audio/")
+            ? "Voice note"
+            : item.lastMessage.attachment?.mimeType?.startsWith("video/")
+              ? "Video"
+              : "Photo"),
+        isMarket: false
+      };
     case "vibe_card":
       return { text: text || "Shared a vibe", isMarket: false };
     case "event_card":
@@ -569,6 +638,17 @@ function IconSend() {
   );
 }
 
+function IconMic() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 1 1-6 0V5a3 3 0 0 1 3-3Z" />
+      <path d="M19 11a7 7 0 0 1-14 0" />
+      <path d="M12 18v4" />
+      <path d="M8 22h8" />
+    </svg>
+  );
+}
+
 function IconReply() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -771,7 +851,11 @@ export function CampusMessagesShell({
   const [conversationError, setConversationError] = useState<string | null>(activeConversationError);
   const [draftMessage, setDraftMessage] = useState("");
   const [pendingShareCard, setPendingShareCard] = useState<PendingShareCard | null>(null);
-  const [pendingMediaAttachment, setPendingMediaAttachment] = useState<PendingMediaAttachment | null>(null);
+  const [pendingMediaAttachments, setPendingMediaAttachments] = useState<PendingMediaAttachment[]>([]);
+  const [viewOnceEnabled, setViewOnceEnabled] = useState(false);
+  const [composerDragActive, setComposerDragActive] = useState(false);
+  const [isRecordingVoiceNote, setIsRecordingVoiceNote] = useState(false);
+  const [recordingElapsedSeconds, setRecordingElapsedSeconds] = useState(0);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
@@ -820,6 +904,13 @@ export function CampusMessagesShell({
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const mediaInputRef = useRef<HTMLInputElement | null>(null);
   const threadRef = useRef<HTMLDivElement | null>(null);
+  const pendingMediaUrlsRef = useRef<string[]>([]);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
+  const recordingChunksRef = useRef<Blob[]>([]);
+  const recordingDurationStartRef = useRef<number | null>(null);
+  const recordingStopActionRef = useRef<"discard" | "send">("discard");
+  const recordingMimeTypeRef = useRef<string>("audio/webm");
   const requestRef = useRef(0);
   const appliedShareIntentRef = useRef<string | null>(null);
   const isMountedRef = useRef(false);
@@ -892,12 +983,53 @@ export function CampusMessagesShell({
   }, [calendarDayMarker]);
 
   useEffect(() => {
+    const previousUrls = pendingMediaUrlsRef.current;
+    const nextUrls = pendingMediaAttachments.map((item) => item.previewUrl);
+
+    if (typeof window !== "undefined") {
+      previousUrls
+        .filter((url) => !nextUrls.includes(url))
+        .forEach((url) => window.URL.revokeObjectURL(url));
+    }
+
+    pendingMediaUrlsRef.current = nextUrls;
+  }, [pendingMediaAttachments]);
+
+  useEffect(() => {
     return () => {
-      if (pendingMediaAttachment?.previewUrl && typeof window !== "undefined") {
-        window.URL.revokeObjectURL(pendingMediaAttachment.previewUrl);
+      if (typeof window !== "undefined") {
+        pendingMediaUrlsRef.current.forEach((url) => window.URL.revokeObjectURL(url));
       }
     };
-  }, [pendingMediaAttachment]);
+  }, []);
+
+  useEffect(() => {
+    if (!isRecordingVoiceNote) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setRecordingElapsedSeconds((current) => current + 1);
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isRecordingVoiceNote]);
+
+  useEffect(() => {
+    return () => {
+      try {
+        mediaRecorderRef.current?.stop();
+      } catch {
+        // Ignore stop races during unmount.
+      }
+
+      recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+      mediaRecorderRef.current = null;
+      recordingStreamRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     setConversations(
@@ -1652,23 +1784,19 @@ export function CampusMessagesShell({
     }
 
     function handleKeyUp(event: KeyboardEvent) {
-      if (event.key === "PrintScreen") {
-        void sendScreenshotAlert();
+      if (event.repeat || document.visibilityState !== "visible") {
+        return;
       }
-    }
 
-    function handleVisibilityChange() {
-      if (document.visibilityState === "hidden") {
+      if (event.key === "PrintScreen" || event.code === "PrintScreen") {
         void sendScreenshotAlert();
       }
     }
 
     window.addEventListener("keyup", handleKeyUp);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       window.removeEventListener("keyup", handleKeyUp);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [activeConversationId, localChatKey, viewerName, viewerUserId]);
 
@@ -1767,7 +1895,13 @@ export function CampusMessagesShell({
       );
       const updates = Object.fromEntries(resolvedEntries);
       if (Object.keys(updates).length > 0) {
-        setMessagePlaintextById((current) => ({ ...current, ...updates }));
+        setMessagePlaintextById((current) => {
+          const nextUpdates = Object.entries(updates).filter(([messageId, plaintext]) => current[messageId] !== plaintext);
+          if (nextUpdates.length === 0) {
+            return current;
+          }
+          return { ...current, ...Object.fromEntries(nextUpdates) };
+        });
       }
     })();
 
@@ -1814,7 +1948,13 @@ export function CampusMessagesShell({
       const resolvedIds = new Set(resolvedEntries.map((entry) => entry[0]));
       const updates = Object.fromEntries(resolvedEntries);
       if (Object.keys(updates).length > 0) {
-        setMessagePlaintextById((current) => ({ ...current, ...updates }));
+        setMessagePlaintextById((current) => {
+          const nextUpdates = Object.entries(updates).filter(([messageId, plaintext]) => current[messageId] !== plaintext);
+          if (nextUpdates.length === 0) {
+            return current;
+          }
+          return { ...current, ...Object.fromEntries(nextUpdates) };
+        });
         setKeySetupError(null);
       }
 
@@ -1987,13 +2127,33 @@ export function CampusMessagesShell({
     return seenIds;
   }, [activeConversation, viewerMembershipId, viewerUserId]);
 
-  function clearPendingMediaAttachment() {
-    setPendingMediaAttachment((current) => {
-      if (current?.previewUrl && typeof window !== "undefined") {
-        window.URL.revokeObjectURL(current.previewUrl);
+  function clearPendingMediaAttachments() {
+    setPendingMediaAttachments((current) => {
+      if (typeof window !== "undefined") {
+        current.forEach((item) => window.URL.revokeObjectURL(item.previewUrl));
       }
 
-      return null;
+      return [];
+    });
+    setViewOnceEnabled(false);
+
+    if (mediaInputRef.current) {
+      mediaInputRef.current.value = "";
+    }
+  }
+
+  function removePendingMediaAttachment(attachmentId: string) {
+    setPendingMediaAttachments((current) => {
+      const target = current.find((item) => item.id === attachmentId) ?? null;
+      if (target?.previewUrl && typeof window !== "undefined") {
+        window.URL.revokeObjectURL(target.previewUrl);
+      }
+
+      const next = current.filter((item) => item.id !== attachmentId);
+      if (next.length === 0) {
+        setViewOnceEnabled(false);
+      }
+      return next;
     });
 
     if (mediaInputRef.current) {
@@ -2001,40 +2161,254 @@ export function CampusMessagesShell({
     }
   }
 
-  async function handleMediaSelection(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) {
+  async function queuePendingMediaAttachments(files: File[]) {
+    if (files.length === 0) {
       return;
     }
 
-    if (!file.type.startsWith("image/")) {
-      setSendError("Right now chat media supports images only.");
-      event.target.value = "";
+    const supportedFiles = files.filter((file) => isSupportedChatMediaMimeType(file.type));
+    if (supportedFiles.length === 0) {
+      setSendError("Select images or videos to share in chat.");
       return;
     }
 
-    const previewUrl = window.URL.createObjectURL(file);
-    const dimensions = await readImageDimensions(previewUrl);
-    setSendError(null);
+    const availableSlots = Math.max(0, CHAT_MAX_PENDING_MEDIA - pendingMediaAttachments.length);
+    if (availableSlots <= 0) {
+      setSendError(`You can queue up to ${CHAT_MAX_PENDING_MEDIA} media items at once.`);
+      return;
+    }
+
+    const limitedFiles = supportedFiles.slice(0, availableSlots);
+    const nextAttachments = await Promise.all(
+      limitedFiles.map(async (file) => {
+        const previewUrl = window.URL.createObjectURL(file);
+        const mediaKind = file.type.startsWith("video/") ? "video" : "image";
+        const metadata =
+          mediaKind === "video"
+            ? await readVideoMetadata(previewUrl)
+            : { ...(await readImageDimensions(previewUrl)), durationMs: null };
+
+        return {
+          id: buildPendingMediaId(file),
+          file,
+          name: file.name,
+          mimeType: file.type || (mediaKind === "video" ? "video/mp4" : "image/jpeg"),
+          mediaKind,
+          previewUrl,
+          width: metadata.width,
+          height: metadata.height,
+          durationMs: metadata.durationMs
+        } satisfies PendingMediaAttachment;
+      })
+    );
+
     setPendingShareCard(null);
-
-    setPendingMediaAttachment((current) => {
-      if (current?.previewUrl && current.previewUrl !== previewUrl && typeof window !== "undefined") {
-        window.URL.revokeObjectURL(current.previewUrl);
-      }
-
-      return {
-        file,
-        name: file.name,
-        mimeType: file.type || "image/jpeg",
-        previewUrl,
-        width: dimensions.width,
-        height: dimensions.height
-      };
-    });
-
-    event.target.value = "";
+    setSendError(
+      limitedFiles.length < files.length
+        ? `Queued ${limitedFiles.length} items. Extra files were skipped to keep the composer fast.`
+        : null
+    );
+    setPendingMediaAttachments((current) => [...current, ...nextAttachments]);
     focusComposerSoon();
+  }
+
+  async function handleMediaSelection(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    await queuePendingMediaAttachments(files);
+  }
+
+  function handleComposerDragOver(event: React.DragEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setComposerDragActive(true);
+  }
+
+  function handleComposerDragLeave(event: React.DragEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      return;
+    }
+
+    setComposerDragActive(false);
+  }
+
+  async function handleComposerDrop(event: React.DragEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setComposerDragActive(false);
+    await queuePendingMediaAttachments(Array.from(event.dataTransfer.files ?? []));
+  }
+
+  async function uploadPendingAttachment(mediaAttachment: PendingMediaAttachment) {
+    const formData = new FormData();
+    formData.set("file", mediaAttachment.file);
+    formData.set("mimeType", mediaAttachment.mimeType);
+    if (typeof mediaAttachment.width === "number") {
+      formData.set("width", String(mediaAttachment.width));
+    }
+    if (typeof mediaAttachment.height === "number") {
+      formData.set("height", String(mediaAttachment.height));
+    }
+    if (typeof mediaAttachment.durationMs === "number") {
+      formData.set("durationMs", String(mediaAttachment.durationMs));
+    }
+
+    const uploadResponse = await fetchChatEndpoint("/api/chats/media", {
+      method: "POST",
+      body: formData
+    });
+    const uploadData = await uploadResponse.json().catch(() => null);
+
+    if (!uploadResponse.ok) {
+      throw new Error(uploadData?.error?.message ?? `We could not upload ${mediaAttachment.mediaKind}.`);
+    }
+
+    return (uploadData?.attachment as ChatEncryptedAttachment | undefined) ?? null;
+  }
+
+  async function stopVoiceRecording(action: "discard" | "send") {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder) {
+      setIsRecordingVoiceNote(false);
+      setRecordingElapsedSeconds(0);
+      return;
+    }
+
+    recordingStopActionRef.current = action;
+
+    if (recorder.state === "inactive") {
+      setIsRecordingVoiceNote(false);
+      setRecordingElapsedSeconds(0);
+      focusComposerSoon();
+      return;
+    }
+
+    try {
+      recorder.stop();
+    } catch {
+      setIsRecordingVoiceNote(false);
+      setRecordingElapsedSeconds(0);
+      setSendError("We could not finish the voice recording.");
+      focusComposerSoon();
+    }
+  }
+
+  async function startVoiceRecording() {
+    if (
+      sending ||
+      uploadingMedia ||
+      pendingShareCard ||
+      pendingMediaAttachments.length > 0 ||
+      !activeConversation?.id
+    ) {
+      return;
+    }
+
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setSendError("Voice recording is not supported on this device.");
+      return;
+    }
+
+    setShareMenuOpen(false);
+    setSendError(null);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const preferredMimeType = pickSupportedRecordingMimeType();
+      const recorder = preferredMimeType
+        ? new MediaRecorder(stream, { mimeType: preferredMimeType })
+        : new MediaRecorder(stream);
+
+      recordingChunksRef.current = [];
+      recordingStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      recordingStopActionRef.current = "discard";
+      recordingDurationStartRef.current = Date.now();
+      recordingMimeTypeRef.current = recorder.mimeType || preferredMimeType || "audio/webm";
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          recordingChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const stopAction = recordingStopActionRef.current;
+        const mimeType = recordingMimeTypeRef.current || recorder.mimeType || "audio/webm";
+        const durationMs = recordingDurationStartRef.current ? Date.now() - recordingDurationStartRef.current : null;
+        const chunks = [...recordingChunksRef.current];
+
+        recordingChunksRef.current = [];
+        recordingDurationStartRef.current = null;
+        mediaRecorderRef.current = null;
+        recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+        recordingStreamRef.current = null;
+        setIsRecordingVoiceNote(false);
+        setRecordingElapsedSeconds(0);
+
+        if (stopAction !== "send" || chunks.length === 0) {
+          focusComposerSoon();
+          return;
+        }
+
+        const blob = new Blob(chunks, { type: mimeType });
+        if (blob.size <= 0 || !activeConversationRef.current?.id) {
+          focusComposerSoon();
+          return;
+        }
+
+        const extension = mimeType.includes("mp4")
+          ? "m4a"
+          : mimeType.includes("ogg")
+            ? "ogg"
+            : mimeType.includes("wav")
+              ? "wav"
+              : "webm";
+        const file = new File([blob], `voice-note-${Date.now()}.${extension}`, { type: mimeType });
+        const voiceAttachment: PendingMediaAttachment = {
+          id: buildPendingMediaId(file),
+          file,
+          name: file.name,
+          mimeType,
+          mediaKind: "audio",
+          previewUrl: "",
+          width: null,
+          height: null,
+          durationMs
+        };
+
+        void (async () => {
+          setSending(true);
+          setUploadingMedia(true);
+          setSendError(null);
+
+          try {
+            const uploadedAttachment = await uploadPendingAttachment(voiceAttachment);
+            await dispatchEncryptedMessage({
+              conversationId: activeConversationRef.current?.id ?? "",
+              plaintext: "",
+              messageKind: "image",
+              replyToMessageId: replyingToMessageId,
+              attachment: uploadedAttachment
+            });
+            setReplyingToMessageId(null);
+          } catch (error) {
+            setSendError(error instanceof Error ? error.message : "We could not send your voice note.");
+          } finally {
+            setSending(false);
+            setUploadingMedia(false);
+            focusComposerSoon();
+          }
+        })();
+      };
+
+      recorder.start();
+      setIsRecordingVoiceNote(true);
+      setRecordingElapsedSeconds(0);
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : "Microphone permission is required to record voice notes.");
+      setIsRecordingVoiceNote(false);
+      setRecordingElapsedSeconds(0);
+    }
   }
 
   function getOutgoingReceiptState(message: ChatMessageRecord, isOwnMessage: boolean, isDeletedMessage: boolean): OutgoingReceiptState | null {
@@ -2224,7 +2598,10 @@ export function CampusMessagesShell({
           try {
             const payload = JSON.parse(event.data) as {
               type?: string;
-              payload?: { messageId?: string };
+              payload?: {
+                messageId?: string;
+                item?: ChatMessageRecord;
+              };
             };
 
             if (payload.type === "chat.sync" || payload.type === "chat.read") {
@@ -2240,6 +2617,28 @@ export function CampusMessagesShell({
             }
 
             const messageId = typeof payload.payload?.messageId === "string" ? payload.payload.messageId : null;
+            const incomingMessage =
+              payload.payload?.item && typeof payload.payload.item === "object"
+                ? (payload.payload.item as ChatMessageRecord)
+                : null;
+
+            if (incomingMessage && !messageIdsRef.current.has(incomingMessage.id)) {
+              const currentConversation = activeConversationRef.current;
+
+              if (currentConversation?.id === conversationId) {
+                const nextConversation = {
+                  ...currentConversation,
+                  messages: [...currentConversation.messages, incomingMessage]
+                };
+
+                activeConversationRef.current = nextConversation;
+                messageIdsRef.current = new Set(nextConversation.messages.map((message) => message.id));
+                setActiveConversation(nextConversation);
+                setConversations((current) => upsertConversationItem(current, buildConversationPreview(nextConversation)));
+                return;
+              }
+            }
+
             if (messageId && messageIdsRef.current.has(messageId)) {
               return;
             }
@@ -3235,7 +3634,7 @@ export function CampusMessagesShell({
     const conversationId = activeConversation?.id;
     const nextMessage = draftMessage.trim();
     const hasPendingShare = Boolean(pendingShareCard);
-    const hasPendingMedia = Boolean(pendingMediaAttachment);
+    const hasPendingMedia = pendingMediaAttachments.length > 0;
     if (!conversationId || (!nextMessage && !hasPendingShare && !hasPendingMedia) || sending || uploadingMedia) {
       return;
     }
@@ -3244,49 +3643,38 @@ export function CampusMessagesShell({
     setSendError(null);
 
     try {
-      let uploadedAttachment: ChatEncryptedAttachment | null = null;
-      let outgoingMessageKind: ChatMessageKind = pendingShareCard ? pendingShareCard.kind : "text";
+      const queuedMedia = [...pendingMediaAttachments];
+      const outgoingMessageKind: ChatMessageKind = pendingShareCard ? pendingShareCard.kind : queuedMedia.length > 0 ? "image" : "text";
 
-      if (pendingMediaAttachment) {
+      if (queuedMedia.length > 0) {
         setUploadingMedia(true);
-        const formData = new FormData();
-        formData.set("file", pendingMediaAttachment.file);
-        formData.set("mimeType", pendingMediaAttachment.mimeType);
-        if (typeof pendingMediaAttachment.width === "number") {
-          formData.set("width", String(pendingMediaAttachment.width));
+        for (const [index, mediaAttachment] of queuedMedia.entries()) {
+          const uploadedAttachment = await uploadPendingAttachment(mediaAttachment);
+          await dispatchEncryptedMessage({
+            conversationId,
+            plaintext: index === 0 ? nextMessage : "",
+            messageKind: outgoingMessageKind,
+            replyToMessageId: index === 0 ? replyingToMessageId : null,
+            attachment: uploadedAttachment
+          });
         }
-        if (typeof pendingMediaAttachment.height === "number") {
-          formData.set("height", String(pendingMediaAttachment.height));
-        }
-
-        const uploadResponse = await fetchChatEndpoint("/api/chats/media", {
-          method: "POST",
-          body: formData
+      } else {
+        const outgoingText = pendingShareCard
+          ? serializeShareCardPayload(pendingShareCard, nextMessage || null)
+          : nextMessage;
+        await dispatchEncryptedMessage({
+          conversationId,
+          plaintext: outgoingText,
+          messageKind: outgoingMessageKind,
+          replyToMessageId: replyingToMessageId,
+          attachment: null
         });
-        const uploadData = await uploadResponse.json().catch(() => null);
-
-        if (!uploadResponse.ok) {
-          throw new Error(uploadData?.error?.message ?? "We could not upload that image.");
-        }
-
-        uploadedAttachment = (uploadData?.attachment as ChatEncryptedAttachment | undefined) ?? null;
-        outgoingMessageKind = "image";
       }
-
-      const outgoingText = pendingShareCard
-        ? serializeShareCardPayload(pendingShareCard, nextMessage || null)
-        : nextMessage;
-      await dispatchEncryptedMessage({
-        conversationId,
-        plaintext: outgoingText,
-        messageKind: outgoingMessageKind,
-        replyToMessageId: replyingToMessageId,
-        attachment: uploadedAttachment
-      });
 
       setDraftMessage("");
       setPendingShareCard(null);
-      clearPendingMediaAttachment();
+      clearPendingMediaAttachments();
+      setViewOnceEnabled(false);
       setShareMenuOpen(false);
       setReplyingToMessageId(null);
       focusComposerSoon();
@@ -3299,6 +3687,9 @@ export function CampusMessagesShell({
   }
 
   const activePeer = activeConversation?.peer ?? null;
+  const hasPendingMedia = pendingMediaAttachments.length > 0;
+  const composerHasPayload = Boolean(draftMessage.trim() || pendingShareCard || hasPendingMedia);
+  const recordingTimerLabel = formatRecordingTimer(recordingElapsedSeconds);
   const hasCompatibleLocalChatKey = Boolean(
     viewerIdentity && localChatKey && isStoredChatKeyCompatible(localChatKey, viewerIdentity)
   );
@@ -3835,6 +4226,16 @@ export function CampusMessagesShell({
                           messagePlaintextById[message.id] ||
                           (!isE2eeCipherAlgorithm(message.cipherAlgorithm) ? message.cipherText : "") ||
                           "";
+                        const attachmentKind = message.attachment?.mimeType?.startsWith("audio/")
+                          ? "audio"
+                          : message.attachment?.mimeType?.startsWith("video/")
+                            ? "video"
+                            : "image";
+                        const shouldSuppressMediaFallbackText =
+                          message.messageKind === "image" &&
+                          Boolean(message.attachment?.url) &&
+                          !plaintext.trim() &&
+                          !isDeletedMessage;
                         const isScreenshotAlert = plaintext.includes("Suspected screenshot:");
                         const isSystemMessage = message.messageKind === "system" || isScreenshotAlert;
                         if (isSystemMessage) {
@@ -3865,7 +4266,7 @@ export function CampusMessagesShell({
                             )}
 
                             <div
-                              className={`spm-chat-bubble${isOwnMessage && !isSystemMessage ? " spm-chat-bubble-self" : ""}${isSystemMessage ? " spm-chat-bubble-system" : ""}${showSwipeReplyCue ? " spm-chat-bubble-swipe-active" : ""}${isSelectedMessage ? " spm-chat-bubble-selected" : ""}`}
+                              className={`spm-chat-bubble${isOwnMessage && !isSystemMessage ? " spm-chat-bubble-self" : ""}${isSystemMessage ? " spm-chat-bubble-system" : ""}${message.messageKind === "image" && message.attachment?.url ? " spm-chat-bubble-image" : ""}${showSwipeReplyCue ? " spm-chat-bubble-swipe-active" : ""}${isSelectedMessage ? " spm-chat-bubble-selected" : ""}`}
                               style={swipeOffsetX ? { transform: `translateX(${swipeOffsetX}px)` } : undefined}
                               onPointerDown={(event) => handleMessagePointerDown(message, isOwnMessage, event)}
                               onPointerMove={(event) => handleMessagePointerMove(message, event)}
@@ -3888,11 +4289,26 @@ export function CampusMessagesShell({
 
                               {message.attachment?.url && (
                                 <div className="spm-chat-attachment">
-                                  <img
-                                    src={message.attachment.url}
-                                    alt="Shared in chat"
-                                    loading="lazy"
-                                  />
+                                  {attachmentKind === "video" ? (
+                                    <video
+                                      src={message.attachment.url}
+                                      controls
+                                      playsInline
+                                      preload="metadata"
+                                    />
+                                  ) : attachmentKind === "audio" ? (
+                                    <audio
+                                      src={message.attachment.url}
+                                      controls
+                                      preload="metadata"
+                                    />
+                                  ) : (
+                                    <img
+                                      src={message.attachment.url}
+                                      alt="Shared in chat"
+                                      loading="lazy"
+                                    />
+                                  )}
                                 </div>
                               )}
 
@@ -3912,11 +4328,11 @@ export function CampusMessagesShell({
                                     <p className="spm-chat-message-text">{messageCardPayload?.caption?.trim()}</p>
                                   )}
                                 </>
-                              ) : (
+                              ) : !shouldSuppressMediaFallbackText ? (
                                 <p className={`spm-chat-message-text${isScreenshotAlert ? " spm-chat-message-text-system" : ""}`}>
                                   {getMessageBody(message, messagePlaintextById[message.id], { isOwnMessage })}
                                 </p>
-                              )}
+                              ) : null}
 
                               {reactionSummary ? (
                                 <span className="spm-chat-reaction-pill">{reactionSummary}</span>
@@ -4245,6 +4661,7 @@ export function CampusMessagesShell({
                                 type="button"
                                 className={`spm-chat-share-item${pendingShareCard === card ? " is-active" : ""}`}
                                 onClick={() => {
+                                  clearPendingMediaAttachments();
                                   setPendingShareCard(card);
                                   setShareMenuOpen(false);
                                   focusComposerSoon();
@@ -4313,25 +4730,40 @@ export function CampusMessagesShell({
                       </div>
                     )}
 
-                    {pendingMediaAttachment && (
-                      <div className="spm-chat-compose-share spm-chat-compose-media">
-                        <div className="spm-chat-compose-share-media" aria-hidden="true">
-                          <img src={pendingMediaAttachment.previewUrl} alt="" loading="lazy" />
-                        </div>
-
-                        <div className="spm-chat-compose-share-copy">
-                          <strong>Ready to send image</strong>
-                          <span>{pendingMediaAttachment.name}</span>
-                          <p>Add an optional caption, then send.</p>
+                    {hasPendingMedia && (
+                      <div className="spm-chat-compose-share spm-chat-compose-media spm-chat-compose-media-panel">
+                        <div className="spm-chat-compose-media-strip" role="list" aria-label="Selected media">
+                          {pendingMediaAttachments.map((attachment) => (
+                            <div key={attachment.id} className="spm-chat-compose-media-tile" role="listitem">
+                              <div className="spm-chat-compose-share-media" aria-hidden="true">
+                                {attachment.mediaKind === "video" ? (
+                                  <video src={attachment.previewUrl} muted playsInline preload="metadata" />
+                                ) : (
+                                  <img src={attachment.previewUrl} alt="" loading="lazy" />
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                className="spm-chat-compose-media-remove"
+                                onClick={() => removePendingMediaAttachment(attachment.id)}
+                                aria-label={`Remove ${attachment.name}`}
+                              >
+                                <IconClose />
+                              </button>
+                              <span className="spm-chat-compose-media-kind">
+                                {attachment.mediaKind === "video" ? "Video" : attachment.mediaKind === "audio" ? "Voice" : "Photo"}
+                              </span>
+                            </div>
+                          ))}
                         </div>
 
                         <button
                           type="button"
-                          className="spm-chat-compose-reply-clear"
-                          onClick={clearPendingMediaAttachment}
-                          aria-label="Remove selected image"
+                          className="spm-chat-compose-reply-clear spm-chat-compose-media-clear"
+                          onClick={clearPendingMediaAttachments}
+                          aria-label="Clear selected media"
                         >
-                          <IconClose />
+                          <IconTrash />
                         </button>
                       </div>
                     )}
@@ -4357,7 +4789,13 @@ export function CampusMessagesShell({
                       </div>
                     )}
 
-                    <form className="spm-chat-compose-form" onSubmit={handleSendMessage}>
+                    <form
+                      className={`spm-chat-compose-form${composerDragActive ? " is-drag-active" : ""}${isRecordingVoiceNote ? " is-recording" : ""}`}
+                      onSubmit={handleSendMessage}
+                      onDragOver={handleComposerDragOver}
+                      onDragLeave={handleComposerDragLeave}
+                      onDrop={handleComposerDrop}
+                    >
                       <div className="spm-chat-compose-avatar" aria-hidden="true">
                         <CampusAvatarContent
                           userId={viewerUserId}
@@ -4372,18 +4810,51 @@ export function CampusMessagesShell({
                         ref={mediaInputRef}
                         type="file"
                         hidden
-                        accept="image/*"
+                        multiple
+                        accept={CHAT_MEDIA_ACCEPT}
                         onChange={handleMediaSelection}
                       />
                       <button
                         type="button"
                         className="spm-chat-share-trigger"
-                        aria-label="Select media"
+                        aria-label="Select photos or videos"
                         onClick={() => mediaInputRef.current?.click()}
                       >
                         <IconPlus />
                       </button>
-                      <label className="spm-chat-compose-box">
+
+                      <div className="spm-chat-compose-box">
+                        {isRecordingVoiceNote ? (
+                          <div className="spm-chat-recording-overlay" role="status" aria-live="polite">
+                            <button
+                              type="button"
+                              className="spm-chat-recording-stop"
+                              onClick={() => {
+                                void stopVoiceRecording("discard");
+                              }}
+                              aria-label="Stop voice recording"
+                            >
+                              <span className="spm-chat-recording-dot" aria-hidden="true" />
+                            </button>
+                            <div className="spm-chat-recording-status">
+                              <strong>{recordingTimerLabel}</strong>
+                            </div>
+                            <div className="spm-chat-recording-waveform" aria-hidden="true">
+                              {SMART_COMPOSER_WAVEFORM_BARS.map((height, index) => (
+                                <span
+                                  key={`recording-wave-${height}-${index}`}
+                                  className="spm-chat-recording-wave"
+                                  style={
+                                    {
+                                      "--wave-height": `${height}px`,
+                                      "--wave-delay": `${index * 0.08}s`
+                                    } as CSSProperties
+                                  }
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
                         <textarea
                           ref={composerRef}
                           value={draftMessage}
@@ -4395,18 +4866,52 @@ export function CampusMessagesShell({
                             }
                           }}
                           rows={1}
-                          placeholder=""
+                          placeholder="Type a message"
                           aria-label="Type a message"
+                          disabled={isRecordingVoiceNote}
                         />
-                      </label>
+
+                        {hasPendingMedia && !isRecordingVoiceNote ? (
+                          <button
+                            type="button"
+                            className={`spm-chat-view-once-toggle spm-chat-view-once-toggle-inline${viewOnceEnabled ? " is-active" : ""}`}
+                            onClick={() => setViewOnceEnabled((current) => !current)}
+                            aria-pressed={viewOnceEnabled}
+                            aria-label={viewOnceEnabled ? "Disable view once" : "Enable view once"}
+                            title="Toggle view once preview"
+                          >
+                            <span>1</span>
+                          </button>
+                        ) : null}
+                      </div>
 
                       <button
-                        type="submit"
-                        className={`spm-chat-send${draftMessage.trim() || pendingShareCard || pendingMediaAttachment ? " spm-chat-send-active" : ""}`}
-                        disabled={(!draftMessage.trim() && !pendingShareCard && !pendingMediaAttachment) || sending || uploadingMedia}
-                        aria-label="Send message"
+                        type={composerHasPayload && !isRecordingVoiceNote ? "submit" : "button"}
+                        className={`spm-chat-send${isRecordingVoiceNote ? " spm-chat-send-recording" : composerHasPayload ? " spm-chat-send-active" : " spm-chat-send-mic"}${isRecordingVoiceNote ? " is-recording" : ""}`}
+                        disabled={sending || uploadingMedia || creatingChatIdentity}
+                        aria-label={composerHasPayload ? "Send message" : isRecordingVoiceNote ? "Send voice recording" : "Start voice recording"}
+                        onClick={
+                          isRecordingVoiceNote
+                            ? () => {
+                                void stopVoiceRecording("send");
+                              }
+                            : composerHasPayload
+                            ? undefined
+                            : startVoiceRecording
+                        }
                       >
-                        {sending || uploadingMedia || creatingChatIdentity ? <span className="spm-search-spinner" aria-hidden="true" /> : <IconSend />}
+                        {sending || uploadingMedia || creatingChatIdentity ? (
+                          <span className="spm-search-spinner" aria-hidden="true" />
+                        ) : (
+                          <span className="spm-chat-send-icon-stack" aria-hidden="true">
+                            <span className={`spm-chat-send-icon spm-chat-send-icon-mic${composerHasPayload || isRecordingVoiceNote ? "" : " is-visible"}`}>
+                              <IconMic />
+                            </span>
+                            <span className={`spm-chat-send-icon spm-chat-send-icon-send${composerHasPayload || isRecordingVoiceNote ? " is-visible" : ""}`}>
+                              <IconSend />
+                            </span>
+                          </span>
+                        )}
                       </button>
                     </form>
                   </div>

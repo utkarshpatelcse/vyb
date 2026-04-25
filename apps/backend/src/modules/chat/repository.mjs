@@ -46,7 +46,12 @@ const CHAT_ALLOWED_REACTION_EMOJIS = new Set([
 ]);
 const CHAT_REACTION_EMOJIS = new Set(["❤️", "🔥", "😂", "😍", "👍", "😮", "😢", "👏"]);
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
+const VIDEO_MIME_TYPES = new Set(["video/mp4", "video/quicktime", "video/webm", "video/ogg"]);
+const AUDIO_MIME_TYPES = new Set(["audio/webm", "audio/mp4", "audio/ogg", "audio/mpeg", "audio/wav", "audio/aac"]);
+const SUPPORTED_CHAT_ATTACHMENT_MIME_TYPES = new Set([...IMAGE_MIME_TYPES, ...VIDEO_MIME_TYPES, ...AUDIO_MIME_TYPES]);
 const MAX_ENCRYPTED_CHAT_IMAGE_BYTES = 12 * 1024 * 1024;
+const MAX_ENCRYPTED_CHAT_VIDEO_BYTES = 32 * 1024 * 1024;
+const MAX_ENCRYPTED_CHAT_AUDIO_BYTES = 16 * 1024 * 1024;
 const CHAT_ATTACHMENT_STORAGE_PATH_PATTERN =
   /^chat\/([^/]+)\/users\/([^/]+)\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.bin$/iu;
 
@@ -1117,17 +1122,21 @@ function normalizeDimension(value) {
   return Number.isFinite(Number(value)) ? Math.max(1, Math.round(Number(value))) : null;
 }
 
+function normalizeDurationMs(value) {
+  return Number.isFinite(Number(value)) ? Math.max(0, Math.round(Number(value))) : null;
+}
+
 async function verifyAttachmentOwnership(viewer, attachment, messageKind) {
   if (!attachment) {
     if (messageKind === "image") {
-      throw new ChatSecurityError(400, "IMAGE_ATTACHMENT_REQUIRED", "Image chat messages require a verified encrypted attachment.");
+      throw new ChatSecurityError(400, "MEDIA_ATTACHMENT_REQUIRED", "Media chat messages require a verified encrypted attachment.");
     }
 
     return null;
   }
 
   if (messageKind !== "image") {
-    throw new ChatSecurityError(400, "ATTACHMENT_KIND_MISMATCH", "Only image chat messages can include encrypted attachments.");
+    throw new ChatSecurityError(400, "ATTACHMENT_KIND_MISMATCH", "Only media chat messages can include encrypted attachments.");
   }
 
   const storagePath = normalizeString(attachment.storagePath);
@@ -1161,18 +1170,21 @@ async function verifyAttachmentOwnership(viewer, attachment, messageKind) {
 
   const token = normalizeString(customMetadata.firebaseStorageDownloadTokens)?.split(",")[0]?.trim();
   const mimeType = normalizeString(customMetadata.originalMimeType) ?? normalizeString(attachment.mimeType);
-  if (!token || !mimeType || !IMAGE_MIME_TYPES.has(mimeType)) {
+  if (!token || !mimeType || !SUPPORTED_CHAT_ATTACHMENT_MIME_TYPES.has(mimeType)) {
     throw new ChatSecurityError(400, "INVALID_ATTACHMENT_METADATA", "Encrypted attachment metadata is incomplete.");
   }
 
+  const kind = VIDEO_MIME_TYPES.has(mimeType) ? "video" : AUDIO_MIME_TYPES.has(mimeType) ? "audio" : "image";
+
   return {
-    kind: "image",
+    kind,
     url: buildEncryptedAttachmentDownloadUrl(getChatBucket().name, parsed.storagePath, token),
     storagePath: parsed.storagePath,
     mimeType,
     sizeBytes: Number(metadata.size ?? attachment.sizeBytes ?? 0),
     width: normalizeDimension(attachment.width),
-    height: normalizeDimension(attachment.height)
+    height: normalizeDimension(attachment.height),
+    durationMs: normalizeDurationMs(customMetadata.originalDurationMs || attachment.durationMs)
   };
 }
 
@@ -1327,13 +1339,18 @@ function mapChatMessage(item, reactionsByMessageId = new Map()) {
     attachment:
       !isDeletedForEveryone && item.attachmentUrl && item.attachmentMimeType
         ? {
-            kind: "image",
+            kind: item.attachmentMimeType.startsWith("video/")
+              ? "video"
+              : item.attachmentMimeType.startsWith("audio/")
+                ? "audio"
+                : "image",
             url: item.attachmentUrl,
             storagePath: item.attachmentStoragePath ?? null,
             mimeType: item.attachmentMimeType,
             sizeBytes: Number(item.attachmentSizeBytes ?? 0),
             width: item.attachmentWidth ?? null,
-            height: item.attachmentHeight ?? null
+            height: item.attachmentHeight ?? null,
+            durationMs: item.attachmentDurationMs ?? null
           }
         : null,
     createdAt,
@@ -2241,7 +2258,8 @@ export async function sendChatMessage(viewer, conversationId, payload) {
       conversationId,
       senderUserId: viewer.userId,
       senderMembershipId: viewer.membershipId,
-      createdAt: storedMessage.createdAt
+      createdAt: storedMessage.createdAt,
+      item: storedMessage
     }
   });
 
@@ -2741,9 +2759,10 @@ export async function uploadEncryptedChatAttachment(viewer, payload) {
   const mimeType = normalizeString(payload.mimeType);
   const width = Number.isFinite(Number(payload.width)) ? Math.max(1, Math.round(Number(payload.width))) : null;
   const height = Number.isFinite(Number(payload.height)) ? Math.max(1, Math.round(Number(payload.height))) : null;
+  const durationMs = normalizeDurationMs(payload.durationMs);
 
-  if (!mimeType || !IMAGE_MIME_TYPES.has(mimeType)) {
-    throw new Error("Only image attachments are supported right now.");
+  if (!mimeType || !SUPPORTED_CHAT_ATTACHMENT_MIME_TYPES.has(mimeType)) {
+    throw new Error("Only image and video attachments are supported right now.");
   }
 
   if (typeof payload.base64Data !== "string" || !payload.base64Data.trim()) {
@@ -2751,8 +2770,21 @@ export async function uploadEncryptedChatAttachment(viewer, payload) {
   }
 
   const buffer = Buffer.from(payload.base64Data, "base64");
-  if (buffer.byteLength <= 0 || buffer.byteLength > MAX_ENCRYPTED_CHAT_IMAGE_BYTES) {
-    throw new Error("Encrypted image attachment must stay under 12 MB.");
+  const isVideoAttachment = VIDEO_MIME_TYPES.has(mimeType);
+  const isAudioAttachment = AUDIO_MIME_TYPES.has(mimeType);
+  const byteLimit = isVideoAttachment
+    ? MAX_ENCRYPTED_CHAT_VIDEO_BYTES
+    : isAudioAttachment
+      ? MAX_ENCRYPTED_CHAT_AUDIO_BYTES
+      : MAX_ENCRYPTED_CHAT_IMAGE_BYTES;
+  if (buffer.byteLength <= 0 || buffer.byteLength > byteLimit) {
+    throw new Error(
+      isVideoAttachment
+        ? "Encrypted video attachment must stay under 32 MB."
+        : isAudioAttachment
+          ? "Encrypted audio attachment must stay under 16 MB."
+          : "Encrypted image attachment must stay under 12 MB."
+    );
   }
 
   const assetId = randomUUID();
@@ -2771,20 +2803,22 @@ export async function uploadEncryptedChatAttachment(viewer, payload) {
         ownerUserId: viewer.userId,
         assetId,
         originalMimeType: mimeType,
-        originalFileName: fileName
+        originalFileName: fileName,
+        ...(durationMs != null ? { originalDurationMs: String(durationMs) } : {})
       }
     }
   });
 
   return {
     attachment: {
-      kind: "image",
+      kind: isVideoAttachment ? "video" : isAudioAttachment ? "audio" : "image",
       url: buildEncryptedAttachmentDownloadUrl(getChatBucket().name, storagePath, token),
       storagePath,
       mimeType,
       sizeBytes: buffer.byteLength,
       width,
-      height
+      height,
+      durationMs
     }
   };
 }
