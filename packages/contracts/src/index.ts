@@ -534,6 +534,9 @@ export interface ChatPeerSummary {
   stream?: string | null;
   avatarUrl?: string | null;
   publicKey?: ChatIdentitySummary | null;
+  isOnline?: boolean;
+  lastActiveAt?: string | null;
+  activePath?: string | null;
 }
 
 export interface ChatEncryptedAttachment {
@@ -545,6 +548,7 @@ export interface ChatEncryptedAttachment {
   width?: number | null;
   height?: number | null;
   durationMs?: number | null;
+  viewOnce?: boolean;
 }
 
 export interface ChatCardPayloadBase {
@@ -745,11 +749,22 @@ export interface UpdateChatMessageLifecycleRequest {
   durationKey?: ChatMessageTtlKey;
   isStarred?: boolean;
   isSaved?: boolean;
+  consumeViewOnce?: boolean;
 }
 
 export interface UpdateChatMessageLifecycleResponse {
-  item: ChatMessageRecord;
+  item: ChatMessageRecord | null;
   conversationPreview: ChatConversationPreview;
+}
+
+export interface ChatPresenceHeartbeatRequest {
+  path?: string | null;
+}
+
+export interface ChatPresenceHeartbeatResponse {
+  ok: true;
+  lastActiveAt: string;
+  activePath: string | null;
 }
 
 export interface UpsertChatIdentityRequest {

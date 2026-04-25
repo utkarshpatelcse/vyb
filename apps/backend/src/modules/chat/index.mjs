@@ -21,6 +21,7 @@ import {
   upsertChatKeyBackup,
   upsertChatIdentity
 } from "./repository.mjs";
+import { recordChatPresenceHeartbeat } from "./presence-store.mjs";
 
 function requireNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
@@ -214,6 +215,26 @@ export async function handleChatRoute({ request, response, url, context }) {
       sendJson(response, 201, await uploadEncryptedChatAttachment(viewer, payload));
     } catch (error) {
       sendChatFailure(response, "chat_media_upload", resolved, error);
+    }
+    return true;
+  }
+
+  if (request.method === "POST" && url.pathname === "/v1/chats/presence/heartbeat") {
+    const payload = await readJson(request).catch(() => null);
+
+    try {
+      sendJson(
+        response,
+        200,
+        recordChatPresenceHeartbeat({
+          tenantId: viewer.tenantId,
+          userId: viewer.userId,
+          membershipId: viewer.membershipId,
+          activePath: typeof payload?.path === "string" ? payload.path : null
+        })
+      );
+    } catch (error) {
+      sendChatFailure(response, "chat_presence_heartbeat", resolved, error);
     }
     return true;
   }

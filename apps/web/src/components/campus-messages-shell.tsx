@@ -55,6 +55,12 @@ import { MessageCardRenderer } from "./message-card-renderer";
 
 type ActiveConversation = ChatConversationResponse["conversation"];
 type RealtimeState = "idle" | "offline" | "connecting" | "reconnecting" | "live";
+type PeerPresenceTone = "online" | "recent" | "away";
+type ConversationTypingState = {
+  userId: string;
+  membershipId: string;
+  updatedAt: number;
+};
 type MessageActionAnchor = {
   top: number;
   left: number;
@@ -92,6 +98,11 @@ type PendingDeleteUndo = {
   label: string;
   expiresAt: number;
 };
+type ViewOncePreviewState = {
+  url: string;
+  kind: "image" | "video";
+  messageId: string;
+};
 const DISMISSED_DECRYPTION_WARNING_STORAGE_PREFIX = "vyb-chat-dismissed-decryption-warning";
 const CHAT_DEFAULT_TTL_STORAGE_PREFIX = "vyb-chat-default-ttl";
 const CHAT_REACTION_OPTIONS = [
@@ -114,6 +125,9 @@ const CHAT_DELETED_MESSAGE_ALGORITHM = "deleted";
 const CHAT_MAX_PENDING_MEDIA = 8;
 const CHAT_MEDIA_ACCEPT = "image/*,video/*";
 const SMART_COMPOSER_WAVEFORM_BARS = [7, 13, 18, 11, 20, 14, 9, 16, 12, 8, 19, 10] as const;
+const ONLINE_PRESENCE_WINDOW_MS = 3 * 60 * 1000;
+const RECENT_PRESENCE_WINDOW_MS = 60 * 60 * 1000;
+const TYPING_INDICATOR_WINDOW_MS = 4_500;
 const CHAT_TTL_OPTIONS = [
   { value: "instant", label: "Instant", durationMs: 0 },
   { value: "1h", label: "1h", durationMs: 60 * 60 * 1000 },
@@ -480,11 +494,116 @@ function getInitials(name: string) {
     .toUpperCase();
 }
 
-function getStatusRing(userId: string): "online" | "vibing" | "away" {
-  const code = userId.charCodeAt(userId.length - 1);
-  if (code % 3 === 0) return "online";
-  if (code % 3 === 1) return "vibing";
-  return "away";
+function toTimestamp(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function pickLatestActivityAt(...values: Array<string | null | undefined>) {
+  let latestValue: string | null = null;
+  let latestTimestamp = -Infinity;
+
+  for (const value of values) {
+    const timestamp = toTimestamp(value);
+    if (timestamp === null || timestamp <= latestTimestamp) {
+      continue;
+    }
+
+    latestTimestamp = timestamp;
+    latestValue = value ?? null;
+  }
+
+  return latestValue;
+}
+
+function getLatestPeerMessageAt(messages: ChatMessageRecord[], peerUserId: string) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.senderUserId === peerUserId) {
+      return message.createdAt;
+    }
+  }
+
+  return null;
+}
+
+function getConversationPeerActivityAt(conversation: ActiveConversation | null) {
+  if (!conversation) {
+    return null;
+  }
+
+  if (conversation.peer.lastActiveAt) {
+    return conversation.peer.lastActiveAt;
+  }
+
+  return pickLatestActivityAt(
+    conversation.peerLastReadAt,
+    getLatestPeerMessageAt(conversation.messages, conversation.peer.userId)
+  );
+}
+
+function getConversationPreviewPeerActivityAt(item: ChatConversationPreview) {
+  if (item.peer.lastActiveAt) {
+    return item.peer.lastActiveAt;
+  }
+
+  return item.lastMessage?.senderUserId === item.peer.userId ? item.lastMessage.createdAt : null;
+}
+
+function formatPresenceAgeLabel(dateString: string, nowTimestamp: number) {
+  const activityTimestamp = toTimestamp(dateString);
+  if (activityTimestamp === null) {
+    return "recently";
+  }
+
+  const diffInSeconds = Math.max(0, Math.floor((nowTimestamp - activityTimestamp) / 1000));
+  if (diffInSeconds < 60) return "just now";
+
+  const diffInMinutes = Math.floor(diffInSeconds / 60);
+  if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+
+  const diffInHours = Math.floor(diffInMinutes / 60);
+  if (diffInHours < 24) return `${diffInHours}h ago`;
+
+  const diffInDays = Math.floor(diffInHours / 24);
+  if (diffInDays < 7) return `${diffInDays}d ago`;
+
+  return new Date(dateString).toLocaleDateString("en-IN", { month: "short", day: "numeric" });
+}
+
+function getPeerPresence(activityAt: string | null, nowTimestamp: number): {
+  tone: PeerPresenceTone;
+  label: string;
+  shortLabel: string;
+} {
+  const activityTimestamp = toTimestamp(activityAt);
+  if (activityTimestamp === null) {
+    return {
+      tone: "away",
+      label: "Offline",
+      shortLabel: "Offline"
+    };
+  }
+
+  const diff = Math.max(0, nowTimestamp - activityTimestamp);
+  if (diff <= ONLINE_PRESENCE_WINDOW_MS) {
+    return {
+      tone: "online",
+      label: "Online",
+      shortLabel: "Online"
+    };
+  }
+
+  const relativeAge = formatPresenceAgeLabel(new Date(activityTimestamp).toISOString(), nowTimestamp);
+  return {
+    tone: diff <= RECENT_PRESENCE_WINDOW_MS ? "recent" : "away",
+    label: `Active ${relativeAge}`,
+    shortLabel: relativeAge
+  };
 }
 
 function getReceiptLabel(state: OutgoingReceiptState) {
@@ -859,6 +978,8 @@ export function CampusMessagesShell({
   const [sendError, setSendError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [typingByConversation, setTypingByConversation] = useState<Record<string, ConversationTypingState>>({});
+  const [viewOncePreview, setViewOncePreview] = useState<ViewOncePreviewState | null>(null);
   const [realtimeState, setRealtimeState] = useState<RealtimeState>(initialConversationId ? "connecting" : "idle");
   const [viewerIdentity, setViewerIdentity] = useState<ChatIdentitySummary | null>(initialViewerIdentity);
   const [localChatKey, setLocalChatKey] = useState<StoredChatKeyMaterial | null>(null);
@@ -873,6 +994,7 @@ export function CampusMessagesShell({
   const [restoreRecoveryCode, setRestoreRecoveryCode] = useState("");
   const [pinAttemptState, setPinAttemptState] = useState<ChatPinAttemptState | null>(null);
   const [lockoutNow, setLockoutNow] = useState(() => Date.now());
+  const [presenceNow, setPresenceNow] = useState(() => Date.now());
   const [recoveryCodeVisible, setRecoveryCodeVisible] = useState(false);
   const [backupPanelOpen, setBackupPanelOpen] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
@@ -912,6 +1034,9 @@ export function CampusMessagesShell({
   const recordingStopActionRef = useRef<"discard" | "send">("discard");
   const recordingMimeTypeRef = useRef<string>("audio/webm");
   const requestRef = useRef(0);
+  const chatSocketRef = useRef<WebSocket | null>(null);
+  const typingStopTimerRef = useRef<number | null>(null);
+  const lastTypingSignalRef = useRef<{ conversationId: string; isTyping: boolean } | null>(null);
   const appliedShareIntentRef = useRef<string | null>(null);
   const isMountedRef = useRef(false);
   const composerFocusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -965,6 +1090,35 @@ export function CampusMessagesShell({
       }
       swipeGestureRef.current = null;
     };
+  }, []);
+
+  useEffect(() => {
+    setPresenceNow(Date.now());
+    const intervalId = window.setInterval(() => {
+      setPresenceNow(Date.now());
+    }, 60000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      const now = Date.now();
+      setTypingByConversation((current) => {
+        let changed = false;
+        const nextEntries = Object.entries(current).filter(([, value]) => {
+          const keep = now - value.updatedAt < TYPING_INDICATOR_WINDOW_MS;
+          if (!keep) {
+            changed = true;
+          }
+          return keep;
+        });
+
+        return changed ? Object.fromEntries(nextEntries) : current;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
   }, []);
 
   useEffect(() => {
@@ -1136,6 +1290,98 @@ export function CampusMessagesShell({
     void syncSessionWarning(response.status);
 
     return response;
+  }
+
+  function clearTypingStopTimer() {
+    if (typingStopTimerRef.current) {
+      window.clearTimeout(typingStopTimerRef.current);
+      typingStopTimerRef.current = null;
+    }
+  }
+
+  function applyRemoteTypingState(
+    conversationId: string,
+    typingState: {
+      userId: string;
+      membershipId: string;
+      isTyping: boolean;
+      typedAt?: string;
+    }
+  ) {
+    setTypingByConversation((current) => {
+      if (!typingState.isTyping) {
+        if (!current[conversationId]) {
+          return current;
+        }
+
+        const next = { ...current };
+        delete next[conversationId];
+        return next;
+      }
+
+      return {
+        ...current,
+        [conversationId]: {
+          userId: typingState.userId,
+          membershipId: typingState.membershipId,
+          updatedAt: toTimestamp(typingState.typedAt ?? null) ?? Date.now()
+        }
+      };
+    });
+  }
+
+  function sendTypingSignal(isTyping: boolean) {
+    const conversationId = activeConversationRef.current?.id ?? null;
+    const socket = chatSocketRef.current;
+    if (!conversationId || !socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    if (
+      lastTypingSignalRef.current?.conversationId === conversationId &&
+      lastTypingSignalRef.current.isTyping === isTyping
+    ) {
+      return;
+    }
+
+    try {
+      socket.send(
+        JSON.stringify({
+          type: "chat.typing",
+          payload: {
+            conversationId,
+            isTyping
+          }
+        })
+      );
+      lastTypingSignalRef.current = { conversationId, isTyping };
+    } catch {
+      return;
+    }
+  }
+
+  function scheduleTypingStop() {
+    clearTypingStopTimer();
+    typingStopTimerRef.current = window.setTimeout(() => {
+      sendTypingSignal(false);
+    }, 1400);
+  }
+
+  function handleDraftMessageChange(nextValue: string) {
+    setDraftMessage(nextValue);
+
+    if (isRecordingVoiceNote) {
+      return;
+    }
+
+    if (nextValue.trim().length > 0) {
+      sendTypingSignal(true);
+      scheduleTypingStop();
+      return;
+    }
+
+    clearTypingStopTimer();
+    sendTypingSignal(false);
   }
 
   useEffect(() => {
@@ -1357,6 +1603,27 @@ export function CampusMessagesShell({
       if (!silent && requestRef.current === requestId) {
         setConversationLoading(false);
       }
+    }
+  }
+
+  async function refreshConversationPreviews() {
+    try {
+      const response = await fetchChatEndpoint("/api/chats");
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        return;
+      }
+
+      const inboxItems = Array.isArray(data?.items) ? (data.items as ChatConversationPreview[]) : [];
+      const currentConversation = activeConversationRef.current;
+      setConversations(
+        dedupeConversationItems(
+          currentConversation ? upsertConversationItem(inboxItems, buildConversationPreview(currentConversation)) : inboxItems
+        )
+      );
+    } catch {
+      return;
     }
   }
 
@@ -2238,7 +2505,10 @@ export function CampusMessagesShell({
     await queuePendingMediaAttachments(Array.from(event.dataTransfer.files ?? []));
   }
 
-  async function uploadPendingAttachment(mediaAttachment: PendingMediaAttachment) {
+  async function uploadPendingAttachment(
+    mediaAttachment: PendingMediaAttachment,
+    options?: { viewOnce?: boolean }
+  ) {
     const formData = new FormData();
     formData.set("file", mediaAttachment.file);
     formData.set("mimeType", mediaAttachment.mimeType);
@@ -2250,6 +2520,9 @@ export function CampusMessagesShell({
     }
     if (typeof mediaAttachment.durationMs === "number") {
       formData.set("durationMs", String(mediaAttachment.durationMs));
+    }
+    if (options?.viewOnce) {
+      formData.set("viewOnce", "true");
     }
 
     const uploadResponse = await fetchChatEndpoint("/api/chats/media", {
@@ -2266,6 +2539,9 @@ export function CampusMessagesShell({
   }
 
   async function stopVoiceRecording(action: "discard" | "send") {
+    clearTypingStopTimer();
+    sendTypingSignal(false);
+
     const recorder = mediaRecorderRef.current;
     if (!recorder) {
       setIsRecordingVoiceNote(false);
@@ -2302,6 +2578,9 @@ export function CampusMessagesShell({
     ) {
       return;
     }
+
+    clearTypingStopTimer();
+    sendTypingSignal(false);
 
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setSendError("Voice recording is not supported on this device.");
@@ -2485,6 +2764,33 @@ export function CampusMessagesShell({
   }, [activeConversationId, realtimeState]);
 
   useEffect(() => {
+    function handleVisibilityRefresh() {
+      if (document.visibilityState === "visible" && navigator.onLine) {
+        void refreshConversationPreviews();
+      }
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return;
+      }
+
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        return;
+      }
+
+      void refreshConversationPreviews();
+    }, 20_000);
+
+    document.addEventListener("visibilitychange", handleVisibilityRefresh);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityRefresh);
+    };
+  }, []);
+
+  useEffect(() => {
     const conversationId = activeConversationId ?? "";
     if (!conversationId) {
       return;
@@ -2509,11 +2815,15 @@ export function CampusMessagesShell({
 
     function closeSocket(reason?: string) {
       clearReconnectTimer();
+      clearTypingStopTimer();
+      sendTypingSignal(false);
 
       if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
         socket.close(1000, reason);
       }
 
+      chatSocketRef.current = null;
+      lastTypingSignalRef.current = null;
       socket = null;
     }
 
@@ -2579,6 +2889,7 @@ export function CampusMessagesShell({
         }
 
         socket = new WebSocket(data.wsUrl);
+        chatSocketRef.current = socket;
 
         socket.onopen = () => {
           connectInFlight = false;
@@ -2601,6 +2912,10 @@ export function CampusMessagesShell({
               payload?: {
                 messageId?: string;
                 item?: ChatMessageRecord;
+                userId?: string;
+                membershipId?: string;
+                isTyping?: boolean;
+                typedAt?: string;
               };
             };
 
@@ -2608,6 +2923,25 @@ export function CampusMessagesShell({
               void loadConversationDetail(conversationId, {
                 silent: true,
                 preserveActiveConversation: true
+              });
+              return;
+            }
+
+            if (payload.type === "chat.typing") {
+              const typingUserId = typeof payload.payload?.userId === "string" ? payload.payload.userId : null;
+              const typingMembershipId =
+                typeof payload.payload?.membershipId === "string" ? payload.payload.membershipId : null;
+              const isTyping = typeof payload.payload?.isTyping === "boolean" ? payload.payload.isTyping : null;
+
+              if (!typingUserId || !typingMembershipId || isTyping === null || typingUserId === viewerUserId) {
+                return;
+              }
+
+              applyRemoteTypingState(conversationId, {
+                userId: typingUserId,
+                membershipId: typingMembershipId,
+                isTyping,
+                typedAt: typeof payload.payload?.typedAt === "string" ? payload.payload.typedAt : undefined
               });
               return;
             }
@@ -2658,6 +2992,8 @@ export function CampusMessagesShell({
 
         socket.onclose = () => {
           connectInFlight = false;
+          chatSocketRef.current = null;
+          lastTypingSignalRef.current = null;
           socket = null;
 
           if (cancelled) {
@@ -2709,12 +3045,13 @@ export function CampusMessagesShell({
 
     return () => {
       cancelled = true;
+      clearTypingStopTimer();
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       closeSocket("cleanup");
     };
-  }, [activeConversationId]);
+  }, [activeConversationId, viewerUserId]);
 
   useEffect(() => {
     if (!activeConversationId) {
@@ -3070,12 +3407,13 @@ export function CampusMessagesShell({
       durationKey?: ChatMessageTtlKey;
       isStarred?: boolean;
       isSaved?: boolean;
+      consumeViewOnce?: boolean;
     },
     options?: { closeSelection?: boolean }
   ) {
     const targetMessage = messageMap.get(messageId);
     if (!targetMessage || isDeletedChatMessage(targetMessage)) {
-      return;
+      return false;
     }
 
     setMessageActionBusy(true);
@@ -3091,7 +3429,7 @@ export function CampusMessagesShell({
 
       if (!response.ok) {
         setMessageActionError(data?.error?.message ?? "We could not update that message.");
-        return;
+        return false;
       }
 
       const updatedMessage =
@@ -3114,6 +3452,15 @@ export function CampusMessagesShell({
               }
             : current
         );
+      } else if (payload.consumeViewOnce) {
+        setActiveConversation((current) =>
+          current
+            ? {
+                ...current,
+                messages: current.messages.filter((message) => message.id !== messageId)
+              }
+            : current
+        );
       }
 
       if (conversationPreview) {
@@ -3123,11 +3470,54 @@ export function CampusMessagesShell({
       if (options?.closeSelection !== false) {
         clearSelectedMessage();
       }
+      return true;
     } catch {
       setMessageActionError("Network issue while updating that message.");
+      return false;
     } finally {
       setMessageActionBusy(false);
     }
+  }
+
+  async function openViewOnceAttachment(
+    message: ChatMessageRecord,
+    options: {
+      isOwnMessage: boolean;
+      attachmentKind: "image" | "video" | "audio";
+    }
+  ) {
+    if (!message.attachment?.url || options.attachmentKind === "audio") {
+      return;
+    }
+
+    if (!message.attachment.viewOnce || options.isOwnMessage) {
+      setViewOncePreview({
+        url: message.attachment.url,
+        kind: options.attachmentKind === "video" ? "video" : "image",
+        messageId: message.id
+      });
+      return;
+    }
+
+    const consumed = await updateMessageLifecycleById(
+      message.id,
+      {
+        consumeViewOnce: true
+      },
+      {
+        closeSelection: false
+      }
+    );
+
+    if (!consumed) {
+      return;
+    }
+
+    setViewOncePreview({
+      url: message.attachment.url,
+      kind: options.attachmentKind === "video" ? "video" : "image",
+      messageId: message.id
+    });
   }
 
   async function handleToggleSavedMessage(messageId: string) {
@@ -3641,6 +4031,8 @@ export function CampusMessagesShell({
 
     setSending(true);
     setSendError(null);
+    clearTypingStopTimer();
+    sendTypingSignal(false);
 
     try {
       const queuedMedia = [...pendingMediaAttachments];
@@ -3649,7 +4041,9 @@ export function CampusMessagesShell({
       if (queuedMedia.length > 0) {
         setUploadingMedia(true);
         for (const [index, mediaAttachment] of queuedMedia.entries()) {
-          const uploadedAttachment = await uploadPendingAttachment(mediaAttachment);
+          const uploadedAttachment = await uploadPendingAttachment(mediaAttachment, {
+            viewOnce: viewOnceEnabled && mediaAttachment.mediaKind !== "audio"
+          });
           await dispatchEncryptedMessage({
             conversationId,
             plaintext: index === 0 ? nextMessage : "",
@@ -3719,7 +4113,19 @@ export function CampusMessagesShell({
         ? "create-backup"
         : null;
   const activeShareCards = shareMenuCollections[shareMenuTab];
-  const activePeerStatus = activePeer ? getStatusRing(activePeer.userId) : "away";
+  const activePeerPresence = useMemo(
+    () => getPeerPresence(getConversationPeerActivityAt(activeConversation), presenceNow),
+    [activeConversation, presenceNow]
+  );
+  const activeConversationTyping = activeConversationId ? typingByConversation[activeConversationId] ?? null : null;
+  const activePeerIsTyping = Boolean(
+    activePeer &&
+      activeConversationTyping &&
+      activeConversationTyping.userId === activePeer.userId &&
+      Date.now() - activeConversationTyping.updatedAt < TYPING_INDICATOR_WINDOW_MS
+  );
+  const activePeerStatus = activePeerIsTyping ? "online" : activePeerPresence.tone;
+  const activePeerStatusLabel = activePeerIsTyping ? "Typing..." : activePeerPresence.label;
   const activePeerInitials = activePeer ? getInitials(activePeer.displayName) : "";
   const activePeerMeta = activePeer
     ? [activePeer.course, activePeer.stream].filter(Boolean).join(" / ") || collegeName
@@ -3734,6 +4140,16 @@ export function CampusMessagesShell({
           : realtimeState === "connecting"
             ? "Syncing"
             : "Paused";
+
+  function handleExitMessages() {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+      return;
+    }
+
+    router.push("/");
+  }
+
   const renderBackupPanel = shouldShowBackupCards ? (
     <div className="spm-chat-key-card" role="status">
       <strong>{showRecoveryRestoreCard ? "Restore this device from settings" : "Create your secure backup from settings"}</strong>
@@ -3796,7 +4212,17 @@ export function CampusMessagesShell({
         <section className="spm-list-pane" aria-label="Conversations">
           <div className="spm-list-header">
             <div className="spm-list-header-top">
-              <h1 className="spm-list-title">Messages</h1>
+              <div className="spm-list-header-main">
+                <button
+                  type="button"
+                  className="spm-list-back"
+                  onClick={handleExitMessages}
+                  aria-label="Go back"
+                >
+                  <IconArrowLeft />
+                </button>
+                <h1 className="spm-list-title">Messages</h1>
+              </div>
               {unreadCount > 0 && (
                 <span className="spm-unread-chip">{unreadCount} new</span>
               )}
@@ -3929,7 +4355,8 @@ export function CampusMessagesShell({
 
                 {visibleConversations.map((item) => {
                   const { text: previewText, isMarket } = getConversationPreviewLabel(item, messagePlaintextById);
-                  const statusRing = getStatusRing(item.peer.userId);
+                  const peerPresence = getPeerPresence(getConversationPreviewPeerActivityAt(item), presenceNow);
+                  const statusRing = peerPresence.tone;
                   const initials = getInitials(item.peer.displayName);
 
                   return (
@@ -3954,7 +4381,8 @@ export function CampusMessagesShell({
                         </div>
                         <span
                           className={`spm-status-dot spm-status-${statusRing}`}
-                          aria-label={statusRing === "online" ? "Online" : statusRing === "vibing" ? "Vibing" : "Away"}
+                          aria-label={peerPresence.label}
+                          title={peerPresence.label}
                         />
                       </div>
 
@@ -4075,6 +4503,10 @@ export function CampusMessagesShell({
                             </span>
                           )}
                         </button>
+                        <span style={{ opacity: 0.5 }}>•</span>
+                        <span className={`spm-chat-presence-pill spm-chat-presence-pill-${activePeerStatus}`}>
+                          {activePeerStatusLabel}
+                        </span>
                         <span style={{ opacity: 0.5 }}>•</span>
                         <span className={`spm-chat-live-pill-mini spm-chat-live-pill-${realtimeState}`}>
                           {realtimeLabel}
@@ -4231,6 +4663,11 @@ export function CampusMessagesShell({
                           : message.attachment?.mimeType?.startsWith("video/")
                             ? "video"
                             : "image";
+                        const isViewOnceAttachment = Boolean(
+                          message.attachment?.viewOnce &&
+                          message.attachment?.url &&
+                          attachmentKind !== "audio"
+                        );
                         const shouldSuppressMediaFallbackText =
                           message.messageKind === "image" &&
                           Boolean(message.attachment?.url) &&
@@ -4288,28 +4725,47 @@ export function CampusMessagesShell({
                               )}
 
                               {message.attachment?.url && (
-                                <div className="spm-chat-attachment">
-                                  {attachmentKind === "video" ? (
-                                    <video
-                                      src={message.attachment.url}
-                                      controls
-                                      playsInline
-                                      preload="metadata"
-                                    />
-                                  ) : attachmentKind === "audio" ? (
-                                    <audio
-                                      src={message.attachment.url}
-                                      controls
-                                      preload="metadata"
-                                    />
-                                  ) : (
-                                    <img
-                                      src={message.attachment.url}
-                                      alt="Shared in chat"
-                                      loading="lazy"
-                                    />
-                                  )}
-                                </div>
+                                isViewOnceAttachment ? (
+                                  <button
+                                    type="button"
+                                    className="spm-chat-view-once-card"
+                                    onClick={() => {
+                                      void openViewOnceAttachment(message, {
+                                        isOwnMessage,
+                                        attachmentKind
+                                      });
+                                    }}
+                                  >
+                                    <span className="spm-chat-view-once-badge">1</span>
+                                    <strong>{attachmentKind === "video" ? "View once video" : "View once photo"}</strong>
+                                    <span>
+                                      {isOwnMessage ? "Can be opened once by the recipient." : "Tap to open. It disappears after you view it."}
+                                    </span>
+                                  </button>
+                                ) : (
+                                  <div className="spm-chat-attachment">
+                                    {attachmentKind === "video" ? (
+                                      <video
+                                        src={message.attachment.url}
+                                        controls
+                                        playsInline
+                                        preload="metadata"
+                                      />
+                                    ) : attachmentKind === "audio" ? (
+                                      <audio
+                                        src={message.attachment.url}
+                                        controls
+                                        preload="metadata"
+                                      />
+                                    ) : (
+                                      <img
+                                        src={message.attachment.url}
+                                        alt="Shared in chat"
+                                        loading="lazy"
+                                      />
+                                    )}
+                                  </div>
+                                )
                               )}
 
                               {showMessageCard ? (
@@ -4858,7 +5314,11 @@ export function CampusMessagesShell({
                         <textarea
                           ref={composerRef}
                           value={draftMessage}
-                          onChange={(event) => setDraftMessage(event.target.value)}
+                          onChange={(event) => handleDraftMessageChange(event.target.value)}
+                          onBlur={() => {
+                            clearTypingStopTimer();
+                            sendTypingSignal(false);
+                          }}
                           onKeyDown={(event) => {
                             if (event.key === "Enter" && !event.shiftKey) {
                               event.preventDefault();
@@ -4921,6 +5381,36 @@ export function CampusMessagesShell({
           )}
         </section>
       </div>
+
+      {viewOncePreview && (
+        <div
+          className="spm-chat-view-once-backdrop"
+          role="presentation"
+          onClick={() => setViewOncePreview(null)}
+        >
+          <div
+            className="spm-chat-view-once-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="View once media"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="spm-chat-view-once-close"
+              onClick={() => setViewOncePreview(null)}
+              aria-label="Close view once media"
+            >
+              <IconClose />
+            </button>
+            {viewOncePreview.kind === "video" ? (
+              <video src={viewOncePreview.url} controls autoPlay playsInline className="spm-chat-view-once-media" />
+            ) : (
+              <img src={viewOncePreview.url} alt="View once media" className="spm-chat-view-once-media" />
+            )}
+          </div>
+        </div>
+      )}
 
       {activeVibePreview && (
         <div

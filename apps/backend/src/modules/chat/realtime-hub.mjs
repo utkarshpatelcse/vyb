@@ -60,8 +60,42 @@ function rejectUpgrade(socket, statusCode, statusText) {
 function addSubscription(ws, auth) {
   const key = auth.conversationId;
   const current = subscriptionsByConversation.get(key) ?? new Set();
+  ws.__chatAuth = auth;
   current.add(ws);
   subscriptionsByConversation.set(key, current);
+
+  ws.on("message", (rawMessage) => {
+    let payload = null;
+
+    try {
+      payload = JSON.parse(String(rawMessage));
+    } catch {
+      return;
+    }
+
+    if (payload?.type !== "chat.typing" || !payload.payload || typeof payload.payload !== "object") {
+      return;
+    }
+
+    const isTyping = typeof payload.payload.isTyping === "boolean" ? payload.payload.isTyping : null;
+    const conversationId =
+      typeof payload.payload.conversationId === "string" ? payload.payload.conversationId : auth.conversationId;
+    if (isTyping === null || conversationId !== auth.conversationId) {
+      return;
+    }
+
+    emitChatRealtimeEvent({
+      conversationId: auth.conversationId,
+      type: "chat.typing",
+      payload: {
+        conversationId: auth.conversationId,
+        userId: auth.userId,
+        membershipId: auth.membershipId,
+        isTyping,
+        typedAt: new Date().toISOString()
+      }
+    });
+  });
 
   ws.on("close", () => {
     const listeners = subscriptionsByConversation.get(key);
