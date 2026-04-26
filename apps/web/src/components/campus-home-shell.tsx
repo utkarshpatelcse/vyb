@@ -16,6 +16,16 @@ import { SignOutButton } from "./sign-out-button";
 import { useSocialPostEngagement } from "./use-social-post-engagement";
 import { VybLogoLockup, VybLogoMark } from "./vyb-logo";
 import { MediaCarousel } from "./media-carousel";
+import {
+  createDefaultCampusSettings,
+  getPostDisplayControls,
+  persistPostDisplayPreference,
+  readPostDisplayPreferences,
+  readStoredCampusSettings,
+  subscribeToCampusSettings,
+  subscribeToPostDisplayPreferences,
+  type PostDisplayPreference
+} from "./campus-settings-storage";
 
 function timeAgo(dateString: string) {
   const date = new Date(dateString);
@@ -422,10 +432,19 @@ export function CampusHomeShell({
   initialPosts,
   trendingVibes,
   suggestedUsers,
-  unreadChatCount
+  unreadChatCount,
+  viewerUserId
 }: CampusHomeShellProps) {
   const router = useRouter();
   const engagement = useSocialPostEngagement(initialPosts);
+  const settingsIdentity = useMemo(
+    () => ({
+      userId: viewerUserId ?? null,
+      username: viewerUsername,
+      email: viewerEmail
+    }),
+    [viewerEmail, viewerUserId, viewerUsername]
+  );
   const [recommendedUsers, setRecommendedUsers] = useState(suggestedUsers);
   const [storyFeed, setStoryFeed] = useState(stories);
   const [vibeStrip, setVibeStrip] = useState(trendingVibes);
@@ -454,6 +473,8 @@ export function CampusHomeShell({
   const [repostBusyPostId, setRepostBusyPostId] = useState<string | null>(null);
   const [saveBusyPostId, setSaveBusyPostId] = useState<string | null>(null);
   const [reactionTrayPostId, setReactionTrayPostId] = useState<string | null>(null);
+  const [storedCampusSettings, setStoredCampusSettings] = useState(createDefaultCampusSettings);
+  const [postDisplayPreferences, setPostDisplayPreferences] = useState<Record<string, PostDisplayPreference>>({});
   const storyVideoRef = useRef<HTMLVideoElement | null>(null);
   const storyHoldTimeoutRef = useRef<number | null>(null);
   const storyPointerDownAtRef = useRef<number>(0);
@@ -498,6 +519,24 @@ export function CampusHomeShell({
   useEffect(() => {
     setRecommendedUsers(suggestedUsers);
   }, [suggestedUsers]);
+
+  useEffect(() => {
+    const syncStoredSettings = () => {
+      setStoredCampusSettings(readStoredCampusSettings(settingsIdentity));
+    };
+
+    syncStoredSettings();
+    return subscribeToCampusSettings(syncStoredSettings);
+  }, [settingsIdentity]);
+
+  useEffect(() => {
+    const syncPostDisplayPreferences = () => {
+      setPostDisplayPreferences(readPostDisplayPreferences(settingsIdentity));
+    };
+
+    syncPostDisplayPreferences();
+    return subscribeToPostDisplayPreferences(syncPostDisplayPreferences);
+  }, [settingsIdentity]);
 
   useEffect(() => {
     if (!flashMessage) {
@@ -910,6 +949,41 @@ export function CampusHomeShell({
     } catch {
       setActionMessage("We could not copy that link right now.");
     }
+  }
+
+  function updatePostDisplayPreference(post: FeedCard, key: "hideReactionCount" | "hideCommentCount") {
+    const currentPreference = postDisplayPreferences[post.id] ?? {
+      hideReactionCount: false,
+      hideCommentCount: false,
+      reactionCountMode: "default" as const,
+      commentCountMode: "default" as const,
+      updatedAt: new Date().toISOString()
+    };
+    const currentControls = getPostDisplayControls(storedCampusSettings, post, currentPreference);
+    const isReactionToggle = key === "hideReactionCount";
+    const nextReactionMode = isReactionToggle
+      ? currentControls.hideReactionCount ? "visible" : "hidden"
+      : currentPreference.reactionCountMode ?? "default";
+    const nextCommentMode = !isReactionToggle
+      ? currentControls.hideCommentCount ? "visible" : "hidden"
+      : currentPreference.commentCountMode ?? "default";
+    const nextPreference = {
+      hideReactionCount: currentPreference.hideReactionCount,
+      hideCommentCount: currentPreference.hideCommentCount,
+      reactionCountMode: nextReactionMode,
+      commentCountMode: nextCommentMode,
+      [key]: isReactionToggle ? nextReactionMode === "hidden" : nextCommentMode === "hidden"
+    };
+
+    setPostDisplayPreferences((current) => ({
+      ...current,
+      [post.id]: {
+        ...nextPreference,
+        updatedAt: new Date().toISOString()
+      }
+    }));
+    persistPostDisplayPreference(settingsIdentity, post.id, nextPreference);
+    setActionMessage(key === "hideReactionCount" ? "Like count preference updated." : "Comment count preference updated.");
   }
 
   function handleSharePost(post: FeedCard) {
@@ -1348,6 +1422,7 @@ export function CampusHomeShell({
                 ? [{ url: post.mediaUrl, kind: post.kind === "video" ? "video" as const : "image" as const }]
                 : [];
               const reactionMeta = getPostReactionMeta(post.viewerReactionType);
+              const displayControls = getPostDisplayControls(storedCampusSettings, post, postDisplayPreferences[post.id]);
 
               return (
               <div key={post.id} className="vyb-campus-feed-item">
@@ -1414,8 +1489,8 @@ export function CampusHomeShell({
                   {/* ── Metrics Bar ── */}
                   <div className="fc-metrics-bar">
                     <div className="fc-metrics-left">
-                      <span>{formatMetric(post.reactions)} reactions</span>
-                      <span>{formatMetric(post.comments)} comments</span>
+                      {displayControls.hideReactionCount ? null : <span>{formatMetric(post.reactions)} reactions</span>}
+                      {displayControls.hideCommentCount ? null : <span>{formatMetric(post.comments)} comments</span>}
                     </div>
                     <div className="fc-metrics-right">
                       <span>{formatMetric(post.savedCount || 0)} shares</span>
@@ -1784,6 +1859,7 @@ export function CampusHomeShell({
         message={engagement.threadMessage}
         isLoading={engagement.threadLoading}
         isSubmitting={engagement.threadSubmitting}
+        deletingCommentId={engagement.threadDeletingCommentId}
         onClose={engagement.closeThread}
         onDraftChange={engagement.setThreadDraft}
         onMediaUrlChange={engagement.setThreadMediaUrl}
@@ -1791,6 +1867,9 @@ export function CampusHomeShell({
         onReply={engagement.beginReply}
         onCommentLike={(commentId) => {
           void engagement.reactToComment(commentId);
+        }}
+        onDeleteComment={(comment) => {
+          void engagement.deleteComment(comment.id);
         }}
         onClearReply={engagement.clearReplyTarget}
         onSubmit={() => void engagement.submitComment()}
@@ -1803,6 +1882,16 @@ export function CampusHomeShell({
         viewerUsername={viewerUsername}
         isLiking={lightboxPost ? engagement.loadingPostId === lightboxPost.id : false}
         showHeartBurst={lightboxPost ? heartBurstPostId === lightboxPost.id : false}
+        hideReactionCount={
+          lightboxPost
+            ? getPostDisplayControls(storedCampusSettings, lightboxPost, postDisplayPreferences[lightboxPost.id]).hideReactionCount
+            : false
+        }
+        hideCommentCount={
+          lightboxPost
+            ? getPostDisplayControls(storedCampusSettings, lightboxPost, postDisplayPreferences[lightboxPost.id]).hideCommentCount
+            : false
+        }
         onClose={() => setLightboxPost(null)}
         onLike={() => {
           if (lightboxPost) {
@@ -1842,6 +1931,16 @@ export function CampusHomeShell({
         isOwner={Boolean(actionPost && actionPost.author.username === viewerUsername)}
         isBusy={actionBusy}
         message={actionMessage}
+        hideReactionCount={
+          actionPost
+            ? getPostDisplayControls(storedCampusSettings, actionPost, postDisplayPreferences[actionPost.id]).hideReactionCount
+            : false
+        }
+        hideCommentCount={
+          actionPost
+            ? getPostDisplayControls(storedCampusSettings, actionPost, postDisplayPreferences[actionPost.id]).hideCommentCount
+            : false
+        }
         onClose={() => setActionPost(null)}
         onOpenDetail={() => {
           if (actionPost) {
@@ -1852,6 +1951,16 @@ export function CampusHomeShell({
         onOpenRepostComposer={() => {
           if (actionPost) {
             openRepostComposer(actionPost);
+          }
+        }}
+        onToggleReactionCount={() => {
+          if (actionPost) {
+            updatePostDisplayPreference(actionPost, "hideReactionCount");
+          }
+        }}
+        onToggleCommentCount={() => {
+          if (actionPost) {
+            updatePostDisplayPreference(actionPost, "hideCommentCount");
           }
         }}
         onEdit={(payload) => {

@@ -13,6 +13,7 @@ import {
   createComment,
   createPost,
   createStory,
+  deleteComment,
   deletePost,
   findCommentById,
   findPostById,
@@ -1068,6 +1069,58 @@ export async function handleSocialRoute({ request, response, url, context }) {
     });
 
     sendJson(response, 201, { item: enrichedItem });
+    return true;
+  }
+
+  const deleteCommentMatch = request.method === "DELETE" ? url.pathname.match(/^\/v1\/comments\/([^/]+)$/) : null;
+  if (deleteCommentMatch) {
+    const comment = await findCommentById(deleteCommentMatch[1], {
+      tenantId: resolvedTenantId ?? null,
+      viewerMembershipId: resolvedMembershipId
+    });
+    if (!comment) {
+      sendError(response, 404, "COMMENT_NOT_FOUND", "Comment not found.");
+      return true;
+    }
+
+    const post = await findPostById(comment.postId, {
+      tenantId: resolvedTenantId ?? null,
+      viewerMembershipId: resolvedMembershipId
+    });
+    if (!post) {
+      sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
+      return true;
+    }
+
+    const canDelete =
+      comment.authorUserId === resolvedUserId ||
+      comment.membershipId === resolvedMembershipId ||
+      post.userId === resolvedUserId ||
+      post.membershipId === resolvedMembershipId;
+    if (!canDelete) {
+      sendError(response, 403, "COMMENT_DELETE_FORBIDDEN", "Only the comment author or post owner can delete this comment.");
+      return true;
+    }
+
+    const item = await deleteComment(comment.id, {
+      tenantId: post.tenantId,
+      postId: post.id
+    });
+
+    await logSocialActivity({
+      tenantId: post.tenantId,
+      membershipId: resolvedMembershipId ?? comment.membershipId,
+      activityType: "comment.deleted",
+      entityType: "comment",
+      entityId: comment.id,
+      metadata: {
+        postId: post.id,
+        placement: post.placement,
+        deletedCount: item.deletedCount
+      }
+    });
+
+    sendJson(response, 200, item);
     return true;
   }
 

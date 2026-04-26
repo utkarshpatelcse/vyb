@@ -17,6 +17,7 @@ type SocialThreadSheetProps = {
   message: string | null;
   isLoading: boolean;
   isSubmitting: boolean;
+  deletingCommentId: string | null;
   viewerName: string;
   viewerUsername: string;
   desktopInsetLeft?: string;
@@ -27,6 +28,7 @@ type SocialThreadSheetProps = {
   onMediaTypeChange: (value: ThreadMediaKind) => void;
   onReply: (comment: CommentItem) => void;
   onCommentLike: (commentId: string) => void;
+  onDeleteComment: (comment: CommentItem) => void;
   onClearReply: () => void;
   onSubmit: () => void;
 };
@@ -178,6 +180,7 @@ export function SocialThreadSheet({
   message,
   isLoading,
   isSubmitting,
+  deletingCommentId,
   viewerName,
   viewerUsername,
   desktopInsetLeft = "0px",
@@ -188,6 +191,7 @@ export function SocialThreadSheet({
   onMediaTypeChange,
   onReply,
   onCommentLike,
+  onDeleteComment,
   onClearReply,
   onSubmit
 }: SocialThreadSheetProps) {
@@ -293,6 +297,10 @@ export function SocialThreadSheet({
     const { comment, replies } = node;
     const replyTargetLabel = getReplyTargetLabel(comment, comments);
     const commentKey = getCommentRenderKey(comment, fallbackKey);
+    const canDeleteComment = Boolean(
+      comment.author?.username === viewerUsername || post?.author.username === viewerUsername
+    );
+    const isDeletingComment = deletingCommentId === comment.id;
 
     return (
       <motion.div
@@ -352,6 +360,16 @@ export function SocialThreadSheet({
                 >
                   Reply
                 </button>
+                {canDeleteComment ? (
+                  <button
+                    type="button"
+                    className="vyb-thread-delete-button"
+                    onClick={() => onDeleteComment(comment)}
+                    disabled={isDeletingComment}
+                  >
+                    {isDeletingComment ? "Deleting..." : "Delete"}
+                  </button>
+                ) : null}
               </div>
             </div>
           </div>

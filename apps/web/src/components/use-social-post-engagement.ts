@@ -1,6 +1,6 @@
 "use client";
 
-import type { CommentItem, FeedCard, ReactionKind, ReactionResponse } from "@vyb/contracts";
+import type { CommentItem, DeleteCommentResponse, FeedCard, ReactionKind, ReactionResponse } from "@vyb/contracts";
 import { useEffect, useMemo, useState } from "react";
 
 type CommentMediaKind = "gif" | "sticker";
@@ -17,6 +17,7 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
   const [loadingPostId, setLoadingPostId] = useState<string | null>(null);
   const [threadLoading, setThreadLoading] = useState(false);
   const [threadSubmitting, setThreadSubmitting] = useState(false);
+  const [threadDeletingCommentId, setThreadDeletingCommentId] = useState<string | null>(null);
 
   useEffect(() => {
     setPosts(initialPosts);
@@ -358,6 +359,115 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
     });
   }
 
+  function collectCommentThreadIds(comments: CommentItem[], commentId: string) {
+    const ids = new Set<string>([commentId]);
+    let changed = true;
+
+    while (changed) {
+      changed = false;
+      for (const comment of comments) {
+        if (comment.parentCommentId && ids.has(comment.parentCommentId) && !ids.has(comment.id)) {
+          ids.add(comment.id);
+          changed = true;
+        }
+      }
+    }
+
+    return ids;
+  }
+
+  async function deleteComment(commentId: string) {
+    const post = selectedPost;
+    if (!post) {
+      return null;
+    }
+
+    const currentComments = commentsByPost[post.id] ?? [];
+    const targetComment = currentComments.find((item) => item.id === commentId) ?? null;
+    if (!targetComment) {
+      return null;
+    }
+
+    const removedIds = collectCommentThreadIds(currentComments, commentId);
+    const removedCount = removedIds.size;
+
+    setThreadDeletingCommentId(commentId);
+    setThreadMessage(null);
+    setCommentsByPost((current) => ({
+      ...current,
+      [post.id]: (current[post.id] ?? []).filter((item) => !removedIds.has(item.id))
+    }));
+    setPosts((current) =>
+      current.map((item) =>
+        item.id === post.id
+          ? {
+            ...item,
+            comments: Math.max(0, item.comments - removedCount)
+          }
+          : item
+      )
+    );
+
+    try {
+      const response = await fetch(`/api/comments/${encodeURIComponent(commentId)}`, {
+        method: "DELETE"
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | DeleteCommentResponse
+        | {
+          error?: {
+            message?: string;
+          };
+        }
+        | null;
+
+      if (!response.ok || !payload || !("deleted" in payload) || !payload.deleted) {
+        setCommentsByPost((current) => ({
+          ...current,
+          [post.id]: currentComments
+        }));
+        setPosts((current) =>
+          current.map((item) =>
+            item.id === post.id
+              ? {
+                ...item,
+                comments: post.comments
+              }
+              : item
+          )
+        );
+        setThreadMessage(
+          payload && "error" in payload
+            ? payload.error?.message ?? "We could not delete that comment right now."
+            : "We could not delete that comment right now."
+        );
+        return null;
+      }
+
+      setThreadMessage("Comment deleted.");
+      return payload;
+    } catch {
+      setCommentsByPost((current) => ({
+        ...current,
+        [post.id]: currentComments
+      }));
+      setPosts((current) =>
+        current.map((item) =>
+          item.id === post.id
+            ? {
+              ...item,
+              comments: post.comments
+            }
+            : item
+        )
+      );
+      setThreadMessage("We could not delete that comment right now.");
+      return null;
+    } finally {
+      setThreadDeletingCommentId(null);
+    }
+  }
+
   function clearReplyTarget() {
     setThreadReplyTarget(null);
   }
@@ -383,6 +493,7 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
     loadingPostId,
     threadLoading,
     threadSubmitting,
+    threadDeletingCommentId,
     loadComments,
     openThread,
     closeThread,
@@ -390,6 +501,7 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
     clearReplyTarget,
     react,
     reactToComment,
+    deleteComment,
     submitComment
   };
 }

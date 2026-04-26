@@ -16,6 +16,7 @@ import type {
   ContactMarketPostResponse,
   DeleteChatMessageRequest,
   DeleteChatMessageResponse,
+  DeleteCommentResponse,
   CreateCommentResponse,
   CreateMarketPostRequest,
   CreateMarketPostResponse,
@@ -563,6 +564,15 @@ export async function toggleCampusPostSave(viewer: DevSession, postId: string) {
   return mutateBackendJson<TogglePostSaveResponse>(
     `/v1/posts/${encodeURIComponent(postId)}/save`,
     "PUT",
+    {},
+    viewer
+  );
+}
+
+export async function deletePostComment(viewer: DevSession, commentId: string) {
+  return mutateBackendJson<DeleteCommentResponse>(
+    `/v1/comments/${encodeURIComponent(commentId)}`,
+    "DELETE",
     {},
     viewer
   );

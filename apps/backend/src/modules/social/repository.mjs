@@ -366,6 +366,21 @@ const UPDATE_COMMENT_REACTION_MUTATION = `
   }
 `;
 
+const SOFT_DELETE_COMMENT_MUTATION = `
+  mutation SoftDeleteComment($id: UUID!) {
+    comment_update(
+      key: { id: $id }
+      data: {
+        status: "removed"
+        deletedAt_expr: "request.time"
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
+
 const LIST_STORY_VIEWS_BY_TENANT_QUERY = `
   query ListStoryViewsByTenant($tenantId: UUID!, $limit: Int!) {
     storyViews(
@@ -1256,6 +1271,23 @@ export async function listCommentsByPost({ tenantId, postId, limit = 50, viewerM
   }
 }
 
+function collectCommentThreadIds(comments, rootCommentId) {
+  const ids = new Set([rootCommentId]);
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    for (const comment of comments) {
+      if (comment.parentCommentId && ids.has(comment.parentCommentId) && !ids.has(comment.id)) {
+        ids.add(comment.id);
+        changed = true;
+      }
+    }
+  }
+
+  return Array.from(ids);
+}
+
 export async function upsertReaction(payload) {
   const reactionKey = buildReactionKey(payload.postId, payload.membershipId);
   const existing = await getReactionByKeyQuery(getSocialDc(), { reactionKey });
@@ -1397,6 +1429,67 @@ export async function upsertCommentReaction(payload) {
       active: !isRemovingReaction
     };
   }
+}
+
+export async function deleteComment(commentId, { tenantId = null, postId = null } = {}) {
+  const relatedComments = postId
+    ? await listCommentsByPost({
+        tenantId,
+        postId,
+        limit: 500,
+        viewerMembershipId: null
+      }).catch(() => [])
+    : [];
+  const commentIds = relatedComments.length > 0 ? collectCommentThreadIds(relatedComments, commentId) : [commentId];
+
+  try {
+    for (const id of commentIds) {
+      await getSocialDc().executeGraphql(SOFT_DELETE_COMMENT_MUTATION, {
+        operationName: "SoftDeleteComment",
+        variables: {
+          id
+        }
+      });
+    }
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const store = await ensureFallbackStore();
+    const activeComments = store.comments.map(normalizeFallbackCommentRecord);
+    const fallbackIds = postId ? collectCommentThreadIds(activeComments, commentId) : commentIds;
+    const idSet = new Set(fallbackIds);
+
+    for (const item of store.comments) {
+      if (idSet.has(item.id)) {
+        item.status = "removed";
+        item.deletedAt = new Date().toISOString();
+        item.updatedAt = new Date().toISOString();
+      }
+    }
+
+    const post = postId ? store.posts.find((item) => item.id === postId) : null;
+    if (post) {
+      post.comments = Math.max(0, Number(post.comments ?? 0) - idSet.size);
+    }
+
+    await persistFallbackStore();
+
+    return {
+      commentId,
+      postId,
+      deleted: true,
+      deletedCount: idSet.size
+    };
+  }
+
+  return {
+    commentId,
+    postId,
+    deleted: true,
+    deletedCount: commentIds.length
+  };
 }
 
 export async function deletePost(postId) {

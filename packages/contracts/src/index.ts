@@ -340,6 +340,13 @@ export interface CreateCommentResponse {
   item: CommentItem;
 }
 
+export interface DeleteCommentResponse {
+  commentId: string;
+  postId: string;
+  deleted: boolean;
+  deletedCount: number;
+}
+
 export interface ReactionResponse {
   postId: string;
   membershipId: string;

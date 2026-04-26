@@ -996,6 +996,12 @@
   transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+@media (max-width: 767px) {
+  .spm-chat-back {
+    display: none !important;
+  }
+}
+
 .spm-chat-back:hover {
   transform: translateX(-2px);
   background: rgba(255, 255, 255, 0.1);

@@ -5,6 +5,24 @@ import { useEffect } from "react";
 
 const HEARTBEAT_INTERVAL_MS = 45 * 1000;
 
+function shouldSendPresenceHeartbeat() {
+  if (typeof window === "undefined") {
+    return true;
+  }
+
+  try {
+    const rawSettings = window.localStorage.getItem("vyb-settings:last-active");
+    if (!rawSettings) {
+      return true;
+    }
+
+    const settings = JSON.parse(rawSettings) as { lastSeenOnline?: unknown };
+    return settings.lastSeenOnline !== "Nobody";
+  } catch {
+    return true;
+  }
+}
+
 export function ChatPresenceHeartbeat() {
   const pathname = usePathname();
 
@@ -17,6 +35,10 @@ export function ChatPresenceHeartbeat() {
       }
 
       if (document.visibilityState !== "visible" || !navigator.onLine) {
+        return;
+      }
+
+      if (!shouldSendPresenceHeartbeat()) {
         return;
       }
 

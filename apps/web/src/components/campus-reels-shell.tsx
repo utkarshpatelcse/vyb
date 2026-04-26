@@ -26,6 +26,16 @@ import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation 
 import { SignOutButton } from "./sign-out-button";
 import { useSocialPostEngagement } from "./use-social-post-engagement";
 import { VybLogoLockup } from "./vyb-logo";
+import {
+  createDefaultCampusSettings,
+  getPostDisplayControls,
+  persistPostDisplayPreference,
+  readPostDisplayPreferences,
+  readStoredCampusSettings,
+  subscribeToCampusSettings,
+  subscribeToPostDisplayPreferences,
+  type PostDisplayPreference
+} from "./campus-settings-storage";
 
 type CampusReelsShellProps = {
   viewerName: string;
@@ -318,6 +328,14 @@ export function CampusReelsShell({
 }: CampusReelsShellProps) {
   const router = useRouter();
   const engagement = useSocialPostEngagement(initialVibes);
+  const settingsIdentity = useMemo(
+    () => ({
+      userId: viewerUserId,
+      username: viewerUsername,
+      email: viewerEmail
+    }),
+    [viewerEmail, viewerUserId, viewerUsername]
+  );
   const prefersReducedMotion = useReducedMotion();
   const feedRef = useRef<HTMLDivElement | null>(null);
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
@@ -360,6 +378,8 @@ export function CampusReelsShell({
   const [isPlaybackPaused, setIsPlaybackPaused] = useState(false);
   const [speedBoostPostId, setSpeedBoostPostId] = useState<string | null>(null);
   const [progressByPost, setProgressByPost] = useState<Record<string, number>>({});
+  const [storedCampusSettings, setStoredCampusSettings] = useState(createDefaultCampusSettings);
+  const [postDisplayPreferences, setPostDisplayPreferences] = useState<Record<string, PostDisplayPreference>>({});
 
   const navItems = useMemo(() => buildPrimaryCampusNav("vibes"), []);
 
@@ -387,6 +407,24 @@ export function CampusReelsShell({
       window.clearTimeout(timeoutId);
     };
   }, [flashMessage]);
+
+  useEffect(() => {
+    const syncStoredSettings = () => {
+      setStoredCampusSettings(readStoredCampusSettings(settingsIdentity));
+    };
+
+    syncStoredSettings();
+    return subscribeToCampusSettings(syncStoredSettings);
+  }, [settingsIdentity]);
+
+  useEffect(() => {
+    const syncPostDisplayPreferences = () => {
+      setPostDisplayPreferences(readPostDisplayPreferences(settingsIdentity));
+    };
+
+    syncPostDisplayPreferences();
+    return subscribeToPostDisplayPreferences(syncPostDisplayPreferences);
+  }, [settingsIdentity]);
 
   useEffect(() => {
     if (!heartBurstPostId) {
@@ -1071,6 +1109,41 @@ export function CampusReelsShell({
     }
   }
 
+  function updatePostDisplayPreference(post: FeedCard, key: "hideReactionCount" | "hideCommentCount") {
+    const currentPreference = postDisplayPreferences[post.id] ?? {
+      hideReactionCount: false,
+      hideCommentCount: false,
+      reactionCountMode: "default" as const,
+      commentCountMode: "default" as const,
+      updatedAt: new Date().toISOString()
+    };
+    const currentControls = getPostDisplayControls(storedCampusSettings, post, currentPreference);
+    const isReactionToggle = key === "hideReactionCount";
+    const nextReactionMode = isReactionToggle
+      ? currentControls.hideReactionCount ? "visible" : "hidden"
+      : currentPreference.reactionCountMode ?? "default";
+    const nextCommentMode = !isReactionToggle
+      ? currentControls.hideCommentCount ? "visible" : "hidden"
+      : currentPreference.commentCountMode ?? "default";
+    const nextPreference = {
+      hideReactionCount: currentPreference.hideReactionCount,
+      hideCommentCount: currentPreference.hideCommentCount,
+      reactionCountMode: nextReactionMode,
+      commentCountMode: nextCommentMode,
+      [key]: isReactionToggle ? nextReactionMode === "hidden" : nextCommentMode === "hidden"
+    };
+
+    setPostDisplayPreferences((current) => ({
+      ...current,
+      [post.id]: {
+        ...nextPreference,
+        updatedAt: new Date().toISOString()
+      }
+    }));
+    persistPostDisplayPreference(settingsIdentity, post.id, nextPreference);
+    setActionMessage(key === "hideReactionCount" ? "Like count preference updated." : "Comment count preference updated.");
+  }
+
   async function handleEditPost(post: FeedCard, payload: { title: string | null; body: string; location: string | null }) {
     setActionBusy(true);
     setActionMessage(null);
@@ -1198,6 +1271,7 @@ export function CampusReelsShell({
                 const isActive = activePost?.id === item.id;
                 const profileHref = item.author.username === viewerUsername ? "/dashboard" : `/u/${encodeURIComponent(item.author.username)}`;
                 const progress = progressByPost[item.id] ?? 0;
+                const displayControls = getPostDisplayControls(storedCampusSettings, item, postDisplayPreferences[item.id]);
 
                 return (
                   <section key={item.id} id={`post-${item.id}`} className="vyb-vibes-slide">
@@ -1314,10 +1388,12 @@ export function CampusReelsShell({
                           <p className="vyb-vibes-caption">{item.body}</p>
                           <div className="vyb-vibes-stage-meta">
                             <span>{collegeName}</span>
-                            <span>{formatMetric(item.reactions)} likes</span>
-                            <button type="button" onClick={() => void openPostLikes(item)}>
-                              See likes
-                            </button>
+                            {displayControls.hideReactionCount ? null : <span>{formatMetric(item.reactions)} likes</span>}
+                            {displayControls.hideReactionCount ? null : (
+                              <button type="button" onClick={() => void openPostLikes(item)}>
+                                See likes
+                              </button>
+                            )}
                           </div>
                         </motion.div>
 
@@ -1340,7 +1416,7 @@ export function CampusReelsShell({
                             }}
                           >
                             <HeartIcon />
-                            <span>{formatMetric(item.reactions)}</span>
+                            {displayControls.hideReactionCount ? <span>Like</span> : <span>{formatMetric(item.reactions)}</span>}
                           </button>
                           <button
                             type="button"
@@ -1351,7 +1427,7 @@ export function CampusReelsShell({
                             }}
                           >
                             <CommentIcon />
-                            <span>{formatMetric(item.comments)}</span>
+                            {displayControls.hideCommentCount ? <span>Comments</span> : <span>{formatMetric(item.comments)}</span>}
                           </button>
                           <button
                             type="button"
@@ -1416,6 +1492,7 @@ export function CampusReelsShell({
         message={engagement.threadMessage}
         isLoading={engagement.threadLoading}
         isSubmitting={engagement.threadSubmitting}
+        deletingCommentId={engagement.threadDeletingCommentId}
         viewerName={viewerName}
         viewerUsername={viewerUsername}
         onClose={engagement.closeThread}
@@ -1425,6 +1502,9 @@ export function CampusReelsShell({
         onReply={engagement.beginReply}
         onCommentLike={(commentId) => {
           void engagement.reactToComment(commentId);
+        }}
+        onDeleteComment={(comment) => {
+          void engagement.deleteComment(comment.id);
         }}
         onClearReply={engagement.clearReplyTarget}
         onSubmit={() => void engagement.submitComment()}
@@ -1437,6 +1517,16 @@ export function CampusReelsShell({
         viewerUsername={viewerUsername}
         isLiking={lightboxPost ? engagement.loadingPostId === lightboxPost.id : false}
         showHeartBurst={lightboxPost ? heartBurstPostId === lightboxPost.id : false}
+        hideReactionCount={
+          lightboxPost
+            ? getPostDisplayControls(storedCampusSettings, lightboxPost, postDisplayPreferences[lightboxPost.id]).hideReactionCount
+            : false
+        }
+        hideCommentCount={
+          lightboxPost
+            ? getPostDisplayControls(storedCampusSettings, lightboxPost, postDisplayPreferences[lightboxPost.id]).hideCommentCount
+            : false
+        }
         onClose={() => setLightboxPost(null)}
         onLike={() => {
           if (lightboxPost) {
@@ -1518,6 +1608,16 @@ export function CampusReelsShell({
         isOwner={Boolean(actionPost && actionPost.author.username === viewerUsername)}
         isBusy={actionBusy}
         message={actionMessage}
+        hideReactionCount={
+          actionPost
+            ? getPostDisplayControls(storedCampusSettings, actionPost, postDisplayPreferences[actionPost.id]).hideReactionCount
+            : false
+        }
+        hideCommentCount={
+          actionPost
+            ? getPostDisplayControls(storedCampusSettings, actionPost, postDisplayPreferences[actionPost.id]).hideCommentCount
+            : false
+        }
         onClose={() => setActionPost(null)}
         onOpenDetail={() => {
           if (actionPost) {
@@ -1528,6 +1628,16 @@ export function CampusReelsShell({
         onOpenRepostComposer={() => {
           if (actionPost) {
             openRepostComposer(actionPost);
+          }
+        }}
+        onToggleReactionCount={() => {
+          if (actionPost) {
+            updatePostDisplayPreference(actionPost, "hideReactionCount");
+          }
+        }}
+        onToggleCommentCount={() => {
+          if (actionPost) {
+            updatePostDisplayPreference(actionPost, "hideCommentCount");
           }
         }}
         onEdit={(payload) => {

@@ -51,6 +51,11 @@ import {
   type StoredChatKeyMaterial
 } from "../lib/chat-e2ee";
 import { buildPrimaryCampusNav, CampusDesktopNavigation } from "./campus-navigation";
+import {
+  createDefaultCampusSettings,
+  readStoredCampusSettings,
+  subscribeToCampusSettings
+} from "./campus-settings-storage";
 import { MessageCardRenderer } from "./message-card-renderer";
 
 type ActiveConversation = ChatConversationResponse["conversation"];
@@ -976,6 +981,14 @@ export function CampusMessagesShell({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const settingsIdentity = useMemo(
+    () => ({
+      userId: viewerUserId,
+      username: viewerUsername,
+      email: null
+    }),
+    [viewerUserId, viewerUsername]
+  );
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const [startingChat, setStartingChat] = useState<string | null>(null);
@@ -1044,6 +1057,7 @@ export function CampusMessagesShell({
   const [defaultDurationKey, setDefaultDurationKey] = useState<ChatMessageTtlKey>("30d");
   const [dismissedDecryptionWarningIds, setDismissedDecryptionWarningIds] = useState<Record<string, true>>({});
   const [creatingChatIdentity, setCreatingChatIdentity] = useState(false);
+  const [storedCampusSettings, setStoredCampusSettings] = useState(createDefaultCampusSettings);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const mediaInputRef = useRef<HTMLInputElement | null>(null);
@@ -1359,6 +1373,10 @@ export function CampusMessagesShell({
       return;
     }
 
+    if (!storedCampusSettings.typingIndicator && isTyping) {
+      return;
+    }
+
     if (
       lastTypingSignalRef.current?.conversationId === conversationId &&
       lastTypingSignalRef.current.isTyping === isTyping
@@ -1405,6 +1423,25 @@ export function CampusMessagesShell({
     clearTypingStopTimer();
     sendTypingSignal(false);
   }
+
+  useEffect(() => {
+    const syncStoredSettings = () => {
+      setStoredCampusSettings(readStoredCampusSettings(settingsIdentity));
+    };
+
+    syncStoredSettings();
+    return subscribeToCampusSettings(syncStoredSettings);
+  }, [settingsIdentity]);
+
+  useEffect(() => {
+    if (storedCampusSettings.typingIndicator) {
+      return;
+    }
+
+    clearTypingStopTimer();
+    sendTypingSignal(false);
+    setTypingByConversation({});
+  }, [storedCampusSettings.typingIndicator]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -3117,6 +3154,28 @@ export function CampusMessagesShell({
       return;
     }
 
+    if (!storedCampusSettings.readReceipts) {
+      const readAt = new Date().toISOString();
+      setActiveConversation((current) =>
+        current && current.id === activeConversation.id
+          ? { ...current, lastReadMessageId: latestIncomingMessage.id, lastReadAt: readAt }
+          : current
+      );
+      setConversations((current) =>
+        current.map((item) =>
+          item.id === activeConversation.id
+            ? {
+                ...item,
+                unreadCount: 0,
+                lastMessage: activeConversation.messages[activeConversation.messages.length - 1] ?? item.lastMessage,
+                lastActivityAt: activeConversation.messages[activeConversation.messages.length - 1]?.createdAt ?? item.lastActivityAt
+              }
+            : item
+        )
+      );
+      return;
+    }
+
     let cancelled = false;
 
     void (async () => {
@@ -3166,7 +3225,7 @@ export function CampusMessagesShell({
     return () => {
       cancelled = true;
     };
-  }, [activeConversation, latestIncomingMessage]);
+  }, [activeConversation, latestIncomingMessage, storedCampusSettings.readReceipts]);
 
   function focusComposerSoon() {
     if (composerFocusTimeoutRef.current) {
@@ -4141,15 +4200,19 @@ export function CampusMessagesShell({
     () => getPeerPresence(getConversationPeerActivityAt(activeConversation), presenceNow),
     [activeConversation, presenceNow]
   );
+  const canSeePresence = storedCampusSettings.lastSeenOnline !== "Nobody";
+  const canUseReadReceipts = storedCampusSettings.readReceipts;
+  const canUseTypingIndicator = storedCampusSettings.typingIndicator;
   const activeConversationTyping = activeConversationId ? typingByConversation[activeConversationId] ?? null : null;
   const activePeerIsTyping = Boolean(
-    activePeer &&
+    canUseTypingIndicator &&
+      activePeer &&
       activeConversationTyping &&
       activeConversationTyping.userId === activePeer.userId &&
       Date.now() - activeConversationTyping.updatedAt < TYPING_INDICATOR_WINDOW_MS
   );
-  const activePeerStatus = activePeerIsTyping ? "online" : activePeerPresence.tone;
-  const activePeerStatusLabel = activePeerIsTyping ? "Typing..." : activePeerPresence.label;
+  const activePeerStatus = activePeerIsTyping ? "online" : canSeePresence ? activePeerPresence.tone : "away";
+  const activePeerStatusLabel = activePeerIsTyping ? "Typing..." : canSeePresence ? activePeerPresence.label : "Last seen hidden";
   const activePeerInitials = activePeer ? getInitials(activePeer.displayName) : "";
   const activePeerMeta = activePeer
     ? [activePeer.course, activePeer.stream].filter(Boolean).join(" / ") || collegeName
@@ -4380,7 +4443,8 @@ export function CampusMessagesShell({
                 {visibleConversations.map((item) => {
                   const { text: previewText, isMarket } = getConversationPreviewLabel(item, messagePlaintextById);
                   const peerPresence = getPeerPresence(getConversationPreviewPeerActivityAt(item), presenceNow);
-                  const statusRing = peerPresence.tone;
+                  const statusRing = canSeePresence ? peerPresence.tone : "away";
+                  const statusLabel = canSeePresence ? peerPresence.label : "Last seen hidden";
                   const initials = getInitials(item.peer.displayName);
 
                   return (
@@ -4405,8 +4469,8 @@ export function CampusMessagesShell({
                         </div>
                         <span
                           className={`spm-status-dot spm-status-${statusRing}`}
-                          aria-label={peerPresence.label}
-                          title={peerPresence.label}
+                          aria-label={statusLabel}
+                          title={statusLabel}
                         />
                       </div>
 
@@ -4665,7 +4729,9 @@ export function CampusMessagesShell({
                         const reactionSummary = isDeletedMessage
                           ? ""
                           : [...new Set(message.reactions.map((reaction) => reaction.emoji))].join(" ");
-                        const receiptState = getOutgoingReceiptState(message, isOwnMessage, isDeletedMessage);
+                        const receiptState = canUseReadReceipts
+                          ? getOutgoingReceiptState(message, isOwnMessage, isDeletedMessage)
+                          : null;
                         const swipeOffsetX = swipeReplyPreview?.messageId === message.id ? swipeReplyPreview.offsetX : 0;
                         const showSwipeReplyCue = Math.abs(swipeOffsetX) >= 10;
                         const isSelectedMessage = Boolean(selectedMessageIds[message.id]);

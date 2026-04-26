@@ -566,6 +566,17 @@ mutation UpdateCommentReaction($id: UUID!, $reactionType: String!) @auth(level: 
   )
 }
 
+mutation SoftDeleteComment($id: UUID!) @auth(level: NO_ACCESS) @transaction {
+  comment_update(
+    key: { id: $id }
+    data: {
+      status: "removed"
+      deletedAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
 mutation CreateReaction(
   $id: UUID!
   $reactionKey: String!

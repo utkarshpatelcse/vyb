@@ -20,7 +20,19 @@ import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation 
 import { SignOutButton } from "./sign-out-button";
 import { VybLogoLockup, VybLogoMark } from "./vyb-logo";
 import { CampusSettingsHub } from "./campus-settings-hub";
-import { createDefaultCampusSettings, readStoredCampusSettings, subscribeToCampusSettings } from "./campus-settings-storage";
+import {
+  CAMPUS_SOCIAL_LINK_KEYS,
+  CAMPUS_SOCIAL_LINK_LABELS,
+  getCampusSocialLinkHref,
+  getPostDisplayControls,
+  readPostDisplayPreferences,
+  createDefaultCampusSettings,
+  readStoredCampusSettings,
+  subscribeToCampusSettings,
+  subscribeToPostDisplayPreferences,
+  type CampusSocialLinkKey,
+  type PostDisplayPreference
+} from "./campus-settings-storage";
 
 type CampusProfileShellProps = {
   viewerName: string;
@@ -213,6 +225,50 @@ function HeartIcon() {
   );
 }
 
+function SocialBrandIcon({ brand }: { brand: CampusSocialLinkKey }) {
+  if (brand === "linkedin") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="3" y="3" width="18" height="18" rx="4" fill="currentColor" opacity="0.16" />
+        <path d="M7.2 10h3v7h-3v-7Zm1.5-3.5a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2ZM12 10h2.8v1.1c.5-.8 1.3-1.3 2.5-1.3 2 0 3.1 1.3 3.1 3.7V17h-3v-3.1c0-.9-.4-1.5-1.2-1.5-.9 0-1.3.6-1.3 1.6v3h-3V10Z" fill="currentColor" />
+      </svg>
+    );
+  }
+
+  if (brand === "github") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3.6a8.6 8.6 0 0 0-2.7 16.8c.4.1.6-.2.6-.4v-1.5c-2.4.5-2.9-1-2.9-1-.4-.9-.9-1.1-.9-1.1-.8-.5.1-.5.1-.5.8.1 1.3.9 1.3.9.8 1.3 2 1 2.5.8.1-.6.3-1 .5-1.2-1.9-.2-3.9-1-3.9-4.2 0-.9.3-1.7.9-2.3-.1-.2-.4-1.1.1-2.3 0 0 .7-.2 2.4.9.7-.2 1.4-.3 2.1-.3s1.4.1 2.1.3c1.6-1.1 2.4-.9 2.4-.9.5 1.2.2 2.1.1 2.3.5.6.9 1.4.9 2.3 0 3.3-2 4-3.9 4.2.3.3.6.8.6 1.6v2c0 .3.2.5.6.4A8.6 8.6 0 0 0 12 3.6Z" fill="currentColor" />
+      </svg>
+    );
+  }
+
+  if (brand === "instagram") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4.5" y="4.5" width="15" height="15" rx="4.2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <circle cx="12" cy="12" r="3.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <circle cx="16.8" cy="7.4" r="1" fill="currentColor" />
+      </svg>
+    );
+  }
+
+  if (brand === "email") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="3.8" y="5.8" width="16.4" height="12.4" rx="3" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <path d="m5 8 7 5 7-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 4.6h4.7l3.5 5 4.3-5H20l-6.2 7.1 6.5 7.7h-4.7l-3.8-5.5-4.8 5.5H3.5l6.8-7.7L4 4.6Zm2.4 1.8 10.2 11.2h1.2L7.6 6.4H6.4Z" fill="currentColor" />
+    </svg>
+  );
+}
+
 function SparkIcon() {
   return (
     <IconBase>
@@ -348,13 +404,6 @@ function formatMetric(value: number) {
     notation: value > 999 ? "compact" : "standard",
     maximumFractionDigits: 1
   }).format(value);
-}
-
-function buildBannerStyle(seed: string): CSSProperties {
-  const normalizedSeed = encodeURIComponent(seed || "vyb");
-  return {
-    backgroundImage: `linear-gradient(180deg, rgba(0, 0, 0, 0.16), rgba(10, 10, 12, 0.92)), url("https://picsum.photos/seed/${normalizedSeed}-banner/1200/540")`
-  };
 }
 
 function buildAvatarUrl(seed: string) {
@@ -653,6 +702,7 @@ export function CampusProfileShell({
   const [avatarUrl, setAvatarUrl] = useState<string | null>(initialAvatarUrl);
   const [avatarCropDraft, setAvatarCropDraft] = useState<AvatarCropDraft | null>(null);
   const [storedCampusSettings, setStoredCampusSettings] = useState(createDefaultCampusSettings);
+  const [postDisplayPreferences, setPostDisplayPreferences] = useState<Record<string, PostDisplayPreference>>({});
   const [followingState, setFollowingState] = useState(isFollowing);
   const [followerCount, setFollowerCount] = useState(stats.followers);
   const [followingCount, setFollowingCount] = useState(stats.following);
@@ -685,7 +735,14 @@ export function CampusProfileShell({
     [initialProfile?.userId, username, viewerEmail]
   );
   const resolvedAvatarUrl = avatarUrl ?? buildAvatarUrl(profileSeed);
-  const resolvedCoverPhotoUrl = storedCampusSettings.coverPhotoUrl;
+  const visibleSocialLinks = useMemo(
+    () =>
+      CAMPUS_SOCIAL_LINK_KEYS.map((key) => ({
+        key,
+        href: getCampusSocialLinkHref(key, storedCampusSettings.socialLinks[key])
+      })).filter((item) => item.href),
+    [storedCampusSettings.socialLinks]
+  );
   const avatarCropMetrics = avatarCropDraft
     ? getAvatarCropMetrics(avatarCropDraft.imageWidth, avatarCropDraft.imageHeight, avatarCropDraft.zoom)
     : null;
@@ -737,6 +794,15 @@ export function CampusProfileShell({
 
     syncStoredSettings();
     return subscribeToCampusSettings(syncStoredSettings);
+  }, [avatarStorageIdentity]);
+
+  useEffect(() => {
+    const syncPostDisplayPreferences = () => {
+      setPostDisplayPreferences(readPostDisplayPreferences(avatarStorageIdentity));
+    };
+
+    syncPostDisplayPreferences();
+    return subscribeToPostDisplayPreferences(syncPostDisplayPreferences);
   }, [avatarStorageIdentity]);
 
   useEffect(() => {
@@ -1522,16 +1588,6 @@ export function CampusProfileShell({
 
         <div className="vyb-insta-profile-shell" style={{ display: (settingsOpen || editProfileOpen) ? "none" : "block" }}>
           <section className="vyb-insta-header">
-            <div
-              className="vyb-insta-cover-photo"
-              style={
-                resolvedCoverPhotoUrl
-                  ? {
-                      backgroundImage: `linear-gradient(180deg, rgba(5, 7, 18, 0.08), rgba(5, 7, 18, 0.88)), url("${resolvedCoverPhotoUrl}")`
-                    }
-                  : buildBannerStyle(profileSeed)
-              }
-            />
             <div className="vyb-insta-header-main">
               <div className="vyb-insta-avatar-container">
                 <input
@@ -1591,6 +1647,23 @@ export function CampusProfileShell({
               <strong>@{username}</strong>
               <p>{identityLine} • {collegeName}</p>
               {profileBio ? <p className="vyb-insta-bio-copy">{profileBio}</p> : null}
+              {visibleSocialLinks.length > 0 ? (
+                <div className="vyb-profile-social-links" aria-label="Social profile links">
+                  {visibleSocialLinks.map(({ key, href }) => (
+                    <a
+                      key={key}
+                      className={`vyb-profile-social-link is-${key}`}
+                      href={href}
+                      target={href.startsWith("mailto:") ? undefined : "_blank"}
+                      rel={href.startsWith("mailto:") ? undefined : "noreferrer"}
+                      aria-label={CAMPUS_SOCIAL_LINK_LABELS[key]}
+                      title={CAMPUS_SOCIAL_LINK_LABELS[key]}
+                    >
+                      <SocialBrandIcon brand={key} />
+                    </a>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </section>
 
@@ -1624,6 +1697,14 @@ export function CampusProfileShell({
                 const previewMedia = mediaAssets[0] ?? null;
                 const isVideo = previewMedia?.kind === "video";
                 const hasMultipleMedia = mediaAssets.length > 1;
+                const displayControls = getPostDisplayControls(storedCampusSettings, post, postDisplayPreferences[post.id]);
+                const overlayMetric = displayControls.hideReactionCount
+                  ? displayControls.hideCommentCount
+                    ? null
+                    : post.comments
+                  : displayControls.hideCommentCount
+                    ? post.reactions
+                    : Math.max(post.reactions, post.comments, 0);
                 return (
                   <article key={post.id} className="vyb-insta-grid-item">
                     {previewMedia ? (
@@ -1653,11 +1734,13 @@ export function CampusProfileShell({
                       </div>
                     ) : null}
 
-                    <div className="vyb-insta-grid-overlay">
-                      <div className="vyb-overlay-stat">
-                        <HeartIcon /> <span>{formatMetric(Math.max(post.reactions, post.comments, 0))}</span>
+                    {overlayMetric === null ? null : (
+                      <div className="vyb-insta-grid-overlay">
+                        <div className="vyb-overlay-stat">
+                          <HeartIcon /> <span>{formatMetric(overlayMetric)}</span>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </article>
                 );
               })}

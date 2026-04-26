@@ -29,6 +29,8 @@ type SocialPostLightboxProps = {
   viewerUsername: string;
   isLiking: boolean;
   showHeartBurst: boolean;
+  hideReactionCount: boolean;
+  hideCommentCount: boolean;
   onClose: () => void;
   onLike: () => void;
   onOpenComments: () => void;
@@ -94,6 +96,8 @@ export function SocialPostLightbox({
   post,
   isLiking,
   showHeartBurst,
+  hideReactionCount,
+  hideCommentCount,
   onClose,
   onLike,
   onOpenComments,
@@ -218,8 +222,8 @@ export function SocialPostLightbox({
           </div>
           <div className="fc-metrics-bar">
             <div className="fc-metrics-left">
-              <span>{formatMetric(post.reactions)} reactions</span>
-              <span>{formatMetric(post.comments)} comments</span>
+              {hideReactionCount ? null : <span>{formatMetric(post.reactions)} reactions</span>}
+              {hideCommentCount ? null : <span>{formatMetric(post.comments)} comments</span>}
             </div>
             <div className="fc-metrics-right">
               <span>{formatMetric(post.savedCount || 0)} shares</span>

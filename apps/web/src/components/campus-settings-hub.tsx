@@ -15,11 +15,17 @@ import { clearChatVault } from "../lib/chat-e2ee";
 import { getFirebaseClientAuth, isFirebaseClientConfigured } from "../lib/firebase-client";
 import { persistStoredAvatarUrl } from "./campus-avatar";
 import {
+  CAMPUS_SOCIAL_LINK_KEYS,
+  CAMPUS_SOCIAL_LINK_LABELS,
   clearStoredCampusSettings,
   createDefaultCampusSettings,
+  createDefaultCampusSocialLinks,
+  normalizeCampusSocialLink,
   persistStoredCampusSettings,
   readStoredCampusSettings,
   type CampusSettingsIdentity,
+  type CampusSocialLinkKey,
+  type CampusSocialLinks,
   type StoredCampusSettings
 } from "./campus-settings-storage";
 
@@ -156,11 +162,13 @@ function formatLabel(key: string) {
     phone_number: "Phone Number",
     last_seen_online: "Last Seen & Online Status",
     group_add_permissions: "Who can add me to groups?",
-    vibe_visibility: "Who can see my vibes?",
+    story_visibility: "Who can see my story?",
     global_message_timer: "Global Message Timer",
     autoplay_on_wifi_only: "Autoplay videos on WiFi only",
-    disable_comments_on_posts: "Disable comments on posts",
+    hide_reaction_counts_on_posts: "Hide reaction counts on posts",
+    hide_comment_counts_on_posts: "Hide comment counts on posts",
     hide_reaction_counts_on_vibes: "Hide reaction counts on vibes",
+    hide_comment_counts_on_vibes: "Hide comment counts on vibes",
     chat_messages: "Chat messages",
     marketplace_deals: "Marketplace deals",
     social_interactions: "Social interactions",
@@ -179,10 +187,6 @@ function formatLabel(key: string) {
 
 function isDangerAction(key: string) {
   return ["logout_all_devices", "deactivate_account", "delete_my_account_permanently", "nuclear_reset"].includes(key);
-}
-
-function sanitizeListEntry(value: string) {
-  return value.trim().replace(/\s+/gu, " ").slice(0, 120);
 }
 
 function readFileAsDataUrl(file: File) {
@@ -213,18 +217,6 @@ function formatStorageBytes(value: number) {
   return `${(value / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-function formatVerificationStatus(value: StoredCampusSettings["verifiedStudentStatus"]) {
-  if (value === "verified") {
-    return "Verified";
-  }
-
-  if (value === "requested") {
-    return "Requested";
-  }
-
-  return "Not requested";
-}
-
 function buildInitialAccountDraft({
   viewerName,
   viewerEmail,
@@ -245,6 +237,20 @@ function buildInitialAccountDraft({
     primaryEmail: viewerEmail ?? initialProfile?.primaryEmail ?? "",
     phoneNumber: initialProfile?.phoneNumber ?? ""
   };
+}
+
+function buildInitialSocialDraft(settings: StoredCampusSettings): CampusSocialLinks {
+  return {
+    ...createDefaultCampusSocialLinks(),
+    ...settings.socialLinks
+  };
+}
+
+function normalizeSocialDraft(draft: CampusSocialLinks): CampusSocialLinks {
+  return CAMPUS_SOCIAL_LINK_KEYS.reduce<CampusSocialLinks>((links, key) => {
+    links[key] = normalizeCampusSocialLink(key, draft[key]);
+    return links;
+  }, createDefaultCampusSocialLinks());
 }
 
 async function clearCurrentSession(redirectToLogin = false) {
@@ -281,7 +287,6 @@ export function CampusSettingsHub({
 }: CampusSettingsHubProps) {
   const router = useRouter();
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
-  const coverInputRef = useRef<HTMLInputElement | null>(null);
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>("account");
   const [settings, setSettings] = useState<StoredCampusSettings>(() => readStoredCampusSettings(settingsIdentity));
   const [accountDraft, setAccountDraft] = useState(() =>
@@ -292,7 +297,9 @@ export function CampusSettingsHub({
       storedSettings: readStoredCampusSettings(settingsIdentity)
     })
   );
-  const [janitorDraft, setJanitorDraft] = useState("");
+  const [socialDraft, setSocialDraft] = useState<CampusSocialLinks>(() =>
+    buildInitialSocialDraft(readStoredCampusSettings(settingsIdentity))
+  );
   const [activePanel, setActivePanel] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
   const [profileBusy, setProfileBusy] = useState(false);
@@ -328,11 +335,10 @@ export function CampusSettingsHub({
     return {
       localStorageBytes,
       vybKeyCount,
-      coverPhotoBytes: settings.coverPhotoUrl?.length ?? 0,
       avatarBytes: avatarUrl.length,
-      janitorRuleCount: settings.janitorExclusions.length
+      connectedSocialLinks: CAMPUS_SOCIAL_LINK_KEYS.filter((key) => settings.socialLinks[key].trim()).length
     };
-  }, [avatarUrl, settings.coverPhotoUrl, settings.janitorExclusions.length]);
+  }, [avatarUrl, settings.socialLinks]);
 
   useEffect(() => {
     persistStoredCampusSettings(settingsIdentity, settings);
@@ -348,6 +354,10 @@ export function CampusSettingsHub({
     viewerEmail,
     viewerName
   ]);
+
+  useEffect(() => {
+    setSocialDraft(buildInitialSocialDraft(settings));
+  }, [settings.socialLinks]);
 
   useEffect(() => {
     if (!feedback) {
@@ -383,6 +393,13 @@ export function CampusSettingsHub({
     }));
   }
 
+  function updateSocialDraft(key: CampusSocialLinkKey, value: string) {
+    setSocialDraft((current) => ({
+      ...current,
+      [key]: value
+    }));
+  }
+
   async function handleProfilePhotoSelection(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -407,33 +424,6 @@ export function CampusSettingsHub({
       showFeedback("success", "Profile photo updated on this device.");
     } catch (error) {
       showFeedback("error", error instanceof Error ? error.message : "We could not update your profile photo.");
-    }
-  }
-
-  async function handleCoverPhotoSelection(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-
-    if (!file) {
-      return;
-    }
-
-    if (!file.type.startsWith("image/")) {
-      showFeedback("error", "Choose an image file for your cover photo.");
-      return;
-    }
-
-    if (file.size > 15 * 1024 * 1024) {
-      showFeedback("error", "Choose an image smaller than 15 MB.");
-      return;
-    }
-
-    try {
-      const nextCoverUrl = await readFileAsDataUrl(file);
-      updateSettings("coverPhotoUrl", nextCoverUrl);
-      showFeedback("success", "Cover photo updated on this device.");
-    } catch (error) {
-      showFeedback("error", error instanceof Error ? error.message : "We could not update your cover photo.");
     }
   }
 
@@ -485,6 +475,13 @@ export function CampusSettingsHub({
     }
   }
 
+  function handleSocialLinksSave() {
+    const nextSocialLinks = normalizeSocialDraft(socialDraft);
+    updateSettings("socialLinks", nextSocialLinks);
+    setSocialDraft(nextSocialLinks);
+    showFeedback("success", "Social account links saved to your profile bio.");
+  }
+
   async function handlePasswordReset() {
     if (!viewerEmail) {
       showFeedback("error", "No account email is available for password recovery.");
@@ -509,47 +506,12 @@ export function CampusSettingsHub({
     }
   }
 
-  function handleVerificationRequest() {
-    const nextStatus = settings.verifiedStudentStatus === "verified" ? "verified" : "requested";
-    updateSettings("verifiedStudentStatus", nextStatus);
-    window.open(`mailto:support@vyb.app?subject=${encodeURIComponent("Verified student status request")}`, "_blank", "noopener,noreferrer");
-    showFeedback("success", nextStatus === "verified" ? "Verified student badge already active." : "Verification request queued with support.");
-  }
-
-  function handleLinkedAccountsPanel() {
-    setActivePanel((current) => (current === "linked_accounts" ? null : "linked_accounts"));
-  }
-
   function handleStorageStatsPanel() {
     setActivePanel((current) => (current === "storage_stats" ? null : "storage_stats"));
   }
 
   function handleDevicesPanel() {
     setActivePanel((current) => (current === "devices" ? null : "devices"));
-  }
-
-  function handleJanitorPanel() {
-    setActivePanel((current) => (current === "janitor" ? null : "janitor"));
-  }
-
-  function handleJanitorAdd() {
-    const nextEntry = sanitizeListEntry(janitorDraft);
-    if (!nextEntry) {
-      return;
-    }
-
-    setSettings((current) => ({
-      ...current,
-      janitorExclusions: Array.from(new Set([...current.janitorExclusions, nextEntry]))
-    }));
-    setJanitorDraft("");
-  }
-
-  function handleJanitorRemove(value: string) {
-    setSettings((current) => ({
-      ...current,
-      janitorExclusions: current.janitorExclusions.filter((entry) => entry !== value)
-    }));
   }
 
   function handleExportData() {
@@ -659,6 +621,39 @@ export function CampusSettingsHub({
       ? "Current browser"
       : `${navigator.platform || "Web"} • ${Intl.DateTimeFormat().resolvedOptions().timeZone || "Local time"}`;
 
+  const deviceDetails = useMemo(() => {
+    if (typeof navigator === "undefined") {
+      return {
+        deviceLabel,
+        browserLabel: "Web browser",
+        platformLabel: "Web",
+        timezoneLabel: "Local time",
+        checkedAtLabel: new Date().toLocaleString("en-IN")
+      };
+    }
+
+    const userAgent = navigator.userAgent;
+    const browserLabel = /Edg\//u.test(userAgent)
+      ? "Microsoft Edge"
+      : /Chrome\//u.test(userAgent)
+        ? "Chrome"
+        : /Firefox\//u.test(userAgent)
+          ? "Firefox"
+          : /Safari\//u.test(userAgent)
+            ? "Safari"
+            : "Web browser";
+    const platformLabel = navigator.platform || "Web";
+    const timezoneLabel = Intl.DateTimeFormat().resolvedOptions().timeZone || "Local time";
+
+    return {
+      deviceLabel: `${browserLabel} on ${platformLabel}`,
+      browserLabel,
+      platformLabel,
+      timezoneLabel,
+      checkedAtLabel: new Date().toLocaleString("en-IN")
+    };
+  }, []);
+
   return (
     <div className="vyb-settings-list-hub">
       <input
@@ -667,13 +662,6 @@ export function CampusSettingsHub({
         accept="image/*"
         className="vyb-settings-list-hidden-input"
         onChange={handleProfilePhotoSelection}
-      />
-      <input
-        ref={coverInputRef}
-        type="file"
-        accept="image/*"
-        className="vyb-settings-list-hidden-input"
-        onChange={handleCoverPhotoSelection}
       />
 
       <div className="vyb-settings-list-header">
@@ -740,16 +728,6 @@ export function CampusSettingsHub({
                             <span>Upload</span>
                           </span>
                         </button>
-                        <button type="button" className="vyb-settings-list-row is-action is-button-row" onClick={() => coverInputRef.current?.click()}>
-                          <div className="vyb-settings-list-row-info">
-                            <strong>Cover Photo</strong>
-                            <span>Upload a new cover banner for your profile.</span>
-                          </div>
-                          <span className="vyb-settings-upload-btn">
-                            <UploadIcon />
-                            <span>Upload</span>
-                          </span>
-                        </button>
                         <div className="vyb-settings-list-row-actions">
                           <button type="button" className="vyb-settings-list-save-btn" onClick={handleAccountSave} disabled={profileBusy}>
                             {profileBusy ? "Saving..." : "Save personalization"}
@@ -808,6 +786,42 @@ export function CampusSettingsHub({
                     </section>
 
                     <section className="vyb-settings-list-section">
+                      <span className="vyb-settings-list-section-title">Link Social Accounts</span>
+                      <div className="vyb-settings-list-section-group">
+                        <div className="vyb-settings-list-row is-social-copy">
+                          <div className="vyb-settings-list-row-info">
+                            <strong>Profile bio icons</strong>
+                            <span>Add public links or handles. Connected links appear as brand icons at the end of your bio.</span>
+                          </div>
+                        </div>
+                        <div className="vyb-settings-social-grid">
+                          {CAMPUS_SOCIAL_LINK_KEYS.map((key) => (
+                            <label key={key} className="vyb-settings-social-field">
+                              <span>{CAMPUS_SOCIAL_LINK_LABELS[key]}</span>
+                              <input
+                                className="vyb-settings-list-input"
+                                value={socialDraft[key]}
+                                onChange={(event) => updateSocialDraft(key, event.target.value)}
+                                placeholder={
+                                  key === "email"
+                                    ? "name@college.edu"
+                                    : key === "linkedin"
+                                      ? "linkedin.com/in/username"
+                                      : `@${key}_handle or profile URL`
+                                }
+                              />
+                            </label>
+                          ))}
+                        </div>
+                        <div className="vyb-settings-list-row-actions">
+                          <button type="button" className="vyb-settings-list-save-btn" onClick={handleSocialLinksSave}>
+                            Save social links
+                          </button>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="vyb-settings-list-section">
                       <span className="vyb-settings-list-section-title">Account Security</span>
                       <div className="vyb-settings-list-section-group">
                         <div className="vyb-settings-list-row is-field">
@@ -835,36 +849,6 @@ export function CampusSettingsHub({
                           </div>
                           <span className="vyb-settings-list-inline-pill">{passwordBusy ? "Sending..." : "Send link"}</span>
                         </button>
-                        <button type="button" className="vyb-settings-list-row is-action is-button-row" onClick={handleVerificationRequest}>
-                          <div className="vyb-settings-list-row-info">
-                            <strong>Request Verified Student Status</strong>
-                            <span>Status: {formatVerificationStatus(settings.verifiedStudentStatus)}</span>
-                          </div>
-                          <ChevronRightIcon />
-                        </button>
-                        <button type="button" className="vyb-settings-list-row is-action is-button-row" onClick={handleLinkedAccountsPanel}>
-                          <div className="vyb-settings-list-row-info">
-                            <strong>Linked Accounts Integration</strong>
-                            <span>Review connected sign-in methods for this account.</span>
-                          </div>
-                          <ChevronRightIcon />
-                        </button>
-                        {activePanel === "linked_accounts" ? (
-                          <div className="vyb-settings-list-panel">
-                            <div className="vyb-settings-list-panel-row">
-                              <strong>Google</strong>
-                              <span>{settings.linkedAccounts.google ? "Connected" : "Not connected"}</span>
-                            </div>
-                            <div className="vyb-settings-list-panel-row">
-                              <strong>Phone</strong>
-                              <span>{settings.linkedAccounts.phone ? "Connected" : "Not connected"}</span>
-                            </div>
-                            <div className="vyb-settings-list-panel-row">
-                              <strong>GitHub</strong>
-                              <span>{settings.linkedAccounts.github ? "Connected" : "Not connected"}</span>
-                            </div>
-                          </div>
-                        ) : null}
                         <div className="vyb-settings-list-row-actions">
                           <button type="button" className="vyb-settings-list-save-btn" onClick={handleAccountSave} disabled={profileBusy}>
                             {profileBusy ? "Saving..." : "Save security contact"}
@@ -903,6 +887,7 @@ export function CampusSettingsHub({
                         <div className="vyb-settings-list-row">
                           <div className="vyb-settings-list-row-info">
                             <strong>{formatLabel("last_seen_online")}</strong>
+                            <span>If you choose Nobody, your last seen is hidden and other students' last seen is hidden from you too.</span>
                           </div>
                           <select
                             className="vyb-settings-list-select"
@@ -919,6 +904,7 @@ export function CampusSettingsHub({
                         <div className="vyb-settings-list-row">
                           <div className="vyb-settings-list-row-info">
                             <strong>Read Receipts</strong>
+                            <span>When off, you will not send read receipts or see read receipts from others.</span>
                           </div>
                           <label className="vyb-settings-list-toggle">
                             <input
@@ -932,6 +918,7 @@ export function CampusSettingsHub({
                         <div className="vyb-settings-list-row">
                           <div className="vyb-settings-list-row-info">
                             <strong>Typing Indicator</strong>
+                            <span>When off, you will not broadcast typing or see typing indicators from others.</span>
                           </div>
                           <label className="vyb-settings-list-toggle">
                             <input
@@ -966,12 +953,12 @@ export function CampusSettingsHub({
                         </div>
                         <div className="vyb-settings-list-row">
                           <div className="vyb-settings-list-row-info">
-                            <strong>{formatLabel("vibe_visibility")}</strong>
+                            <strong>{formatLabel("story_visibility")}</strong>
                           </div>
                           <select
                             className="vyb-settings-list-select"
-                            value={settings.vibeVisibility}
-                            onChange={(event) => updateSettings("vibeVisibility", event.target.value as StoredCampusSettings["vibeVisibility"])}
+                            value={settings.storyVisibility}
+                            onChange={(event) => updateSettings("storyVisibility", event.target.value as StoredCampusSettings["storyVisibility"])}
                           >
                             {["Everyone", "Contacts", "Nobody"].map((value) => (
                               <option key={value} value={value}>
@@ -1006,37 +993,6 @@ export function CampusSettingsHub({
                             ))}
                           </select>
                         </div>
-                        <button type="button" className="vyb-settings-list-row is-action is-button-row" onClick={handleJanitorPanel}>
-                          <div className="vyb-settings-list-row-info">
-                            <strong>Manage Janitor Exclusion</strong>
-                            <span>{settings.janitorExclusions.length} exclusion rule{settings.janitorExclusions.length === 1 ? "" : "s"} saved.</span>
-                          </div>
-                          <ChevronRightIcon />
-                        </button>
-                        {activePanel === "janitor" ? (
-                          <div className="vyb-settings-list-panel">
-                            <div className="vyb-settings-list-panel-input">
-                              <input
-                                className="vyb-settings-list-input"
-                                value={janitorDraft}
-                                onChange={(event) => setJanitorDraft(event.target.value)}
-                                placeholder="Conversation, username, or thread label"
-                              />
-                              <button type="button" className="vyb-settings-list-mini-btn" onClick={handleJanitorAdd}>
-                                Add
-                              </button>
-                            </div>
-                            <div className="vyb-settings-list-chip-wrap">
-                              {settings.janitorExclusions.length === 0 ? <p className="vyb-settings-list-empty">No exclusions yet.</p> : null}
-                              {settings.janitorExclusions.map((entry) => (
-                                <button key={entry} type="button" className="vyb-settings-list-chip" onClick={() => handleJanitorRemove(entry)}>
-                                  <span>{entry}</span>
-                                  <span>Remove</span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
                       </div>
                     </section>
 
@@ -1075,32 +1031,29 @@ export function CampusSettingsHub({
                     <section className="vyb-settings-list-section">
                       <span className="vyb-settings-list-section-title">Interaction Controls</span>
                       <div className="vyb-settings-list-section-group">
-                        <div className="vyb-settings-list-row">
-                          <div className="vyb-settings-list-row-info">
-                            <strong>{formatLabel("disable_comments_on_posts")}</strong>
+                        {(
+                          [
+                            ["hideReactionCountsOnPosts", "hide_reaction_counts_on_posts"],
+                            ["hideCommentCountsOnPosts", "hide_comment_counts_on_posts"],
+                            ["hideReactionCountsOnVibes", "hide_reaction_counts_on_vibes"],
+                            ["hideCommentCountsOnVibes", "hide_comment_counts_on_vibes"]
+                          ] as const
+                        ).map(([key, labelKey]) => (
+                          <div key={key} className="vyb-settings-list-row">
+                            <div className="vyb-settings-list-row-info">
+                              <strong>{formatLabel(labelKey)}</strong>
+                              <span>Global default. Owners can override a single post or vibe from its three-dot menu.</span>
+                            </div>
+                            <label className="vyb-settings-list-toggle">
+                              <input
+                                type="checkbox"
+                                checked={settings[key]}
+                                onChange={(event) => updateSettings(key, event.target.checked)}
+                              />
+                              <span className="vyb-settings-list-toggle-slider"></span>
+                            </label>
                           </div>
-                          <label className="vyb-settings-list-toggle">
-                            <input
-                              type="checkbox"
-                              checked={settings.disableCommentsOnPosts}
-                              onChange={(event) => updateSettings("disableCommentsOnPosts", event.target.checked)}
-                            />
-                            <span className="vyb-settings-list-toggle-slider"></span>
-                          </label>
-                        </div>
-                        <div className="vyb-settings-list-row">
-                          <div className="vyb-settings-list-row-info">
-                            <strong>{formatLabel("hide_reaction_counts_on_vibes")}</strong>
-                          </div>
-                          <label className="vyb-settings-list-toggle">
-                            <input
-                              type="checkbox"
-                              checked={settings.hideReactionCountsOnVibes}
-                              onChange={(event) => updateSettings("hideReactionCountsOnVibes", event.target.checked)}
-                            />
-                            <span className="vyb-settings-list-toggle-slider"></span>
-                          </label>
-                        </div>
+                        ))}
                       </div>
                     </section>
                   </>
@@ -1220,12 +1173,8 @@ export function CampusSettingsHub({
                               <span>{formatStorageBytes(storageStats.avatarBytes)}</span>
                             </div>
                             <div className="vyb-settings-list-panel-row">
-                              <strong>Cached cover data</strong>
-                              <span>{formatStorageBytes(storageStats.coverPhotoBytes)}</span>
-                            </div>
-                            <div className="vyb-settings-list-panel-row">
-                              <strong>Janitor exclusions</strong>
-                              <span>{storageStats.janitorRuleCount}</span>
+                              <strong>Connected social links</strong>
+                              <span>{storageStats.connectedSocialLinks}</span>
                             </div>
                           </div>
                         ) : null}
@@ -1293,12 +1242,28 @@ export function CampusSettingsHub({
                       {activePanel === "devices" ? (
                         <div className="vyb-settings-list-panel">
                           <div className="vyb-settings-list-panel-row">
-                            <strong>Current device</strong>
-                            <span>{deviceLabel}</span>
+                            <strong>Current session</strong>
+                            <span>{deviceDetails.deviceLabel}</span>
                           </div>
                           <div className="vyb-settings-list-panel-row">
-                            <strong>Session scope</strong>
-                            <span>Current browser session</span>
+                            <strong>Browser</strong>
+                            <span>{deviceDetails.browserLabel}</span>
+                          </div>
+                          <div className="vyb-settings-list-panel-row">
+                            <strong>Platform</strong>
+                            <span>{deviceDetails.platformLabel}</span>
+                          </div>
+                          <div className="vyb-settings-list-panel-row">
+                            <strong>Timezone</strong>
+                            <span>{deviceDetails.timezoneLabel}</span>
+                          </div>
+                          <div className="vyb-settings-list-panel-row">
+                            <strong>Signed in as</strong>
+                            <span>{viewerEmail ?? `@${viewerUsername}`}</span>
+                          </div>
+                          <div className="vyb-settings-list-panel-row">
+                            <strong>Last checked</strong>
+                            <span>{deviceDetails.checkedAtLabel}</span>
                           </div>
                         </div>
                       ) : null}
@@ -1309,8 +1274,8 @@ export function CampusSettingsHub({
                         disabled={sessionBusy}
                       >
                         <div className="vyb-settings-list-row-info">
-                          <strong className={isDangerAction("logout_all_devices") ? "is-danger" : ""}>Logout All Devices</strong>
-                          <span>This build signs out the current web session securely.</span>
+                          <strong className={isDangerAction("logout_all_devices") ? "is-danger" : ""}>Logout This Device</strong>
+                          <span>This build can securely sign out this current browser session.</span>
                         </div>
                         <ChevronRightIcon />
                       </button>

@@ -8,9 +8,13 @@ type SocialPostActionSheetProps = {
   isOwner: boolean;
   isBusy: boolean;
   message: string | null;
+  hideReactionCount: boolean;
+  hideCommentCount: boolean;
   onClose: () => void;
   onOpenDetail: () => void;
   onOpenRepostComposer: () => void;
+  onToggleReactionCount: () => void;
+  onToggleCommentCount: () => void;
   onEdit: (payload: { title: string | null; body: string; location: string | null }) => void;
   onDelete: () => void;
   onReport: (reason: string) => void;
@@ -83,9 +87,13 @@ export function SocialPostActionSheet({
   isOwner,
   isBusy,
   message,
+  hideReactionCount,
+  hideCommentCount,
   onClose,
   onOpenDetail,
   onOpenRepostComposer,
+  onToggleReactionCount,
+  onToggleCommentCount,
   onEdit,
   onDelete,
   onReport,
@@ -113,6 +121,8 @@ export function SocialPostActionSheet({
   if (!post) {
     return null;
   }
+
+  const itemLabel = post.placement === "vibe" || post.kind === "video" ? "vibe" : "post";
 
   return (
     <div className="vyb-post-actions-backdrop" role="presentation" onClick={onClose}>
@@ -150,6 +160,18 @@ export function SocialPostActionSheet({
                   <div className="action-icon"><EditIcon /></div>
                   <span>Edit post</span>
                 </button>
+              ) : null}
+              {isOwner ? (
+                <>
+                  <button type="button" onClick={onToggleReactionCount} disabled={isBusy}>
+                    <div className="action-icon"><EyeIcon /></div>
+                    <span>{hideReactionCount ? `Show like count on this ${itemLabel}` : `Hide like count on this ${itemLabel}`}</span>
+                  </button>
+                  <button type="button" onClick={onToggleCommentCount} disabled={isBusy}>
+                    <div className="action-icon"><EyeIcon /></div>
+                    <span>{hideCommentCount ? `Show comment count on this ${itemLabel}` : `Hide comment count on this ${itemLabel}`}</span>
+                  </button>
+                </>
               ) : null}
               <button type="button" onClick={onCopyLink}>
                 <div className="action-icon"><CopyIcon /></div>
