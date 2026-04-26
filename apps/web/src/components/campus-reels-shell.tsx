@@ -1,13 +1,26 @@
 "use client";
 
-import type { FeedCard, PostLikerItem } from "@vyb/contracts";
+import type { ChatConversationPreview, ChatIdentitySummary, FeedCard, PostLikerItem, UserSearchItem } from "@vyb/contracts";
 import { animate, motion, useReducedMotion } from "framer-motion";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  CHAT_IDENTITY_ALGORITHM,
+  createStoredChatKeyMaterial,
+  encryptChatText,
+  isStoredChatKeyCompatible,
+  loadStoredChatKeyMaterial,
+  saveStoredChatKeyMaterial,
+  syncStoredChatKeyIdentity,
+  type StoredChatKeyMaterial
+} from "../lib/chat-e2ee";
 import { CampusAvatarContent } from "./campus-avatar";
 import { SocialPostActionSheet } from "./social-post-action-sheet";
 import { SocialPostLightbox } from "./social-post-lightbox";
 import { SocialPostLikersSheet } from "./social-post-likers-sheet";
+import { SocialPostRepostSheet } from "./social-post-repost-sheet";
+import { SocialPostShareSheet, type SocialShareTarget } from "./social-post-share-sheet";
 import { SocialThreadSheet } from "./social-thread-sheet";
 import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
 import { SignOutButton } from "./sign-out-button";
@@ -17,12 +30,16 @@ import { VybLogoLockup } from "./vyb-logo";
 type CampusReelsShellProps = {
   viewerName: string;
   viewerUsername: string;
+  viewerUserId: string;
   collegeName: string;
   viewerEmail: string;
   course?: string | null;
   stream?: string | null;
   role: string;
   initialVibes: FeedCard[];
+  suggestedUsers: UserSearchItem[];
+  recentChats: ChatConversationPreview[];
+  initialViewerIdentity?: ChatIdentitySummary | null;
 };
 
 function IconBase({ children }: { children: ReactNode }) {
@@ -201,16 +218,105 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+function truncateText(value: string, maxLength: number) {
+  const trimmed = value.trim();
+  if (trimmed.length <= maxLength) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, maxLength).trimEnd()}...`;
+}
+
+function buildRecentShareTarget(item: ChatConversationPreview): SocialShareTarget {
+  return {
+    userId: item.peer.userId,
+    username: item.peer.username,
+    displayName: item.peer.displayName,
+    conversationId: item.id,
+    peerIdentity: item.peer.publicKey ?? null,
+    lastActivityAt: item.lastActivityAt,
+    source: "recent"
+  };
+}
+
+function buildSuggestedShareTarget(item: UserSearchItem): SocialShareTarget {
+  return {
+    userId: item.userId,
+    username: item.username,
+    displayName: item.displayName,
+    source: "suggested"
+  };
+}
+
+function buildShareTargets(recentChats: ChatConversationPreview[], suggestedUsers: UserSearchItem[]) {
+  const targets: SocialShareTarget[] = [];
+  const seen = new Set<string>();
+
+  for (const item of [...recentChats].sort((left, right) => new Date(right.lastActivityAt).getTime() - new Date(left.lastActivityAt).getTime())) {
+    const key = item.peer.userId || item.peer.username.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    targets.push(buildRecentShareTarget(item));
+  }
+
+  for (const item of suggestedUsers) {
+    const key = item.userId || item.username.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    targets.push(buildSuggestedShareTarget(item));
+  }
+
+  return targets;
+}
+
+function upsertShareTarget(items: SocialShareTarget[], target: SocialShareTarget): SocialShareTarget[] {
+  const normalizedUsername = target.username.toLowerCase();
+  const remaining = items.filter(
+    (item) =>
+      item.userId !== target.userId &&
+      item.username.toLowerCase() !== normalizedUsername &&
+      (!target.conversationId || item.conversationId !== target.conversationId)
+  );
+
+  return [{ ...target, source: "recent" as const }, ...remaining];
+}
+
+function buildSharedPostCardPayload(post: FeedCard) {
+  return JSON.stringify({
+    version: 1,
+    type: "vibe_card",
+    postId: post.id,
+    title: truncateText(post.title || "Shared vibe", 80),
+    body: truncateText(post.body || "", 140),
+    mediaUrl: post.media?.[0]?.url ?? post.mediaUrl ?? null,
+    thumbnailUrl: post.media?.[0]?.url ?? post.mediaUrl ?? null,
+    authorUsername: post.author.username,
+    authorDisplayName: post.author.displayName || post.author.username,
+    caption: null
+  });
+}
+
 export function CampusReelsShell({
   viewerName,
   viewerUsername,
+  viewerUserId,
   collegeName,
   viewerEmail,
   course,
   stream,
   role,
-  initialVibes
+  initialVibes,
+  suggestedUsers,
+  recentChats,
+  initialViewerIdentity = null
 }: CampusReelsShellProps) {
+  const router = useRouter();
   const engagement = useSocialPostEngagement(initialVibes);
   const prefersReducedMotion = useReducedMotion();
   const feedRef = useRef<HTMLDivElement | null>(null);
@@ -219,6 +325,7 @@ export function CampusReelsShell({
   const snapAnimationRef = useRef<ReturnType<typeof animate> | null>(null);
   const tapTimeoutRef = useRef<number | null>(null);
   const holdTimeoutRef = useRef<number | null>(null);
+  const chatIdentityPromiseRef = useRef<Promise<StoredChatKeyMaterial> | null>(null);
   const snappingRef = useRef(false);
   const holdTriggeredRef = useRef(false);
   const holdPostIdRef = useRef<string | null>(null);
@@ -238,6 +345,13 @@ export function CampusReelsShell({
   const [likesLoadingPostId, setLikesLoadingPostId] = useState<string | null>(null);
   const [likesMessage, setLikesMessage] = useState<string | null>(null);
   const [actionPost, setActionPost] = useState<FeedCard | null>(null);
+  const [repostComposerPost, setRepostComposerPost] = useState<FeedCard | null>(null);
+  const [sharePost, setSharePost] = useState<FeedCard | null>(null);
+  const [shareTargets, setShareTargets] = useState(() => buildShareTargets(recentChats, suggestedUsers));
+  const [shareBusyUsername, setShareBusyUsername] = useState<string | null>(null);
+  const [shareMessage, setShareMessage] = useState<string | null>(null);
+  const [viewerChatIdentity, setViewerChatIdentity] = useState<ChatIdentitySummary | null>(initialViewerIdentity);
+  const [localChatKey, setLocalChatKey] = useState<StoredChatKeyMaterial | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -296,6 +410,10 @@ export function CampusReelsShell({
 
     setActiveIndex((current) => clamp(current, 0, engagement.posts.length - 1));
   }, [engagement.posts.length]);
+
+  useEffect(() => {
+    setShareTargets(buildShareTargets(recentChats, suggestedUsers));
+  }, [recentChats, suggestedUsers]);
 
   useEffect(() => {
     setIsPlaybackPaused(false);
@@ -618,81 +736,256 @@ export function CampusReelsShell({
     }
   }
 
-  async function handleDirectRepost(post: FeedCard) {
+  function openRepostComposer(post: FeedCard) {
+    setActionMessage(null);
+    setActionPost(null);
+    setRepostComposerPost(post);
+  }
+
+  async function requestRepost(post: FeedCard, repostPayload: { quote?: string; placement: "feed" | "vibe" }) {
+    const response = await fetch(`/api/posts/${encodeURIComponent(post.id)}/repost`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        placement: repostPayload.placement,
+        quote: repostPayload.quote?.trim() || undefined
+      })
+    });
+    const payload = (await response.json().catch(() => null)) as
+      | {
+          item?: FeedCard;
+          error?: {
+            message?: string;
+          };
+        }
+      | null;
+
+    if (!response.ok || !payload?.item) {
+      throw new Error(payload?.error?.message ?? "We could not repost this vibe right now.");
+    }
+
+    return payload.item;
+  }
+
+  async function handleSubmitRepost(post: FeedCard, repostPayload: { quote: string; placement: "feed" | "vibe" }) {
     setActionBusy(true);
     setActionMessage(null);
 
     try {
-      const response = await fetch(`/api/posts/${encodeURIComponent(post.id)}/repost`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json"
-        },
-        body: JSON.stringify({ placement: "vibe" })
-      });
-      const payload = (await response.json().catch(() => null)) as
-        | {
-            item?: FeedCard;
-            error?: {
-              message?: string;
-            };
-          }
-        | null;
-
-      if (!response.ok || !payload?.item) {
-        const nextMessage = payload?.error?.message ?? "We could not repost this vibe right now.";
-        setActionMessage(nextMessage);
-        setFlashMessage(nextMessage);
-        return;
-      }
-
-      engagement.prependPost(payload.item);
+      const nextItem = await requestRepost(post, repostPayload);
+      engagement.prependPost(nextItem);
       setActionPost(null);
-      setFlashMessage("Vibe reposted to your lane.");
-    } catch {
-      setActionMessage("We could not repost this vibe right now.");
-      setFlashMessage("We could not repost this vibe right now.");
+      setRepostComposerPost(null);
+      setFlashMessage(repostPayload.quote.trim() ? "Quote repost added to vibes." : "Vibe reposted to your lane.");
+      router.refresh();
+    } catch (error) {
+      const nextMessage = error instanceof Error ? error.message : "We could not repost this vibe right now.";
+      setActionMessage(nextMessage);
+      setFlashMessage(nextMessage);
     } finally {
       setActionBusy(false);
     }
   }
 
-  async function handleQuoteRepost(post: FeedCard, quote: string) {
-    setActionBusy(true);
-    setActionMessage(null);
+  function handleSharePost(post: FeedCard) {
+    setShareMessage(null);
+    setActionPost(null);
+    setSharePost(post);
+  }
 
-    try {
-      const response = await fetch(`/api/posts/${encodeURIComponent(post.id)}/repost`, {
-        method: "POST",
+  async function fetchChatEndpoint(input: string, init?: RequestInit) {
+    return fetch(input, {
+      cache: "no-store",
+      credentials: "same-origin",
+      ...(init ?? {})
+    });
+  }
+
+  async function ensureChatIdentityReady() {
+    if (viewerChatIdentity && localChatKey && isStoredChatKeyCompatible(localChatKey, viewerChatIdentity)) {
+      return localChatKey;
+    }
+
+    const stored = localChatKey ?? (await loadStoredChatKeyMaterial(viewerUserId));
+    if (viewerChatIdentity && stored && isStoredChatKeyCompatible(stored, viewerChatIdentity)) {
+      const synced = (await syncStoredChatKeyIdentity(viewerUserId, viewerChatIdentity)) ?? stored;
+      await saveStoredChatKeyMaterial(synced);
+      setLocalChatKey(synced);
+      return synced;
+    }
+
+    if (viewerChatIdentity) {
+      throw new Error("Restore your secure chat key from Settings / Security before sharing from this browser.");
+    }
+
+    if (chatIdentityPromiseRef.current) {
+      return chatIdentityPromiseRef.current;
+    }
+
+    const pending = (async () => {
+      const material = stored ?? (await createStoredChatKeyMaterial(viewerUserId));
+      await saveStoredChatKeyMaterial(material);
+      setLocalChatKey(material);
+
+      const response = await fetchChatEndpoint("/api/chats/keys", {
+        method: "PUT",
         headers: {
           "content-type": "application/json"
         },
         body: JSON.stringify({
-          quote,
-          placement: "vibe"
+          publicKey: material.publicKey,
+          algorithm: material.algorithm || CHAT_IDENTITY_ALGORITHM,
+          keyVersion: material.keyVersion
         })
       });
-      const payload = (await response.json().catch(() => null)) as
+      const data = (await response.json().catch(() => null)) as
         | {
-            item?: FeedCard;
+            identity?: ChatIdentitySummary;
             error?: {
               message?: string;
             };
           }
         | null;
 
-      if (!response.ok || !payload?.item) {
-        setActionMessage(payload?.error?.message ?? "We could not quote repost this vibe right now.");
-        return;
+      if (!response.ok || !data?.identity) {
+        throw new Error(data?.error?.message ?? "We could not enable secure sharing on this browser.");
       }
 
-      engagement.prependPost(payload.item);
-      setActionPost(null);
-      setFlashMessage("Quote repost added to vibes.");
-    } catch {
-      setActionMessage("We could not quote repost this vibe right now.");
+      const synced = (await syncStoredChatKeyIdentity(viewerUserId, data.identity)) ?? {
+        ...material,
+        identityId: data.identity.id,
+        algorithm: data.identity.algorithm,
+        keyVersion: data.identity.keyVersion,
+        updatedAt: data.identity.updatedAt
+      };
+
+      await saveStoredChatKeyMaterial(synced);
+      setViewerChatIdentity(data.identity);
+      setLocalChatKey(synced);
+      return synced;
+    })();
+
+    chatIdentityPromiseRef.current = pending;
+
+    try {
+      return await pending;
     } finally {
-      setActionBusy(false);
+      chatIdentityPromiseRef.current = null;
+    }
+  }
+
+  async function resolveShareTarget(target: SocialShareTarget) {
+    if (target.conversationId && target.peerIdentity) {
+      return target;
+    }
+
+    const normalizedUsername = target.username.trim().replace(/^@+/u, "");
+    const response = await fetchChatEndpoint("/api/chats", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(
+        target.userId.startsWith("lookup:")
+          ? { recipientUsername: normalizedUsername }
+          : {
+              recipientUserId: target.userId,
+              recipientUsername: normalizedUsername
+            }
+      )
+    });
+    const payload = (await response.json().catch(() => null)) as
+      | {
+          conversation?: {
+            id?: string;
+            peer?: {
+              userId?: string;
+              username?: string;
+              displayName?: string;
+              publicKey?: ChatIdentitySummary | null;
+            };
+            messages?: Array<{ createdAt?: string }>;
+            lastReadAt?: string | null;
+          };
+          error?: {
+            message?: string;
+          };
+        }
+      | null;
+
+    if (!response.ok || !payload?.conversation?.id || !payload.conversation.peer?.username || !payload.conversation.peer.userId) {
+      throw new Error(payload?.error?.message ?? "We could not open that chat right now.");
+    }
+
+    return {
+      userId: payload.conversation.peer.userId,
+      username: payload.conversation.peer.username,
+      displayName: payload.conversation.peer.displayName || payload.conversation.peer.username,
+      conversationId: payload.conversation.id,
+      peerIdentity: payload.conversation.peer.publicKey ?? null,
+      lastActivityAt: payload.conversation.messages?.[payload.conversation.messages.length - 1]?.createdAt ?? payload.conversation.lastReadAt ?? null,
+      source: "recent" as const
+    };
+  }
+
+  async function handleShareToChat(post: FeedCard, target: SocialShareTarget) {
+    const normalizedUsername = target.username.trim().replace(/^@+/u, "");
+
+    if (!normalizedUsername) {
+      setShareMessage("Enter a valid username first.");
+      return;
+    }
+
+    setShareBusyUsername(normalizedUsername);
+    setShareMessage(null);
+
+    try {
+      const resolvedTarget = await resolveShareTarget(target);
+      if (!resolvedTarget.conversationId || !resolvedTarget.peerIdentity) {
+        throw new Error("This user has not finished setting up secure chat yet.");
+      }
+
+      const keyMaterial = await ensureChatIdentityReady();
+      const encryptedPayload = await encryptChatText(buildSharedPostCardPayload(post), keyMaterial, resolvedTarget.peerIdentity);
+      const response = await fetchChatEndpoint(`/api/chats/${encodeURIComponent(resolvedTarget.conversationId)}/messages`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          messageKind: "vibe_card",
+          ...encryptedPayload
+        })
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            conversationPreview?: ChatConversationPreview;
+            error?: {
+              message?: string;
+            };
+          }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.error?.message ?? "We could not share this vibe right now.");
+      }
+
+      const conversationPreview = payload?.conversationPreview;
+      if (conversationPreview) {
+        setShareTargets((current) => upsertShareTarget(current, buildRecentShareTarget(conversationPreview)));
+      } else {
+        setShareTargets((current) => upsertShareTarget(current, resolvedTarget));
+      }
+
+      setSharePost(null);
+      setShareMessage(null);
+      setFlashMessage(`Shared with ${resolvedTarget.displayName || resolvedTarget.username}.`);
+    } catch (error) {
+      setShareMessage(error instanceof Error ? error.message : "Network issue while sharing this vibe.");
+    } finally {
+      setShareBusyUsername(null);
     }
   }
 
@@ -1065,7 +1358,7 @@ export function CampusReelsShell({
                             className="vyb-vibes-action-button"
                             onClick={(event) => {
                               event.stopPropagation();
-                              void handleDirectRepost(item);
+                              openRepostComposer(item);
                             }}
                           >
                             <RepostIcon />
@@ -1076,7 +1369,7 @@ export function CampusReelsShell({
                             className="vyb-vibes-action-button"
                             onClick={(event) => {
                               event.stopPropagation();
-                              void handleCopyPostLink(item);
+                              handleSharePost(item);
                             }}
                           >
                             <ShareIcon />
@@ -1178,6 +1471,48 @@ export function CampusReelsShell({
         onClose={() => setLikesPost(null)}
       />
 
+      <SocialPostRepostSheet
+        post={repostComposerPost}
+        viewerName={viewerName}
+        viewerUsername={viewerUsername}
+        isBusy={actionBusy}
+        message={actionMessage}
+        onClose={() => {
+          if (!actionBusy) {
+            setRepostComposerPost(null);
+            setActionMessage(null);
+          }
+        }}
+        onSubmit={(payload) => {
+          if (repostComposerPost) {
+            void handleSubmitRepost(repostComposerPost, payload);
+          }
+        }}
+      />
+
+      <SocialPostShareSheet
+        post={sharePost}
+        shareTargets={shareTargets}
+        busyUsername={shareBusyUsername}
+        message={shareMessage}
+        onClose={() => {
+          if (!shareBusyUsername) {
+            setSharePost(null);
+            setShareMessage(null);
+          }
+        }}
+        onAddToStory={() => {
+          setSharePost(null);
+          setShareMessage(null);
+          router.push("/create?kind=story&from=%2Fvibes");
+        }}
+        onShare={(target) => {
+          if (sharePost) {
+            void handleShareToChat(sharePost, target);
+          }
+        }}
+      />
+
       <SocialPostActionSheet
         post={actionPost}
         isOwner={Boolean(actionPost && actionPost.author.username === viewerUsername)}
@@ -1192,7 +1527,7 @@ export function CampusReelsShell({
         }}
         onOpenRepostComposer={() => {
           if (actionPost) {
-            void handleDirectRepost(actionPost);
+            openRepostComposer(actionPost);
           }
         }}
         onEdit={(payload) => {

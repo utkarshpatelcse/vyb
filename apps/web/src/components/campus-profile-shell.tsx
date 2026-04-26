@@ -19,6 +19,8 @@ import { persistStoredAvatarUrl, readStoredAvatarUrl } from "./campus-avatar";
 import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
 import { SignOutButton } from "./sign-out-button";
 import { VybLogoLockup, VybLogoMark } from "./vyb-logo";
+import { CampusSettingsHub } from "./campus-settings-hub";
+import { createDefaultCampusSettings, readStoredCampusSettings, subscribeToCampusSettings } from "./campus-settings-storage";
 
 type CampusProfileShellProps = {
   viewerName: string;
@@ -650,6 +652,7 @@ export function CampusProfileShell({
   const [mutedDraft, setMutedDraft] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(initialAvatarUrl);
   const [avatarCropDraft, setAvatarCropDraft] = useState<AvatarCropDraft | null>(null);
+  const [storedCampusSettings, setStoredCampusSettings] = useState(createDefaultCampusSettings);
   const [followingState, setFollowingState] = useState(isFollowing);
   const [followerCount, setFollowerCount] = useState(stats.followers);
   const [followingCount, setFollowingCount] = useState(stats.following);
@@ -669,7 +672,9 @@ export function CampusProfileShell({
   const likesCount = useMemo(() => posts.reduce((total, post) => total + post.reactions, 0), [posts]);
   const blockedUsernameSet = useMemo(() => new Set(blockedAccounts), [blockedAccounts]);
   const visiblePosts = activeTab === "posts" ? posts : activeTab === "vibes" ? vibePosts : ([] as FeedCard[]);
-  const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
+  const campusBadgeLine = storedCampusSettings.branchDepartment.trim() || [course, stream].filter(Boolean).join(" / ");
+  const identityLine = campusBadgeLine || collegeName;
+  const profileBio = storedCampusSettings.bio.trim();
   const profileSeed = `${username}-${viewerName}`;
   const avatarStorageIdentity = useMemo(
     () => ({
@@ -680,6 +685,7 @@ export function CampusProfileShell({
     [initialProfile?.userId, username, viewerEmail]
   );
   const resolvedAvatarUrl = avatarUrl ?? buildAvatarUrl(profileSeed);
+  const resolvedCoverPhotoUrl = storedCampusSettings.coverPhotoUrl;
   const avatarCropMetrics = avatarCropDraft
     ? getAvatarCropMetrics(avatarCropDraft.imageWidth, avatarCropDraft.imageHeight, avatarCropDraft.zoom)
     : null;
@@ -722,6 +728,15 @@ export function CampusProfileShell({
     if (storedAvatar) {
       setAvatarUrl(storedAvatar);
     }
+  }, [avatarStorageIdentity]);
+
+  useEffect(() => {
+    const syncStoredSettings = () => {
+      setStoredCampusSettings(readStoredCampusSettings(avatarStorageIdentity));
+    };
+
+    syncStoredSettings();
+    return subscribeToCampusSettings(syncStoredSettings);
   }, [avatarStorageIdentity]);
 
   useEffect(() => {
@@ -1507,6 +1522,16 @@ export function CampusProfileShell({
 
         <div className="vyb-insta-profile-shell" style={{ display: (settingsOpen || editProfileOpen) ? "none" : "block" }}>
           <section className="vyb-insta-header">
+            <div
+              className="vyb-insta-cover-photo"
+              style={
+                resolvedCoverPhotoUrl
+                  ? {
+                      backgroundImage: `linear-gradient(180deg, rgba(5, 7, 18, 0.08), rgba(5, 7, 18, 0.88)), url("${resolvedCoverPhotoUrl}")`
+                    }
+                  : buildBannerStyle(profileSeed)
+              }
+            />
             <div className="vyb-insta-header-main">
               <div className="vyb-insta-avatar-container">
                 <input
@@ -1565,6 +1590,7 @@ export function CampusProfileShell({
             <div className="vyb-insta-bio">
               <strong>@{username}</strong>
               <p>{identityLine} • {collegeName}</p>
+              {profileBio ? <p className="vyb-insta-bio-copy">{profileBio}</p> : null}
             </div>
           </section>
 
@@ -1735,6 +1761,29 @@ export function CampusProfileShell({
       ) : null}
 
       {isOwnProfile && settingsOpen ? (
+        <div style={{ padding: "0", width: "100%", margin: "0 auto", boxSizing: "border-box", animation: "vyb-slide-up 0.3s ease" }}>
+          <CampusSettingsHub
+            onClose={() => setSettingsOpen(false)}
+            viewerName={viewerName}
+            viewerUsername={username}
+            viewerEmail={viewerEmail}
+            collegeName={collegeName}
+            initialProfile={initialProfile}
+            avatarUrl={resolvedAvatarUrl}
+            settingsIdentity={avatarStorageIdentity}
+            stats={{
+              posts: stats.posts,
+              followers: followerCount,
+              following: followingCount
+            }}
+            posts={posts}
+            recentResources={recentResources}
+            recentCourses={recentCourses}
+            recentActivity={recentActivity}
+          />
+        </div>
+      ) : null}
+      {false && isOwnProfile && settingsOpen ? (
         <div style={{ padding: "0 1rem 2rem", width: "100%", maxWidth: "600px", margin: "0 auto", boxSizing: "border-box", animation: "vyb-slide-up 0.3s ease" }}>
           <div className="vyb-insta-settings-inline">
             <div className="vyb-insta-settings-header" style={{borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "1rem", marginBottom: "2rem", display: "flex", alignItems: "center", justifyContent: "space-between"}}>

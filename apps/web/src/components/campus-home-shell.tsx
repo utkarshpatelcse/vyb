@@ -70,6 +70,9 @@ type CampusHomeShellProps = {
   trendingVibes: FeedCard[];
   suggestedUsers: UserSearchItem[];
   unreadChatCount: number;
+  recentChats?: unknown[];
+  viewerUserId?: string;
+  initialViewerIdentity?: unknown;
 };
 
 function formatMetric(value: number) {
@@ -1408,9 +1411,20 @@ export function CampusHomeShell({
                     </div>
                   )}
 
+                  {/* ── Metrics Bar ── */}
+                  <div className="fc-metrics-bar">
+                    <div className="fc-metrics-left">
+                      <span>{formatMetric(post.reactions)} reactions</span>
+                      <span>{formatMetric(post.comments)} comments</span>
+                    </div>
+                    <div className="fc-metrics-right">
+                      <span>{formatMetric(post.savedCount || 0)} shares</span>
+                    </div>
+                  </div>
+
                   {/* ── Actions ── */}
                   <div className="fc-actions">
-                    <div className="fc-actions-left">
+                    <div className="fc-actions-group is-left">
                       <div
                         ref={(node) => {
                           reactionShellRefs.current[post.id] = node;
@@ -1421,11 +1435,6 @@ export function CampusHomeShell({
                           type="button"
                           className={`fc-action-btn is-reaction-btn reaction-${reactionMeta.tone}${post.viewerReactionType ? " is-active" : ""}`}
                           disabled={engagement.loadingPostId === post.id}
-                          aria-label={
-                            post.viewerReactionType
-                              ? `${reactionMeta.label} reaction selected. Hold to change reaction.`
-                              : "React to this post. Hold to choose more reactions."
-                          }
                           onPointerDown={() => handleReactionButtonPointerDown(post.id)}
                           onPointerUp={handleReactionButtonPointerCancel}
                           onPointerCancel={handleReactionButtonPointerCancel}
@@ -1434,7 +1443,6 @@ export function CampusHomeShell({
                           onClick={() => handleReactionButtonClick(post)}
                         >
                           <span className="fc-action-symbol" aria-hidden="true">{reactionMeta.symbol}</span>
-                          <span>{formatMetric(post.reactions)}</span>
                         </button>
 
                         <div className="fc-reaction-tray" role="menu" aria-label="Choose a reaction">
@@ -1452,39 +1460,42 @@ export function CampusHomeShell({
                           ))}
                         </div>
                       </div>
+
                       <button
                         type="button"
                         className="fc-action-btn"
                         onClick={() => void engagement.openThread(post.id)}
                       >
                         <CommentIcon />
-                        <span>{formatMetric(post.comments)}</span>
                       </button>
+
                       <button
                         type="button"
                         className="fc-action-btn"
                         onClick={() => handleSharePost(post)}
                       >
                         <ShareIcon />
-                        <span>Share</span>
                       </button>
+                    </div>
+
+                    <div className="fc-actions-group is-right">
                       <button
                         type="button"
                         className="fc-action-btn"
                         disabled={repostBusyPostId === post.id}
                         onClick={() => openRepostComposer(post)}
+                        title="Repost"
                       >
                         <RepostIcon />
-                        <span>{repostBusyPostId === post.id ? "..." : "Repost"}</span>
                       </button>
                       <button
                         type="button"
                         className={`fc-action-btn${post.isSaved ? " is-active is-save-active" : ""}`}
                         disabled={saveBusyPostId === post.id}
                         onClick={() => void handleTogglePostSave(post)}
+                        title="Save"
                       >
                         <BookmarkIcon />
-                        <span>{saveBusyPostId === post.id ? "..." : post.isSaved ? "Saved" : "Save"}</span>
                       </button>
                     </div>
                   </div>
@@ -1886,7 +1897,12 @@ export function CampusHomeShell({
 
       <SocialPostShareSheet
         post={sharePost}
-        suggestedUsers={recommendedUsers}
+        shareTargets={recommendedUsers.map((user) => ({
+          userId: user.userId,
+          username: user.username,
+          displayName: user.displayName,
+          source: "suggested" as const
+        }))}
         busyUsername={shareBusyUsername}
         message={shareMessage}
         onClose={() => {
@@ -1895,16 +1911,13 @@ export function CampusHomeShell({
             setShareMessage(null);
           }
         }}
-        onShare={(username) => {
+        onAddToStory={() => {}}
+        onShare={(target) => {
           if (sharePost) {
-            void handleShareToChat(sharePost, username);
+            void handleShareToChat(sharePost, target.username);
           }
         }}
       />
     </main>
   );
 }
-
-
-
-

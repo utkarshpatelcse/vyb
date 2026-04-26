@@ -1451,6 +1451,199 @@
   user-select: none;
 }
 
+.spm-chat-state {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  padding: 2rem;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.spm-chat-state strong {
+  color: #fff;
+  font-size: 1.05rem;
+}
+
+.spm-chat-state span {
+  max-width: 28rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.spm-chat-state-error strong {
+  color: #f87171;
+}
+
+.spm-chat-retry {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.7rem 1.2rem;
+  border-radius: 999px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.spm-chat-retry:hover {
+  transform: translateY(-2px);
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.4);
+  box-shadow: 0 4px 15px rgba(239, 68, 68, 0.2);
+}
+
+.spm-chat-thread {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(139, 92, 246, 0.3) transparent;
+  overscroll-behavior: contain;
+}
+
+.spm-chat-thread::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+
+.spm-chat-thread::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.spm-chat-thread::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.4);
+  border-radius: 999px;
+}
+
+.spm-chat-day-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 1rem 0;
+}
+
+.spm-chat-day-divider span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 1rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.spm-chat-message-row {
+  display: flex;
+  align-items: flex-end;
+  position: relative;
+}
+
+.spm-chat-message-row-self {
+  justify-content: flex-end;
+}
+
+.spm-chat-message-trigger {
+  position: absolute;
+  left: -2.6rem;
+  top: 50%;
+  transform: translateY(-50%) scale(0.9);
+  width: 2.2rem;
+  height: 2.2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  opacity: 0;
+  z-index: 10;
+}
+
+.spm-chat-message-row:hover .spm-chat-message-trigger {
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
+}
+
+.spm-chat-message-trigger:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.spm-chat-message-trigger-self {
+  left: auto;
+  right: -2.6rem;
+  order: unset;
+}
+
+.spm-chat-mini-avatar {
+  width: 2.2rem;
+  height: 2.2rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #14b8a6, #0ea5e9);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+}
+
+.spm-chat-mini-avatar-self {
+  background: linear-gradient(135deg, #8b5cf6, #d946ef);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+}
+
+.spm-chat-bubble {
+  max-width: min(75%, 40rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  position: relative;
+  padding: 0.75rem 1rem;
+  border-radius: 1.5rem 1.5rem 1.5rem 0.5rem;
+  background: var(--spm-chat-bubble-peer-bg);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--spm-chat-bubble-peer-border);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--spm-market) 18%, rgba(5, 12, 24, 0.32));
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  touch-action: pan-y;
+  -webkit-tap-highlight-color: transparent;
+  overflow: visible;
+  margin-bottom: 0.5rem;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .spm-chat-bubble-swipe-active {
   transition: none;
 }
@@ -1460,6 +1653,13 @@
   background: var(--spm-chat-bubble-self-bg);
   border-color: var(--spm-chat-bubble-self-border);
   box-shadow: 0 14px 34px color-mix(in srgb, var(--spm-accent) 22%, rgba(57, 73, 171, 0.36));
+}
+
+.spm-chat-bubble.spm-chat-bubble-card {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
 }
 
 .spm-chat-bubble-image {
@@ -6182,4 +6382,48 @@ body.chat-active .spm-nav {
   background: rgba(99, 102, 241, 0.15);
   border-radius: 0.5rem;
   padding: 0.4rem 0.5rem;
+}
+
+/* ---------------------------------------------------------------------------------- 
+   CLEAN CHAT CARDS — No Bubble Box Reset
+   ---------------------------------------------------------------------------------- */
+
+.spm-message-card {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.spm-chat-bubble.spm-chat-bubble-card {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  max-width: 85% !important;
+}
+
+.spm-message-card-media {
+  border-radius: 1.5rem !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.spm-message-card-copy {
+  padding: 1rem 0.5rem 0 !important;
+}
+
+.spm-message-card-actions {
+  padding: 1rem 0.5rem !important;
+}
+
+.spm-message-card-button {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  backdrop-filter: blur(10px) !important;
+}
+
+.spm-message-card-skeleton {
+  background: transparent !important;
+  border: none !important;
 }

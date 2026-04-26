@@ -172,6 +172,28 @@ function getMessageFallbackLabel(message: ChatMessageRecord) {
   }
 }
 
+function upsertMessageRecord(messages: ChatMessageRecord[], incomingMessage: ChatMessageRecord) {
+  const existingIndex = messages.findIndex((message) => message.id === incomingMessage.id);
+  if (existingIndex === -1) {
+    return [...messages, incomingMessage];
+  }
+
+  const nextMessages = [...messages];
+  nextMessages[existingIndex] = incomingMessage;
+  return nextMessages;
+}
+
+function dedupeMessageRecords(messages: ChatMessageRecord[]) {
+  return messages.reduce<ChatMessageRecord[]>((current, message) => upsertMessageRecord(current, message), []);
+}
+
+function normalizeConversationMessages(conversation: ActiveConversation): ActiveConversation {
+  return {
+    ...conversation,
+    messages: dedupeMessageRecords(conversation.messages)
+  };
+}
+
 function isDeletedChatMessage(message: ChatMessageRecord) {
   return message.cipherAlgorithm === CHAT_DELETED_MESSAGE_ALGORITHM;
 }
@@ -1568,7 +1590,7 @@ export function CampusMessagesShell({
         return;
       }
 
-      const conversation = data?.conversation as ActiveConversation | undefined;
+      const conversationRecord = data?.conversation as ActiveConversation | undefined;
       const responseViewerUserId =
         typeof data?.viewer?.userId === "string" ? (data.viewer.userId as string) : null;
       if (responseViewerUserId && responseViewerUserId !== viewerUserId) {
@@ -1577,7 +1599,7 @@ export function CampusMessagesShell({
         return;
       }
 
-      if (!conversation) {
+      if (!conversationRecord) {
         if (!preserveActiveConversation || !activeConversationRef.current || activeConversationRef.current.id !== conversationId) {
           setActiveConversation(null);
           setConversationError("This chat is not available right now.");
@@ -1585,6 +1607,7 @@ export function CampusMessagesShell({
         return;
       }
 
+      const conversation = normalizeConversationMessages(conversationRecord);
       setSessionExpired(false);
       setViewerIdentity((data?.viewer?.activeIdentity as ChatIdentitySummary | null | undefined) ?? null);
       setActiveConversation(conversation);
@@ -1642,7 +1665,7 @@ export function CampusMessagesShell({
     }
 
     if (initialConversation) {
-      setActiveConversation(initialConversation);
+      setActiveConversation(normalizeConversationMessages(initialConversation));
       setConversationLoading(false);
       setConversationError(activeConversationError);
       return;
@@ -1991,9 +2014,10 @@ export function CampusMessagesShell({
 
       if (item) {
         setMessagePlaintextById((current) => ({ ...current, [item.id]: body }));
+        messageIdsRef.current.add(item.id);
         setActiveConversation((current) =>
           current && current.id === conversationId
-            ? { ...current, messages: [...current.messages, item] }
+            ? { ...current, messages: upsertMessageRecord(current.messages, item) }
             : current
         );
       }
@@ -2014,7 +2038,7 @@ export function CampusMessagesShell({
   const unreadCount = conversations.filter((item) => item.unreadCount > 0).length;
   const hiddenMessageIdSet = useMemo(() => new Set(Object.keys(hiddenMessageIds)), [hiddenMessageIds]);
   const visibleConversationMessages = useMemo(
-    () => (activeConversation?.messages ?? []).filter((message) => !hiddenMessageIdSet.has(message.id)),
+    () => dedupeMessageRecords(activeConversation?.messages ?? []).filter((message) => !hiddenMessageIdSet.has(message.id)),
     [activeConversation, hiddenMessageIdSet]
   );
 
@@ -2960,10 +2984,10 @@ export function CampusMessagesShell({
               const currentConversation = activeConversationRef.current;
 
               if (currentConversation?.id === conversationId) {
-                const nextConversation = {
+                const nextConversation = normalizeConversationMessages({
                   ...currentConversation,
                   messages: [...currentConversation.messages, incomingMessage]
-                };
+                });
 
                 activeConversationRef.current = nextConversation;
                 messageIdsRef.current = new Set(nextConversation.messages.map((message) => message.id));
@@ -3959,7 +3983,7 @@ export function CampusMessagesShell({
         current && current.id === conversationId
           ? {
               ...current,
-              messages: [...current.messages, sentMessage]
+              messages: upsertMessageRecord(current.messages, sentMessage)
             }
           : current
       );
@@ -4688,7 +4712,6 @@ export function CampusMessagesShell({
                             className={`${rowClass}${isSelectedMessage ? ' spm-chat-message-row-selected' : ''}`}
                           >
 
-
                             {!isOwnMessage && !isSystemMessage && (
                               <button
                                 type="button"
@@ -4703,13 +4726,11 @@ export function CampusMessagesShell({
                             )}
 
                             <div
-                              className={`spm-chat-bubble${isOwnMessage && !isSystemMessage ? " spm-chat-bubble-self" : ""}${isSystemMessage ? " spm-chat-bubble-system" : ""}${message.messageKind === "image" && message.attachment?.url ? " spm-chat-bubble-image" : ""}${showSwipeReplyCue ? " spm-chat-bubble-swipe-active" : ""}${isSelectedMessage ? " spm-chat-bubble-selected" : ""}`}
+                              className={`spm-chat-bubble${isOwnMessage && !isSystemMessage ? " spm-chat-bubble-self" : ""}${isSystemMessage ? " spm-chat-bubble-system" : ""}${message.messageKind === "image" && message.attachment?.url ? " spm-chat-bubble-image" : ""}${showSwipeReplyCue ? " spm-chat-bubble-swipe-active" : ""}${isSelectedMessage ? " spm-chat-bubble-selected" : ""}${showMessageCard ? " spm-chat-bubble-card" : ""}`}
                               style={swipeOffsetX ? { transform: `translateX(${swipeOffsetX}px)` } : undefined}
                               onPointerDown={(event) => handleMessagePointerDown(message, isOwnMessage, event)}
                               onPointerMove={(event) => handleMessagePointerMove(message, event)}
                               onPointerUp={(event) => handleMessagePointerUp(message, event)}
-                              onPointerCancel={handleMessagePointerCancel}
-                              onContextMenu={(e) => { e.preventDefault(); }}
                             >
                               <div
                                 className={`spm-chat-swipe-reply-cue${showSwipeReplyCue ? " is-visible" : ""}${isOwnMessage ? " spm-chat-swipe-reply-cue-self" : ""}`}

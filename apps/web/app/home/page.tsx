@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import type { ChatInboxResponse } from "@vyb/contracts";
 import { CampusHomeShell } from "../../src/components/campus-home-shell";
 import {
   getCampusFeed,
@@ -27,7 +28,17 @@ export default async function AuthenticatedHomePage() {
     getCampusFeed(viewer).catch(() => ({ tenantId: viewer.tenantId, communityId: null, items: [], nextCursor: null })),
     getCampusVibes(viewer, 10).catch(() => ({ tenantId: viewer.tenantId, communityId: null, items: [], nextCursor: null })),
     getSuggestedCampusUsers(viewer, 5).catch(() => ({ query: "", items: [] })),
-    getChatInbox(viewer).catch(() => ({ items: [] }))
+    getChatInbox(viewer).catch(
+      () =>
+        ({
+          viewer: {
+            userId: viewer.userId,
+            membershipId: viewer.membershipId,
+            activeIdentity: null
+          },
+          items: []
+        }) satisfies ChatInboxResponse
+    )
   ]);
 
   if (!profile?.profileCompleted) {
@@ -51,7 +62,10 @@ export default async function AuthenticatedHomePage() {
       initialPosts={feedResponse.items}
       trendingVibes={vibesResponse.items}
       suggestedUsers={suggestedResponse.items}
+      recentChats={chatInbox.items}
       unreadChatCount={unreadChatCount}
+      viewerUserId={viewer.userId}
+      initialViewerIdentity={chatInbox.viewer?.activeIdentity ?? null}
     />
   );
 }
