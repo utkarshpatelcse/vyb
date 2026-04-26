@@ -13,7 +13,7 @@ function buildDownloadUrl(bucketName, storagePath, token) {
 }
 
 function normalizeMimeType(value) {
-  return String(value ?? "").trim().toLowerCase();
+  return String(value ?? "").split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
 }
 
 function getSocialMediaKind(mimeType) {

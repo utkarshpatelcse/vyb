@@ -50,6 +50,8 @@ const MAX_VIDEO_BYTES = 40 * 1024 * 1024;
 const STORY_IMAGE_DURATION_SECONDS = 15;
 const STORY_MAX_TOTAL_SECONDS = 60;
 const STORY_MAX_IMAGES = STORY_MAX_TOTAL_SECONDS / STORY_IMAGE_DURATION_SECONDS;
+const VIBE_TARGET_ASPECT_RATIO = 9 / 16;
+const VIBE_ASPECT_RATIO_TOLERANCE = 0.08;
 
 const CREATION_MODE_OPTIONS: Array<{ value: PublishableCreationMode; label: string }> = [
   { value: "story", label: "Story" },
@@ -223,6 +225,14 @@ function formatDuration(seconds: number) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+function isVibeAspectRatio(width: number, height: number) {
+  if (width <= 0 || height <= 0 || height <= width) {
+    return false;
+  }
+
+  return Math.abs(width / height - VIBE_TARGET_ASPECT_RATIO) <= VIBE_ASPECT_RATIO_TOLERANCE;
+}
+
 function loadVideoMetadata(file: File) {
   return new Promise<{ duration: number; height: number; width: number }>(
     (resolve, reject) => {
@@ -372,7 +382,7 @@ export function CampusUploadShell({
 
   const canPublish = useMemo(() => {
     if (mode === "vibe") {
-      return Boolean(vibeVideoUrl && vibeIsPortrait !== false);
+      return Boolean(vibeVideoUrl && vibeIsPortrait === true);
     }
     if (mode === "story") {
       return storyAssets.length > 0;
@@ -499,12 +509,17 @@ export function CampusUploadShell({
       if (vibeVideoUrl?.startsWith("blob:")) URL.revokeObjectURL(vibeVideoUrl);
       setVibeVideoUrl(objectUrl);
       setVibeVideoFile(file);
+      setVibeDuration(null);
+      setVibeIsPortrait(null);
 
       const meta = await loadVideoMetadata(file);
+      const isReadyForVibes = isVibeAspectRatio(meta.width, meta.height);
       setVibeDuration(meta.duration);
-      setVibeIsPortrait(meta.height > meta.width);
+      setVibeIsPortrait(isReadyForVibes);
       setMessage(
-        file.size > MAX_VIDEO_BYTES
+        !isReadyForVibes
+          ? "Use a 9:16 portrait video for Vibes."
+          : file.size > MAX_VIDEO_BYTES
           ? `Large video detected (${formatBytes(file.size)}). We'll optimize it in background after you post.`
           : null
       );
@@ -741,7 +756,7 @@ export function CampusUploadShell({
         setMessage("Add a portrait video before posting.");
         return;
       }
-      if (!vibeIsPortrait) {
+      if (vibeIsPortrait !== true) {
         setMessage("Use a 9:16 portrait video for Vibes.");
         return;
       }
@@ -954,7 +969,7 @@ export function CampusUploadShell({
                     </div>
                     {vibeIsPortrait === false && (
                       <div className="cs-vibe-warning">
-                        ⚠ Use a portrait (9:16) video for Vibes
+                        ⚠ Use a 9:16 portrait video for Vibes
                       </div>
                     )}
                   </>
@@ -1017,7 +1032,7 @@ export function CampusUploadShell({
                   <span>{formatBytes(vibeVideoFile.size)}</span>
                   {vibeDuration && <span>{formatDuration(vibeDuration)}</span>}
                   <span className={vibeIsPortrait === false ? "cs-meta-warn" : "cs-meta-ok"}>
-                    {vibeIsPortrait === false ? "Landscape — not ideal" : vibeIsPortrait ? "Portrait ✓" : "—"}
+                    {vibeIsPortrait === false ? "Needs 9:16" : vibeIsPortrait ? "9:16 ✓" : "—"}
                   </span>
                 </div>
               )}

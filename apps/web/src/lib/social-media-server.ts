@@ -28,7 +28,7 @@ function buildLocalDownloadUrl(storagePath: string) {
 }
 
 function normalizeMimeType(value: string) {
-  return value.trim().toLowerCase();
+  return value.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
 }
 
 function getConfiguredStorageBucket() {

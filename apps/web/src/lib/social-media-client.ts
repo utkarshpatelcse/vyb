@@ -67,6 +67,10 @@ function pickRecorderMimeType() {
   return supported.find((mimeType) => MediaRecorder.isTypeSupported(mimeType)) ?? null;
 }
 
+function normalizeMimeType(value: string) {
+  return value.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
+}
+
 function formatDimension(value: number) {
   return Math.max(2, Math.round(value / 2) * 2);
 }
@@ -217,7 +221,7 @@ async function transcodeVideo(file: File, options: { maxDimension: number; targe
     sourceStream?.getTracks().forEach((track) => track.stop());
 
     return new File([blob], replaceFileExtension(file.name || "social-video", "webm"), {
-      type: blob.type || "video/webm",
+      type: normalizeMimeType(blob.type || "video/webm"),
       lastModified: Date.now()
     });
   } finally {
