@@ -319,6 +319,7 @@ export function CampusUploadShell({
   const [caption, setCaption] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [isAnonymous, setIsAnonymous] = useState(false);
 
   /* ── Vibe (single video) ─────────────────────────────────────────────── */
   const [vibeVideoUrl, setVibeVideoUrl] = useState<string | null>(null);
@@ -361,6 +362,20 @@ export function CampusUploadShell({
     () => getInitials(viewerName, viewerUsername),
     [viewerName, viewerUsername]
   );
+  const canPostAnonymously = mode === "vibe" || mode === "moment";
+  const composerDisplayName = canPostAnonymously && isAnonymous ? "Anonymous" : viewerName;
+  const composerUsername = canPostAnonymously && isAnonymous ? "anonymous" : viewerUsername;
+  const composerPillLabel =
+    mode === "story"
+      ? "Story"
+      : mode === "vibe"
+        ? isAnonymous
+          ? "Anonymous Vibe"
+          : "Public Vibe"
+        : isAnonymous
+          ? "Anonymous Post"
+          : "Post";
+  const composerInitials = canPostAnonymously && isAnonymous ? "AN" : avatarInitials;
 
   const activeStoryAsset = useMemo(
     () => storyAssets.find((asset) => asset.id === activeStoryAssetId) ?? storyAssets[0] ?? null,
@@ -493,6 +508,9 @@ export function CampusUploadShell({
     stopStoryMusicPreview();
     setIsStoryMusicLibraryOpen(false);
     setMessage(null);
+    if (nextMode === "story") {
+      setIsAnonymous(false);
+    }
     setMode(nextMode);
   }
 
@@ -780,7 +798,8 @@ export function CampusUploadShell({
           kind: "vibe",
           caption,
           collegeName,
-          videoFile: vibeVideoFile
+          videoFile: vibeVideoFile,
+          isAnonymous
         });
       } else if (mode === "story") {
         enqueueBackgroundPublish({
@@ -808,7 +827,8 @@ export function CampusUploadShell({
           kind: "post",
           caption,
           collegeName,
-          mediaFiles: momentImages.map((asset) => asset.file)
+          mediaFiles: momentImages.map((asset) => asset.file),
+          isAnonymous
         });
       }
 
@@ -1000,18 +1020,18 @@ export function CampusUploadShell({
               <div className="cs-user-row">
                   <div className="cs-avatar" aria-hidden="true">
                     <CampusAvatarContent
-                      username={viewerUsername}
-                      email={viewerEmail}
-                      displayName={viewerName}
-                      fallback={avatarInitials}
+                      username={composerUsername}
+                      email={isAnonymous ? null : viewerEmail}
+                      displayName={composerDisplayName}
+                      fallback={composerInitials}
                       decorative
                     />
                   </div>
                 <div className="cs-user-info">
-                  <strong>{viewerName}</strong>
-                  <span>@{viewerUsername}</span>
+                  <strong>{composerDisplayName}</strong>
+                  <span>@{composerUsername}</span>
                 </div>
-                <span className="cs-user-pill">Public Vibe</span>
+                <span className={`cs-user-pill${isAnonymous ? " cs-user-pill--anonymous" : ""}`}>{composerPillLabel}</span>
               </div>
 
               {/* Caption */}
@@ -1025,6 +1045,19 @@ export function CampusUploadShell({
                   disabled={isPublishing}
                 />
               </div>
+
+              <label className={`cs-anon-toggle${isAnonymous ? " is-active" : ""}`}>
+                <input
+                  type="checkbox"
+                  checked={isAnonymous}
+                  onChange={(event) => setIsAnonymous(event.target.checked)}
+                  disabled={isPublishing}
+                />
+                <span className="cs-anon-toggle-copy">
+                  <strong>Post anonymously</strong>
+                  <small>Hide your profile from the public feed and expose identity only to admins.</small>
+                </span>
+              </label>
 
               {/* Meta info */}
               {vibeVideoFile && (
@@ -1047,19 +1080,19 @@ export function CampusUploadShell({
           <div className="cs-moment-screen">
             <div className="cs-user-row cs-user-row--moment">
                 <div className="cs-avatar" aria-hidden="true">
-                  <CampusAvatarContent
-                    username={viewerUsername}
-                    email={viewerEmail}
-                    displayName={viewerName}
-                    fallback={avatarInitials}
+                   <CampusAvatarContent
+                    username={composerUsername}
+                    email={isAnonymous ? null : viewerEmail}
+                    displayName={composerDisplayName}
+                    fallback={composerInitials}
                     decorative
                   />
                 </div>
               <div className="cs-user-info">
-                <strong>{viewerName}</strong>
-                <span>@{viewerUsername}</span>
+                <strong>{composerDisplayName}</strong>
+                <span>@{composerUsername}</span>
               </div>
-              <span className="cs-user-pill cs-user-pill--moment">{mode === "story" ? "Story" : "Post"}</span>
+              <span className={`cs-user-pill cs-user-pill--moment${isAnonymous ? " cs-user-pill--anonymous" : ""}`}>{composerPillLabel}</span>
             </div>
 
             {mode === "story" ? (
@@ -1336,6 +1369,19 @@ export function CampusUploadShell({
                     disabled={isPublishing}
                   />
                 </div>
+
+                <label className={`cs-anon-toggle${isAnonymous ? " is-active" : ""}`}>
+                  <input
+                    type="checkbox"
+                    checked={isAnonymous}
+                    onChange={(event) => setIsAnonymous(event.target.checked)}
+                    disabled={isPublishing}
+                  />
+                  <span className="cs-anon-toggle-copy">
+                    <strong>Post anonymously</strong>
+                    <small>Public viewers will only see an anonymous profile for this post.</small>
+                  </span>
+                </label>
 
                 <div className="cs-moment-images">
                   {momentImages.map((img, i) => (

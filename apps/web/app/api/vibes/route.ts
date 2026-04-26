@@ -102,6 +102,7 @@ export async function POST(request: Request) {
         mediaMimeType?: string | null;
         mediaSizeBytes?: number | null;
         location?: string | null;
+        isAnonymous?: boolean;
       }
     | null;
 
@@ -163,6 +164,7 @@ export async function POST(request: Request) {
         communityId: null,
         placement: "vibe",
         kind: "video",
+        isAnonymous: payload.isAnonymous === true,
         title: payload.title ?? "",
         body: payload.body ?? "",
         mediaUrl: payload.mediaUrl.trim(),

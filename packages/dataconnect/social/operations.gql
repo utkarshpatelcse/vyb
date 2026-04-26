@@ -16,6 +16,8 @@ query ListFeedByTenant($tenantId: UUID!, $placement: String! = "feed", $limit: I
     authorUserId
     authorUsername
     authorName
+    authorEmail
+    isAnonymous
     placement
     kind
     title
@@ -54,6 +56,8 @@ query ListPostsByAuthor(
     authorUserId
     authorUsername
     authorName
+    authorEmail
+    isAnonymous
     placement
     kind
     title
@@ -77,6 +81,8 @@ query GetPostById($id: UUID!) @auth(level: NO_ACCESS) {
     authorUserId
     authorUsername
     authorName
+    authorEmail
+    isAnonymous
     placement
     kind
     title
@@ -436,6 +442,8 @@ mutation CreatePost(
   $authorUserId: UUID
   $authorUsername: String! = "vyb_user"
   $authorName: String! = "Vyb Student"
+  $authorEmail: String
+  $isAnonymous: Boolean! = false
   $placement: String! = "feed"
   $kind: String!
   $title: String
@@ -456,6 +464,8 @@ mutation CreatePost(
       authorUserId: $authorUserId
       authorUsername: $authorUsername
       authorName: $authorName
+      authorEmail: $authorEmail
+      isAnonymous: $isAnonymous
       placement: $placement
       kind: $kind
       title: $title

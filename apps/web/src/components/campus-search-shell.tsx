@@ -235,6 +235,10 @@ function buildDiscoveryViewModel(
 
   const trendingProfiles = Array.from(
     vibeItems.reduce<Map<string, TrendingProfile>>((accumulator, vibe) => {
+      if (vibe.isAnonymous || !vibe.author.userId) {
+        return accumulator;
+      }
+
       const current = accumulator.get(vibe.author.userId);
       const vibeScore =
         rankedItems.find((entry) => entry.id === vibe.id)?.trendScore ??

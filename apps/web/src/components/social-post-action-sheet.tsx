@@ -123,6 +123,7 @@ export function SocialPostActionSheet({
   }
 
   const itemLabel = post.placement === "vibe" || post.kind === "video" ? "vibe" : "post";
+  const authorHandle = post.isAnonymous ? "Anonymous" : `@${post.author.username}`;
 
   return (
     <div className="vyb-post-actions-backdrop" role="presentation" onClick={onClose}>
@@ -134,7 +135,7 @@ export function SocialPostActionSheet({
             <div className="vyb-post-actions-head">
               <div>
                 <strong>Post actions</strong>
-                <span>@{post.author.username}</span>
+                <span>{authorHandle}</span>
               </div>
               <button type="button" className="vyb-post-share-close" onClick={onClose} aria-label="Close">✕</button>
             </div>

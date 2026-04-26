@@ -309,6 +309,7 @@ function upsertShareTarget(items: SocialShareTarget[], target: SocialShareTarget
 }
 
 function buildSharedPostCardPayload(post: FeedCard) {
+  const authorLabel = post.isAnonymous ? "Anonymous" : post.author.displayName || post.author.username;
   return JSON.stringify({
     version: 1,
     type: "vibe_card",
@@ -317,8 +318,8 @@ function buildSharedPostCardPayload(post: FeedCard) {
     body: truncateText(post.body || "", 140),
     mediaUrl: post.media?.[0]?.url ?? post.mediaUrl ?? null,
     thumbnailUrl: post.media?.[0]?.url ?? post.mediaUrl ?? null,
-    authorUsername: post.author.username,
-    authorDisplayName: post.author.displayName || post.author.username,
+    authorUsername: post.isAnonymous ? "anonymous" : post.author.username,
+    authorDisplayName: authorLabel,
     caption: null
   });
 }
@@ -1378,14 +1379,17 @@ export function CampusReelsShell({
                 const isActive = activePost?.id === item.id;
                 const distanceFromActive = Math.abs(index - activeIndex);
                 const shouldMountMedia = distanceFromActive <= 1;
-                const profileHref = item.author.username === viewerUsername ? "/dashboard" : `/u/${encodeURIComponent(item.author.username)}`;
+                const profileHref =
+                  item.isAnonymous || item.author.username !== viewerUsername
+                    ? `/u/${encodeURIComponent(item.author.username)}`
+                    : "/dashboard";
                 const progress = progressByPost[item.id] ?? 0;
                 const displayControls = getPostDisplayControls(storedCampusSettings, item, postDisplayPreferences[item.id]);
 
                 return (
                   <section key={item.id} id={`post-${item.id}`} className="vyb-vibes-slide">
                     <motion.article
-                      className={`vyb-vibes-stage${isActive ? " is-active" : ""}`}
+                      className={`vyb-vibes-stage${isActive ? " is-active" : ""}${item.isAnonymous ? " is-anonymous" : ""}`}
                       initial={false}
                       animate={{
                         opacity: isActive ? 1 : isDesktop ? 0.75 : 1,
@@ -1482,21 +1486,38 @@ export function CampusReelsShell({
                           transition={{ type: "spring", stiffness: 190, damping: 24 }}
                         >
                           <div className="vyb-vibes-author-row">
-                            <Link href={profileHref} className="vyb-vibes-author-avatar" aria-label={`Open ${item.author.displayName} profile`}>
-                              <CampusAvatarContent
-                                userId={item.author.userId}
-                                username={item.author.username}
-                                displayName={item.author.displayName}
-                                avatarUrl={item.author.avatarUrl ?? null}
-                                fallback={getInitials(item.author.displayName)}
-                                decorative
-                              />
-                            </Link>
-                            <div className="vyb-vibes-author-copy">
-                              <Link href={profileHref}>
-                                <strong>{item.author.displayName}</strong>
+                            {item.isAnonymous ? (
+                              <span className="vyb-vibes-author-avatar" aria-label="Anonymous author">
+                                <CampusAvatarContent
+                                  userId={item.author.userId}
+                                  username={item.author.username}
+                                  displayName={item.author.displayName}
+                                  avatarUrl={item.author.avatarUrl ?? null}
+                                  fallback={getInitials(item.author.displayName)}
+                                  decorative
+                                />
+                              </span>
+                            ) : (
+                              <Link href={profileHref} className="vyb-vibes-author-avatar" aria-label={`Open ${item.author.displayName} profile`}>
+                                <CampusAvatarContent
+                                  userId={item.author.userId}
+                                  username={item.author.username}
+                                  displayName={item.author.displayName}
+                                  avatarUrl={item.author.avatarUrl ?? null}
+                                  fallback={getInitials(item.author.displayName)}
+                                  decorative
+                                />
                               </Link>
-                              <span>@{item.author.username}</span>
+                            )}
+                            <div className="vyb-vibes-author-copy">
+                              {item.isAnonymous ? (
+                                <strong>{item.author.displayName}</strong>
+                              ) : (
+                                <Link href={profileHref}>
+                                  <strong>{item.author.displayName}</strong>
+                                </Link>
+                              )}
+                              <span>{item.isAnonymous ? "Hidden profile" : `@${item.author.username}`}</span>
                             </div>
                           </div>
                           <p className="vyb-vibes-caption">{item.body}</p>
@@ -1719,7 +1740,7 @@ export function CampusReelsShell({
 
       <SocialPostActionSheet
         post={actionPost}
-        isOwner={Boolean(actionPost && actionPost.author.username === viewerUsername)}
+        isOwner={Boolean(actionPost?.viewerCanManage)}
         isBusy={actionBusy}
         message={actionMessage}
         hideReactionCount={

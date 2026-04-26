@@ -285,7 +285,7 @@ export async function mutateBackendJson<TResponse>(
 
 export async function proxyBackendMutation(
   path: string,
-  method: "POST" | "PUT" | "PATCH" | "DELETE",
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   payload: unknown,
   viewer: DevSession
 ) {
