@@ -421,7 +421,35 @@ export function CampusSettingsHub({
     try {
       const nextAvatarUrl = await readFileAsDataUrl(file);
       persistStoredAvatarUrl(settingsIdentity, nextAvatarUrl);
-      showFeedback("success", "Profile photo updated on this device.");
+      const splitName = splitDisplayName(accountDraft.displayName.trim() || viewerName);
+      const response = await fetch("/api/profile", {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          username: initialProfile?.username ?? viewerUsername,
+          firstName: splitName.firstName.trim(),
+          lastName: splitName.lastName.trim() || null,
+          course: initialProfile?.course ?? (accountDraft.branchDepartment.trim() || "Campus"),
+          stream: initialProfile?.stream ?? (accountDraft.branchDepartment.trim() || "General"),
+          year: Number(accountDraft.batchYear) || initialProfile?.year || 1,
+          section: initialProfile?.section ?? "A",
+          isHosteller: initialProfile?.isHosteller ?? false,
+          hostelName: initialProfile?.hostelName ?? null,
+          phoneNumber: accountDraft.phoneNumber.trim() || null,
+          avatarUrl: nextAvatarUrl
+        })
+      });
+
+      const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+      if (!response.ok) {
+        showFeedback("error", payload?.error?.message ?? "We could not sync your profile photo.");
+        return;
+      }
+
+      showFeedback("success", "Profile photo updated.");
+      router.refresh();
     } catch (error) {
       showFeedback("error", error instanceof Error ? error.message : "We could not update your profile photo.");
     }
@@ -456,7 +484,8 @@ export function CampusSettingsHub({
           section: initialProfile?.section ?? "A",
           isHosteller: initialProfile?.isHosteller ?? false,
           hostelName: initialProfile?.hostelName ?? null,
-          phoneNumber: accountDraft.phoneNumber.trim() || null
+          phoneNumber: accountDraft.phoneNumber.trim() || null,
+          avatarUrl: avatarUrl ?? null
         })
       });
 

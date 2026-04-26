@@ -6,7 +6,13 @@ import { getCampusVibes, getChatInbox, getSuggestedCampusUsers, getViewerMe, get
 import { getDisplayCollegeName } from "../../src/lib/college-access";
 import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
 
-export default async function VibesPage() {
+export default async function VibesPage({
+  searchParams
+}: {
+  searchParams: Promise<{
+    post?: string;
+  }>;
+}) {
   const viewer = readDevSessionFromCookieStore(await cookies());
 
   if (!viewer) {
@@ -38,6 +44,8 @@ export default async function VibesPage() {
   const viewerName = profile.profile?.fullName ?? viewer.displayName;
   const displayCollegeName = getDisplayCollegeName(profile.collegeName);
 
+  const { post: initialFocusedPostId } = await searchParams;
+
   return (
     <CampusReelsShell
       viewerName={viewerName}
@@ -52,6 +60,7 @@ export default async function VibesPage() {
       suggestedUsers={suggestedResponse.items}
       recentChats={chatInbox.items}
       initialViewerIdentity={chatInbox.viewer?.activeIdentity ?? null}
+      initialFocusedPostId={initialFocusedPostId?.trim() || null}
     />
   );
 }

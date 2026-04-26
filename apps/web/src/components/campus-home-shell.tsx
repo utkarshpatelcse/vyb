@@ -16,6 +16,7 @@ import { SignOutButton } from "./sign-out-button";
 import { useSocialPostEngagement } from "./use-social-post-engagement";
 import { VybLogoLockup, VybLogoMark } from "./vyb-logo";
 import { MediaCarousel } from "./media-carousel";
+import { useSearchNavigationGuard } from "../lib/search-navigation";
 import {
   createDefaultCampusSettings,
   getPostDisplayControls,
@@ -83,6 +84,7 @@ type CampusHomeShellProps = {
   recentChats?: unknown[];
   viewerUserId?: string;
   initialViewerIdentity?: unknown;
+  initialFocusedPostId?: string | null;
 };
 
 function formatMetric(value: number) {
@@ -179,6 +181,7 @@ function renderStoryRailPreview(story: StoryCard, alt: string) {
           userId={story.userId}
           username={story.username}
           displayName={story.displayName}
+          avatarUrl={story.avatarUrl ?? null}
           decorative
         />
       </span>
@@ -330,6 +333,14 @@ function CloseIcon() {
   );
 }
 
+function BackIcon() {
+  return (
+    <IconBase>
+      <path d="M15 18 9 12l6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </IconBase>
+  );
+}
+
 function VolumeOnIcon() {
   return (
     <IconBase>
@@ -433,9 +444,11 @@ export function CampusHomeShell({
   trendingVibes,
   suggestedUsers,
   unreadChatCount,
-  viewerUserId
+  viewerUserId,
+  initialFocusedPostId = null
 }: CampusHomeShellProps) {
   const router = useRouter();
+  const { isFromSearch, goBack, clearOrigin } = useSearchNavigationGuard("/search");
   const engagement = useSocialPostEngagement(initialPosts);
   const settingsIdentity = useMemo(
     () => ({
@@ -482,6 +495,7 @@ export function CampusHomeShell({
   const reactionHoldTimeoutRef = useRef<number | null>(null);
   const suppressReactionClickPostIdRef = useRef<string | null>(null);
   const reactionShellRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const hasAppliedInitialPostRef = useRef(false);
 
   const storyGroups = useMemo(() => buildStoryRailGroups(storyFeed, viewerUsername), [storyFeed, viewerUsername]);
   const storySequence = useMemo(() => storyGroups.flatMap((group) => group.items), [storyGroups]);
@@ -572,6 +586,23 @@ export function CampusHomeShell({
       clearReactionHoldTimer();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isFromSearch || !initialFocusedPostId) {
+      return;
+    }
+
+    const handleScroll = () => {
+      if (window.scrollY > 48) {
+        clearOrigin();
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, [clearOrigin, initialFocusedPostId, isFromSearch]);
 
   useEffect(() => {
     if (!reactionTrayPostId) {
@@ -951,6 +982,27 @@ export function CampusHomeShell({
     }
   }
 
+  useEffect(() => {
+    if (!initialFocusedPostId || hasAppliedInitialPostRef.current || engagement.posts.length === 0) {
+      return;
+    }
+
+    const targetPost = engagement.posts.find((post) => post.id === initialFocusedPostId);
+    if (!targetPost) {
+      hasAppliedInitialPostRef.current = true;
+      return;
+    }
+
+    hasAppliedInitialPostRef.current = true;
+    window.requestAnimationFrame(() => {
+      document.getElementById(`post-${targetPost.id}`)?.scrollIntoView({
+        block: "center",
+        behavior: "smooth"
+      });
+    });
+    void openPostLightbox(targetPost);
+  }, [engagement.posts, initialFocusedPostId]);
+
   function updatePostDisplayPreference(post: FeedCard, key: "hideReactionCount" | "hideCommentCount") {
     const currentPreference = postDisplayPreferences[post.id] ?? {
       hideReactionCount: false,
@@ -1315,6 +1367,11 @@ export function CampusHomeShell({
           </div>
 
           <div className="vyb-campus-top-actions">
+            {isFromSearch ? (
+              <button type="button" className="vyb-campus-top-icon" aria-label="Back to search" onClick={() => goBack()}>
+                <BackIcon />
+              </button>
+            ) : null}
             <Link href="/search" className="vyb-campus-top-icon vyb-campus-top-link" aria-label="Search campus users">
               <SearchIcon />
             </Link>
@@ -1339,6 +1396,11 @@ export function CampusHomeShell({
             <VybLogoMark />
           </Link>
           <div className="vyb-campus-mobile-actions">
+            {isFromSearch ? (
+              <button type="button" className="vyb-campus-top-icon" aria-label="Back to search" onClick={() => goBack()}>
+                <BackIcon />
+              </button>
+            ) : null}
             <Link href="/search" className="vyb-campus-top-icon vyb-campus-top-link" aria-label="Search campus users">
               <SearchIcon />
             </Link>
@@ -1434,6 +1496,7 @@ export function CampusHomeShell({
                         userId={post.author.userId}
                         username={post.author.username}
                         displayName={post.author.displayName}
+                        avatarUrl={post.author.avatarUrl ?? null}
                         fallback={post.author.displayName.slice(0, 1).toUpperCase()}
                         decorative
                       />
@@ -1720,13 +1783,14 @@ export function CampusHomeShell({
             <div className="vyb-story-viewer-head">
               <div className="vyb-story-viewer-user">
                 <span className="vyb-story-viewer-avatar" aria-hidden="true">
-                  <CampusAvatarContent
-                    userId={selectedStory.userId}
-                    username={selectedStory.username}
-                    displayName={selectedStory.displayName}
-                    fallback={(selectedStory.displayName.trim() || selectedStory.username).slice(0, 2).toUpperCase()}
-                    decorative
-                  />
+                   <CampusAvatarContent
+                     userId={selectedStory.userId}
+                     username={selectedStory.username}
+                     displayName={selectedStory.displayName}
+                     avatarUrl={selectedStory.avatarUrl ?? null}
+                     fallback={(selectedStory.displayName.trim() || selectedStory.username).slice(0, 2).toUpperCase()}
+                     decorative
+                   />
                 </span>
                 <div className="vyb-story-viewer-user-copy">
                   <strong>{selectedStory.isOwn ? "Your story" : selectedStory.displayName}</strong>

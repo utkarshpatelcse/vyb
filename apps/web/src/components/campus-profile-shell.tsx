@@ -33,6 +33,7 @@ import {
   type CampusSocialLinkKey,
   type PostDisplayPreference
 } from "./campus-settings-storage";
+import { useSearchNavigationGuard } from "../lib/search-navigation";
 
 type CampusProfileShellProps = {
   viewerName: string;
@@ -54,6 +55,7 @@ type CampusProfileShellProps = {
   recentCourses?: CourseItem[];
   recentActivity?: ActivityItem[];
   initialProfile?: ProfileRecord | null;
+  initialAvatarUrl?: string | null;
 };
 
 type ProfileTab = "posts" | "vibes" | "saved";
@@ -399,6 +401,14 @@ function CloseIcon() {
   );
 }
 
+function BackIcon() {
+  return (
+    <IconBase>
+      <path d="M15 18 9 12l6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </IconBase>
+  );
+}
+
 function formatMetric(value: number) {
   return new Intl.NumberFormat("en-IN", {
     notation: value > 999 ? "compact" : "standard",
@@ -661,9 +671,11 @@ export function CampusProfileShell({
   recentResources = [],
   recentCourses = [],
   recentActivity = [],
-  initialProfile = null
+  initialProfile = null,
+  initialAvatarUrl = null
 }: CampusProfileShellProps) {
   const router = useRouter();
+  const { isFromSearch, goBack } = useSearchNavigationGuard("/search");
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const avatarCropDragRef = useRef<{
     pointerId: number;
@@ -672,7 +684,8 @@ export function CampusProfileShell({
     originX: number;
     originY: number;
   } | null>(null);
-  const initialAvatarUrl = (initialProfile as (ProfileRecord & { avatarUrl?: string | null }) | null)?.avatarUrl ?? null;
+  const avatarSyncAttemptedRef = useRef(false);
+  const initialAvatar = initialAvatarUrl ?? initialProfile?.avatarUrl ?? null;
   const [message, setMessage] = useState<ToastState | null>(null);
   const [busy, setBusy] = useState(false);
   const [profileBusy, setProfileBusy] = useState(false);
@@ -699,7 +712,7 @@ export function CampusProfileShell({
   const [mutedAccounts, setMutedAccounts] = useState<string[]>([]);
   const [blockedDraft, setBlockedDraft] = useState("");
   const [mutedDraft, setMutedDraft] = useState("");
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(initialAvatarUrl);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(initialAvatar);
   const [avatarCropDraft, setAvatarCropDraft] = useState<AvatarCropDraft | null>(null);
   const [storedCampusSettings, setStoredCampusSettings] = useState(createDefaultCampusSettings);
   const [postDisplayPreferences, setPostDisplayPreferences] = useState<Record<string, PostDisplayPreference>>({});
@@ -812,6 +825,25 @@ export function CampusProfileShell({
 
     persistStoredAvatarUrl(avatarStorageIdentity, avatarUrl);
   }, [avatarStorageIdentity, avatarUrl]);
+
+  useEffect(() => {
+    if (!isOwnProfile || !avatarUrl || initialAvatar) {
+      return;
+    }
+
+    if (avatarSyncAttemptedRef.current) {
+      return;
+    }
+
+    avatarSyncAttemptedRef.current = true;
+    saveProfileSettings(avatarUrl)
+      .then(() => {
+        router.refresh();
+      })
+      .catch(() => {
+        avatarSyncAttemptedRef.current = false;
+      });
+  }, [avatarUrl, initialAvatar, isOwnProfile, router]);
 
   useEffect(() => {
     return () => {
@@ -989,7 +1021,9 @@ export function CampusProfileShell({
       const nextAvatarUrl = await blobToDataUrl(croppedBlob);
       setAvatarUrl(nextAvatarUrl);
       closeAvatarCropper();
+      await saveProfileSettings(nextAvatarUrl);
       showSuccess("Profile photo updated.");
+      router.refresh();
     } catch (error) {
       showError(error instanceof Error ? error.message : "We could not update your profile photo right now.");
     } finally {
@@ -1039,6 +1073,37 @@ export function CampusProfileShell({
     setMutedAccounts((current) => current.filter((item) => item !== value));
   }
 
+  function buildProfileSavePayload(nextAvatarUrl: string | null = avatarUrl) {
+    return {
+      username: sanitizeUsername(profileDraft.username),
+      firstName: profileDraft.firstName.trim(),
+      lastName: profileDraft.lastName.trim() || null,
+      course: profileDraft.course,
+      stream: profileDraft.stream,
+      year: Number(profileDraft.year),
+      section: profileDraft.section.trim(),
+      isHosteller: profileDraft.isHosteller,
+      hostelName: profileDraft.isHosteller ? profileDraft.hostelName.trim() || null : null,
+      phoneNumber: profileDraft.phoneNumber.trim() || null,
+      avatarUrl: nextAvatarUrl ?? null
+    };
+  }
+
+  async function saveProfileSettings(nextAvatarUrl: string | null = avatarUrl) {
+    const response = await fetch("/api/profile", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(buildProfileSavePayload(nextAvatarUrl))
+    });
+
+    const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+    if (!response.ok) {
+      throw new Error(payload?.error?.message ?? "We could not save your profile settings.");
+    }
+  }
+
   async function handleProfileSave() {
     if (!isOwnProfile) {
       return;
@@ -1048,35 +1113,11 @@ export function CampusProfileShell({
     setMessage(null);
 
     try {
-      const response = await fetch("/api/profile", {
-        method: "PUT",
-        headers: {
-          "content-type": "application/json"
-        },
-        body: JSON.stringify({
-          username: sanitizeUsername(profileDraft.username),
-          firstName: profileDraft.firstName.trim(),
-          lastName: profileDraft.lastName.trim() || null,
-          course: profileDraft.course,
-          stream: profileDraft.stream,
-          year: Number(profileDraft.year),
-          section: profileDraft.section.trim(),
-          isHosteller: profileDraft.isHosteller,
-          hostelName: profileDraft.isHosteller ? profileDraft.hostelName.trim() || null : null,
-          phoneNumber: profileDraft.phoneNumber.trim() || null
-        })
-      });
-
-      const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
-      if (!response.ok) {
-        showError(payload?.error?.message ?? "We could not save your profile settings.");
-        return;
-      }
-
+      await saveProfileSettings();
       showSuccess("Profile settings updated.");
       router.refresh();
-    } catch {
-      showError("We could not save your profile settings.");
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "We could not save your profile settings.");
     } finally {
       setProfileBusy(false);
     }
@@ -1450,6 +1491,11 @@ export function CampusProfileShell({
           </div>
 
           <div className="vyb-campus-top-actions">
+            {isFromSearch ? (
+              <button type="button" className="vyb-campus-top-icon" aria-label="Back to search" onClick={() => goBack()}>
+                <BackIcon />
+              </button>
+            ) : null}
             <button type="button" className="vyb-campus-top-icon" aria-label="Notifications" onClick={() => setSettingsOpen(true)}>
               <BellIcon />
             </button>
@@ -1477,6 +1523,11 @@ export function CampusProfileShell({
             <VybLogoMark />
           </Link>
           <div className="vyb-campus-mobile-actions">
+            {isFromSearch ? (
+              <button type="button" className="vyb-campus-top-icon" aria-label="Back to search" onClick={() => goBack()}>
+                <BackIcon />
+              </button>
+            ) : null}
             {isOwnProfile ? (
               <>
                 <button type="button" className="vyb-campus-top-icon" aria-label="Profile settings" onClick={() => setSettingsOpen(true)}>

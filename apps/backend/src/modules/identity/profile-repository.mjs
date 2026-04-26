@@ -1,7 +1,18 @@
 import { getFirebaseDataConnect } from "../../../../../packages/config/src/index.mjs";
 import { connectorConfig as campusConnectorConfig } from "../../../../../packages/dataconnect/campus-admin-sdk/esm/index.esm.js";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const TENANT_PROFILE_LIMIT = 5000;
+const directoryName = path.dirname(fileURLToPath(import.meta.url));
+const avatarStorePath = path.resolve(directoryName, "../../data/avatar-store.json");
+const defaultAvatarStore = {
+  avatars: {}
+};
+
+let avatarStoreCache = null;
+let avatarWriteQueue = Promise.resolve();
 
 const PROFILE_FIELDS = `
   id
@@ -139,6 +150,134 @@ function getCampusDc() {
   return getFirebaseDataConnect(campusConnectorConfig);
 }
 
+function buildAvatarStoreKey(tenantId, userId) {
+  if (!tenantId || !userId) {
+    return null;
+  }
+
+  return `${tenantId}:${userId}`;
+}
+
+function normalizeAvatarUrl(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  return normalized.slice(0, 2_500_000);
+}
+
+async function ensureAvatarStore() {
+  if (avatarStoreCache) {
+    return avatarStoreCache;
+  }
+
+  await mkdir(path.dirname(avatarStorePath), { recursive: true });
+
+  try {
+    const raw = await readFile(avatarStorePath, "utf8");
+    const parsed = JSON.parse(raw);
+    avatarStoreCache = {
+      avatars:
+        parsed && typeof parsed === "object" && parsed.avatars && typeof parsed.avatars === "object"
+          ? parsed.avatars
+          : {}
+    };
+  } catch {
+    avatarStoreCache = { ...defaultAvatarStore };
+    await persistAvatarStore();
+  }
+
+  return avatarStoreCache;
+}
+
+async function persistAvatarStore() {
+  if (!avatarStoreCache) {
+    return;
+  }
+
+  const snapshot = JSON.stringify(avatarStoreCache, null, 2);
+  avatarWriteQueue = avatarWriteQueue.then(() => writeFile(avatarStorePath, snapshot, "utf8"));
+  await avatarWriteQueue;
+}
+
+async function readAvatarMap(tenantId, userIds) {
+  const normalizedUserIds = Array.from(
+    new Set(userIds.filter((value) => typeof value === "string" && value.trim().length > 0))
+  );
+  const map = new Map();
+
+  if (!tenantId || normalizedUserIds.length === 0) {
+    return map;
+  }
+
+  const store = await ensureAvatarStore();
+
+  for (const userId of normalizedUserIds) {
+    const key = buildAvatarStoreKey(tenantId, userId);
+    if (!key) {
+      continue;
+    }
+
+    map.set(userId, normalizeAvatarUrl(store.avatars[key]) ?? null);
+  }
+
+  return map;
+}
+
+async function readAvatarUrl({ tenantId, userId }) {
+  if (!tenantId || !userId) {
+    return null;
+  }
+
+  const store = await ensureAvatarStore();
+  const key = buildAvatarStoreKey(tenantId, userId);
+  return key ? normalizeAvatarUrl(store.avatars[key]) ?? null : null;
+}
+
+function attachAvatarUrl(profile, avatarUrl) {
+  if (!profile) {
+    return null;
+  }
+
+  return {
+    ...profile,
+    avatarUrl: avatarUrl ?? null
+  };
+}
+
+export async function storeAvatarUrl({ tenantId, userId, avatarUrl }) {
+  const key = buildAvatarStoreKey(tenantId, userId);
+  if (!key) {
+    return null;
+  }
+
+  const store = await ensureAvatarStore();
+  const normalizedAvatarUrl = normalizeAvatarUrl(avatarUrl);
+
+  if (!normalizedAvatarUrl) {
+    if (!(key in store.avatars)) {
+      return null;
+    }
+
+    delete store.avatars[key];
+    await persistAvatarStore();
+    return null;
+  }
+
+  if (store.avatars[key] === normalizedAvatarUrl) {
+    return normalizedAvatarUrl;
+  }
+
+  store.avatars[key] = normalizedAvatarUrl;
+  await persistAvatarStore();
+  return normalizedAvatarUrl;
+}
+
 function toNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
@@ -270,21 +409,25 @@ export function normalizeUsername(value) {
 }
 
 export async function getProfileByUserId({ tenantId, userId }) {
-  return mapMembershipProfile(
+  const profile = mapMembershipProfile(
     await getRawProfileByUserAndTenant({
       tenantId,
       userId
     })
   );
+
+  return attachAvatarUrl(profile, await readAvatarUrl({ tenantId, userId }));
 }
 
 export async function getProfileByUsername({ tenantId, username }) {
-  return mapMembershipProfile(
+  const profile = mapMembershipProfile(
     await getRawProfileByUsername({
       tenantId,
       username
     })
   );
+
+  return attachAvatarUrl(profile, await readAvatarUrl({ tenantId, userId: profile?.userId ?? null }));
 }
 
 export async function listProfilesByTenant(tenantId) {
@@ -296,10 +439,17 @@ export async function listProfilesByTenant(tenantId) {
     }
   });
 
-  return (Array.isArray(response.data.tenantMemberships) ? response.data.tenantMemberships : [])
+  const profiles = (Array.isArray(response.data.tenantMemberships) ? response.data.tenantMemberships : [])
     .map((item) => mapMembershipProfile(item))
     .filter(Boolean)
     .sort((left, right) => left.fullName.localeCompare(right.fullName));
+
+  const avatarMap = await readAvatarMap(
+    tenantId,
+    profiles.map((profile) => profile.userId)
+  );
+
+  return profiles.map((profile) => attachAvatarUrl(profile, avatarMap.get(profile.userId) ?? null));
 }
 
 export async function searchProfiles({ tenantId, query, limit = 12, excludedUserId = null }) {
@@ -389,6 +539,14 @@ export async function upsertProfile(input) {
       phoneNumber: toNonEmptyString(input.phoneNumber)
     }
   });
+
+  if (Object.prototype.hasOwnProperty.call(input, "avatarUrl")) {
+    await storeAvatarUrl({
+      tenantId: input.tenantId,
+      userId: input.userId,
+      avatarUrl: input.avatarUrl
+    });
+  }
 
   return getProfileByUserId({
     tenantId: input.tenantId,

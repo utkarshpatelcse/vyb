@@ -14,7 +14,13 @@ import {
 import { getDisplayCollegeName } from "../../src/lib/college-access";
 import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
 
-export default async function AuthenticatedHomePage() {
+export default async function AuthenticatedHomePage({
+  searchParams
+}: {
+  searchParams: Promise<{
+    post?: string;
+  }>;
+}) {
   const viewer = readDevSessionFromCookieStore(await cookies());
 
   if (!viewer) {
@@ -49,6 +55,8 @@ export default async function AuthenticatedHomePage() {
   const displayCollegeName = getDisplayCollegeName(profile.collegeName);
   const unreadChatCount = chatInbox.items.reduce((sum, item) => sum + item.unreadCount, 0);
 
+  const { post: initialFocusedPostId } = await searchParams;
+
   return (
     <CampusHomeShell
       viewerName={viewerName}
@@ -66,6 +74,7 @@ export default async function AuthenticatedHomePage() {
       unreadChatCount={unreadChatCount}
       viewerUserId={viewer.userId}
       initialViewerIdentity={chatInbox.viewer?.activeIdentity ?? null}
+      initialFocusedPostId={initialFocusedPostId?.trim() || null}
     />
   );
 }

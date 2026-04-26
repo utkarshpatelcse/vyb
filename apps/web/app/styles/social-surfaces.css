@@ -8530,11 +8530,15 @@ html {
 .vyb-search-page-modern {
   position: fixed !important;
   inset: 0 !important;
-  background: #0f172a !important;
   z-index: 1000 !important;
   display: flex !important;
   flex-direction: column !important;
-  animation: searchSlideDown 0.4s cubic-bezier(0.32, 0.72, 0, 1) both;
+  background:
+    radial-gradient(circle at top left, rgba(20, 184, 166, 0.22), transparent 28%),
+    radial-gradient(circle at top right, rgba(249, 115, 22, 0.18), transparent 32%),
+    linear-gradient(180deg, #07111d 0%, #091727 38%, #08131f 100%) !important;
+  color: #f8fafc !important;
+  animation: searchSlideDown 0.38s cubic-bezier(0.32, 0.72, 0, 1) both;
 }
 
 @keyframes searchSlideDown {
@@ -8545,26 +8549,34 @@ html {
 .vyb-search-top-bar {
   display: flex !important;
   align-items: center !important;
-  gap: 1rem !important;
-  padding: 1rem 1.25rem !important;
-  background: rgba(15, 23, 42, 0.7) !important;
-  backdrop-filter: blur(40px) saturate(180%) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  gap: 0.9rem !important;
+  padding: 1rem 1rem 0.9rem !important;
+  background: rgba(5, 13, 24, 0.68) !important;
+  backdrop-filter: blur(28px) saturate(160%) !important;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08) !important;
   z-index: 10 !important;
 }
 
 .search-back-btn {
-  width: 2.8rem !important;
-  height: 2.8rem !important;
-  display: flex !important;
+  width: 3rem !important;
+  height: 3rem !important;
+  flex: 0 0 auto !important;
+  display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  border-radius: 50% !important;
-  background: rgba(255, 255, 255, 0.05) !important;
-  color: #fff !important;
+  border-radius: 999px !important;
+  background: rgba(15, 23, 42, 0.72) !important;
+  border: 1px solid rgba(148, 163, 184, 0.16) !important;
+  color: #f8fafc !important;
   text-decoration: none !important;
-  font-size: 1.2rem !important;
-  font-weight: 800 !important;
+  box-shadow: 0 14px 30px rgba(2, 8, 23, 0.35) !important;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease !important;
+}
+
+.search-back-btn:hover {
+  transform: translateY(-1px) !important;
+  border-color: rgba(45, 212, 191, 0.38) !important;
+  background: rgba(15, 23, 42, 0.88) !important;
 }
 
 .modern-search-form {
@@ -8575,62 +8587,72 @@ html {
   position: relative !important;
   display: flex !important;
   align-items: center !important;
-  background: rgba(255, 255, 255, 0.06) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-radius: 1.4rem !important;
-  padding: 0 1.25rem !important;
-  transition: all 0.2s ease !important;
+  min-height: 3.2rem !important;
+  background: rgba(15, 23, 42, 0.72) !important;
+  border: 1px solid rgba(148, 163, 184, 0.16) !important;
+  border-radius: 999px !important;
+  padding: 0 1rem 0 1.1rem !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease !important;
 }
 
 .modern-search-input-wrap:focus-within {
-  background: rgba(255, 255, 255, 0.1) !important;
-  border-color: #6366f1 !important;
-  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1) !important;
+  background: rgba(15, 23, 42, 0.92) !important;
+  border-color: rgba(45, 212, 191, 0.45) !important;
+  box-shadow: 0 0 0 4px rgba(45, 212, 191, 0.08) !important;
 }
 
 .modern-search-input-wrap .vyb-campus-icon {
-  width: 1.2rem !important;
-  height: 1.2rem !important;
-  color: rgba(255, 255, 255, 0.4) !important;
+  width: 1.1rem !important;
+  height: 1.1rem !important;
+  color: rgba(226, 232, 240, 0.54) !important;
 }
 
 .modern-search-input-wrap input {
   flex: 1 !important;
-  height: 3rem !important;
+  min-height: 3.2rem !important;
   background: transparent !important;
   border: none !important;
-  color: #fff !important;
-  font-size: 0.95rem !important;
-  padding-left: 0.75rem !important;
+  color: #f8fafc !important;
+  font-size: 0.94rem !important;
+  font-weight: 500 !important;
+  padding-left: 0.7rem !important;
   outline: none !important;
 }
 
 .search-scroll-content {
   flex: 1 !important;
   overflow-y: auto !important;
-  padding: 1.5rem !important;
+  padding: 1.05rem 1rem 7rem !important;
   display: flex !important;
   flex-direction: column !important;
-  gap: 2rem !important;
+  gap: 1.6rem !important;
+}
+
+.vyb-search-discovery-stack {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 1.6rem !important;
 }
 
 .search-section .section-head {
   display: flex !important;
-  align-items: baseline !important;
+  align-items: flex-end !important;
   justify-content: space-between !important;
-  margin-bottom: 1.25rem !important;
+  gap: 1rem !important;
+  margin-bottom: 1rem !important;
 }
 
 .search-section .section-head h2 {
-  font-size: 1.15rem !important;
+  font-size: 1.1rem !important;
   font-weight: 800 !important;
-  color: #fff !important;
+  color: #f8fafc !important;
   margin: 0 !important;
 }
 
 .search-section .section-head span {
-  font-size: 0.75rem !important;
-  color: rgba(255, 255, 255, 0.4) !important;
+  font-size: 0.76rem !important;
+  color: rgba(148, 163, 184, 0.8) !important;
 }
 
 .search-results-list {
@@ -8643,24 +8665,30 @@ html {
   display: flex !important;
   align-items: center !important;
   gap: 1rem !important;
-  padding: 0.85rem 1rem !important;
-  background: rgba(255, 255, 255, 0.03) !important;
-  border: 1px solid rgba(255, 255, 255, 0.05) !important;
-  border-radius: 1.25rem !important;
-  transition: all 0.2s ease !important;
+  padding: 0.9rem 0.95rem !important;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.82), rgba(10, 16, 28, 0.92)) !important;
+  border: 1px solid rgba(148, 163, 184, 0.12) !important;
+  border-radius: 1.3rem !important;
+  box-shadow: 0 14px 34px rgba(2, 8, 23, 0.24) !important;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease !important;
 }
 
 .modern-search-card:hover {
-  background: rgba(255, 255, 255, 0.06) !important;
-  transform: scale(1.01);
+  transform: translateY(-1px) !important;
+  border-color: rgba(45, 212, 191, 0.24) !important;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(12, 19, 34, 0.98)) !important;
 }
 
 .search-card-avatar {
   width: 3.2rem !important;
   height: 3.2rem !important;
+  flex: 0 0 auto !important;
   border-radius: 50% !important;
   overflow: hidden !important;
-  border: 2px solid rgba(255, 255, 255, 0.1) !important;
+  border: 2px solid rgba(45, 212, 191, 0.18) !important;
+  background: transparent !important;
+  padding: 0 !important;
+  cursor: pointer !important;
 }
 
 .search-card-info {
@@ -8668,118 +8696,537 @@ html {
   min-width: 0 !important;
 }
 
-.search-card-info a {
-  text-decoration: none !important;
+.search-card-link {
   display: block !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  text-align: left !important;
+  cursor: pointer !important;
 }
 
 .search-card-info strong {
   display: block !important;
-  font-size: 0.95rem !important;
-  color: #fff !important;
+  font-size: 0.96rem !important;
+  color: #f8fafc !important;
 }
 
 .search-card-info span {
-  font-size: 0.75rem !important;
-  color: rgba(255, 255, 255, 0.4) !important;
+  font-size: 0.76rem !important;
+  color: rgba(148, 163, 184, 0.88) !important;
 }
 
 .search-card-info p {
   margin: 0.2rem 0 0 !important;
-  font-size: 0.8rem !important;
-  color: rgba(255, 255, 255, 0.6) !important;
+  font-size: 0.81rem !important;
+  color: rgba(191, 219, 254, 0.86) !important;
+}
+
+.search-card-info small {
+  display: block !important;
+  margin-top: 0.22rem !important;
+  color: rgba(148, 163, 184, 0.72) !important;
+  font-size: 0.7rem !important;
 }
 
 .modern-follow-btn {
-  background: #6366f1 !important;
-  color: #fff !important;
+  background: linear-gradient(135deg, #14b8a6, #0f766e) !important;
+  color: #ecfeff !important;
   border: none !important;
-  padding: 0.5rem 1rem !important;
-  border-radius: 0.8rem !important;
-  font-size: 0.8rem !important;
-  font-weight: 700 !important;
+  padding: 0.62rem 0.95rem !important;
+  border-radius: 0.9rem !important;
+  font-size: 0.78rem !important;
+  font-weight: 800 !important;
   cursor: pointer !important;
-  transition: all 0.2s ease !important;
+  transition: transform 0.2s ease, opacity 0.2s ease !important;
 }
 
 .modern-follow-btn.is-following {
-  background: rgba(255, 255, 255, 0.1) !important;
-  color: rgba(255, 255, 255, 0.7) !important;
+  background: rgba(30, 41, 59, 0.92) !important;
+  color: rgba(226, 232, 240, 0.82) !important;
+}
+
+.modern-follow-btn:disabled {
+  opacity: 0.7 !important;
+  cursor: not-allowed !important;
 }
 
 .trending-section .icon-label {
   display: flex !important;
   align-items: center !important;
-  gap: 0.6rem !important;
-  color: #818cf8 !important;
+  gap: 0.7rem !important;
+  color: #5eead4 !important;
 }
 
-.trending-placeholder {
-  background: rgba(255, 255, 255, 0.02) !important;
-  border: 1px dashed rgba(255, 255, 255, 0.1) !important;
-  border-radius: 1.5rem !important;
-  padding: 1.5rem !important;
+.icon-label > div {
   display: flex !important;
   flex-direction: column !important;
-  gap: 1.25rem !important;
+  gap: 0.1rem !important;
 }
 
-.trending-card-skeleton {
-  display: flex !important;
-  gap: 1rem !important;
-  opacity: 0.4 !important;
+.vyb-search-trending-strip {
+  display: grid !important;
+  grid-auto-flow: column !important;
+  grid-auto-columns: minmax(5.5rem, 1fr) !important;
+  gap: 0.85rem !important;
+  overflow-x: auto !important;
+  padding-bottom: 0.2rem !important;
+  scrollbar-width: none !important;
 }
 
-.skeleton-avatar {
-  width: 2.8rem !important;
-  height: 2.8rem !important;
-  background: rgba(255, 255, 255, 0.1) !important;
-  border-radius: 50% !important;
+.vyb-search-trending-strip::-webkit-scrollbar {
+  display: none !important;
 }
 
-.skeleton-copy {
-  flex: 1 !important;
+.vyb-search-trending-avatar-card,
+.vyb-search-avatar-skeleton-card {
+  min-width: 5.5rem !important;
   display: flex !important;
   flex-direction: column !important;
-  gap: 0.4rem !important;
-  justify-content: center !important;
+  align-items: center !important;
+  gap: 0.55rem !important;
+  border: none !important;
+  background: transparent !important;
+  color: #e2e8f0 !important;
+  padding: 0 !important;
 }
 
-.skeleton-line {
-  height: 0.7rem !important;
-  background: rgba(255, 255, 255, 0.1) !important;
-  border-radius: 0.4rem !important;
-  width: 60% !important;
-}
-
-.skeleton-line.short { width: 30% !important; }
-
-.trending-note {
-  margin: 0.5rem 0 0 !important;
-  font-size: 0.75rem !important;
-  color: rgba(255, 255, 255, 0.3) !important;
+.vyb-search-trending-avatar-card strong {
+  width: 100% !important;
+  font-size: 0.78rem !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
   text-align: center !important;
+}
+
+.vyb-search-trending-avatar-card span {
+  max-width: 100% !important;
+  font-size: 0.7rem !important;
+  color: rgba(148, 163, 184, 0.84) !important;
+  text-align: center !important;
+}
+
+.vyb-search-trending-avatar-shell {
+  position: relative !important;
+  width: 5.2rem !important;
+  height: 5.2rem !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 50% !important;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(10, 16, 28, 0.92)) !important;
+  border: 1px solid rgba(148, 163, 184, 0.18) !important;
+  box-shadow: 0 18px 32px rgba(2, 8, 23, 0.32) !important;
+}
+
+.vyb-search-trending-avatar-shell.is-glowing {
+  box-shadow:
+    0 0 0 2px rgba(251, 191, 36, 0.46),
+    0 0 0 7px rgba(251, 191, 36, 0.12),
+    0 20px 36px rgba(250, 204, 21, 0.16) !important;
+}
+
+.vyb-search-trending-avatar {
+  width: 4.2rem !important;
+  height: 4.2rem !important;
+  border-radius: 50% !important;
+  overflow: hidden !important;
+}
+
+.vyb-search-trending-badge {
+  position: absolute !important;
+  left: 50% !important;
+  bottom: -0.28rem !important;
+  transform: translateX(-50%) !important;
+  padding: 0.18rem 0.5rem !important;
+  border-radius: 999px !important;
+  background: rgba(8, 15, 28, 0.92) !important;
+  border: 1px solid rgba(251, 191, 36, 0.34) !important;
+  color: #fef08a !important;
+  font-size: 0.62rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.02em !important;
+  white-space: nowrap !important;
+}
+
+.vyb-search-avatar-skeleton {
+  width: 5.2rem !important;
+  height: 5.2rem !important;
+  border-radius: 50% !important;
+  background: linear-gradient(90deg, rgba(30, 41, 59, 0.8), rgba(51, 65, 85, 0.92), rgba(30, 41, 59, 0.8)) !important;
+  background-size: 220% 100% !important;
+  animation: vybSearchShimmer 1.4s linear infinite !important;
+}
+
+.vyb-search-avatar-skeleton-line {
+  width: 70% !important;
+  height: 0.55rem !important;
+  border-radius: 999px !important;
+  background: rgba(71, 85, 105, 0.72) !important;
+}
+
+.vyb-search-discovery-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  grid-auto-rows: 8px !important;
+  gap: 0.9rem !important;
+  grid-auto-flow: dense !important;
+}
+
+.vyb-search-discovery-card,
+.vyb-search-grid-skeleton {
+  position: relative !important;
+  overflow: hidden !important;
+  border-radius: 1.45rem !important;
+  border: 1px solid rgba(148, 163, 184, 0.12) !important;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.84), rgba(10, 16, 28, 0.96)) !important;
+  box-shadow: 0 18px 40px rgba(2, 8, 23, 0.28) !important;
+}
+
+.vyb-search-discovery-card {
+  padding: 0 !important;
+  cursor: pointer !important;
+  text-align: left !important;
+  color: #f8fafc !important;
+  transition: transform 0.22s ease, border-color 0.22s ease !important;
+}
+
+.vyb-search-discovery-card:hover {
+  transform: translateY(-2px) !important;
+  border-color: rgba(45, 212, 191, 0.24) !important;
+}
+
+.vyb-search-discovery-card.is-square,
+.vyb-search-grid-skeleton {
+  grid-row: span 30 !important;
+}
+
+.vyb-search-discovery-card.is-tall,
+.vyb-search-grid-skeleton.is-tall {
+  grid-row: span 42 !important;
+}
+
+.vyb-search-discovery-card.is-promo,
+.vyb-search-grid-skeleton.is-wide {
+  grid-row: span 24 !important;
+}
+
+.vyb-search-discovery-card.is-promo.is-squad {
+  grid-row: span 30 !important;
+  padding: 1rem !important;
+}
+
+.vyb-search-discovery-card.is-promo.is-deal {
+  padding: 1rem !important;
+}
+
+.vyb-search-grid-skeleton {
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.88), rgba(15, 23, 42, 0.96)) !important;
+  background-size: 240% 100% !important;
+  animation: vybSearchShimmer 1.5s linear infinite !important;
+}
+
+.vyb-search-discovery-media {
+  position: absolute !important;
+  inset: 0 !important;
+  background: rgba(15, 23, 42, 0.72) !important;
+}
+
+.vyb-search-discovery-media img,
+.vyb-search-discovery-media video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  display: block !important;
+  opacity: 0 !important;
+  transition: opacity 0.26s ease !important;
+}
+
+.vyb-search-discovery-media.is-loaded img,
+.vyb-search-discovery-media.is-loaded video {
+  opacity: 1 !important;
+}
+
+.vyb-search-media-skeleton {
+  position: absolute !important;
+  inset: 0 !important;
+  background:
+    linear-gradient(90deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.86), rgba(15, 23, 42, 0.96)),
+    linear-gradient(180deg, rgba(14, 116, 144, 0.16), rgba(249, 115, 22, 0.1)) !important;
+  background-size: 240% 100% !important;
+  animation: vybSearchShimmer 1.35s linear infinite !important;
+}
+
+.vyb-search-discovery-fallback {
+  position: absolute !important;
+  inset: 0 !important;
+  padding: 1rem !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-end !important;
+  gap: 0.5rem !important;
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.1), rgba(8, 15, 28, 0.94)),
+    radial-gradient(circle at top left, rgba(45, 212, 191, 0.18), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(251, 146, 60, 0.18), transparent 34%) !important;
+}
+
+.vyb-search-discovery-fallback strong,
+.vyb-search-discovery-fallback p {
+  margin: 0 !important;
+}
+
+.vyb-search-vibe-pill {
+  position: absolute !important;
+  top: 0.8rem !important;
+  right: 0.8rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.28rem !important;
+  padding: 0.32rem 0.6rem !important;
+  border-radius: 999px !important;
+  background: rgba(8, 15, 28, 0.76) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #fef08a !important;
+  font-size: 0.68rem !important;
+  font-weight: 800 !important;
+  z-index: 2 !important;
+}
+
+.vyb-search-discovery-overlay {
+  position: absolute !important;
+  inset: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-end !important;
+  padding: 1rem !important;
+  gap: 0.72rem !important;
+  background: linear-gradient(180deg, rgba(6, 12, 23, 0.02), rgba(6, 12, 23, 0.68) 54%, rgba(6, 12, 23, 0.96) 100%) !important;
+}
+
+.vyb-search-discovery-author {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.6rem !important;
+}
+
+.vyb-search-discovery-author-avatar {
+  width: 2rem !important;
+  height: 2rem !important;
+  border-radius: 50% !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  flex: 0 0 auto !important;
+}
+
+.vyb-search-discovery-author span {
+  min-width: 0 !important;
+}
+
+.vyb-search-discovery-author strong {
+  display: block !important;
+  font-size: 0.76rem !important;
+  line-height: 1.1 !important;
+}
+
+.vyb-search-discovery-author small,
+.vyb-search-discovery-copy p,
+.vyb-search-discovery-meta span {
+  color: rgba(226, 232, 240, 0.82) !important;
+}
+
+.vyb-search-discovery-author small {
+  display: block !important;
+  font-size: 0.68rem !important;
+}
+
+.vyb-search-discovery-copy {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.18rem !important;
+}
+
+.vyb-search-discovery-copy strong {
+  display: -webkit-box !important;
+  overflow: hidden !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 2 !important;
+  font-size: 0.9rem !important;
+  font-weight: 800 !important;
+  line-height: 1.22 !important;
+}
+
+.vyb-search-discovery-copy p {
+  margin: 0 !important;
+  display: -webkit-box !important;
+  overflow: hidden !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 2 !important;
+  font-size: 0.74rem !important;
+  line-height: 1.35 !important;
+}
+
+.vyb-search-discovery-meta {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 0.38rem !important;
+}
+
+.vyb-search-discovery-meta span {
+  padding: 0.26rem 0.5rem !important;
+  border-radius: 999px !important;
+  background: rgba(8, 15, 28, 0.54) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  font-size: 0.64rem !important;
+  font-weight: 700 !important;
+}
+
+.vyb-search-promo-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 0.75rem !important;
+  margin-bottom: 0.95rem !important;
+}
+
+.vyb-search-promo-chip {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.4rem !important;
+  padding: 0.34rem 0.65rem !important;
+  border-radius: 999px !important;
+  background: rgba(15, 23, 42, 0.72) !important;
+  border: 1px solid rgba(148, 163, 184, 0.14) !important;
+  color: #99f6e4 !important;
+  font-size: 0.69rem !important;
+  font-weight: 800 !important;
+}
+
+.vyb-search-promo-meta {
+  color: #fef08a !important;
+  font-size: 0.78rem !important;
+  font-weight: 800 !important;
+}
+
+.vyb-search-discovery-card.is-promo strong {
+  display: block !important;
+  margin: 0 0 0.38rem !important;
+  font-size: 0.95rem !important;
+  line-height: 1.25 !important;
+}
+
+.vyb-search-discovery-card.is-promo p,
+.vyb-search-discovery-card.is-promo small {
+  margin: 0 !important;
+  color: rgba(226, 232, 240, 0.82) !important;
+  line-height: 1.45 !important;
+}
+
+.vyb-search-discovery-card.is-promo p {
+  font-size: 0.78rem !important;
+}
+
+.vyb-search-discovery-card.is-promo small {
+  font-size: 0.72rem !important;
+}
+
+.vyb-search-squad-stack {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.6rem !important;
+  margin-top: 0.9rem !important;
+}
+
+.vyb-search-squad-person {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.7rem !important;
+  border: none !important;
+  border-radius: 1rem !important;
+  background: rgba(15, 23, 42, 0.58) !important;
+  padding: 0.7rem !important;
+  color: #f8fafc !important;
+  cursor: pointer !important;
+}
+
+.vyb-search-squad-avatar {
+  width: 2.4rem !important;
+  height: 2.4rem !important;
+  border-radius: 50% !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  flex: 0 0 auto !important;
+}
+
+.vyb-search-squad-person span {
+  min-width: 0 !important;
+}
+
+.vyb-search-squad-person strong {
+  margin: 0 !important;
+  font-size: 0.8rem !important;
+}
+
+.vyb-search-squad-person small {
+  display: block !important;
+  margin-top: 0.16rem !important;
 }
 
 .search-explore-prompt {
+  margin: 0 auto !important;
+  padding: 1.2rem 1rem !important;
+  max-width: 30rem !important;
   text-align: center !important;
-  margin: 2rem auto !important;
-  max-width: 280px !important;
+  border-radius: 1.5rem !important;
+  background: rgba(15, 23, 42, 0.44) !important;
+  border: 1px solid rgba(148, 163, 184, 0.1) !important;
+}
+
+.search-explore-prompt.is-compact {
+  margin-top: 1rem !important;
 }
 
 .search-explore-prompt strong {
   display: block !important;
-  font-size: 1.1rem !important;
-  color: #fff !important;
-  margin-bottom: 0.5rem !important;
+  margin-bottom: 0.45rem !important;
+  font-size: 1rem !important;
+  color: #f8fafc !important;
 }
 
 .search-explore-prompt p {
-  font-size: 0.85rem !important;
-  color: rgba(255, 255, 255, 0.5) !important;
+  margin: 0 !important;
+  font-size: 0.82rem !important;
+  color: rgba(203, 213, 225, 0.82) !important;
   line-height: 1.5 !important;
 }
 
+@keyframes vybSearchShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@media (min-width: 768px) {
+  .vyb-search-top-bar {
+    padding: 1.05rem 1.35rem 1rem !important;
+  }
+
+  .search-scroll-content {
+    padding-left: max(1.35rem, calc((100vw - 1120px) / 2 + 1.35rem)) !important;
+    padding-right: max(1.35rem, calc((100vw - 1120px) / 2 + 1.35rem)) !important;
+  }
+
+  .vyb-search-trending-strip {
+    grid-auto-columns: minmax(6.5rem, 1fr) !important;
+  }
+
+  .vyb-search-discovery-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .vyb-search-discovery-card.is-promo,
+  .vyb-search-grid-skeleton.is-wide {
+    grid-column: span 2 !important;
+  }
+}
 /* â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• 
    POST ACTION SHEET â€” Modern Redesign
    â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â•  */

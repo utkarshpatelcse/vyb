@@ -8,6 +8,7 @@ export type SocialShareTarget = {
   userId: string;
   username: string;
   displayName: string;
+  avatarUrl?: string | null;
   conversationId?: string | null;
   peerIdentity?: ChatIdentitySummary | null;
   lastActivityAt?: string | null;
@@ -198,6 +199,7 @@ export function SocialPostShareSheet({
                       userId={user.userId}
                       username={user.username}
                       displayName={user.displayName}
+                      avatarUrl={user.avatarUrl ?? null}
                       fallback={(user.displayName || user.username).slice(0, 2).toUpperCase()}
                       decorative
                     />

@@ -98,6 +98,7 @@ export interface ProfileRecord {
   tenantId: string;
   primaryEmail: string;
   collegeName: string;
+  avatarUrl?: string | null;
   username: string;
   firstName: string;
   lastName: string | null;
@@ -133,6 +134,7 @@ export interface UpsertProfileRequest {
   isHosteller: boolean;
   hostelName?: string | null;
   phoneNumber?: string | null;
+  avatarUrl?: string | null;
 }
 
 export interface ClientShellResponse {
@@ -195,6 +197,7 @@ export interface FeedCard {
     userId: string;
     username: string;
     displayName: string;
+    avatarUrl?: string | null;
   };
 }
 
@@ -234,6 +237,7 @@ export interface StoryCard {
   userId: string;
   username: string;
   displayName: string;
+  avatarUrl?: string | null;
   mediaType: "image" | "video";
   mediaUrl: string;
   caption: string;
@@ -264,6 +268,7 @@ export interface PublicProfileSummary {
   userId: string;
   username: string;
   displayName: string;
+  avatarUrl?: string | null;
   collegeName: string;
   course: string;
   stream: string;
@@ -328,6 +333,7 @@ export interface CommentItem {
     userId: string;
     username: string;
     displayName: string;
+    avatarUrl?: string | null;
   } | null;
 }
 
@@ -383,6 +389,7 @@ export interface PostLikerItem {
   userId: string | null;
   username: string;
   displayName: string;
+  avatarUrl?: string | null;
   reactionType: ReactionKind;
   reactedAt: string;
 }

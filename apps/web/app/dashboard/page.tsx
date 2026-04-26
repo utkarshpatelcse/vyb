@@ -48,6 +48,7 @@ export default async function DashboardPage() {
       recentCourses={courses.items}
       recentActivity={activity.items}
       initialProfile={profile.profile}
+      initialAvatarUrl={publicProfile?.profile.avatarUrl ?? profile.profile.avatarUrl ?? null}
     />
   );
 }

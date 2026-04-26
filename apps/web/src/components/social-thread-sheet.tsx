@@ -312,13 +312,14 @@ export function SocialThreadSheet({
       >
         <article className={`vyb-thread-comment${depth > 0 ? " is-reply" : ""}`}>
           <div className="vyb-thread-comment-avatar" aria-hidden="true">
-            <CampusAvatarContent
-              userId={comment.author?.userId}
-              username={comment.author?.username}
-              displayName={comment.author?.displayName ?? "Vyb Student"}
-              fallback={getInitials(comment.author?.displayName ?? "Vyb Student")}
-              decorative
-            />
+             <CampusAvatarContent
+               userId={comment.author?.userId}
+               username={comment.author?.username}
+               displayName={comment.author?.displayName ?? "Vyb Student"}
+               avatarUrl={comment.author?.avatarUrl ?? null}
+               fallback={getInitials(comment.author?.displayName ?? "Vyb Student")}
+               decorative
+             />
           </div>
           <div className="vyb-thread-comment-body">
             <div className="vyb-thread-comment-copy">

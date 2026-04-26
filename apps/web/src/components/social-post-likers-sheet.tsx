@@ -57,6 +57,7 @@ export function SocialPostLikersSheet({ post, items, isLoading, message, onClose
                   userId={item.userId}
                   username={item.username}
                   displayName={item.displayName}
+                  avatarUrl={item.avatarUrl ?? null}
                   fallback={item.displayName.slice(0, 1).toUpperCase()}
                   decorative
                 />

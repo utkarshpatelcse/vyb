@@ -211,6 +211,7 @@ export function SocialPostLightbox({
                 userId={post.author.userId}
                 username={post.author.username}
                 displayName={post.author.displayName}
+                avatarUrl={post.author.avatarUrl ?? null}
                 fallback={(post.author.displayName || post.author.username).slice(0, 2).toUpperCase()}
                 decorative
               />

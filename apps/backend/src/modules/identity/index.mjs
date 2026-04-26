@@ -55,7 +55,8 @@ const profileSchema = z
     hostelName: z.union([z.string().trim().min(1), z.literal(""), z.null()]).optional(),
     phoneNumber: z
       .union([z.string().trim().regex(/^[+\d][\d\s-]{7,18}$/u, "Phone number format is invalid."), z.literal(""), z.null()])
-      .optional()
+      .optional(),
+    avatarUrl: z.union([z.string().trim().min(1).max(2_500_000), z.literal(""), z.null()]).optional()
   })
   .superRefine((payload, ctx) => {
     if (payload.isHosteller && !requireNonEmptyString(payload.hostelName)) {
@@ -349,7 +350,8 @@ export async function handleIdentityRoute({ request, response, url, context }) {
         section: normalizedPayload.section.trim().toUpperCase(),
         isHosteller: normalizedPayload.isHosteller,
         hostelName: normalizeOptionalString(normalizedPayload.hostelName),
-        phoneNumber: normalizePhoneNumber(normalizedPayload.phoneNumber)
+        phoneNumber: normalizePhoneNumber(normalizedPayload.phoneNumber),
+        avatarUrl: normalizeOptionalString(normalizedPayload.avatarUrl)
       });
     } catch (error) {
       if (error?.code === "USERNAME_TAKEN") {

@@ -855,7 +855,8 @@ function mapPostRecord(item, counts = null, profileMap = null) {
     author: {
       userId: item.authorUserId,
       username: profile?.username ?? item.authorUsername ?? "vyb_user",
-      displayName: profile?.fullName ?? item.authorName ?? "Vyb Student"
+      displayName: profile?.fullName ?? item.authorName ?? "Vyb Student",
+      avatarUrl: profile?.avatarUrl ?? null
     }
   };
 }
@@ -885,6 +886,7 @@ function mapStoryRecord(item, viewerUserId = null, reactionMaps = null, viewMaps
     userId: item.userId,
     username: profile?.username ?? item.username,
     displayName: profile?.fullName ?? item.displayName,
+    avatarUrl: profile?.avatarUrl ?? null,
     mediaType: item.mediaType,
     mediaUrl: item.mediaUrl,
     caption: item.caption ?? "",

@@ -131,12 +131,13 @@ export function SocialPostRepostSheet({
               <div className="repost-card-author">
                 <div className="author-avatar-mini">
                    <CampusAvatarContent
-                    userId={post.author.userId}
-                    username={post.author.username}
-                    displayName={post.author.displayName}
-                    fallback={post.author.username.slice(0, 2).toUpperCase()}
-                    decorative
-                  />
+                     userId={post.author.userId}
+                     username={post.author.username}
+                     displayName={post.author.displayName}
+                     avatarUrl={post.author.avatarUrl ?? null}
+                     fallback={post.author.username.slice(0, 2).toUpperCase()}
+                     decorative
+                   />
                 </div>
                 <strong>{post.author.displayName || post.author.username}</strong>
               </div>

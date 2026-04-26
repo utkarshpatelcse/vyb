@@ -52,6 +52,7 @@ export default async function PublicProfilePage({
       posts={publicProfile.posts}
       isOwnProfile={false}
       isFollowing={publicProfile.isFollowing}
+      initialAvatarUrl={publicProfile.profile.avatarUrl ?? null}
     />
   );
 }

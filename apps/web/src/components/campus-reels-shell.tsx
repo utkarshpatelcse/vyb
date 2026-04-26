@@ -36,6 +36,7 @@ import {
   subscribeToPostDisplayPreferences,
   type PostDisplayPreference
 } from "./campus-settings-storage";
+import { useSearchNavigationGuard } from "../lib/search-navigation";
 
 type CampusReelsShellProps = {
   viewerName: string;
@@ -50,6 +51,7 @@ type CampusReelsShellProps = {
   suggestedUsers: UserSearchItem[];
   recentChats: ChatConversationPreview[];
   initialViewerIdentity?: ChatIdentitySummary | null;
+  initialFocusedPostId?: string | null;
 };
 
 function IconBase({ children }: { children: ReactNode }) {
@@ -208,6 +210,14 @@ function VolumeMutedIcon() {
   );
 }
 
+function BackIcon() {
+  return (
+    <IconBase>
+      <path d="M15 18 9 12l6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </IconBase>
+  );
+}
+
 function formatMetric(value: number) {
   return new Intl.NumberFormat("en-IN", {
     notation: value > 999 ? "compact" : "standard",
@@ -324,9 +334,11 @@ export function CampusReelsShell({
   initialVibes,
   suggestedUsers,
   recentChats,
-  initialViewerIdentity = null
+  initialViewerIdentity = null,
+  initialFocusedPostId = null
 }: CampusReelsShellProps) {
   const router = useRouter();
+  const { isFromSearch, goBack, clearOrigin } = useSearchNavigationGuard("/search");
   const engagement = useSocialPostEngagement(initialVibes);
   const settingsIdentity = useMemo(
     () => ({
@@ -347,6 +359,8 @@ export function CampusReelsShell({
   const snappingRef = useRef(false);
   const holdTriggeredRef = useRef(false);
   const holdPostIdRef = useRef<string | null>(null);
+  const initialFocusIndexRef = useRef<number | null>(null);
+  const hasAppliedInitialFocusRef = useRef(false);
   const lastTapRef = useRef<{
     postId: string | null;
     timestamp: number;
@@ -450,6 +464,32 @@ export function CampusReelsShell({
   }, [engagement.posts.length]);
 
   useEffect(() => {
+    if (!initialFocusedPostId || hasAppliedInitialFocusRef.current || engagement.posts.length === 0) {
+      return;
+    }
+
+    const nextIndex = engagement.posts.findIndex((post) => post.id === initialFocusedPostId);
+    hasAppliedInitialFocusRef.current = true;
+
+    if (nextIndex < 0) {
+      return;
+    }
+
+    initialFocusIndexRef.current = nextIndex;
+    setActiveIndex(nextIndex);
+    window.requestAnimationFrame(() => {
+      const feed = feedRef.current;
+      if (!feed) {
+        return;
+      }
+
+      feed.scrollTo({
+        top: nextIndex * feed.clientHeight
+      });
+    });
+  }, [engagement.posts, initialFocusedPostId]);
+
+  useEffect(() => {
     setShareTargets(buildShareTargets(recentChats, suggestedUsers));
   }, [recentChats, suggestedUsers]);
 
@@ -483,6 +523,22 @@ export function CampusReelsShell({
       }
     };
   }, [engagement.posts.length]);
+
+  useEffect(() => {
+    if (!isFromSearch) {
+      initialFocusIndexRef.current = null;
+      return;
+    }
+
+    if (initialFocusIndexRef.current === null) {
+      return;
+    }
+
+    if (activeIndex !== initialFocusIndexRef.current) {
+      initialFocusIndexRef.current = null;
+      clearOrigin();
+    }
+  }, [activeIndex, clearOrigin, isFromSearch]);
 
   useEffect(() => {
     const feed = feedRef.current;
@@ -1228,6 +1284,11 @@ export function CampusReelsShell({
           </div>
 
           <div className="vyb-vibes-topbar-actions">
+            {isFromSearch ? (
+              <button type="button" className="vyb-vibes-topbar-icon" aria-label="Back to search" onClick={() => goBack()}>
+                <BackIcon />
+              </button>
+            ) : null}
             <Link href="/search" className="vyb-vibes-topbar-icon" aria-label="Search campus">
               <SearchIcon />
             </Link>
@@ -1374,6 +1435,7 @@ export function CampusReelsShell({
                                 userId={item.author.userId}
                                 username={item.author.username}
                                 displayName={item.author.displayName}
+                                avatarUrl={item.author.avatarUrl ?? null}
                                 fallback={getInitials(item.author.displayName)}
                                 decorative
                               />

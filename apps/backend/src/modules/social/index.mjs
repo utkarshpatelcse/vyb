@@ -62,7 +62,8 @@ function buildCommentAuthor(profile, authorUserId) {
     return {
       userId: profile.userId,
       username: profile.username,
-      displayName: profile.fullName
+      displayName: profile.fullName,
+      avatarUrl: profile.avatarUrl ?? null
     };
   }
 
@@ -73,7 +74,8 @@ function buildCommentAuthor(profile, authorUserId) {
   return {
     userId: authorUserId,
     username: "vyb_user",
-    displayName: "Vyb Student"
+    displayName: "Vyb Student",
+    avatarUrl: null
   };
 }
 
@@ -113,14 +115,15 @@ async function buildReactionMemberItems(tenantId, items) {
   return items.map((item) => {
     const profile = profileByMembershipId.get(item.membershipId) ?? null;
 
-    return {
-      membershipId: item.membershipId,
-      userId: profile?.userId ?? null,
-      username: profile?.username ?? "vyb_user",
-      displayName: profile?.fullName ?? "Vyb Student",
-      reactionType: item.reactionType ?? "like",
-      reactedAt: item.createdAt
-    };
+      return {
+        membershipId: item.membershipId,
+        userId: profile?.userId ?? null,
+        username: profile?.username ?? "vyb_user",
+        displayName: profile?.fullName ?? "Vyb Student",
+        avatarUrl: profile?.avatarUrl ?? null,
+        reactionType: item.reactionType ?? "like",
+        reactedAt: item.createdAt
+      };
   });
 }
 
@@ -166,13 +169,14 @@ async function buildUserSearchItems({ tenantId, viewerUserId, query, limit }) {
         userId: profile.userId
       });
 
-      return {
-        userId: profile.userId,
-        username: profile.username,
-        displayName: profile.fullName,
-        collegeName: profile.collegeName,
-        course: profile.course,
-        stream: profile.stream,
+        return {
+          userId: profile.userId,
+          username: profile.username,
+          displayName: profile.fullName,
+          avatarUrl: profile.avatarUrl ?? null,
+          collegeName: profile.collegeName,
+          course: profile.course,
+          stream: profile.stream,
         isFollowing: await isFollowing({
           tenantId,
           followerUserId: viewerUserId,
@@ -210,13 +214,14 @@ async function buildSuggestedUserItems({ tenantId, viewerUserId, limit }) {
         userId: profile.userId
       });
 
-      return {
-        userId: profile.userId,
-        username: profile.username,
-        displayName: profile.fullName,
-        collegeName: profile.collegeName,
-        course: profile.course,
-        stream: profile.stream,
+        return {
+          userId: profile.userId,
+          username: profile.username,
+          displayName: profile.fullName,
+          avatarUrl: profile.avatarUrl ?? null,
+          collegeName: profile.collegeName,
+          course: profile.course,
+          stream: profile.stream,
         isFollowing: await isFollowing({
           tenantId,
           followerUserId: viewerUserId,
@@ -657,6 +662,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
         userId: profile.userId,
         username: profile.username,
         displayName: profile.fullName,
+        avatarUrl: profile.avatarUrl ?? null,
         collegeName: profile.collegeName,
         course: profile.course,
         stream: profile.stream
