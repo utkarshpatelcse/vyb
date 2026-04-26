@@ -21,6 +21,7 @@ export function CreatePostPanel({
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [communityId, setCommunityId] = useState("");
+  const [isAnonymous, setIsAnonymous] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   function handleSubmit() {
@@ -39,7 +40,8 @@ export function CreatePostPanel({
         body: JSON.stringify({
           title,
           body,
-          communityId: communityId || null
+          communityId: communityId || null,
+          isAnonymous
         })
       });
 
@@ -55,6 +57,7 @@ export function CreatePostPanel({
       setTitle("");
       setBody("");
       setCommunityId("");
+      setIsAnonymous(false);
       setMessage("Post queue ho gaya. Router refresh ke baad latest feed dikh jayega.");
       router.refresh();
     });
@@ -88,6 +91,18 @@ export function CreatePostPanel({
           rows={4}
           disabled={!enabled || isPending}
         />
+      </label>
+      <label className="cl-field">
+        <span>Privacy</span>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+          <input
+            type="checkbox"
+            checked={isAnonymous}
+            onChange={(event) => setIsAnonymous(event.target.checked)}
+            disabled={!enabled || isPending}
+          />
+          <span>Post anonymously</span>
+        </div>
       </label>
       <div className="cl-form-actions">
         <button type="button" className="cl-button-primary" onClick={handleSubmit} disabled={!enabled || isPending}>

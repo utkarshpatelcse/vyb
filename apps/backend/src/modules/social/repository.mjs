@@ -9,21 +9,17 @@ import {
   createComment as createCommentMutation,
   createFollow as createFollowMutation,
   createPostMedia as createPostMediaMutation,
-  createPost as createPostMutation,
   createReaction as createReactionMutation,
   createStory as createStoryMutation,
   createStoryReaction as createStoryReactionMutation,
   getFollowByKey as getFollowByKeyQuery,
-  getPostById as getPostByIdQuery,
   getReactionByKey as getReactionByKeyQuery,
   getStoryById as getStoryByIdQuery,
   getStoryReactionByKey as getStoryReactionByKeyQuery,
   listCommentsByPost as listCommentsByPostQuery,
   listCommentsByTenant as listCommentsByTenantQuery,
-  listFeedByTenant as listFeedByTenantQuery,
   listFollowersByUser as listFollowersByUserQuery,
   listFollowingByUser as listFollowingByUserQuery,
-  listPostsByAuthor as listPostsByAuthorQuery,
   listReactionsByPost as listReactionsByPostQuery,
   listReactionsByTenant as listReactionsByTenantQuery,
   listStoriesByTenant as listStoriesByTenantQuery,
@@ -41,6 +37,8 @@ const fallbackStorePath = path.resolve(directoryName, "../../data/social-store.j
 const TENANT_SCAN_LIMIT = 5000;
 const FEED_SCAN_MULTIPLIER = 4;
 const INACTIVE_COMMENT_REACTION_TYPE = "__inactive__";
+const ANONYMOUS_AUTHOR_USERNAME = "anonymous";
+const ANONYMOUS_AUTHOR_DISPLAY_NAME = "Anonymous";
 
 const defaultFallbackStore = {
   posts: [
@@ -162,6 +160,8 @@ function normalizeFallbackPostRecord(item) {
     authorUserId: item.authorUserId ?? item.userId ?? item.membershipId ?? item.id,
     authorUsername: item.authorUsername ?? "vyb_user",
     authorName: item.authorName ?? "Vyb Student",
+    authorEmail: item.authorEmail ?? null,
+    isAnonymous: Boolean(item.isAnonymous),
     placement: item.placement ?? "feed",
     kind: item.kind ?? (item.mediaUrl ? "image" : "text"),
     mediaUrl: item.mediaUrl ?? null,
@@ -366,6 +366,126 @@ const UPDATE_COMMENT_REACTION_MUTATION = `
   }
 `;
 
+const PRIVATE_POST_FIELDS = `
+  id
+  tenantId
+  communityId
+  membershipId
+  authorUserId
+  authorUsername
+  authorName
+  authorEmail
+  isAnonymous
+  placement
+  kind
+  title
+  body
+  mediaUrl
+  storagePath
+  mediaMimeType
+  mediaSizeBytes
+  location
+  status
+  createdAt
+`;
+
+const LIST_POSTS_BY_TENANT_PRIVATE_QUERY = `
+  query ListPostsByTenantPrivate($tenantId: UUID!, $placement: String!, $limit: Int!) {
+    posts(
+      where: {
+        tenantId: { eq: $tenantId }
+        placement: { eq: $placement }
+        status: { eq: "published" }
+        deletedAt: { isNull: true }
+      }
+      orderBy: [{ createdAt: DESC }]
+      limit: $limit
+    ) {
+      ${PRIVATE_POST_FIELDS}
+    }
+  }
+`;
+
+const LIST_POSTS_BY_AUTHOR_PRIVATE_QUERY = `
+  query ListPostsByAuthorPrivate($tenantId: UUID!, $authorUserId: UUID!, $placement: String!, $limit: Int!) {
+    posts(
+      where: {
+        tenantId: { eq: $tenantId }
+        authorUserId: { eq: $authorUserId }
+        placement: { eq: $placement }
+        status: { eq: "published" }
+        deletedAt: { isNull: true }
+      }
+      orderBy: [{ createdAt: DESC }]
+      limit: $limit
+    ) {
+      ${PRIVATE_POST_FIELDS}
+    }
+  }
+`;
+
+const GET_POST_BY_ID_PRIVATE_QUERY = `
+  query GetPostByIdPrivate($id: UUID!) {
+    post(key: { id: $id }) {
+      ${PRIVATE_POST_FIELDS}
+    }
+  }
+`;
+
+const CREATE_POST_PRIVATE_MUTATION = `
+  mutation CreatePostPrivate(
+    $id: UUID!
+    $tenantId: UUID!
+    $communityId: UUID
+    $membershipId: UUID!
+    $authorUserId: UUID
+    $authorUsername: String! = "vyb_user"
+    $authorName: String! = "Vyb Student"
+    $authorEmail: String
+    $isAnonymous: Boolean!
+    $placement: String! = "feed"
+    $kind: String!
+    $title: String
+    $body: String!
+    $mediaUrl: String
+    $storagePath: String
+    $mediaMimeType: String
+    $mediaSizeBytes: Int64
+    $location: String
+    $status: String!
+  ) {
+    post_insert(
+      data: {
+        id: $id
+        tenantId: $tenantId
+        communityId: $communityId
+        membershipId: $membershipId
+        authorUserId: $authorUserId
+        authorUsername: $authorUsername
+        authorName: $authorName
+        authorEmail: $authorEmail
+        isAnonymous: $isAnonymous
+        placement: $placement
+        kind: $kind
+        title: $title
+        body: $body
+        mediaUrl: $mediaUrl
+        storagePath: $storagePath
+        mediaMimeType: $mediaMimeType
+        mediaSizeBytes: $mediaSizeBytes
+        location: $location
+        status: $status
+        visibility: "tenant"
+        publishedAt_expr: "request.time"
+        createdAt_expr: "request.time"
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
+
 const SOFT_DELETE_COMMENT_MUTATION = `
   mutation SoftDeleteComment($id: UUID!) {
     comment_update(
@@ -497,6 +617,23 @@ function buildCommentReactionKey(commentId, membershipId) {
 
 function buildStoryViewKey(storyId, membershipId) {
   return `${storyId}:${membershipId}`;
+}
+
+function buildAnonymousAuthor() {
+  return {
+    userId: null,
+    username: ANONYMOUS_AUTHOR_USERNAME,
+    displayName: ANONYMOUS_AUTHOR_DISPLAY_NAME,
+    avatarUrl: null,
+    isAnonymous: true
+  };
+}
+
+function isViewerManagingPost(item, { viewerUserId = null, viewerMembershipId = null } = {}) {
+  return Boolean(
+    (viewerUserId && item.authorUserId === viewerUserId) ||
+      (viewerMembershipId && item.membershipId === viewerMembershipId)
+  );
 }
 
 async function buildProfileByUserIdMap(tenantId, userIds) {
@@ -824,15 +961,27 @@ async function countCommentReactionsByComment(commentId) {
   }
 }
 
-function mapPostRecord(item, counts = null, profileMap = null) {
+function mapPostRecord(item, counts = null, profileMap = null, viewerIdentity = null) {
   const profile = profileMap?.get(item.authorUserId) ?? null;
   const mediaKind = item.kind === "video" ? "video" : "image";
+  const isAnonymous = Boolean(item.isAnonymous);
+  const viewerCanManage = isViewerManagingPost(item, viewerIdentity ?? {});
+  const author = isAnonymous
+    ? buildAnonymousAuthor()
+    : {
+        userId: item.authorUserId,
+        username: profile?.username ?? item.authorUsername ?? "vyb_user",
+        displayName: profile?.fullName ?? item.authorName ?? "Vyb Student",
+        avatarUrl: profile?.avatarUrl ?? null,
+        isAnonymous: false
+      };
+
   return {
     id: item.id,
     tenantId: item.tenantId,
     communityId: item.communityId ?? null,
-    userId: item.authorUserId,
-    membershipId: item.membershipId,
+    userId: isAnonymous ? null : item.authorUserId,
+    membershipId: isAnonymous ? null : item.membershipId,
     placement: normalizePlacement(item.placement),
     kind: item.kind ?? "text",
     mediaUrl: item.mediaUrl ?? null,
@@ -850,14 +999,11 @@ function mapPostRecord(item, counts = null, profileMap = null) {
     comments: Number(counts?.comments?.get(item.id) ?? item.comments ?? 0),
     savedCount: Number(item.savedCount ?? 0),
     isSaved: Boolean(item.isSaved),
+    isAnonymous,
+    viewerCanManage,
     viewerReactionType: counts?.viewerReactions?.get(item.id) ?? item.viewerReactionType ?? null,
     createdAt: toIsoString(item.createdAt),
-    author: {
-      userId: item.authorUserId,
-      username: profile?.username ?? item.authorUsername ?? "vyb_user",
-      displayName: profile?.fullName ?? item.authorName ?? "Vyb Student",
-      avatarUrl: profile?.avatarUrl ?? null
-    }
+    author
   };
 }
 
@@ -899,7 +1045,7 @@ function mapStoryRecord(item, viewerUserId = null, reactionMaps = null, viewMaps
   };
 }
 
-async function mapPostList(records, viewerMembershipId = null, profileMap = null) {
+async function mapPostList(records, viewerIdentity = null, profileMap = null) {
   if (records.length === 0) {
     return [];
   }
@@ -907,13 +1053,21 @@ async function mapPostList(records, viewerMembershipId = null, profileMap = null
   const counts = await buildPostCountMaps(
     records[0].tenantId,
     records.map((item) => item.id),
-    viewerMembershipId
+    viewerIdentity?.viewerMembershipId ?? null
   );
 
-  return records.map((item) => mapPostRecord(item, counts, profileMap));
+  return records.map((item) => mapPostRecord(item, counts, profileMap, viewerIdentity));
 }
 
-async function listFallbackPosts({ tenantId, communityId = null, limit, placement = "feed", userId = null }) {
+async function listFallbackPosts({
+  tenantId,
+  communityId = null,
+  limit,
+  placement = "feed",
+  userId = null,
+  includeAnonymous = true,
+  viewerIdentity = null
+}) {
   const store = await ensureFallbackStore();
   const normalizedPlacement = normalizePlacement(placement);
 
@@ -924,9 +1078,10 @@ async function listFallbackPosts({ tenantId, communityId = null, limit, placemen
     .filter((item) => normalizePlacement(item.placement) === normalizedPlacement)
     .filter((item) => (communityId ? item.communityId === communityId : true))
     .filter((item) => (userId ? item.authorUserId === userId : true))
+    .filter((item) => (includeAnonymous ? true : !item.isAnonymous))
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
     .slice(0, limit)
-    .map((item) => mapPostRecord(item));
+    .map((item) => mapPostRecord(item, null, null, viewerIdentity));
 }
 
 async function findFallbackPostRecordById(postId, tenantId = null) {
@@ -967,35 +1122,48 @@ export async function listPosts({
   limit,
   placement = "feed",
   userId = null,
-  viewerMembershipId = null
+  viewerMembershipId = null,
+  viewerUserId = null,
+  includeAnonymous = userId ? false : true
 }) {
   const normalizedPlacement = normalizePlacement(placement);
   const effectiveLimit = communityId ? Math.max(limit * FEED_SCAN_MULTIPLIER, limit) : limit;
+  const viewerIdentity = {
+    viewerMembershipId,
+    viewerUserId
+  };
 
   try {
-    const response = userId
-      ? await listPostsByAuthorQuery(getSocialDc(), {
-        tenantId,
-        authorUserId: userId,
-        placement: normalizedPlacement,
-        limit: effectiveLimit
-      })
-      : await listFeedByTenantQuery(getSocialDc(), {
-        tenantId,
-        placement: normalizedPlacement,
-        limit: effectiveLimit
-      });
+    const response = await getSocialDc().executeGraphqlRead(
+      userId ? LIST_POSTS_BY_AUTHOR_PRIVATE_QUERY : LIST_POSTS_BY_TENANT_PRIVATE_QUERY,
+      {
+        operationName: userId ? "ListPostsByAuthorPrivate" : "ListPostsByTenantPrivate",
+        variables: userId
+          ? {
+              tenantId,
+              authorUserId: userId,
+              placement: normalizedPlacement,
+              limit: effectiveLimit
+            }
+          : {
+              tenantId,
+              placement: normalizedPlacement,
+              limit: effectiveLimit
+            }
+      }
+    );
 
     const filtered = response.data.posts
       .filter((item) => (communityId ? item.communityId === communityId : true))
+      .filter((item) => (includeAnonymous ? true : !item.isAnonymous))
       .slice(0, limit);
 
     const profileMap = await buildProfileByUserIdMap(
       tenantId,
-      filtered.map((item) => item.authorUserId)
+      filtered.filter((item) => !item.isAnonymous).map((item) => item.authorUserId)
     );
 
-    return mapPostList(filtered, viewerMembershipId, profileMap);
+    return mapPostList(filtered, viewerIdentity, profileMap);
   } catch (error) {
     if (!isFallbackEligibleError(error)) {
       throw error;
@@ -1014,25 +1182,38 @@ export async function listPosts({
       communityId,
       limit,
       placement: normalizedPlacement,
-      userId
+      userId,
+      includeAnonymous,
+      viewerIdentity
     });
   }
 }
 
-export async function listPostsByUser({ tenantId, userId, limit = 24, placement = "feed", viewerMembershipId = null }) {
-  return listPosts({ tenantId, userId, limit, placement, viewerMembershipId });
+export async function listPostsByUser({
+  tenantId,
+  userId,
+  limit = 24,
+  placement = "feed",
+  viewerMembershipId = null,
+  viewerUserId = null,
+  includeAnonymous = false
+}) {
+  return listPosts({ tenantId, userId, limit, placement, viewerMembershipId, viewerUserId, includeAnonymous });
 }
 
-export async function countPostsByUser({ tenantId, userId, placement = "feed" }) {
+export async function countPostsByUser({ tenantId, userId, placement = "feed", includeAnonymous = false }) {
   try {
-    const response = await listPostsByAuthorQuery(getSocialDc(), {
-      tenantId,
-      authorUserId: userId,
-      placement: normalizePlacement(placement),
-      limit: TENANT_SCAN_LIMIT
+    const response = await getSocialDc().executeGraphqlRead(LIST_POSTS_BY_AUTHOR_PRIVATE_QUERY, {
+      operationName: "ListPostsByAuthorPrivate",
+      variables: {
+        tenantId,
+        authorUserId: userId,
+        placement: normalizePlacement(placement),
+        limit: TENANT_SCAN_LIMIT
+      }
     });
 
-    return response.data.posts.length;
+    return response.data.posts.filter((item) => (includeAnonymous ? true : !item.isAnonymous)).length;
   } catch (error) {
     if (!isFallbackEligibleError(error)) {
       throw error;
@@ -1042,57 +1223,62 @@ export async function countPostsByUser({ tenantId, userId, placement = "feed" })
       tenantId,
       userId,
       placement,
-      limit: TENANT_SCAN_LIMIT
+      limit: TENANT_SCAN_LIMIT,
+      includeAnonymous
     });
     return items.length;
   }
 }
 
-export async function findPostById(postId, { tenantId = null, viewerMembershipId = null } = {}) {
+export async function findPostRecordById(postId, { tenantId = null } = {}) {
   try {
-    const response = await getPostByIdQuery(getSocialDc(), { id: postId });
+    const response = await getSocialDc().executeGraphqlRead(GET_POST_BY_ID_PRIVATE_QUERY, {
+      operationName: "GetPostByIdPrivate",
+      variables: {
+        id: postId
+      }
+    });
     const item = response.data.post;
     if (!item || item.status === "removed" || (tenantId && item.tenantId !== tenantId)) {
-      const fallbackItem = await findFallbackPostRecordById(postId, tenantId);
-      if (!fallbackItem) {
-        return null;
-      }
-
-      const fallbackProfileMap = await buildProfileByUserIdMap(fallbackItem.tenantId, [fallbackItem.authorUserId]);
-      return mapPostRecord(fallbackItem, null, fallbackProfileMap);
+      return await findFallbackPostRecordById(postId, tenantId);
     }
-
-    const counts = {
-      comments: new Map([[item.id, await countCommentsByPost(item.id)]]),
-      reactions: new Map([[item.id, await countReactionsByPost(item.id)]]),
-      viewerReactions: new Map()
-    };
-
-    if (viewerMembershipId) {
-      const existing = await getReactionByKeyQuery(getSocialDc(), {
-        reactionKey: buildReactionKey(item.id, viewerMembershipId)
-      });
-      const current = existing.data.reactions[0] ?? null;
-      if (current) {
-        counts.viewerReactions.set(item.id, current.reactionType ?? "like");
-      }
-    }
-
-    const profileMap = await buildProfileByUserIdMap(item.tenantId, [item.authorUserId]);
-    return mapPostRecord(item, counts, profileMap);
+    return item;
   } catch (error) {
     if (!isFallbackEligibleError(error)) {
       throw error;
     }
 
-    const item = await findFallbackPostRecordById(postId, tenantId);
-    if (!item) {
-      return null;
-    }
-
-    const profileMap = await buildProfileByUserIdMap(item.tenantId, [item.authorUserId]);
-    return mapPostRecord(item, null, profileMap);
+    return await findFallbackPostRecordById(postId, tenantId);
   }
+}
+
+export async function findPostById(postId, { tenantId = null, viewerMembershipId = null, viewerUserId = null } = {}) {
+  const item = await findPostRecordById(postId, { tenantId });
+  if (!item) {
+    return null;
+  }
+
+  const counts = {
+    comments: new Map([[item.id, await countCommentsByPost(item.id)]]),
+    reactions: new Map([[item.id, await countReactionsByPost(item.id)]]),
+    viewerReactions: new Map()
+  };
+
+  if (viewerMembershipId) {
+    const existing = await getReactionByKeyQuery(getSocialDc(), {
+      reactionKey: buildReactionKey(item.id, viewerMembershipId)
+    });
+    const current = existing.data.reactions[0] ?? null;
+    if (current) {
+      counts.viewerReactions.set(item.id, current.reactionType ?? "like");
+    }
+  }
+
+  const profileMap = item.isAnonymous ? new Map() : await buildProfileByUserIdMap(item.tenantId, [item.authorUserId]);
+  return mapPostRecord(item, counts, profileMap, {
+    viewerMembershipId,
+    viewerUserId
+  });
 }
 
 export async function createPost(payload) {
@@ -1111,24 +1297,29 @@ export async function createPost(payload) {
     mediaSizeBytesOverride: payload.mediaSizeBytes ?? null
   });
 
-  await createPostMutation(getSocialDc(), {
-    id,
-    tenantId: payload.tenantId,
-    communityId: payload.communityId ?? null,
-    membershipId: payload.membershipId,
-    authorUserId: payload.userId,
-    authorUsername: payload.authorUsername,
-    authorName: payload.authorName,
-    placement,
-    kind: payload.kind,
-    title: payload.title ?? "Campus update",
-    body: payload.body,
-    mediaUrl: media.mediaUrl,
-    storagePath: media.storagePath,
-    mediaMimeType: media.mediaMimeType,
-    mediaSizeBytes: media.mediaSizeBytes === null ? null : String(media.mediaSizeBytes),
-    location: payload.location ?? null,
-    status: "published"
+  await getSocialDc().executeGraphql(CREATE_POST_PRIVATE_MUTATION, {
+    operationName: "CreatePostPrivate",
+    variables: {
+      id,
+      tenantId: payload.tenantId,
+      communityId: payload.communityId ?? null,
+      membershipId: payload.membershipId,
+      authorUserId: payload.userId,
+      authorUsername: payload.authorUsername,
+      authorName: payload.authorName,
+      authorEmail: payload.authorEmail ?? null,
+      isAnonymous: Boolean(payload.isAnonymous),
+      placement,
+      kind: payload.kind,
+      title: payload.title ?? "Campus update",
+      body: payload.body,
+      mediaUrl: media.mediaUrl,
+      storagePath: media.storagePath,
+      mediaMimeType: media.mediaMimeType,
+      mediaSizeBytes: media.mediaSizeBytes === null ? null : String(media.mediaSizeBytes),
+      location: payload.location ?? null,
+      status: "published"
+    }
   });
 
   if (media.storagePath && media.mediaMimeType && media.mediaSizeBytes !== null) {
@@ -1145,28 +1336,38 @@ export async function createPost(payload) {
     });
   }
 
-  return {
-    id,
-    tenantId: payload.tenantId,
-    communityId: payload.communityId ?? null,
-    userId: payload.userId,
-    membershipId: payload.membershipId,
-    placement,
-    kind: payload.kind,
-    mediaUrl: media.mediaUrl,
-    location: payload.location ?? null,
-    title: payload.title ?? "Campus update",
-    body: payload.body,
-    status: "published",
-    reactions: 0,
-    comments: 0,
-    createdAt: new Date().toISOString(),
-    author: {
-      userId: payload.userId,
-      username: payload.authorUsername,
-      displayName: payload.authorName
+  return mapPostRecord(
+    {
+      id,
+      tenantId: payload.tenantId,
+      communityId: payload.communityId ?? null,
+      authorUserId: payload.userId,
+      membershipId: payload.membershipId,
+      authorUsername: payload.authorUsername,
+      authorName: payload.authorName,
+      authorEmail: payload.authorEmail ?? null,
+      isAnonymous: Boolean(payload.isAnonymous),
+      placement,
+      kind: payload.kind,
+      mediaUrl: media.mediaUrl,
+      media: payload.mediaAssets ?? null,
+      location: payload.location ?? null,
+      title: payload.title ?? "Campus update",
+      body: payload.body,
+      status: "published",
+      reactions: 0,
+      comments: 0,
+      savedCount: 0,
+      isSaved: false,
+      createdAt: new Date().toISOString()
+    },
+    null,
+    null,
+    {
+      viewerMembershipId: payload.viewerMembershipId ?? payload.membershipId,
+      viewerUserId: payload.viewerUserId ?? payload.userId
     }
-  };
+  );
 }
 
 export async function createComment(payload) {
@@ -1587,7 +1788,7 @@ export async function findCommentById(commentId, { tenantId = null, viewerMember
   }
 }
 
-export async function updatePost(postId, payload, { tenantId = null, viewerMembershipId = null } = {}) {
+export async function updatePost(postId, payload, { tenantId = null, viewerMembershipId = null, viewerUserId = null } = {}) {
   await getSocialDc().executeGraphql(UPDATE_POST_MUTATION, {
     operationName: "UpdatePost",
     variables: {
@@ -1598,7 +1799,7 @@ export async function updatePost(postId, payload, { tenantId = null, viewerMembe
     }
   });
 
-  return findPostById(postId, { tenantId, viewerMembershipId });
+  return findPostById(postId, { tenantId, viewerMembershipId, viewerUserId });
 }
 
 export async function findStoryById(storyId, { tenantId = null, viewerUserId = null, viewerMembershipId = null } = {}) {

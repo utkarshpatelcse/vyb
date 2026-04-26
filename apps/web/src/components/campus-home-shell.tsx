@@ -408,8 +408,12 @@ function truncateText(value: string, maxLength: number) {
   return `${trimmed.slice(0, maxLength).trimEnd()}...`;
 }
 
+function getPostAuthorLabel(post: FeedCard) {
+  return post.isAnonymous ? "Anonymous" : post.author.displayName || post.author.username;
+}
+
 function buildInternalShareDraft(post: FeedCard) {
-  const caption = truncateText(post.body || post.title || `Post from @${post.author.username}`, 140);
+  const caption = truncateText(post.body || post.title || `Post from ${getPostAuthorLabel(post)}`, 140);
   return `${caption}\n\n${window.location.origin}${window.location.pathname}#post-${post.id}`;
 }
 
@@ -1082,7 +1086,7 @@ export function CampusHomeShell({
       const shareParams = new URLSearchParams({
         draft: buildInternalShareDraft(post),
         sharedPostId: post.id,
-        sharedPostAuthor: post.author.username,
+        sharedPostAuthor: getPostAuthorLabel(post),
         sharedPostTitle: truncateText(post.title || "", 80),
         sharedPostBody: truncateText(post.body || "", 140),
         sharedPostMediaUrl: post.media?.[0]?.url ?? post.mediaUrl ?? "",
@@ -1488,27 +1492,45 @@ export function CampusHomeShell({
 
               return (
               <div key={post.id} className="vyb-campus-feed-item">
-                <article id={`post-${post.id}`} className="fc-card">
+                <article id={`post-${post.id}`} className={`fc-card${post.isAnonymous ? " fc-card--anonymous" : ""}`}>
                   {/* ── Header ── */}
                   <div className="fc-header">
-                    <Link href={getProfileHref(post.author.username, viewerUsername)} className="fc-avatar" aria-label={post.author.username}>
-                      <CampusAvatarContent
-                        userId={post.author.userId}
-                        username={post.author.username}
-                        displayName={post.author.displayName}
-                        avatarUrl={post.author.avatarUrl ?? null}
-                        fallback={post.author.displayName.slice(0, 1).toUpperCase()}
-                        decorative
-                      />
-                    </Link>
+                    {post.isAnonymous ? (
+                      <span className="fc-avatar fc-avatar--anonymous" aria-label="Anonymous author">
+                        <CampusAvatarContent
+                          userId={post.author.userId}
+                          username={post.author.username}
+                          displayName={post.author.displayName}
+                          avatarUrl={post.author.avatarUrl ?? null}
+                          fallback={(post.author.displayName || "Anonymous").slice(0, 2).toUpperCase()}
+                          decorative
+                        />
+                      </span>
+                    ) : (
+                      <Link href={getProfileHref(post.author.username, viewerUsername)} className="fc-avatar" aria-label={post.author.username}>
+                        <CampusAvatarContent
+                          userId={post.author.userId}
+                          username={post.author.username}
+                          displayName={post.author.displayName}
+                          avatarUrl={post.author.avatarUrl ?? null}
+                          fallback={post.author.displayName.slice(0, 1).toUpperCase()}
+                          decorative
+                        />
+                      </Link>
+                    )}
                     <div className="fc-header-info">
                       <div className="fc-header-top">
-                        <Link href={getProfileHref(post.author.username, viewerUsername)} className="fc-author-name">
-                          {post.author.displayName || post.author.username}
-                        </Link>
+                        {post.isAnonymous ? (
+                          <span className="fc-author-name fc-author-name--anonymous">{getPostAuthorLabel(post)}</span>
+                        ) : (
+                          <Link href={getProfileHref(post.author.username, viewerUsername)} className="fc-author-name">
+                            {post.author.displayName || post.author.username}
+                          </Link>
+                        )}
+                        {post.isAnonymous ? <span className="fc-anon-badge">Anonymous</span> : null}
                       </div>
                       <div className="fc-header-bottom">
-                        <span className="fc-username">@{post.author.username}</span>
+                        <span className="fc-username">{post.isAnonymous ? "Hidden profile" : `@${post.author.username}`}</span>
                         <span className="fc-sep" aria-hidden="true">·</span>
                         <time className="fc-timestamp" dateTime={post.createdAt} suppressHydrationWarning>{timeAgo(post.createdAt)}</time>
                       </div>
@@ -1668,8 +1690,8 @@ export function CampusHomeShell({
                             )}
                           </div>
                           <div className="vyb-home-vibes-teaser-meta">
-                            <strong>{vibe.author.displayName}</strong>
-                            <span>@{vibe.author.username}</span>
+                            <strong>{getPostAuthorLabel(vibe)}</strong>
+                            <span>{vibe.isAnonymous ? "Hidden profile" : `@${vibe.author.username}`}</span>
                           </div>
                         </button>
                       ))}
@@ -1992,7 +2014,7 @@ export function CampusHomeShell({
 
       <SocialPostActionSheet
         post={actionPost}
-        isOwner={Boolean(actionPost && actionPost.author.username === viewerUsername)}
+        isOwner={Boolean(actionPost?.viewerCanManage)}
         isBusy={actionBusy}
         message={actionMessage}
         hideReactionCount={

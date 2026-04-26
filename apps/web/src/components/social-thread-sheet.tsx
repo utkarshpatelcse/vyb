@@ -297,9 +297,7 @@ export function SocialThreadSheet({
     const { comment, replies } = node;
     const replyTargetLabel = getReplyTargetLabel(comment, comments);
     const commentKey = getCommentRenderKey(comment, fallbackKey);
-    const canDeleteComment = Boolean(
-      comment.author?.username === viewerUsername || post?.author.username === viewerUsername
-    );
+    const canDeleteComment = Boolean(comment.author?.username === viewerUsername || post?.viewerCanManage);
     const isDeletingComment = deletingCommentId === comment.id;
 
     return (

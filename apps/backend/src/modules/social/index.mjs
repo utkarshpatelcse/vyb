@@ -17,6 +17,7 @@ import {
   deletePost,
   findCommentById,
   findPostById,
+  findPostRecordById,
   findStoryById,
   followUser,
   getFollowStats,
@@ -55,6 +56,10 @@ function buildFeedPayload(item) {
   return {
     ...item
   };
+}
+
+function isAdminRole(role) {
+  return role === "admin";
 }
 
 function buildCommentAuthor(profile, authorUserId) {
@@ -130,7 +135,7 @@ async function buildReactionMemberItems(tenantId, items) {
 function buildRepostBody(post, quote = null) {
   const trimmedQuote = requireNonEmptyString(quote) ? quote.trim() : null;
   const originalBody = requireNonEmptyString(post.body) ? post.body.trim() : "";
-  const repostLine = `Reposted from @${post.author.username}`;
+  const repostLine = post.isAnonymous ? "Reposted from Anonymous" : `Reposted from @${post.author.username}`;
 
   if (trimmedQuote && originalBody) {
     return `${trimmedQuote}\n\n${repostLine}\n${originalBody}`;
@@ -313,7 +318,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
       limit,
       placement: "feed",
       userId: authorUserId ?? null,
-      viewerMembershipId: resolvedMembershipId
+      viewerMembershipId: resolvedMembershipId,
+      viewerUserId: resolvedUserId
     });
 
     sendJson(response, 200, {
@@ -347,7 +353,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
       tenantId,
       limit,
       placement: "vibe",
-      viewerMembershipId: resolvedMembershipId
+      viewerMembershipId: resolvedMembershipId,
+      viewerUserId: resolvedUserId
     });
 
     sendJson(response, 200, {
@@ -452,8 +459,11 @@ export async function handleSocialRoute({ request, response, url, context }) {
       membershipId: resolvedMembershipId ?? payload.membershipId ?? context.actor.id,
       authorUsername: profile.username,
       authorName: profile.fullName,
+      authorEmail: profile.primaryEmail ?? null,
+      authorEmail: profile.primaryEmail ?? null,
       placement: payload.placement === "vibe" ? "vibe" : "feed",
       kind: payload.kind ?? "text",
+      isAnonymous: payload.isAnonymous === true,
       mediaAssets: Array.isArray(payload.mediaAssets) ? payload.mediaAssets : null,
       mediaUrl: requireNonEmptyString(payload.mediaUrl) ? payload.mediaUrl.trim() : null,
       mediaStoragePath: requireNonEmptyString(payload.mediaStoragePath) ? payload.mediaStoragePath.trim() : null,
@@ -461,7 +471,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
       mediaSizeBytes: Number.isFinite(Number(payload.mediaSizeBytes)) ? Number(payload.mediaSizeBytes) : null,
       location: requireNonEmptyString(payload.location) ? payload.location.trim() : profile.collegeName,
       title: requireNonEmptyString(payload.title) ? payload.title.trim() : "Campus update",
-      body: requireNonEmptyString(payload.body) ? payload.body.trim() : ""
+      body: requireNonEmptyString(payload.body) ? payload.body.trim() : "",
+      viewerMembershipId: resolvedMembershipId ?? payload.membershipId ?? context.actor.id,
+      viewerUserId: resolvedUserId
     });
 
     await logSocialActivity({
@@ -643,14 +655,16 @@ export async function handleSocialRoute({ request, response, url, context }) {
         userId: profile.userId,
         limit: 24,
         placement: "feed",
-        viewerMembershipId: resolvedMembershipId
+        viewerMembershipId: resolvedMembershipId,
+        viewerUserId: resolvedUserId
       }),
       listPostsByUser({
         tenantId,
         userId: profile.userId,
         limit: 24,
         placement: "vibe",
-        viewerMembershipId: resolvedMembershipId
+        viewerMembershipId: resolvedMembershipId,
+        viewerUserId: resolvedUserId
       })
     ]);
     const posts = [...feedPosts, ...vibePosts].sort(
@@ -760,11 +774,50 @@ export async function handleSocialRoute({ request, response, url, context }) {
     return true;
   }
 
+  const adminAnonymousIdentityMatch =
+    request.method === "GET" ? url.pathname.match(/^\/v1\/admin\/posts\/([^/]+)\/identity$/) : null;
+  if (adminAnonymousIdentityMatch) {
+    if (!isAdminRole(resolved.live?.membership?.role ?? null)) {
+      sendError(response, 403, "FORBIDDEN", "Admin access is required.");
+      return true;
+    }
+
+    const postRecord = await findPostRecordById(adminAnonymousIdentityMatch[1], {
+      tenantId: resolvedTenantId ?? null
+    });
+    if (!postRecord) {
+      sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
+      return true;
+    }
+
+    const authorProfile = postRecord.authorUserId
+      ? await getProfileByUserId({
+          tenantId: postRecord.tenantId,
+          userId: postRecord.authorUserId
+        })
+      : null;
+
+    sendJson(response, 200, {
+      postId: postRecord.id,
+      tenantId: postRecord.tenantId,
+      isAnonymous: Boolean(postRecord.isAnonymous),
+      author: {
+        userId: postRecord.authorUserId ?? null,
+        membershipId: postRecord.membershipId ?? null,
+        email: postRecord.authorEmail ?? authorProfile?.primaryEmail ?? null,
+        username: authorProfile?.username ?? postRecord.authorUsername ?? null,
+        displayName: authorProfile?.fullName ?? postRecord.authorName ?? null
+      }
+    });
+    return true;
+  }
+
   const postLikesMatch = request.method === "GET" ? url.pathname.match(/^\/v1\/posts\/([^/]+)\/likes$/) : null;
   if (postLikesMatch) {
     const post = await findPostById(postLikesMatch[1], {
       tenantId: resolvedTenantId ?? null,
-      viewerMembershipId: resolvedMembershipId
+      viewerMembershipId: resolvedMembershipId,
+      viewerUserId: resolvedUserId
     });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
@@ -802,7 +855,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
 
     const post = await findPostById(repostMatch[1], {
       tenantId: resolvedTenantId ?? null,
-      viewerMembershipId: resolvedMembershipId
+      viewerMembershipId: resolvedMembershipId,
+      viewerUserId: resolvedUserId
     });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
@@ -832,7 +886,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
       title: requireNonEmptyString(payload.quote)
         ? `Quote repost • ${post.author.displayName}`
         : `Repost • ${post.author.displayName}`,
-      body: buildRepostBody(post, payload.quote ?? null)
+      body: buildRepostBody(post, payload.quote ?? null),
+      viewerMembershipId: resolvedMembershipId ?? context.actor.id,
+      viewerUserId: resolvedUserId
     });
 
     await logSocialActivity({
@@ -853,9 +909,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
 
   const deletePostMatch = request.method === "DELETE" ? url.pathname.match(/^\/v1\/posts\/([^/]+)$/) : null;
   if (deletePostMatch) {
-    const post = await findPostById(deletePostMatch[1], {
-      tenantId: resolvedTenantId ?? null,
-      viewerMembershipId: resolvedMembershipId
+    const post = await findPostRecordById(deletePostMatch[1], {
+      tenantId: resolvedTenantId ?? null
     });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
@@ -892,9 +947,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
-    const post = await findPostById(updatePostMatch[1], {
-      tenantId: resolvedTenantId ?? null,
-      viewerMembershipId: resolvedMembershipId
+    const post = await findPostRecordById(updatePostMatch[1], {
+      tenantId: resolvedTenantId ?? null
     });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
@@ -929,7 +983,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
       },
       {
         tenantId: post.tenantId,
-        viewerMembershipId: resolvedMembershipId
+        viewerMembershipId: resolvedMembershipId,
+        viewerUserId: resolvedUserId
       }
     );
 
@@ -952,7 +1007,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
   if (listCommentMatch) {
     const post = await findPostById(listCommentMatch[1], {
       tenantId: resolvedTenantId ?? null,
-      viewerMembershipId: resolvedMembershipId
+      viewerMembershipId: resolvedMembershipId,
+      viewerUserId: resolvedUserId
     });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
@@ -992,7 +1048,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
 
     const post = await findPostById(commentMatch[1], {
       tenantId: resolvedTenantId ?? null,
-      viewerMembershipId: resolvedMembershipId
+      viewerMembershipId: resolvedMembershipId,
+      viewerUserId: resolvedUserId
     });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
@@ -1089,9 +1146,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
-    const post = await findPostById(comment.postId, {
-      tenantId: resolvedTenantId ?? null,
-      viewerMembershipId: resolvedMembershipId
+    const post = await findPostRecordById(comment.postId, {
+      tenantId: resolvedTenantId ?? null
     });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
@@ -1172,7 +1228,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
 
     const post = await findPostById(reactionMatch[1], {
       tenantId: resolvedTenantId ?? null,
-      viewerMembershipId: resolvedMembershipId
+      viewerMembershipId: resolvedMembershipId,
+      viewerUserId: resolvedUserId
     });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
