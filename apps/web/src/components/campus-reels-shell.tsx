@@ -1,6 +1,6 @@
 "use client";
 
-import type { ChatConversationPreview, ChatIdentitySummary, FeedCard, PostLikerItem, UserSearchItem } from "@vyb/contracts";
+import type { ChatConversationPreview, ChatIdentitySummary, FeedCard, FeedListResponse, PostLikerItem, UserSearchItem } from "@vyb/contracts";
 import { animate, motion, useReducedMotion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -48,6 +48,7 @@ type CampusReelsShellProps = {
   stream?: string | null;
   role: string;
   initialVibes: FeedCard[];
+  initialNextCursor: string | null;
   suggestedUsers: UserSearchItem[];
   recentChats: ChatConversationPreview[];
   initialViewerIdentity?: ChatIdentitySummary | null;
@@ -332,6 +333,7 @@ export function CampusReelsShell({
   stream,
   role,
   initialVibes,
+  initialNextCursor,
   suggestedUsers,
   recentChats,
   initialViewerIdentity = null,
@@ -392,6 +394,8 @@ export function CampusReelsShell({
   const [isPlaybackPaused, setIsPlaybackPaused] = useState(false);
   const [speedBoostPostId, setSpeedBoostPostId] = useState<string | null>(null);
   const [progressByPost, setProgressByPost] = useState<Record<string, number>>({});
+  const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor);
+  const [isLoadingMoreVibes, setIsLoadingMoreVibes] = useState(false);
   const [storedCampusSettings, setStoredCampusSettings] = useState(createDefaultCampusSettings);
   const [postDisplayPreferences, setPostDisplayPreferences] = useState<Record<string, PostDisplayPreference>>({});
 
@@ -494,6 +498,10 @@ export function CampusReelsShell({
   }, [recentChats, suggestedUsers]);
 
   useEffect(() => {
+    setNextCursor(initialNextCursor);
+  }, [initialNextCursor]);
+
+  useEffect(() => {
     setIsPlaybackPaused(false);
     setSpeedBoostPostId(null);
   }, [activePost?.id]);
@@ -523,6 +531,16 @@ export function CampusReelsShell({
       }
     };
   }, [engagement.posts.length]);
+
+  useEffect(() => {
+    if (!nextCursor || isLoadingMoreVibes || engagement.posts.length === 0) {
+      return;
+    }
+
+    if (activeIndex >= Math.max(0, engagement.posts.length - 4)) {
+      void loadMoreVibes();
+    }
+  }, [activeIndex, engagement.posts.length, isLoadingMoreVibes, nextCursor]);
 
   useEffect(() => {
     if (!isFromSearch) {
@@ -659,6 +677,38 @@ export function CampusReelsShell({
     }
 
     setActiveIndex((current) => clamp(current + (event.deltaY > 0 ? 1 : -1), 0, engagement.posts.length - 1));
+  }
+
+  async function loadMoreVibes() {
+    if (!nextCursor || isLoadingMoreVibes) {
+      return;
+    }
+
+    setIsLoadingMoreVibes(true);
+
+    try {
+      const params = new URLSearchParams({
+        limit: "12",
+        cursor: nextCursor
+      });
+      const response = await fetch(`/api/vibes?${params.toString()}`, {
+        cache: "no-store",
+        credentials: "same-origin"
+      });
+      const payload = (await response.json().catch(() => null)) as FeedListResponse | { error?: { message?: string } } | null;
+
+      if (!response.ok || !payload || !("items" in payload)) {
+        setFlashMessage(payload && "error" in payload ? payload.error?.message ?? "Could not load more vibes." : "Could not load more vibes.");
+        return;
+      }
+
+      engagement.appendPosts(payload.items);
+      setNextCursor(payload.nextCursor);
+    } catch {
+      setFlashMessage("Network issue while loading more vibes.");
+    } finally {
+      setIsLoadingMoreVibes(false);
+    }
   }
 
   function handleMediaTap(post: FeedCard) {
@@ -1259,12 +1309,8 @@ export function CampusReelsShell({
   return (
     <main className="vyb-campus-home vyb-vibes-theater-page">
       <div className="vyb-vibes-theater-backdrop" aria-hidden="true">
-        {isDesktop && activePost?.mediaUrl ? (
-          activePost.kind === "video" ? (
-            <video key={activePost.id} src={activePost.mediaUrl} autoPlay muted loop playsInline className="vyb-vibes-theater-backdrop-media" />
-          ) : (
-            <img key={activePost.id} src={activePost.mediaUrl} alt="" className="vyb-vibes-theater-backdrop-media" />
-          )
+        {isDesktop && activePost?.mediaUrl && activePost.kind !== "video" ? (
+          <img key={activePost.id} src={activePost.mediaUrl} alt="" className="vyb-vibes-theater-backdrop-media" />
         ) : null}
         <div className="vyb-vibes-theater-backdrop-wash" />
       </div>
@@ -1328,8 +1374,10 @@ export function CampusReelsShell({
             </div>
           ) : (
             <div ref={feedRef} className="vyb-vibes-feed" onWheel={handleWheel}>
-              {engagement.posts.map((item) => {
+              {engagement.posts.map((item, index) => {
                 const isActive = activePost?.id === item.id;
+                const distanceFromActive = Math.abs(index - activeIndex);
+                const shouldMountMedia = distanceFromActive <= 1;
                 const profileHref = item.author.username === viewerUsername ? "/dashboard" : `/u/${encodeURIComponent(item.author.username)}`;
                 const progress = progressByPost[item.id] ?? 0;
                 const displayControls = getPostDisplayControls(storedCampusSettings, item, postDisplayPreferences[item.id]);
@@ -1353,11 +1401,15 @@ export function CampusReelsShell({
                         className="vyb-vibes-stage-media-shell"
                         role="presentation"
                       >
-                        {item.mediaUrl ? (
+                        {item.mediaUrl && shouldMountMedia ? (
                           item.kind === "video" ? (
                             <video
                               ref={(node) => {
-                                videoRefs.current[item.id] = node;
+                                if (node) {
+                                  videoRefs.current[item.id] = node;
+                                } else {
+                                  delete videoRefs.current[item.id];
+                                }
                               }}
                               src={item.mediaUrl}
                               className="vyb-vibes-stage-media"

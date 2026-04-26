@@ -57,6 +57,7 @@ export default async function VibesPage({
       stream={profile.profile?.stream}
       role={me?.membershipSummary.role ?? viewer.role}
       initialVibes={vibes.items}
+      initialNextCursor={vibes.nextCursor}
       suggestedUsers={suggestedResponse.items}
       recentChats={chatInbox.items}
       initialViewerIdentity={chatInbox.viewer?.activeIdentity ?? null}

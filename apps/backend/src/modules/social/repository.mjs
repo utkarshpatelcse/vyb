@@ -471,6 +471,44 @@ function toIsoString(value) {
   return toDate(value).toISOString();
 }
 
+function parsePostCursor(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+
+  try {
+    const decoded = JSON.parse(Buffer.from(value.trim(), "base64url").toString("utf8"));
+    const createdAtMs = new Date(decoded.createdAt).getTime();
+    if (!Number.isFinite(createdAtMs) || typeof decoded.id !== "string") {
+      return null;
+    }
+
+    return {
+      createdAtMs,
+      id: decoded.id
+    };
+  } catch {
+    return null;
+  }
+}
+
+function isBeforePostCursor(item, cursor) {
+  if (!cursor) {
+    return true;
+  }
+
+  const createdAtMs = new Date(item.createdAt).getTime();
+  if (!Number.isFinite(createdAtMs)) {
+    return false;
+  }
+
+  if (createdAtMs !== cursor.createdAtMs) {
+    return createdAtMs < cursor.createdAtMs;
+  }
+
+  return String(item.id) < cursor.id;
+}
+
 function isActiveStory(story) {
   return toDate(story.expiresAt).getTime() > Date.now();
 }
@@ -913,9 +951,10 @@ async function mapPostList(records, viewerMembershipId = null, profileMap = null
   return records.map((item) => mapPostRecord(item, counts, profileMap));
 }
 
-async function listFallbackPosts({ tenantId, communityId = null, limit, placement = "feed", userId = null }) {
+async function listFallbackPosts({ tenantId, communityId = null, limit, placement = "feed", userId = null, cursor = null }) {
   const store = await ensureFallbackStore();
   const normalizedPlacement = normalizePlacement(placement);
+  const parsedCursor = parsePostCursor(cursor);
 
   return store.posts
     .map(normalizeFallbackPostRecord)
@@ -925,6 +964,7 @@ async function listFallbackPosts({ tenantId, communityId = null, limit, placemen
     .filter((item) => (communityId ? item.communityId === communityId : true))
     .filter((item) => (userId ? item.authorUserId === userId : true))
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .filter((item) => isBeforePostCursor(item, parsedCursor))
     .slice(0, limit)
     .map((item) => mapPostRecord(item));
 }
@@ -967,10 +1007,13 @@ export async function listPosts({
   limit,
   placement = "feed",
   userId = null,
-  viewerMembershipId = null
+  viewerMembershipId = null,
+  cursor = null
 }) {
   const normalizedPlacement = normalizePlacement(placement);
-  const effectiveLimit = communityId ? Math.max(limit * FEED_SCAN_MULTIPLIER, limit) : limit;
+  const parsedCursor = parsePostCursor(cursor);
+  const cursorScanLimit = parsedCursor ? Math.min(TENANT_SCAN_LIMIT, Math.max(limit * FEED_SCAN_MULTIPLIER, limit + 1)) : limit;
+  const effectiveLimit = communityId || parsedCursor ? Math.max(cursorScanLimit * FEED_SCAN_MULTIPLIER, cursorScanLimit) : limit;
 
   try {
     const response = userId
@@ -988,6 +1031,7 @@ export async function listPosts({
 
     const filtered = response.data.posts
       .filter((item) => (communityId ? item.communityId === communityId : true))
+      .filter((item) => isBeforePostCursor(item, parsedCursor))
       .slice(0, limit);
 
     const profileMap = await buildProfileByUserIdMap(
@@ -1006,6 +1050,7 @@ export async function listPosts({
       placement: normalizedPlacement,
       communityId,
       userId,
+      cursor: cursor ?? null,
       message: error instanceof Error ? error.message : String(error)
     });
 
@@ -1014,7 +1059,8 @@ export async function listPosts({
       communityId,
       limit,
       placement: normalizedPlacement,
-      userId
+      userId,
+      cursor
     });
   }
 }

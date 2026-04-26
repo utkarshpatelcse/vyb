@@ -6,6 +6,7 @@ import {
   dismissBackgroundPublishTask,
   getBackgroundPublishTasks,
   isBackgroundPublishTaskActive,
+  restoreBackgroundPublishQueue,
   subscribeBackgroundPublishTasks,
   type BackgroundPublishTask
 } from "../lib/background-publish";
@@ -84,6 +85,7 @@ export function BackgroundPublishManager() {
   const refreshedTaskIdsRef = useRef(new Set<string>());
 
   useEffect(() => {
+    void restoreBackgroundPublishQueue();
     return subscribeBackgroundPublishTasks((nextTasks) => {
       setTasks(nextTasks);
     });

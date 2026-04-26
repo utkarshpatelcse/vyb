@@ -1,7 +1,7 @@
 "use client";
 
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { getDownloadURL, ref, uploadBytesResumable, type UploadTaskSnapshot } from "firebase/storage";
 import { getFirebaseClientAuth, getFirebaseClientStorage, isFirebaseClientConfigured } from "./firebase-client";
 
 export type UploadedSocialMediaAsset = {
@@ -30,7 +30,7 @@ type VideoFrameRequester = HTMLVideoElement & {
 
 const DEFAULT_MAX_VIDEO_BYTES = 40 * 1024 * 1024;
 const DEFAULT_TARGET_VIDEO_BYTES = Math.floor(DEFAULT_MAX_VIDEO_BYTES * 0.96);
-const SERVER_PROXY_SAFE_UPLOAD_BYTES = 4 * 1024 * 1024;
+const SERVER_PROXY_SAFE_UPLOAD_BYTES = DEFAULT_MAX_VIDEO_BYTES;
 const VIDEO_COMPRESSION_FRAME_RATE = 30;
 const VIDEO_AUDIO_BITRATE = 128_000;
 const MIN_VIDEO_BITRATE = 500_000;
@@ -112,6 +112,10 @@ function canSafelyFallbackToServerProxy(file: File) {
     isPrivateNetworkHost;
 
   return isLocalHost || file.size <= SERVER_PROXY_SAFE_UPLOAD_BYTES;
+}
+
+function isFirebasePermissionError(error: unknown) {
+  return error instanceof Error && /storage\/unauthorized|permission|unauthorized/i.test(error.message);
 }
 
 async function loadVideoElement(file: File) {
@@ -328,6 +332,7 @@ export async function uploadSocialMediaAsset(
   options?: {
     debugTaskId?: string;
     debugStage?: string;
+    onUploadProgress?: (progress: number) => void;
   }
 ) {
   const uploadViaServerProxy = async () => {
@@ -358,7 +363,7 @@ export async function uploadSocialMediaAsset(
     if (!response.ok || !payload?.asset) {
       const message =
         response.status === 413
-          ? "This deployed upload route rejected the file before it reached storage. Large social uploads must go directly to Firebase Storage in production."
+          ? "This upload route rejected the file before it reached storage. Deploy the Firebase Storage rules for direct uploads or keep the file smaller."
           : payload?.error?.message ?? "We could not upload this media right now.";
       const requestId = payload?.error?.requestId ? `, request: ${payload.error.requestId}` : "";
       throw new Error(`${message} (stage: upload, status: ${response.status}${requestId})`);
@@ -425,7 +430,7 @@ export async function uploadSocialMediaAsset(
 
       if (!canSafelyFallbackToServerProxy(file)) {
         throw new Error(
-          "Firebase sign-in is not ready for direct upload, and this file is too large for the deployed upload proxy. Refresh the session and try again."
+          "Firebase sign-in is not ready for direct upload, and this file is too large for the upload proxy. Refresh the session and try again."
         );
       }
 
@@ -436,12 +441,26 @@ export async function uploadSocialMediaAsset(
       await currentUser.getIdToken(true);
       const storage = getFirebaseClientStorage();
       const storageRef = ref(storage, preparePayload.directUpload.storagePath);
-      const uploadSnapshot = await uploadBytes(storageRef, file, {
-        contentType: preparePayload.directUpload.mimeType,
-        cacheControl: preparePayload.directUpload.cacheControl,
-        customMetadata: preparePayload.directUpload.customMetadata
+      const uploadSnapshot = await new Promise<UploadTaskSnapshot>((resolve, reject) => {
+        const uploadTask = uploadBytesResumable(storageRef, file, {
+          contentType: preparePayload.directUpload!.mimeType,
+          cacheControl: preparePayload.directUpload!.cacheControl,
+          customMetadata: preparePayload.directUpload!.customMetadata
+        });
+
+        uploadTask.on(
+          "state_changed",
+          (snapshot) => {
+            if (snapshot.totalBytes > 0) {
+              options?.onUploadProgress?.(snapshot.bytesTransferred / snapshot.totalBytes);
+            }
+          },
+          reject,
+          () => resolve(uploadTask.snapshot)
+        );
       });
       const url = await getDownloadURL(uploadSnapshot.ref);
+      options?.onUploadProgress?.(1);
 
       return {
         mediaType: preparePayload.directUpload.mediaType,
@@ -460,12 +479,25 @@ export async function uploadSocialMediaAsset(
       if (!canSafelyFallbackToServerProxy(file)) {
         throw new Error(
           error instanceof Error
-            ? `${error.message} Direct Firebase upload failed, and this file is too large for the deployed upload proxy.`
-            : "Direct Firebase upload failed, and this file is too large for the deployed upload proxy."
+            ? `${error.message} Direct Firebase upload failed, and this file is too large for the upload proxy.`
+            : "Direct Firebase upload failed, and this file is too large for the upload proxy."
         );
       }
 
-      return uploadViaServerProxy();
+      try {
+        return await uploadViaServerProxy();
+      } catch (fallbackError) {
+        if (isFirebasePermissionError(error)) {
+          const directErrorMessage = error instanceof Error ? error.message : "Direct Firebase upload failed.";
+          throw new Error(
+            fallbackError instanceof Error
+              ? `${directErrorMessage} Server upload fallback also failed: ${fallbackError.message}`
+              : `${directErrorMessage} Server upload fallback also failed.`
+          );
+        }
+
+        throw fallbackError;
+      }
     }
   }
 

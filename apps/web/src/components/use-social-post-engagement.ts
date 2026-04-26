@@ -338,6 +338,22 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
     setPosts((current) => [post, ...current]);
   }
 
+  function appendPosts(nextPosts: FeedCard[]) {
+    setPosts((current) => {
+      const seenIds = new Set(current.map((post) => post.id));
+      const uniqueNextPosts = nextPosts.filter((post) => {
+        if (seenIds.has(post.id)) {
+          return false;
+        }
+
+        seenIds.add(post.id);
+        return true;
+      });
+
+      return uniqueNextPosts.length > 0 ? [...current, ...uniqueNextPosts] : current;
+    });
+  }
+
   function replacePost(post: FeedCard) {
     setPosts((current) => current.map((item) => (item.id === post.id ? post : item)));
   }
@@ -476,6 +492,7 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
     posts,
     setPosts,
     prependPost,
+    appendPosts,
     replacePost,
     removePost,
     selectedPost,

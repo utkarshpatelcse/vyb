@@ -4,7 +4,52 @@ import { cookies } from "next/headers";
 import { getCampusVibes, proxyBackendMutation } from "../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../src/lib/dev-session";
 
-export async function GET() {
+const MAX_VIBE_VIDEO_BYTES = 40 * 1024 * 1024;
+const VIBE_VIDEO_MIME_TYPES = new Set(["video/mp4", "video/webm", "video/quicktime"]);
+
+function normalizeMimeType(value: unknown) {
+  return typeof value === "string" ? value.split(";")[0]?.trim().toLowerCase() ?? "" : "";
+}
+
+function isSafeVibeStoragePath(value: unknown, tenantId: string, userId: string) {
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  const segments = value.split("/").filter(Boolean);
+  return (
+    segments.length === 6 &&
+    segments[0] === "social" &&
+    segments[1] === tenantId &&
+    segments[2] === "posts" &&
+    segments[3] === "vibe" &&
+    segments[4] === userId &&
+    /\.(mp4|webm|mov)$/i.test(segments[5] ?? "")
+  );
+}
+
+function isSafeVibeMediaUrl(value: unknown, storagePath: string) {
+  if (typeof value !== "string" || !value.trim()) {
+    return false;
+  }
+
+  const mediaUrl = value.trim();
+  if (mediaUrl.startsWith("/api/social-media/files/")) {
+    return mediaUrl.includes(storagePath.split("/").map(encodeURIComponent).join("/"));
+  }
+
+  try {
+    const parsed = new URL(mediaUrl);
+    return (
+      parsed.hostname === "firebasestorage.googleapis.com" &&
+      parsed.pathname.includes(`/o/${encodeURIComponent(storagePath)}`)
+    );
+  } catch {
+    return false;
+  }
+}
+
+export async function GET(request: Request) {
   const viewer = readDevSessionFromCookieStore(await cookies());
 
   if (!viewer) {
@@ -20,7 +65,11 @@ export async function GET() {
   }
 
   try {
-    return NextResponse.json(await getCampusVibes(viewer));
+    const url = new URL(request.url);
+    const rawLimit = Number(url.searchParams.get("limit") ?? "24");
+    const limit = Number.isInteger(rawLimit) && rawLimit > 0 && rawLimit <= 50 ? rawLimit : 24;
+    const cursor = url.searchParams.get("cursor");
+    return NextResponse.json(await getCampusVibes(viewer, limit, cursor));
   } catch {
     return NextResponse.json({ tenantId: viewer.tenantId, communityId: null, items: [], nextCursor: null });
   }
@@ -69,15 +118,39 @@ export async function POST(request: Request) {
     );
   }
 
+  const mediaStoragePath = payload.mediaStoragePath?.trim() ?? "";
+  const mediaMimeType = normalizeMimeType(payload.mediaMimeType);
+  const mediaSizeBytes = Number(payload.mediaSizeBytes);
+
+  if (
+    !isSafeVibeStoragePath(mediaStoragePath, viewer.tenantId, viewer.userId) ||
+    !isSafeVibeMediaUrl(payload.mediaUrl, mediaStoragePath) ||
+    !VIBE_VIDEO_MIME_TYPES.has(mediaMimeType) ||
+    !Number.isFinite(mediaSizeBytes) ||
+    mediaSizeBytes <= 0 ||
+    mediaSizeBytes > MAX_VIBE_VIDEO_BYTES
+  ) {
+    return NextResponse.json(
+      {
+        error: {
+          code: "INVALID_VIBE_MEDIA",
+          message: "Vibes must use a verified video uploaded by your account.",
+          requestId
+        }
+      },
+      { status: 400 }
+    );
+  }
+
   console.info("[web/vibes] create-start", {
     requestId,
     debugStage,
     tenantId: viewer.tenantId,
     membershipId: viewer.membershipId,
     hasMediaUrl: Boolean(payload.mediaUrl),
-    mediaStoragePath: payload.mediaStoragePath ?? null,
-    mediaMimeType: payload.mediaMimeType ?? null,
-    mediaSizeBytes: payload.mediaSizeBytes ?? null
+    mediaStoragePath,
+    mediaMimeType,
+    mediaSizeBytes
   });
 
   try {
@@ -92,10 +165,10 @@ export async function POST(request: Request) {
         kind: "video",
         title: payload.title ?? "",
         body: payload.body ?? "",
-        mediaUrl: payload.mediaUrl,
-        mediaStoragePath: payload.mediaStoragePath ?? null,
-        mediaMimeType: payload.mediaMimeType ?? null,
-        mediaSizeBytes: payload.mediaSizeBytes ?? null,
+        mediaUrl: payload.mediaUrl.trim(),
+        mediaStoragePath,
+        mediaMimeType,
+        mediaSizeBytes,
         location: payload.location ?? null
       },
       viewer

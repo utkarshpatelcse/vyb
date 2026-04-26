@@ -1,0 +1,51 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAllowedSocialPath(assetType, placement) {
+      return assetType in ["posts", "stories"] && placement in ["feed", "vibe"];
+    }
+
+    function isAllowedSocialContent() {
+      return request.resource != null &&
+        (
+          request.resource.contentType.matches("image/.*") ||
+          request.resource.contentType.matches("video/.*")
+        );
+    }
+
+    function isWithinSocialSizeLimit() {
+      return request.resource != null &&
+        (
+          (request.resource.contentType.matches("image/.*") && request.resource.size <= 4 * 1024 * 1024) ||
+          (request.resource.contentType.matches("video/.*") && request.resource.size <= 40 * 1024 * 1024)
+        );
+    }
+
+    function hasExpectedSocialMetadata(tenantId, userId) {
+      return request.resource != null &&
+        request.resource.metadata.tenant_id == tenantId &&
+        request.resource.metadata.uploader_id == userId &&
+        request.resource.metadata.upload_intent in ["post", "story", "vibe"] &&
+        request.resource.metadata.origin_module == "social";
+    }
+
+    match /social/{tenantId}/{assetType}/{placement}/{userId}/{fileName} {
+      allow read: if true;
+      allow create: if isOwner(userId) &&
+        isAllowedSocialPath(assetType, placement) &&
+        isAllowedSocialContent() &&
+        isWithinSocialSizeLimit() &&
+        hasExpectedSocialMetadata(tenantId, userId);
+      allow update, delete: if false;
+    }
+  }
+}

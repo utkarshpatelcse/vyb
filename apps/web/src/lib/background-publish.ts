@@ -73,6 +73,109 @@ const listeners = new Set<(items: BackgroundPublishTask[]) => void>();
 const payloadByTaskId = new Map<string, BackgroundPublishRequest>();
 const queuedTaskIds: string[] = [];
 let activeTaskId: string | null = null;
+let restoreQueuePromise: Promise<void> | null = null;
+
+type PersistedBackgroundPublishRecord = {
+  id: string;
+  task: BackgroundPublishTask;
+  payload: BackgroundPublishRequest;
+};
+
+const PUBLISH_QUEUE_DB_NAME = "vyb-background-publish";
+const PUBLISH_QUEUE_DB_VERSION = 1;
+const PUBLISH_QUEUE_STORE_NAME = "tasks";
+
+function canPersistBackgroundQueue() {
+  return typeof indexedDB !== "undefined";
+}
+
+function idbRequestToPromise<T>(request: IDBRequest<T>) {
+  return new Promise<T>((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("IndexedDB request failed."));
+  });
+}
+
+async function openBackgroundQueueDb() {
+  if (!canPersistBackgroundQueue()) {
+    return null;
+  }
+
+  const request = indexedDB.open(PUBLISH_QUEUE_DB_NAME, PUBLISH_QUEUE_DB_VERSION);
+  request.onupgradeneeded = () => {
+    const db = request.result;
+    if (!db.objectStoreNames.contains(PUBLISH_QUEUE_STORE_NAME)) {
+      db.createObjectStore(PUBLISH_QUEUE_STORE_NAME, { keyPath: "id" });
+    }
+  };
+
+  return idbRequestToPromise(request);
+}
+
+async function persistTaskRecord(taskId: string) {
+  const task = tasks.find((item) => item.id === taskId);
+  const payload = payloadByTaskId.get(taskId);
+  if (!task || !payload || !isBackgroundPublishTaskActive(task.status)) {
+    return;
+  }
+
+  try {
+    const db = await openBackgroundQueueDb();
+    if (!db) {
+      return;
+    }
+
+    const transaction = db.transaction(PUBLISH_QUEUE_STORE_NAME, "readwrite");
+    await idbRequestToPromise(
+      transaction.objectStore(PUBLISH_QUEUE_STORE_NAME).put({
+        id: taskId,
+        task: { ...task, logs: [...task.logs] },
+        payload
+      } satisfies PersistedBackgroundPublishRecord)
+    );
+  } catch (error) {
+    console.warn("[background-publish] could not persist task", {
+      taskId,
+      message: error instanceof Error ? error.message : "unknown"
+    });
+  }
+}
+
+async function deletePersistedTask(taskId: string) {
+  try {
+    const db = await openBackgroundQueueDb();
+    if (!db) {
+      return;
+    }
+
+    const transaction = db.transaction(PUBLISH_QUEUE_STORE_NAME, "readwrite");
+    await idbRequestToPromise(transaction.objectStore(PUBLISH_QUEUE_STORE_NAME).delete(taskId));
+  } catch (error) {
+    console.warn("[background-publish] could not delete persisted task", {
+      taskId,
+      message: error instanceof Error ? error.message : "unknown"
+    });
+  }
+}
+
+async function readPersistedTasks() {
+  try {
+    const db = await openBackgroundQueueDb();
+    if (!db) {
+      return [] as PersistedBackgroundPublishRecord[];
+    }
+
+    const transaction = db.transaction(PUBLISH_QUEUE_STORE_NAME, "readonly");
+    return await idbRequestToPromise<PersistedBackgroundPublishRecord[]>(
+      transaction.objectStore(PUBLISH_QUEUE_STORE_NAME).getAll()
+    );
+  } catch (error) {
+    console.warn("[background-publish] could not read persisted queue", {
+      message: error instanceof Error ? error.message : "unknown"
+    });
+    return [] as PersistedBackgroundPublishRecord[];
+  }
+}
 
 function createTaskId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -162,6 +265,7 @@ function appendTaskLog(taskId: string, stage: string, message: string) {
     stage,
     message
   });
+  void persistTaskRecord(taskId);
   notifyListeners();
 }
 
@@ -172,6 +276,7 @@ function updateTask(taskId: string, patch: Partial<BackgroundPublishTask>) {
   }
 
   Object.assign(target, patch);
+  void persistTaskRecord(taskId);
   notifyListeners();
 }
 
@@ -286,7 +391,14 @@ async function runVibePublish(taskId: string, input: Extract<BackgroundPublishRe
 
   const uploadedMedia = await uploadSocialMediaAsset(preparedVideo.file, "vibe", {
     debugTaskId: taskId,
-    debugStage: "Upload"
+    debugStage: "Upload",
+    onUploadProgress: (progress) => {
+      updateTask(taskId, {
+        status: "uploading",
+        detail: `Uploading vibe video... ${Math.round(progress * 100)}%`,
+        progress: 0.34 + clampProgress(progress) * 0.42
+      });
+    }
   });
   appendTaskLog(taskId, "Upload", `Media uploaded to ${uploadedMedia.storagePath}`);
   const trimmedCaption = input.caption.trim();
@@ -574,6 +686,7 @@ function pumpBackgroundPublishQueue() {
     })
     .finally(() => {
       payloadByTaskId.delete(nextTaskId);
+      void deletePersistedTask(nextTaskId);
       activeTaskId = null;
       notifyListeners();
       pumpBackgroundPublishQueue();
@@ -582,6 +695,47 @@ function pumpBackgroundPublishQueue() {
 
 export function getBackgroundPublishTasks() {
   return tasks.map((task) => ({ ...task, logs: [...task.logs] }));
+}
+
+export function restoreBackgroundPublishQueue() {
+  if (restoreQueuePromise) {
+    return restoreQueuePromise;
+  }
+
+  restoreQueuePromise = (async () => {
+    const records = await readPersistedTasks();
+    const resumableRecords = records
+      .filter((record) => record?.task?.id && record.payload)
+      .sort((left, right) => new Date(left.task.createdAt).getTime() - new Date(right.task.createdAt).getTime());
+
+    for (const record of resumableRecords) {
+      if (tasks.some((task) => task.id === record.id) || payloadByTaskId.has(record.id)) {
+        continue;
+      }
+
+      const restoredTask: BackgroundPublishTask = {
+        ...record.task,
+        status: "queued",
+        detail: `Resuming ${record.task.kind} upload after refresh...`,
+        progress: Math.max(0.02, Math.min(record.task.progress || 0.02, 0.18)),
+        completedAt: null,
+        successMessage: null,
+        errorMessage: null,
+        logs: [...record.task.logs, formatTaskLog("Queue", "Resuming upload after refresh.")].slice(-12)
+      };
+
+      tasks.unshift(restoredTask);
+      payloadByTaskId.set(record.id, record.payload);
+      queuedTaskIds.push(record.id);
+    }
+
+    if (resumableRecords.length > 0) {
+      notifyListeners();
+      pumpBackgroundPublishQueue();
+    }
+  })();
+
+  return restoreQueuePromise;
 }
 
 export function subscribeBackgroundPublishTasks(listener: (items: BackgroundPublishTask[]) => void) {
@@ -616,6 +770,7 @@ export function enqueueBackgroundPublish(input: BackgroundPublishRequest) {
   payloadByTaskId.set(taskId, input);
   queuedTaskIds.push(taskId);
   appendTaskLog(taskId, "Queue", buildTaskQueuedDetail(input));
+  void persistTaskRecord(taskId);
   notifyListeners();
   pumpBackgroundPublishQueue();
   return taskId;
@@ -634,5 +789,6 @@ export function dismissBackgroundPublishTask(taskId: string) {
 
   tasks.splice(taskIndex, 1);
   payloadByTaskId.delete(taskId);
+  void deletePersistedTask(taskId);
   notifyListeners();
 }
