@@ -1,4 +1,4 @@
-import { getFirebaseAdminAuth } from "../../../../../packages/config/src/index.mjs";
+import { getFirebaseAdminAuth, isSuperAdminEmail } from "../../../../../packages/config/src/index.mjs";
 import { readJson, sendError, sendJson } from "../../lib/http.mjs";
 import { buildFallbackDisplayName, resolveLiveContext } from "../shared/viewer-context.mjs";
 import { getAllowedCollegeDomains, isAllowedCollegeEmail, launchCollege, normalizeEmail } from "./college-access.mjs";
@@ -88,6 +88,17 @@ function buildSessionPayload({ displayName, email, membership, tenant, userId })
   };
 }
 
+function buildSuperAdminFallbackSession({ userId, email, displayName }) {
+  return {
+    userId,
+    email,
+    displayName,
+    membershipId: `admin-${userId}`,
+    tenantId: "super-admin",
+    role: "admin"
+  };
+}
+
 export function getIdentityModuleHealth() {
   return {
     module: "identity",
@@ -152,6 +163,24 @@ export async function handleIdentityRoute({ request, response, url, context }) {
       });
 
       if (!resolved?.live?.tenant || !resolved.live.membership) {
+        if (isSuperAdminEmail(email)) {
+          const session = buildSuperAdminFallbackSession({
+            userId: decoded.uid,
+            email,
+            displayName
+          });
+          sendJson(response, 200, {
+            session,
+            profileCompleted: true,
+            nextPath: "/admin"
+          });
+          console.info("[identity] session-bootstrap:super-admin-fallback", {
+            uid: decoded.uid,
+            email
+          });
+          return true;
+        }
+
         console.warn("[identity] session-bootstrap:access-pending", {
           uid: decoded.uid,
           email
@@ -173,14 +202,14 @@ export async function handleIdentityRoute({ request, response, url, context }) {
         userId: decoded.uid,
         email,
         displayName: storedProfile?.fullName ?? resolved.live.user.displayName ?? displayName,
-        membership: resolved.live.membership,
+        membership: isSuperAdminEmail(email) ? { ...resolved.live.membership, role: "admin" } : resolved.live.membership,
         tenant: resolved.live.tenant
       });
 
       sendJson(response, 200, {
         session,
-        profileCompleted: Boolean(storedProfile?.profileCompleted),
-        nextPath: storedProfile?.profileCompleted ? "/home" : "/onboarding"
+        profileCompleted: isSuperAdminEmail(email) ? true : Boolean(storedProfile?.profileCompleted),
+        nextPath: isSuperAdminEmail(email) ? "/admin" : storedProfile?.profileCompleted ? "/home" : "/onboarding"
       });
       console.info("[identity] session-bootstrap:success", {
         uid: decoded.uid,

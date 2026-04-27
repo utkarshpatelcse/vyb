@@ -234,13 +234,40 @@ function resolveTenantScope({ requestedTenantId, resolvedTenantId, routeLabel })
   return resolvedTenantId ?? requestedTenantId ?? null;
 }
 
+function isRecoverableReadError(error) {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return (
+    message.includes("oauth2.googleapis.com/token") ||
+    message.includes("failed to fetch a valid google oauth2 access token") ||
+    message.includes("connect eacces") ||
+    message.includes("econnrefused") ||
+    message.includes("enotfound") ||
+    message.includes("fetch failed") ||
+    message.includes("unrecognized operation query.")
+  );
+}
+
 async function buildUserSearchItems({ tenantId, viewerUserId, query, limit }) {
-  const profiles = await searchProfiles({
-    tenantId,
-    query,
-    limit,
-    excludedUserId: viewerUserId
-  });
+  let profiles = [];
+
+  try {
+    profiles = await searchProfiles({
+      tenantId,
+      query,
+      limit,
+      excludedUserId: viewerUserId
+    });
+  } catch (error) {
+    if (!isRecoverableReadError(error)) {
+      throw error;
+    }
+
+    console.warn("[social] search-users:profiles-unavailable", {
+      tenantId,
+      query,
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
 
   return Promise.all(
     profiles.map(async (profile) => {
@@ -283,9 +310,22 @@ async function buildUserSearchItems({ tenantId, viewerUserId, query, limit }) {
 }
 
 async function buildSuggestedUserItems({ tenantId, viewerUserId, limit }) {
-  const profiles = (await listProfilesByTenant(tenantId))
-    .filter((profile) => profile.userId !== viewerUserId)
-    .slice(0, limit);
+  let profiles = [];
+
+  try {
+    profiles = (await listProfilesByTenant(tenantId))
+      .filter((profile) => profile.userId !== viewerUserId)
+      .slice(0, limit);
+  } catch (error) {
+    if (!isRecoverableReadError(error)) {
+      throw error;
+    }
+
+    console.warn("[social] suggested-users:profiles-unavailable", {
+      tenantId,
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
 
   return Promise.all(
     profiles.map(async (profile) => {

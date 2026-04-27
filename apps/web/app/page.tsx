@@ -2,6 +2,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { VybLogoLockup } from "../src/components/vyb-logo";
+import { isSuperAdminEmail } from "../src/lib/admin-access";
 import { getClientShellData } from "../src/lib/backend";
 import { getDisplayCollegeName } from "../src/lib/college-access";
 import { PROFILE_COMPLETION_COOKIE, readDevSessionFromCookieStore } from "../src/lib/dev-session";
@@ -12,6 +13,10 @@ export default async function HomePage() {
   const profileCompleted = cookieStore.get(PROFILE_COMPLETION_COOKIE)?.value === "1";
 
   if (viewer) {
+    if (isSuperAdminEmail(viewer.email)) {
+      redirect("/admin");
+    }
+
     redirect(profileCompleted ? "/home" : "/onboarding");
   }
 

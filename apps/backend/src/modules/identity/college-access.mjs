@@ -1,3 +1,5 @@
+import { isSuperAdminEmail } from "../../../../../packages/config/src/index.mjs";
+
 export const launchCollege = {
   id: "kiet",
   name: "KIET Group of Institutions Delhi-NCR",
@@ -15,6 +17,10 @@ export function getEmailDomain(email) {
 }
 
 export function isAllowedCollegeEmail(email) {
+  if (isSuperAdminEmail(email)) {
+    return true;
+  }
+
   const domain = getEmailDomain(email);
   return domain ? allowedCollegeDomains.includes(domain) : false;
 }

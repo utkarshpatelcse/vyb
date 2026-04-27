@@ -999,6 +999,7 @@ export function CampusMessagesShell({
       initialConversation ? upsertConversationItem(initialItems, buildConversationPreview(initialConversation)) : initialItems
     )
   );
+  const [activeTab, setActiveTab] = useState<"chats" | "community">("chats");
   const [activeConversationId, setActiveConversationId] = useState<string | null>(initialConversationId);
   const [activeConversation, setActiveConversation] = useState<ActiveConversation | null>(initialConversation);
   const [conversationLoading, setConversationLoading] = useState(Boolean(initialConversationId && !initialConversation && !activeConversationError));
@@ -4298,55 +4299,60 @@ export function CampusMessagesShell({
 
         <section className="spm-list-pane" aria-label="Conversations">
           <div className="spm-list-header">
-            <div className="spm-list-header-top">
-              <div className="spm-list-header-main">
-                <button
-                  type="button"
-                  className="spm-list-back"
-                  onClick={handleExitMessages}
-                  aria-label="Go back"
-                >
-                  <IconArrowLeft />
-                </button>
-                <h1 className="spm-list-title">Messages</h1>
-              </div>
-              {unreadCount > 0 && (
-                <span className="spm-unread-chip">{unreadCount} new</span>
-              )}
+            <div className="spm-tabs-container">
+              <button
+                type="button"
+                className={`spm-tab-item${activeTab === "chats" ? " is-active" : ""}`}
+                onClick={() => setActiveTab("chats")}
+              >
+                <span className="spm-tab-label">CHATS</span>
+                {unreadCount > 0 && (
+                  <span className="spm-tab-badge">{unreadCount}</span>
+                )}
+              </button>
+              <button
+                type="button"
+                className={`spm-tab-item${activeTab === "community" ? " is-active" : ""}`}
+                onClick={() => setActiveTab("community")}
+              >
+                <span className="spm-tab-label">COMMUNITY</span>
+              </button>
             </div>
 
-            <label
-              className={`spm-ghost-search${focused || query ? " spm-ghost-search-active" : ""}`}
-              aria-label="Search campus users"
-            >
-              <span className="spm-ghost-search-icon"><IconSearch /></span>
-              <input
-                ref={searchInputRef}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                onFocus={() => setFocused(true)}
-                onBlur={() => setFocused(false)}
-                placeholder="Search doston by handle or name..."
-                autoCapitalize="none"
-                autoComplete="off"
-                spellCheck={false}
-                id="spm-search-input"
-                aria-label="Search chats by name or user ID"
-              />
-              {isSearching && (
-                <button
-                  type="button"
-                  className="spm-ghost-search-clear"
-                  onClick={() => {
-                    setQuery("");
-                    searchInputRef.current?.focus();
-                  }}
-                  aria-label="Clear search"
-                >
-                  x
-                </button>
-              )}
-            </label>
+            <div className="spm-list-search-wrap">
+              <label
+                className={`spm-ghost-search${focused || query ? " spm-ghost-search-active" : ""}`}
+                aria-label="Search campus users"
+              >
+                <span className="spm-ghost-search-icon"><IconSearch /></span>
+                <input
+                  ref={searchInputRef}
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onFocus={() => setFocused(true)}
+                  onBlur={() => setFocused(false)}
+                  placeholder="Search doston by handle or name..."
+                  autoCapitalize="none"
+                  autoComplete="off"
+                  spellCheck={false}
+                  id="spm-search-input"
+                  aria-label="Search chats by name or user ID"
+                />
+                {isSearching && (
+                  <button
+                    type="button"
+                    className="spm-ghost-search-clear"
+                    onClick={() => {
+                      setQuery("");
+                      searchInputRef.current?.focus();
+                    }}
+                    aria-label="Clear search"
+                  >
+                    x
+                  </button>
+                )}
+              </label>
+            </div>
           </div>
 
           {loadError && (
@@ -4357,150 +4363,162 @@ export function CampusMessagesShell({
           )}
 
           <div className="spm-conv-list" role="list" aria-label="Conversation list">
-            {isSearching && (
+            {activeTab === "chats" ? (
               <>
-                {searchLoading && (
-                  <div className="spm-search-hint">
-                    <span className="spm-search-spinner" aria-hidden="true" />
-                    Searching campus...
-                  </div>
+                {isSearching && (
+                  <>
+                    {searchLoading && (
+                      <div className="spm-search-hint">
+                        <span className="spm-search-spinner" aria-hidden="true" />
+                        Searching campus...
+                      </div>
+                    )}
+
+                    {!searchLoading && searchResults.length === 0 && (
+                      <div className="spm-empty-state" role="status">
+                        <div className="spm-empty-icon" aria-hidden="true">
+                          <IconSearch />
+                        </div>
+                        <strong>No one found</strong>
+                        <span>Try their @username, display name, or roll number.</span>
+                      </div>
+                    )}
+
+                    {!searchLoading && searchResults.map((user) => {
+                      const initials = getInitials(user.displayName);
+                      const isBusy = startingChat === user.username;
+                      const isMe = user.username === viewerUsername;
+                      return (
+                        <div key={user.userId} className="spm-user-result" role="listitem">
+                          <div className="spm-conv-avatar-wrap">
+                            <div className="spm-conv-avatar spm-pulse-ring spm-pulse-away">
+                              <CampusAvatarContent
+                                userId={user.userId}
+                                username={user.username}
+                                displayName={user.displayName}
+                                fallback={initials}
+                                decorative
+                              />
+                            </div>
+                          </div>
+                          <div className="spm-conv-content">
+                            <div className="spm-conv-top">
+                              <span className="spm-conv-name">{user.displayName}</span>
+                            </div>
+                            <span className="spm-conv-preview">@{user.username}</span>
+                            {(user.course || user.stream) && (
+                              <span className="spm-conv-meta">
+                                {[user.course, user.stream].filter(Boolean).join(" / ")}
+                              </span>
+                            )}
+                          </div>
+                          {!isMe && (
+                            <button
+                              type="button"
+                              className="spm-start-chat-btn"
+                              disabled={isBusy}
+                              onClick={() => handleStartChat(user.username)}
+                              aria-label={`Start chat with ${user.displayName}`}
+                            >
+                              {isBusy ? (
+                                <span className="spm-search-spinner" aria-hidden="true" />
+                              ) : (
+                                <IconMessages />
+                              )}
+                            </button>
+                          )}
+                          {isMe && (
+                            <span className="spm-you-badge">You</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </>
                 )}
 
-                {!searchLoading && searchResults.length === 0 && (
-                  <div className="spm-empty-state" role="status">
-                    <div className="spm-empty-icon" aria-hidden="true">
-                      <IconSearch />
-                    </div>
-                    <strong>No one found</strong>
-                    <span>Try their @username, display name, or roll number.</span>
-                  </div>
-                )}
+                {!isSearching && (
+                  <>
+                    {visibleConversations.length === 0 && (
+                      <div className="spm-empty-state" role="status">
+                        <div className="spm-empty-icon" aria-hidden="true">
+                          <IconMessages />
+                        </div>
+                        <strong>No conversations yet</strong>
+                        <span>Search doston by their handle or name to start chatting.</span>
+                      </div>
+                    )}
 
-                {!searchLoading && searchResults.map((user) => {
-                  const initials = getInitials(user.displayName);
-                  const isBusy = startingChat === user.username;
-                  const isMe = user.username === viewerUsername;
-                  return (
-                    <div key={user.userId} className="spm-user-result" role="listitem">
-                      <div className="spm-conv-avatar-wrap">
-                        <div className="spm-conv-avatar spm-pulse-ring spm-pulse-away">
-                          <CampusAvatarContent
-                            userId={user.userId}
-                            username={user.username}
-                            displayName={user.displayName}
-                            fallback={initials}
-                            decorative
-                          />
-                        </div>
-                      </div>
-                      <div className="spm-conv-content">
-                        <div className="spm-conv-top">
-                          <span className="spm-conv-name">{user.displayName}</span>
-                        </div>
-                        <span className="spm-conv-preview">@{user.username}</span>
-                        {(user.course || user.stream) && (
-                          <span className="spm-conv-meta">
-                            {[user.course, user.stream].filter(Boolean).join(" / ")}
-                          </span>
-                        )}
-                      </div>
-                      {!isMe && (
-                        <button
-                          type="button"
-                          className="spm-start-chat-btn"
-                          disabled={isBusy}
-                          onClick={() => handleStartChat(user.username)}
-                          aria-label={`Start chat with ${user.displayName}`}
+                    {visibleConversations.map((item) => {
+                      const { text: previewText, isMarket } = getConversationPreviewLabel(item, messagePlaintextById);
+                      const peerPresence = getPeerPresence(getConversationPreviewPeerActivityAt(item), presenceNow);
+                      const statusRing = canSeePresence ? peerPresence.tone : "away";
+                      const statusLabel = canSeePresence ? peerPresence.label : "Last seen hidden";
+                      const initials = getInitials(item.peer.displayName);
+
+                      return (
+                        <Link
+                          key={item.id}
+                          href={`/messages/${item.id}`}
+                          role="listitem"
+                          className={`spm-conv-item${item.unreadCount > 0 ? " spm-conv-item-unread" : ""}${isMarket ? " spm-conv-item-market" : ""}${item.id === activeConversationId ? " spm-conv-item-active" : ""}`}
+                          aria-label={`Chat with ${item.peer.displayName}${item.unreadCount > 0 ? `, ${item.unreadCount} unread` : ""}`}
+                          onClick={() => setActiveConversationId(item.id)}
                         >
-                          {isBusy ? (
-                            <span className="spm-search-spinner" aria-hidden="true" />
-                          ) : (
-                            <IconMessages />
-                          )}
-                        </button>
-                      )}
-                      {isMe && (
-                        <span className="spm-you-badge">You</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </>
-            )}
+                          <div className="spm-conv-avatar-wrap">
+                            <div className={`spm-conv-avatar spm-pulse-ring spm-pulse-${statusRing}`}>
+                              <CampusAvatarContent
+                                userId={item.peer.userId}
+                                username={item.peer.username}
+                                displayName={item.peer.displayName}
+                                avatarUrl={item.peer.avatarUrl ?? null}
+                                fallback={initials}
+                                decorative
+                              />
+                            </div>
+                            <span
+                              className={`spm-status-dot spm-status-${statusRing}`}
+                              aria-label={statusLabel}
+                              title={statusLabel}
+                            />
+                          </div>
 
-            {!isSearching && (
-              <>
-                {visibleConversations.length === 0 && (
-                  <div className="spm-empty-state" role="status">
-                    <div className="spm-empty-icon" aria-hidden="true">
-                      <IconMessages />
-                    </div>
-                    <strong>No conversations yet</strong>
-                    <span>Search doston by their handle or name to start chatting.</span>
-                  </div>
+                          <div className="spm-conv-content">
+                            <div className="spm-conv-top">
+                              <span className="spm-conv-name">{item.peer.displayName}</span>
+                              <span className="spm-conv-time" suppressHydrationWarning>
+                                {timeAgo(item.lastActivityAt)}
+                              </span>
+                            </div>
+                            <div className="spm-conv-bottom">
+                              <span className={`spm-conv-preview${isMarket ? " spm-conv-preview-market" : ""}`}>
+                                {previewText}
+                              </span>
+                              {item.unreadCount > 0 ? (
+                                <span className="spm-unread-dot">{item.unreadCount > 9 ? "9+" : item.unreadCount}</span>
+                              ) : (
+                                <span className="spm-read-check" aria-label="Read"><IconCheck /></span>
+                              )}
+                            </div>
+                            {item.peer.publicKey ? null : (
+                              <span className="spm-key-pending">Key setup pending</span>
+                            )}
+                          </div>
+
+                          {isMarket && <div className="spm-market-glow" aria-hidden="true" />}
+                        </Link>
+                      );
+                    })}
+                  </>
                 )}
-
-                {visibleConversations.map((item) => {
-                  const { text: previewText, isMarket } = getConversationPreviewLabel(item, messagePlaintextById);
-                  const peerPresence = getPeerPresence(getConversationPreviewPeerActivityAt(item), presenceNow);
-                  const statusRing = canSeePresence ? peerPresence.tone : "away";
-                  const statusLabel = canSeePresence ? peerPresence.label : "Last seen hidden";
-                  const initials = getInitials(item.peer.displayName);
-
-                  return (
-                    <Link
-                      key={item.id}
-                      href={`/messages/${item.id}`}
-                      role="listitem"
-                      className={`spm-conv-item${item.unreadCount > 0 ? " spm-conv-item-unread" : ""}${isMarket ? " spm-conv-item-market" : ""}${item.id === activeConversationId ? " spm-conv-item-active" : ""}`}
-                      aria-label={`Chat with ${item.peer.displayName}${item.unreadCount > 0 ? `, ${item.unreadCount} unread` : ""}`}
-                      onClick={() => setActiveConversationId(item.id)}
-                    >
-                      <div className="spm-conv-avatar-wrap">
-                        <div className={`spm-conv-avatar spm-pulse-ring spm-pulse-${statusRing}`}>
-                          <CampusAvatarContent
-                            userId={item.peer.userId}
-                            username={item.peer.username}
-                            displayName={item.peer.displayName}
-                            avatarUrl={item.peer.avatarUrl ?? null}
-                            fallback={initials}
-                            decorative
-                          />
-                        </div>
-                        <span
-                          className={`spm-status-dot spm-status-${statusRing}`}
-                          aria-label={statusLabel}
-                          title={statusLabel}
-                        />
-                      </div>
-
-                      <div className="spm-conv-content">
-                        <div className="spm-conv-top">
-                          <span className="spm-conv-name">{item.peer.displayName}</span>
-                          <span className="spm-conv-time" suppressHydrationWarning>
-                            {timeAgo(item.lastActivityAt)}
-                          </span>
-                        </div>
-                        <div className="spm-conv-bottom">
-                          <span className={`spm-conv-preview${isMarket ? " spm-conv-preview-market" : ""}`}>
-                            {previewText}
-                          </span>
-                          {item.unreadCount > 0 ? (
-                            <span className="spm-unread-dot">{item.unreadCount > 9 ? "9+" : item.unreadCount}</span>
-                          ) : (
-                            <span className="spm-read-check" aria-label="Read"><IconCheck /></span>
-                          )}
-                        </div>
-                        {item.peer.publicKey ? null : (
-                          <span className="spm-key-pending">Key setup pending</span>
-                        )}
-                      </div>
-
-                      {isMarket && <div className="spm-market-glow" aria-hidden="true" />}
-                    </Link>
-                  );
-                })}
               </>
+            ) : (
+              <div className="spm-empty-state" role="status">
+                <div className="spm-empty-icon" aria-hidden="true">
+                  <IconMessages />
+                </div>
+                <strong>Community coming soon</strong>
+                <span>Connect with your campus groups and global campus vibes here.</span>
+              </div>
             )}
           </div>
 
@@ -4540,14 +4558,6 @@ export function CampusMessagesShell({
           {activeConversationId && (
             <div className="spm-chat-card">
               <header className="spm-chat-header">
-                <button
-                  type="button"
-                  className="spm-chat-back"
-                  onClick={() => router.push("/messages")}
-                  aria-label="Back to inbox"
-                >
-                  <IconArrowLeft />
-                </button>
 
                 {activePeer ? (
                   <div className="spm-chat-peer">

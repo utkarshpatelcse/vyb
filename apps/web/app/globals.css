@@ -21,3 +21,40 @@
   --vyb-theme-gradient-primary: var(--cl-gradient-primary);
   --vyb-theme-gradient-secondary: var(--cl-gradient-market);
 }
+
+.vyb-maintenance-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    linear-gradient(135deg, rgba(13, 17, 12, 0.96), rgba(21, 28, 18, 0.98)),
+    #10130f;
+  color: #f5f7ed;
+}
+
+.vyb-maintenance-screen div {
+  width: min(560px, 100%);
+  text-align: center;
+}
+
+.vyb-maintenance-screen span {
+  color: #d9ff72;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.vyb-maintenance-screen h1 {
+  margin: 14px 0 10px;
+  font-size: clamp(2rem, 8vw, 4.4rem);
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.vyb-maintenance-screen p {
+  margin: 0;
+  color: #a9b79a;
+  line-height: 1.6;
+}

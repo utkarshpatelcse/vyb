@@ -168,12 +168,30 @@ async function requestBackendResponse(
   const body = payload === undefined ? undefined : JSON.stringify(payload);
 
   try {
-    return await fetch(`${API_BASE_URL}${path}`, {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
       method,
       headers,
       body,
       cache: "no-store"
     });
+
+    if (response.status >= 500 && allowBridgeFallback && method === "GET") {
+      console.warn("[web/backend] upstream returned server error, falling back to in-process bridge", {
+        method,
+        path,
+        apiBaseUrl: API_BASE_URL,
+        status: response.status
+      });
+
+      return invokeBackendRoute({
+        path,
+        method,
+        headers,
+        body
+      });
+    }
+
+    return response;
   } catch (error) {
     if (!isBackendConnectionError(error)) {
       throw error;

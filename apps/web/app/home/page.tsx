@@ -11,6 +11,7 @@ import {
   getViewerMe,
   getViewerProfile
 } from "../../src/lib/backend";
+import { isSuperAdminEmail } from "../../src/lib/admin-access";
 import { getDisplayCollegeName } from "../../src/lib/college-access";
 import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
 
@@ -25,6 +26,10 @@ export default async function AuthenticatedHomePage({
 
   if (!viewer) {
     redirect("/login");
+  }
+
+  if (isSuperAdminEmail(viewer.email)) {
+    redirect("/admin");
   }
 
   const [profile, me, storyResponse, feedResponse, vibesResponse, suggestedResponse, chatInbox] = await Promise.all([

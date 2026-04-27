@@ -1,0 +1,67 @@
+{
+  "maintenance": {
+    "enabled": false,
+    "message": "VYB is upgrading. Back in 10 mins!",
+    "updatedAt": "2026-04-27T20:58:46.035Z"
+  },
+  "userControls": {},
+  "hiddenPosts": {},
+  "keywordFirewall": [
+    "abuse",
+    "spam",
+    "scam"
+  ],
+  "reports": [],
+  "auditLogs": [
+    {
+      "id": "12c57fff-2cc3-43fe-95dd-ec8807182f3d",
+      "actor": "utkarshp2003@gmail.com",
+      "action": "maintenance.update",
+      "entityType": "platform",
+      "entityId": "maintenance",
+      "metadata": {
+        "enabled": false,
+        "message": "VYB is upgrading. Back in 10 mins!",
+        "updatedAt": "2026-04-27T20:58:46.035Z"
+      },
+      "createdAt": "2026-04-27T20:58:46.035Z"
+    },
+    {
+      "id": "4a2dd4ca-b85c-4a3b-a2c8-fb4de16c7424",
+      "actor": "utkarshp2003@gmail.com",
+      "action": "maintenance.update",
+      "entityType": "platform",
+      "entityId": "maintenance",
+      "metadata": {
+        "enabled": true,
+        "message": "VYB is upgrading. Back in 10 mins!",
+        "updatedAt": "2026-04-27T20:58:43.374Z"
+      },
+      "createdAt": "2026-04-27T20:58:43.374Z"
+    }
+  ],
+  "notifications": [],
+  "arena": {
+    "dailyLevel": "auto",
+    "difficultyMin": 5,
+    "difficultyMax": 9,
+    "cheaterThresholdSeconds": 2,
+    "leaderboardVerification": true,
+    "updatedAt": null
+  },
+  "apiKeys": [
+    {
+      "provider": "Firebase Storage",
+      "status": "healthy",
+      "lastRotatedAt": null,
+      "note": "Managed through Firebase service account."
+    },
+    {
+      "provider": "Maps",
+      "status": "rotate-soon",
+      "lastRotatedAt": null,
+      "note": "Add key rotation once maps integration lands."
+    }
+  ],
+  "backups": []
+}

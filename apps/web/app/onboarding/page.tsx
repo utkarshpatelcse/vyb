@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { CompleteProfileForm } from "../../src/components/complete-profile-form";
 import { SignOutButton } from "../../src/components/sign-out-button";
 import { VybLogoLockup } from "../../src/components/vyb-logo";
+import { isSuperAdminEmail } from "../../src/lib/admin-access";
 import { getViewerProfile } from "../../src/lib/backend";
 import { getDisplayCollegeName } from "../../src/lib/college-access";
 import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
@@ -12,6 +13,10 @@ export default async function OnboardingPage() {
 
   if (!viewer) {
     redirect("/login");
+  }
+
+  if (isSuperAdminEmail(viewer.email)) {
+    redirect("/admin");
   }
 
   const profile = await getViewerProfile(viewer).catch(() => null);
