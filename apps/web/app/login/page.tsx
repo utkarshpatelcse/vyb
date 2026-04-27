@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { DevSessionCard } from "../../src/components/dev-session-card";
+import { isSuperAdminEmail } from "../../src/lib/admin-access";
 import { PROFILE_COMPLETION_COOKIE, readDevSessionFromCookieStore } from "../../src/lib/dev-session";
 
 export default async function LoginPage() {
@@ -9,6 +10,10 @@ export default async function LoginPage() {
   const profileCompleted = cookieStore.get(PROFILE_COMPLETION_COOKIE)?.value === "1";
 
   if (viewer) {
+    if (isSuperAdminEmail(viewer.email)) {
+      redirect("/admin");
+    }
+
     redirect(profileCompleted ? "/home" : "/onboarding");
   }
 

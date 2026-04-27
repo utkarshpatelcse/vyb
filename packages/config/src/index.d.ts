@@ -6,6 +6,9 @@ export function loadRootEnv(): NodeJS.ProcessEnv;
 export function getFirebaseAdminApp(name?: string): App;
 export function getFirebaseAdminAuth(): Auth;
 export function getFirebaseDataConnect(connectorConfig: ConnectorConfig): DataConnect;
+export const defaultSuperAdminEmails: string[];
+export function getSuperAdminEmails(): string[];
+export function isSuperAdminEmail(email: string | null | undefined): boolean;
 
 export interface MembershipContext {
   user: {

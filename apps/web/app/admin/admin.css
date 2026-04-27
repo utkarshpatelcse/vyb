@@ -1,0 +1,407 @@
+:root {
+  --admin-bg: #10130f;
+  --admin-surface: #171c16;
+  --admin-surface-2: #20271e;
+  --admin-border: rgba(215, 229, 198, 0.14);
+  --admin-text: #f5f7ed;
+  --admin-muted: #a9b79a;
+  --admin-lime: #d9ff72;
+  --admin-cyan: #6ee7f2;
+  --admin-red: #ff756f;
+  --admin-gold: #f9c74f;
+  --admin-green: #7bd88f;
+}
+
+body {
+  background:
+    linear-gradient(145deg, rgba(217, 255, 114, 0.12), transparent 34rem),
+    radial-gradient(circle at top right, rgba(110, 231, 242, 0.12), transparent 30rem),
+    var(--admin-bg);
+  color: var(--admin-text);
+}
+
+.super-admin-shell {
+  width: min(1180px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 28px 0 56px;
+  font-family: "Space Grotesk", "Sora", "Segoe UI", sans-serif;
+}
+
+.admin-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  align-items: end;
+  padding: 30px 0 24px;
+  border-bottom: 1px solid var(--admin-border);
+}
+
+.admin-kicker {
+  color: var(--admin-lime);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.admin-hero h1 {
+  margin: 8px 0;
+  font-size: clamp(2.2rem, 7vw, 5.4rem);
+  line-height: 0.95;
+  letter-spacing: 0;
+}
+
+.admin-hero p {
+  max-width: 720px;
+  margin: 0;
+  color: var(--admin-muted);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.maintenance-pill {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.maintenance-pill span {
+  color: var(--admin-green);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.maintenance-pill.is-on span {
+  color: var(--admin-red);
+}
+
+.admin-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 18px 0;
+}
+
+.admin-tabs button,
+.admin-actions button,
+.admin-panel button,
+.maintenance-pill button,
+.keyword-list button {
+  min-height: 38px;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--admin-text);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.admin-tabs button {
+  white-space: nowrap;
+  padding: 0 14px;
+}
+
+.admin-tabs button.is-active,
+.admin-panel button:hover,
+.maintenance-pill button:hover {
+  border-color: rgba(217, 255, 114, 0.8);
+  background: rgba(217, 255, 114, 0.14);
+  color: var(--admin-lime);
+}
+
+.admin-tabs button:disabled,
+.admin-actions button:disabled,
+.admin-panel button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.admin-feedback {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border: 1px solid rgba(217, 255, 114, 0.3);
+  border-radius: 8px;
+  background: rgba(217, 255, 114, 0.1);
+  color: var(--admin-lime);
+  font-weight: 800;
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.admin-panel {
+  padding: 18px;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--admin-surface) 88%, transparent);
+  box-shadow: 0 20px 80px rgba(0, 0, 0, 0.22);
+}
+
+.admin-panel.is-wide {
+  grid-column: 1 / -1;
+}
+
+.panel-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: baseline;
+  margin-bottom: 14px;
+}
+
+.panel-title span {
+  font-size: 1.02rem;
+  font-weight: 900;
+}
+
+.panel-title small,
+.admin-table small,
+.post-jail small,
+.api-key-row small,
+.notice-row small,
+.report-card small {
+  color: var(--admin-muted);
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.metric-grid article {
+  padding: 14px;
+  border-radius: 8px;
+  background: var(--admin-surface-2);
+}
+
+.metric-grid strong {
+  display: block;
+  color: var(--admin-lime);
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.metric-grid span {
+  color: var(--admin-muted);
+  font-size: 0.85rem;
+}
+
+.health-row,
+.tenant-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.health-row span,
+.tenant-stats span {
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--admin-muted);
+  font-size: 0.84rem;
+}
+
+.retention-list {
+  display: grid;
+  gap: 12px;
+}
+
+.retention-list div {
+  display: grid;
+  grid-template-columns: 1fr minmax(90px, 180px) 42px;
+  gap: 10px;
+  align-items: center;
+}
+
+meter {
+  width: 100%;
+  height: 12px;
+}
+
+.admin-log-list,
+.admin-table,
+.post-jail {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-log-list article,
+.admin-table article,
+.post-jail article,
+.report-card,
+.api-key-row,
+.notice-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.admin-log-list article {
+  grid-template-columns: 160px minmax(0, 1fr) 170px;
+}
+
+.admin-table article.is-shadowed,
+.post-jail article.is-hidden {
+  border-color: rgba(255, 117, 111, 0.45);
+  background: rgba(255, 117, 111, 0.08);
+}
+
+.admin-table strong,
+.post-jail strong,
+.report-card strong,
+.api-key-row strong,
+.notice-row strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.admin-table span,
+.post-jail span,
+.admin-log-list span,
+.report-card span,
+.api-key-row span,
+.notice-row span {
+  display: block;
+  color: var(--admin-muted);
+  overflow-wrap: anywhere;
+}
+
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.admin-search,
+.admin-panel input,
+.admin-panel textarea,
+.admin-panel select,
+.admin-actions select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.24);
+  color: var(--admin-text);
+  font: inherit;
+  font-size: 0.92rem;
+  box-sizing: border-box;
+}
+
+.admin-search {
+  margin-bottom: 14px;
+  padding: 0 12px;
+}
+
+.admin-panel label {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--admin-muted);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.admin-panel input,
+.admin-panel textarea {
+  padding: 10px 12px;
+}
+
+.admin-panel textarea {
+  resize: vertical;
+}
+
+.split-fields,
+.keyword-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.toggle-line {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+.toggle-line input {
+  width: 20px;
+  min-height: 20px;
+}
+
+.keyword-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-bottom: 12px;
+}
+
+.keyword-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.keyword-list button {
+  min-height: 32px;
+  padding: 0 10px;
+}
+
+.tenant-card strong {
+  color: var(--admin-cyan);
+  overflow-wrap: anywhere;
+}
+
+.api-key-row,
+.notice-row,
+.report-card {
+  grid-template-columns: 1fr;
+  margin-bottom: 10px;
+}
+
+@media (max-width: 760px) {
+  .super-admin-shell {
+    width: min(100vw - 20px, 1180px);
+    padding-top: 16px;
+  }
+
+  .admin-hero,
+  .admin-grid,
+  .metric-grid,
+  .admin-log-list article,
+  .admin-table article,
+  .post-jail article,
+  .split-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-actions {
+    justify-content: stretch;
+  }
+
+  .admin-actions button,
+  .admin-actions select,
+  .post-jail button {
+    width: 100%;
+  }
+
+  .retention-list div {
+    grid-template-columns: 1fr;
+  }
+}

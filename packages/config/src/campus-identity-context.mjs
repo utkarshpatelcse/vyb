@@ -20,6 +20,7 @@ import {
 } from "../../dataconnect/campus-admin-sdk/esm/index.esm.js";
 import { getFirebaseDataConnect } from "./firebase-admin.mjs";
 import { loadRootEnv } from "./root-env.mjs";
+import { isSuperAdminEmail } from "./super-admin-access.mjs";
 
 function getEmailDomain(email) {
   return String(email).split("@")[1]?.trim().toLowerCase() ?? null;
@@ -149,6 +150,17 @@ async function resolveTenantForEmailDomain(domain) {
   };
 }
 
+async function resolveTenantForSuperAdminEmail(email) {
+  if (!isSuperAdminEmail(email)) {
+    return null;
+  }
+
+  const defaultTenantSlug = getDefaultTenantSlug() ?? "kiet";
+
+  const tenantResponse = await getTenantBySlug(getCampusDc(), { slug: defaultTenantSlug });
+  return tenantResponse.data.tenants[0] ?? null;
+}
+
 export async function ensureMembershipContext({
   firebaseUid,
   primaryEmail,
@@ -166,12 +178,20 @@ export async function ensureMembershipContext({
     return { user, tenant: null, membership: null, communities: [] };
   }
 
-  const tenantResolution = await resolveTenantForEmailDomain(domain);
+  const superAdminTenant = await resolveTenantForSuperAdminEmail(primaryEmail);
+  const tenantResolution = superAdminTenant
+    ? {
+        tenant: superAdminTenant,
+        tenantDomain: null,
+        resolution: "super-admin"
+      }
+    : await resolveTenantForEmailDomain(domain);
   if (!tenantResolution.tenant) {
     return { user, tenant: null, membership: null, communities: [] };
   }
 
   const tenant = tenantResolution.tenant;
+  const membershipRole = isSuperAdminEmail(primaryEmail) ? "admin" : role;
   let membershipResponse = await getMembershipContext(getCampusDc(), {
     userId: user.id,
     tenantId: tenant.id
@@ -183,7 +203,7 @@ export async function ensureMembershipContext({
       tenantMembershipKey: buildTenantMembershipKey(tenant.id, user.id),
       tenantId: tenant.id,
       userId: user.id,
-      role,
+      role: membershipRole,
       verificationStatus: "verified",
       branch: null,
       batchYear: null,

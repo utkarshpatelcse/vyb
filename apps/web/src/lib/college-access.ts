@@ -1,3 +1,5 @@
+import { isSuperAdminEmail } from "./admin-access";
+
 export const launchCollege = {
   id: "kiet",
   name: "KIET Group of Institutions Delhi-NCR",
@@ -82,6 +84,10 @@ export function getEmailDomain(email: string) {
 }
 
 export function isAllowedCollegeEmail(email: string) {
+  if (isSuperAdminEmail(email)) {
+    return true;
+  }
+
   return getEmailDomain(email) === launchCollege.domain;
 }
 

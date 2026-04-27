@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
 import "./feed-enhancements.css";
+import { AppMaintenanceGate } from "../src/components/app-maintenance-gate";
 import { BackgroundPublishManager } from "../src/components/background-publish-manager";
 import { ChatPresenceHeartbeat } from "../src/components/chat-presence-heartbeat";
 import { ServiceWorkerRegister } from "../src/components/service-worker-register";
@@ -48,6 +49,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
         <ServiceWorkerRegister />
         <ChatPresenceHeartbeat />
         <BackgroundPublishManager />
+        <AppMaintenanceGate />
         {children}
       </body>
     </html>

@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SecuritySettingsShell } from "../../../../src/components/security-settings-shell";
+import { isSuperAdminEmail } from "../../../../src/lib/admin-access";
 import { getChatInbox, getChatKeyBackup, getViewerProfile } from "../../../../src/lib/backend";
 import { getDisplayCollegeName } from "../../../../src/lib/college-access";
 import { readDevSessionFromCookieStore } from "../../../../src/lib/dev-session";
@@ -31,6 +32,10 @@ export default async function ChatPrivacyPage({
 
   if (!viewer) {
     redirect("/login");
+  }
+
+  if (isSuperAdminEmail(viewer.email)) {
+    redirect("/admin");
   }
 
   const [profile, inboxResult, backupResult] = await Promise.all([

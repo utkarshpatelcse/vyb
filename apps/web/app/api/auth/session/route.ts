@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import type { SessionBootstrapRequest, SessionBootstrapResponse } from "@vyb/contracts";
-import { bootstrapViewerSession } from "../../../../src/lib/backend";
+import { bootstrapViewerSession, isBackendRequestError } from "../../../../src/lib/backend";
 import {
   createViewerSession,
   DEV_SESSION_COOKIE,
@@ -96,6 +96,24 @@ export async function POST(request: Request) {
     return finalizeBootstrapResponse(bootstrap);
   } catch (error) {
     const fallbackMessage = "Unable to create an authenticated session.";
+
+    if (isBackendRequestError(error)) {
+      console.warn("[web/auth/session] bootstrap:backend-rejected", {
+        code: error.code,
+        statusCode: error.statusCode,
+        message: error.message
+      });
+      return NextResponse.json(
+        {
+          error: {
+            code: error.code,
+            message: error.message,
+            details: null
+          }
+        },
+        { status: getBootstrapErrorStatus(error.code) }
+      );
+    }
 
     try {
       const parsed = JSON.parse(error instanceof Error ? error.message : "{}") as {

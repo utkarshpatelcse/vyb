@@ -34,6 +34,7 @@ import { listProfilesByTenant } from "../identity/profile-repository.mjs";
 
 const directoryName = path.dirname(fileURLToPath(import.meta.url));
 const fallbackStorePath = path.resolve(directoryName, "../../data/social-store.json");
+const superAdminStorePath = path.resolve(directoryName, "../../data/super-admin-store.json");
 const TENANT_SCAN_LIMIT = 5000;
 const FEED_SCAN_MULTIPLIER = 4;
 const INACTIVE_COMMENT_REACTION_TYPE = "__inactive__";
@@ -41,46 +42,7 @@ const ANONYMOUS_AUTHOR_USERNAME = "anonymous";
 const ANONYMOUS_AUTHOR_DISPLAY_NAME = "Anonymous";
 
 const defaultFallbackStore = {
-  posts: [
-    {
-      id: "post-1",
-      tenantId: "tenant-demo",
-      communityId: "community-general",
-      userId: "dev-akash-1",
-      membershipId: "membership-demo-1",
-      authorUsername: "akash_vyb",
-      authorName: "Akash Verma",
-      placement: "feed",
-      kind: "image",
-      mediaUrl: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80",
-      location: "Innovation Lab",
-      title: "Prototype Night",
-      body: "Club demo night is live. Bring your build, record a clip, and drop your wins before 9 PM.",
-      status: "published",
-      reactions: 124,
-      comments: 18,
-      createdAt: "2026-04-18T08:15:00.000Z"
-    },
-    {
-      id: "post-2",
-      tenantId: "tenant-demo",
-      communityId: "community-batch",
-      userId: "dev-priya-1",
-      membershipId: "membership-demo-2",
-      authorUsername: "priya.dev",
-      authorName: "Priya Sharma",
-      placement: "feed",
-      kind: "text",
-      mediaUrl: null,
-      location: "Central Library",
-      title: "Placement Prep Sprint",
-      body: "Shared DSA revision sheet plus mock interview slots for tomorrow evening.",
-      status: "published",
-      reactions: 88,
-      comments: 26,
-      createdAt: "2026-04-18T06:45:00.000Z"
-    }
-  ],
+  posts: [],
   comments: [],
   commentReactions: [],
   reactions: [],
@@ -93,6 +55,39 @@ let fallbackWriteQueue = Promise.resolve();
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+async function readSuperAdminStore() {
+  try {
+    const raw = await readFile(superAdminStorePath, "utf8");
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function getPostAuthorUserId(item) {
+  return item.authorUserId ?? item.userId ?? item.membershipId ?? null;
+}
+
+function isBlockedByAdminControls(item, adminStore, viewerUserId = null) {
+  if (adminStore?.hiddenPosts?.[item.id]) {
+    return true;
+  }
+
+  const authorUserId = getPostAuthorUserId(item);
+  const control = authorUserId ? adminStore?.userControls?.[authorUserId] : null;
+
+  if (!control) {
+    return false;
+  }
+
+  if (control.status === "suspended" || control.status === "banned") {
+    return true;
+  }
+
+  return Boolean(control.shadowBanned && viewerUserId !== authorUserId);
 }
 
 async function ensureFallbackStore() {
@@ -202,6 +197,30 @@ function normalizeFallbackCommentReactionRecord(item) {
     reactionType: item.reactionType ?? "like",
     createdAt: item.createdAt ?? new Date().toISOString(),
     updatedAt: item.updatedAt ?? item.createdAt ?? new Date().toISOString()
+  };
+}
+
+function normalizeFallbackReactionRecord(item) {
+  return {
+    id: item.id,
+    postId: item.postId,
+    membershipId: item.membershipId,
+    reactionType: item.reactionType ?? "like",
+    createdAt: item.createdAt ?? new Date().toISOString(),
+    updatedAt: item.updatedAt ?? item.createdAt ?? new Date().toISOString(),
+    deletedAt: item.deletedAt ?? null
+  };
+}
+
+function normalizeFallbackFollowRecord(item) {
+  return {
+    id: item.id,
+    tenantId: item.tenantId ?? "tenant-demo",
+    followerUserId: item.followerUserId,
+    followingUserId: item.followingUserId,
+    createdAt: item.createdAt ?? new Date().toISOString(),
+    updatedAt: item.updatedAt ?? item.createdAt ?? new Date().toISOString(),
+    deletedAt: item.deletedAt ?? null
   };
 }
 
@@ -749,45 +768,81 @@ async function persistMediaAsset({
 }
 
 async function buildPostCountMaps(tenantId, postIds, viewerMembershipId = null) {
-  const [commentsResponse, reactionsResponse] = await Promise.all([
-    listCommentsByTenantQuery(getSocialDc(), {
-      tenantId,
-      limit: TENANT_SCAN_LIMIT
-    }),
-    listReactionsByTenantQuery(getSocialDc(), {
-      tenantId,
-      limit: TENANT_SCAN_LIMIT
-    })
-  ]);
+  try {
+    const [commentsResponse, reactionsResponse] = await Promise.all([
+      listCommentsByTenantQuery(getSocialDc(), {
+        tenantId,
+        limit: TENANT_SCAN_LIMIT
+      }),
+      listReactionsByTenantQuery(getSocialDc(), {
+        tenantId,
+        limit: TENANT_SCAN_LIMIT
+      })
+    ]);
 
-  const idSet = new Set(postIds);
-  const comments = new Map();
-  const reactions = new Map();
-  const viewerReactions = new Map();
+    const idSet = new Set(postIds);
+    const comments = new Map();
+    const reactions = new Map();
+    const viewerReactions = new Map();
 
-  for (const item of commentsResponse.data.comments) {
-    if (!idSet.has(item.postId)) {
-      continue;
+    for (const item of commentsResponse.data.comments) {
+      if (!idSet.has(item.postId)) {
+        continue;
+      }
+      comments.set(item.postId, Number(comments.get(item.postId) ?? 0) + 1);
     }
-    comments.set(item.postId, Number(comments.get(item.postId) ?? 0) + 1);
+
+    for (const item of reactionsResponse.data.reactions) {
+      if (!idSet.has(item.postId)) {
+        continue;
+      }
+      reactions.set(item.postId, Number(reactions.get(item.postId) ?? 0) + 1);
+
+      if (viewerMembershipId && item.membershipId === viewerMembershipId && !viewerReactions.has(item.postId)) {
+        viewerReactions.set(item.postId, item.reactionType ?? "like");
+      }
+    }
+
+    return {
+      comments,
+      reactions,
+      viewerReactions
+    };
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const store = await ensureFallbackStore();
+    const idSet = new Set(postIds);
+    const comments = new Map();
+    const reactions = new Map();
+    const viewerReactions = new Map();
+
+    for (const item of store.comments.map(normalizeFallbackCommentRecord)) {
+      if (item.status === "removed" || !idSet.has(item.postId)) {
+        continue;
+      }
+      comments.set(item.postId, Number(comments.get(item.postId) ?? 0) + 1);
+    }
+
+    for (const item of store.reactions.map(normalizeFallbackReactionRecord)) {
+      if (item.deletedAt || !idSet.has(item.postId)) {
+        continue;
+      }
+      reactions.set(item.postId, Number(reactions.get(item.postId) ?? 0) + 1);
+
+      if (viewerMembershipId && item.membershipId === viewerMembershipId && !viewerReactions.has(item.postId)) {
+        viewerReactions.set(item.postId, item.reactionType ?? "like");
+      }
+    }
+
+    return {
+      comments,
+      reactions,
+      viewerReactions
+    };
   }
-
-  for (const item of reactionsResponse.data.reactions) {
-    if (!idSet.has(item.postId)) {
-      continue;
-    }
-    reactions.set(item.postId, Number(reactions.get(item.postId) ?? 0) + 1);
-
-    if (viewerMembershipId && item.membershipId === viewerMembershipId && !viewerReactions.has(item.postId)) {
-      viewerReactions.set(item.postId, item.reactionType ?? "like");
-    }
-  }
-
-  return {
-    comments,
-    reactions,
-    viewerReactions
-  };
 }
 
 async function countCommentsByPost(postId) {
@@ -1069,6 +1124,7 @@ async function listFallbackPosts({
   viewerIdentity = null
 }) {
   const store = await ensureFallbackStore();
+  const adminStore = await readSuperAdminStore();
   const normalizedPlacement = normalizePlacement(placement);
 
   return store.posts
@@ -1076,6 +1132,7 @@ async function listFallbackPosts({
     .filter((item) => item.tenantId === tenantId)
     .filter((item) => item.status === "published")
     .filter((item) => normalizePlacement(item.placement) === normalizedPlacement)
+    .filter((item) => !isBlockedByAdminControls(item, adminStore, viewerIdentity?.viewerUserId ?? null))
     .filter((item) => (communityId ? item.communityId === communityId : true))
     .filter((item) => (userId ? item.authorUserId === userId : true))
     .filter((item) => (includeAnonymous ? true : !item.isAnonymous))
@@ -1153,10 +1210,24 @@ export async function listPosts({
       }
     );
 
+    const adminStore = await readSuperAdminStore();
     const filtered = response.data.posts
       .filter((item) => (communityId ? item.communityId === communityId : true))
+      .filter((item) => !isBlockedByAdminControls(item, adminStore, viewerUserId))
       .filter((item) => (includeAnonymous ? true : !item.isAnonymous))
       .slice(0, limit);
+
+    if (filtered.length === 0) {
+      return listFallbackPosts({
+        tenantId,
+        communityId,
+        limit,
+        placement: normalizedPlacement,
+        userId,
+        includeAnonymous,
+        viewerIdentity
+      });
+    }
 
     const profileMap = await buildProfileByUserIdMap(
       tenantId,
@@ -1213,7 +1284,10 @@ export async function countPostsByUser({ tenantId, userId, placement = "feed", i
       }
     });
 
-    return response.data.posts.filter((item) => (includeAnonymous ? true : !item.isAnonymous)).length;
+    const adminStore = await readSuperAdminStore();
+    return response.data.posts
+      .filter((item) => !isBlockedByAdminControls(item, adminStore, userId))
+      .filter((item) => (includeAnonymous ? true : !item.isAnonymous)).length;
   } catch (error) {
     if (!isFallbackEligibleError(error)) {
       throw error;
@@ -2000,57 +2074,152 @@ export async function followUser({ tenantId, followerUserId, followingUserId }) 
   }
 
   const followKey = buildFollowKey(followerUserId, followingUserId);
-  const existing = await getFollowByKeyQuery(getSocialDc(), { followKey });
-  if (existing.data.follows[0]) {
+  try {
+    const existing = await getFollowByKeyQuery(getSocialDc(), { followKey });
+    if (existing.data.follows[0]) {
+      return true;
+    }
+
+    await createFollowMutation(getSocialDc(), {
+      id: randomUUID(),
+      followKey,
+      tenantId,
+      followerUserId,
+      followingUserId
+    });
+
+    return true;
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const store = await ensureFallbackStore();
+    const now = new Date().toISOString();
+    const current = store.follows
+      .map(normalizeFallbackFollowRecord)
+      .find((item) => item.tenantId === tenantId && item.followerUserId === followerUserId && item.followingUserId === followingUserId);
+
+    if (current) {
+      const target = store.follows.find((item) => item.id === current.id);
+      if (target) {
+        target.deletedAt = null;
+        target.updatedAt = now;
+      }
+    } else {
+      store.follows.push({
+        id: randomUUID(),
+        tenantId,
+        followerUserId,
+        followingUserId,
+        createdAt: now,
+        updatedAt: now
+      });
+    }
+
+    await persistFallbackStore();
     return true;
   }
-
-  await createFollowMutation(getSocialDc(), {
-    id: randomUUID(),
-    followKey,
-    tenantId,
-    followerUserId,
-    followingUserId
-  });
-
-  return true;
 }
 
 export async function unfollowUser({ tenantId, followerUserId, followingUserId }) {
   const followKey = buildFollowKey(followerUserId, followingUserId);
-  const existing = await getFollowByKeyQuery(getSocialDc(), { followKey });
-  const current = existing.data.follows[0] ?? null;
+  try {
+    const existing = await getFollowByKeyQuery(getSocialDc(), { followKey });
+    const current = existing.data.follows[0] ?? null;
 
-  if (!current) {
-    return false;
+    if (!current) {
+      return false;
+    }
+
+    await softDeleteFollowMutation(getSocialDc(), { id: current.id });
+    return true;
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const store = await ensureFallbackStore();
+    const current = store.follows
+      .map(normalizeFallbackFollowRecord)
+      .find(
+        (item) =>
+          item.tenantId === tenantId &&
+          item.followerUserId === followerUserId &&
+          item.followingUserId === followingUserId &&
+          !item.deletedAt
+      );
+
+    if (!current) {
+      return false;
+    }
+
+    const target = store.follows.find((item) => item.id === current.id);
+    if (target) {
+      target.deletedAt = new Date().toISOString();
+      target.updatedAt = target.deletedAt;
+      await persistFallbackStore();
+    }
+
+    return true;
   }
-
-  await softDeleteFollowMutation(getSocialDc(), { id: current.id });
-  return true;
 }
 
-export async function isFollowing({ tenantId: _tenantId, followerUserId, followingUserId }) {
+export async function isFollowing({ tenantId, followerUserId, followingUserId }) {
   const followKey = buildFollowKey(followerUserId, followingUserId);
-  const existing = await getFollowByKeyQuery(getSocialDc(), { followKey });
-  return Boolean(existing.data.follows[0]);
+  try {
+    const existing = await getFollowByKeyQuery(getSocialDc(), { followKey });
+    return Boolean(existing.data.follows[0]);
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const store = await ensureFallbackStore();
+    return store.follows
+      .map(normalizeFallbackFollowRecord)
+      .some(
+        (item) =>
+          item.tenantId === tenantId &&
+          item.followerUserId === followerUserId &&
+          item.followingUserId === followingUserId &&
+          !item.deletedAt
+      );
+  }
 }
 
 export async function getFollowStats({ tenantId, userId }) {
-  const [followersResponse, followingResponse] = await Promise.all([
-    listFollowersByUserQuery(getSocialDc(), {
-      tenantId,
-      followingUserId: userId,
-      limit: TENANT_SCAN_LIMIT
-    }),
-    listFollowingByUserQuery(getSocialDc(), {
-      tenantId,
-      followerUserId: userId,
-      limit: TENANT_SCAN_LIMIT
-    })
-  ]);
+  try {
+    const [followersResponse, followingResponse] = await Promise.all([
+      listFollowersByUserQuery(getSocialDc(), {
+        tenantId,
+        followingUserId: userId,
+        limit: TENANT_SCAN_LIMIT
+      }),
+      listFollowingByUserQuery(getSocialDc(), {
+        tenantId,
+        followerUserId: userId,
+        limit: TENANT_SCAN_LIMIT
+      })
+    ]);
 
-  return {
-    followers: followersResponse.data.follows.length,
-    following: followingResponse.data.follows.length
-  };
+    return {
+      followers: followersResponse.data.follows.length,
+      following: followingResponse.data.follows.length
+    };
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const store = await ensureFallbackStore();
+    const follows = store.follows
+      .map(normalizeFallbackFollowRecord)
+      .filter((item) => item.tenantId === tenantId && !item.deletedAt);
+
+    return {
+      followers: follows.filter((item) => item.followingUserId === userId).length,
+      following: follows.filter((item) => item.followerUserId === userId).length
+    };
+  }
 }
