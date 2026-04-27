@@ -167,51 +167,63 @@ async function requestBackendResponse(
   const headers = buildBackendHeaders(viewer);
   const body = payload === undefined ? undefined : JSON.stringify(payload);
 
-  try {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
-      method,
-      headers,
-      body,
-      cache: "no-store"
-    });
+  const maxAttempts = method === "GET" ? 4 : 1;
+  let lastConnectionError: Error | null = null;
 
-    if (response.status >= 500 && allowBridgeFallback && method === "GET") {
-      console.warn("[web/backend] upstream returned server error, falling back to in-process bridge", {
-        method,
-        path,
-        apiBaseUrl: API_BASE_URL,
-        status: response.status
-      });
-
-      return invokeBackendRoute({
-        path,
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      const response = await fetch(`${API_BASE_URL}${path}`, {
         method,
         headers,
-        body
+        body,
+        cache: "no-store"
       });
-    }
 
-    return response;
-  } catch (error) {
-    if (!isBackendConnectionError(error)) {
-      throw error;
-    }
+      if (response.status >= 500 && allowBridgeFallback && method === "GET") {
+        console.warn("[web/backend] upstream returned server error, falling back to in-process bridge", {
+          method,
+          path,
+          apiBaseUrl: API_BASE_URL,
+          status: response.status
+        });
 
+        return invokeBackendRoute({
+          path,
+          method,
+          headers,
+          body
+        });
+      }
+
+      return response;
+    } catch (error) {
+      if (!isBackendConnectionError(error)) {
+        throw error;
+      }
+
+      lastConnectionError = error;
+      if (attempt < maxAttempts - 1) {
+        await delay(250 * (attempt + 1));
+      }
+    }
+  }
+
+  if (lastConnectionError) {
     if (!allowBridgeFallback) {
       console.error("[web/backend] upstream unavailable for direct-only request", {
         method,
         path,
         apiBaseUrl: API_BASE_URL,
-        message: error.message
+        message: lastConnectionError.message
       });
-      throw error;
+      throw lastConnectionError;
     }
 
     console.warn("[web/backend] upstream unavailable, falling back to in-process bridge", {
       method,
       path,
       apiBaseUrl: API_BASE_URL,
-      message: error.message
+      message: lastConnectionError.message
     });
 
     return invokeBackendRoute({
@@ -221,6 +233,8 @@ async function requestBackendResponse(
       body
     });
   }
+
+  throw new Error(`Backend request failed for ${path}.`);
 }
 
 type BackendRequestOptions = {

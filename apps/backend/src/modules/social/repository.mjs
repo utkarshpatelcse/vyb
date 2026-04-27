@@ -1423,17 +1423,19 @@ export async function findPostById(postId, { tenantId = null, viewerMembershipId
 export async function createPost(payload) {
   const id = randomUUID();
   const placement = normalizePlacement(payload.placement);
+  const mediaAssets = Array.isArray(payload.mediaAssets) ? payload.mediaAssets : [];
+  const primaryMediaAsset = mediaAssets.find((asset) => asset && typeof asset.url === "string" && asset.url.trim()) ?? null;
   const media = await persistMediaAsset({
     tenantId: payload.tenantId,
     userId: payload.userId,
     assetId: id,
     assetType: "posts",
-    mediaUrl: payload.mediaUrl ?? null,
+    mediaUrl: payload.mediaUrl ?? primaryMediaAsset?.url ?? null,
     mediaType: payload.kind,
     placement,
-    storagePathOverride: payload.mediaStoragePath ?? null,
-    mediaMimeTypeOverride: payload.mediaMimeType ?? null,
-    mediaSizeBytesOverride: payload.mediaSizeBytes ?? null
+    storagePathOverride: payload.mediaStoragePath ?? primaryMediaAsset?.storagePath ?? null,
+    mediaMimeTypeOverride: payload.mediaMimeType ?? primaryMediaAsset?.mimeType ?? null,
+    mediaSizeBytesOverride: payload.mediaSizeBytes ?? primaryMediaAsset?.sizeBytes ?? null
   });
 
   const postRecord = {
@@ -1451,7 +1453,7 @@ export async function createPost(payload) {
     placement,
     kind: payload.kind,
     mediaUrl: media.mediaUrl,
-    media: payload.mediaAssets ?? null,
+    media: mediaAssets.length > 0 ? mediaAssets : null,
     storagePath: media.storagePath,
     mediaMimeType: media.mediaMimeType,
     mediaSizeBytes: media.mediaSizeBytes,

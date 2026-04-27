@@ -622,6 +622,7 @@ async function runPostPublish(taskId: string, input: Extract<BackgroundPublishRe
   }
 
   const trimmedCaption = input.caption.trim();
+  const primaryMedia = uploadedMediaAssets[0] ?? null;
 
   updateTask(taskId, {
     status: "publishing",
@@ -637,6 +638,10 @@ async function runPostPublish(taskId: string, input: Extract<BackgroundPublishRe
       title: trimmedCaption ? trimmedCaption.slice(0, 72) : "",
       body: trimmedCaption || "",
       kind: uploadedMediaAssets.length > 0 ? "image" : "text",
+      mediaUrl: primaryMedia?.url ?? null,
+      mediaStoragePath: primaryMedia?.storagePath ?? null,
+      mediaMimeType: primaryMedia?.mimeType ?? null,
+      mediaSizeBytes: primaryMedia?.sizeBytes ?? null,
       mediaAssets: uploadedMediaAssets.length > 0 ? uploadedMediaAssets : undefined,
       location: input.collegeName,
       isAnonymous: input.isAnonymous,
