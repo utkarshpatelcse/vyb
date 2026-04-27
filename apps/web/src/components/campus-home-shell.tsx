@@ -1322,7 +1322,7 @@ export function CampusHomeShell({
     setStoryMessageDraft("");
   }
 
-  async function handleEditPost(post: FeedCard, payload: { title: string | null; body: string; location: string | null }) {
+  async function handleEditPost(post: FeedCard, payload: { title: string | null; body: string; location: string | null; allowAnonymousComments: boolean }) {
     setActionBusy(true);
     setActionMessage(null);
 
@@ -1946,10 +1946,12 @@ export function CampusHomeShell({
         isLoading={engagement.threadLoading}
         isSubmitting={engagement.threadSubmitting}
         deletingCommentId={engagement.threadDeletingCommentId}
+        isAnonymousComment={engagement.threadIsAnonymous}
         onClose={engagement.closeThread}
         onDraftChange={engagement.setThreadDraft}
         onMediaUrlChange={engagement.setThreadMediaUrl}
         onMediaTypeChange={engagement.setThreadMediaType}
+        onAnonymousCommentChange={engagement.setThreadIsAnonymous}
         onReply={engagement.beginReply}
         onCommentLike={(commentId) => {
           void engagement.reactToComment(commentId);

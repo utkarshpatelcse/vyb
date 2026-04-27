@@ -157,6 +157,7 @@ function normalizeFallbackPostRecord(item) {
     authorName: item.authorName ?? "Vyb Student",
     authorEmail: item.authorEmail ?? null,
     isAnonymous: Boolean(item.isAnonymous),
+    allowAnonymousComments: item.allowAnonymousComments !== false,
     placement: item.placement ?? "feed",
     kind: item.kind ?? (item.mediaUrl ? "image" : "text"),
     mediaUrl: item.mediaUrl ?? null,
@@ -180,6 +181,8 @@ function normalizeFallbackCommentRecord(item) {
     postId: item.postId,
     membershipId: item.membershipId ?? item.authorUserId ?? item.id,
     authorUserId: item.authorUserId ?? item.membershipId ?? item.id,
+    authorEmail: item.authorEmail ?? null,
+    isAnonymous: Boolean(item.isAnonymous),
     parentCommentId: item.parentCommentId ?? null,
     body: item.body ?? "",
     mediaUrl: item.mediaUrl ?? null,
@@ -229,6 +232,8 @@ const EXTENDED_COMMENT_FIELDS = `
   postId
   membershipId
   authorUserId
+  authorEmail
+  isAnonymous
   parentCommentId
   body
   mediaUrl
@@ -317,6 +322,8 @@ const CREATE_COMMENT_EXTENDED_MUTATION = `
     $postId: UUID!
     $membershipId: UUID!
     $authorUserId: UUID!
+    $authorEmail: String
+    $isAnonymous: Boolean!
     $parentCommentId: UUID
     $body: String!
     $mediaUrl: String
@@ -331,6 +338,8 @@ const CREATE_COMMENT_EXTENDED_MUTATION = `
         postId: $postId
         membershipId: $membershipId
         authorUserId: $authorUserId
+        authorEmail: $authorEmail
+        isAnonymous: $isAnonymous
         parentCommentId: $parentCommentId
         body: $body
         mediaUrl: $mediaUrl
@@ -395,6 +404,7 @@ const PRIVATE_POST_FIELDS = `
   authorName
   authorEmail
   isAnonymous
+  allowAnonymousComments
   placement
   kind
   title
@@ -462,6 +472,7 @@ const CREATE_POST_PRIVATE_MUTATION = `
     $authorName: String! = "Vyb Student"
     $authorEmail: String
     $isAnonymous: Boolean!
+    $allowAnonymousComments: Boolean!
     $placement: String! = "feed"
     $kind: String!
     $title: String
@@ -484,6 +495,7 @@ const CREATE_POST_PRIVATE_MUTATION = `
         authorName: $authorName
         authorEmail: $authorEmail
         isAnonymous: $isAnonymous
+        allowAnonymousComments: $allowAnonymousComments
         placement: $placement
         kind: $kind
         title: $title
@@ -574,13 +586,14 @@ const CREATE_STORY_VIEW_MUTATION = `
 `;
 
 const UPDATE_POST_MUTATION = `
-  mutation UpdatePost($id: UUID!, $title: String, $body: String!, $location: String) {
+  mutation UpdatePost($id: UUID!, $title: String, $body: String!, $location: String, $allowAnonymousComments: Boolean!) {
     post_update(
       key: { id: $id }
       data: {
         title: $title
         body: $body
         location: $location
+        allowAnonymousComments: $allowAnonymousComments
         updatedAt_expr: "request.time"
       }
     ) {
@@ -1093,6 +1106,7 @@ function mapPostRecord(item, counts = null, profileMap = null, viewerIdentity = 
     savedCount: Number(item.savedCount ?? 0),
     isSaved: Boolean(item.isSaved),
     isAnonymous,
+    allowAnonymousComments: item.allowAnonymousComments !== false,
     viewerCanManage,
     viewerReactionType: counts?.viewerReactions?.get(item.id) ?? item.viewerReactionType ?? null,
     createdAt: toIsoString(item.createdAt),
@@ -1100,20 +1114,24 @@ function mapPostRecord(item, counts = null, profileMap = null, viewerIdentity = 
   };
 }
 
-function mapCommentRecord(item, reactionMaps = null) {
+function mapCommentRecord(item, reactionMaps = null, viewerMembershipId = null) {
+  const isAnonymous = Boolean(item.isAnonymous);
+  const viewerCanManage = Boolean(viewerMembershipId && item.membershipId === viewerMembershipId);
   return {
     id: item.id,
     postId: item.postId,
-    membershipId: item.membershipId,
-    authorUserId: item.authorUserId,
+    membershipId: isAnonymous ? null : item.membershipId,
+    authorUserId: isAnonymous ? null : item.authorUserId,
     parentCommentId: item.parentCommentId ?? null,
     body: item.body,
     mediaUrl: item.mediaUrl ?? null,
     mediaType: item.mediaType ?? null,
+    isAnonymous,
     createdAt: toIsoString(item.createdAt),
     reactions: Number(reactionMaps?.reactions?.get(item.id) ?? 0),
     viewerHasLiked: Boolean(reactionMaps?.viewerReactions?.get(item.id)),
-    author: null
+    viewerCanManage,
+    author: isAnonymous ? buildAnonymousAuthor() : null
   };
 }
 
@@ -1202,7 +1220,7 @@ async function listFallbackCommentsByPost({ tenantId, postId, limit = 50, viewer
     .slice(0, limit);
 
   const reactionMaps = comments.length ? await buildCommentReactionMaps(tenantId, comments.map((item) => item.id), viewerMembershipId) : null;
-  return comments.map((item) => mapCommentRecord(item, reactionMaps));
+  return comments.map((item) => mapCommentRecord(item, reactionMaps, viewerMembershipId));
 }
 
 async function findFallbackCommentRecordById(commentId, tenantId = null) {
@@ -1429,6 +1447,7 @@ export async function createPost(payload) {
     authorName: payload.authorName,
     authorEmail: payload.authorEmail ?? null,
     isAnonymous: Boolean(payload.isAnonymous),
+    allowAnonymousComments: payload.allowAnonymousComments !== false,
     placement,
     kind: payload.kind,
     mediaUrl: media.mediaUrl,
@@ -1462,6 +1481,7 @@ export async function createPost(payload) {
         authorName: payload.authorName,
         authorEmail: payload.authorEmail ?? null,
         isAnonymous: Boolean(payload.isAnonymous),
+        allowAnonymousComments: payload.allowAnonymousComments !== false,
         placement,
         kind: payload.kind,
         title: payload.title ?? "Campus update",
@@ -1552,6 +1572,8 @@ export async function createComment(payload) {
         postId: payload.postId,
         membershipId: payload.membershipId,
         authorUserId: payload.authorUserId,
+        authorEmail: payload.authorEmail ?? null,
+        isAnonymous: Boolean(payload.isAnonymous),
         parentCommentId: payload.parentCommentId ?? null,
         body: payload.body,
         mediaUrl: media.mediaUrl,
@@ -1577,6 +1599,8 @@ export async function createComment(payload) {
       postId: payload.postId,
       membershipId: payload.membershipId,
       authorUserId: payload.authorUserId,
+      authorEmail: payload.authorEmail ?? null,
+      isAnonymous: Boolean(payload.isAnonymous),
       parentCommentId: payload.parentCommentId ?? null,
       body: payload.body,
       mediaUrl: media.mediaUrl,
@@ -1590,16 +1614,18 @@ export async function createComment(payload) {
   return {
     id,
     postId: payload.postId,
-    membershipId: payload.membershipId,
-    authorUserId: payload.authorUserId,
+    membershipId: payload.isAnonymous ? null : payload.membershipId,
+    authorUserId: payload.isAnonymous ? null : payload.authorUserId,
     parentCommentId: payload.parentCommentId ?? null,
     body: payload.body,
     mediaUrl: media.mediaUrl,
     mediaType: payload.mediaType ?? null,
+    isAnonymous: Boolean(payload.isAnonymous),
     createdAt: new Date().toISOString(),
     reactions: 0,
     viewerHasLiked: false,
-    author: null
+    viewerCanManage: true,
+    author: payload.isAnonymous ? buildAnonymousAuthor() : null
   };
 }
 
@@ -1622,7 +1648,7 @@ export async function listCommentsByPost({ tenantId, postId, limit = 50, viewerM
       )
       : null;
 
-    return comments.map((item) => mapCommentRecord(item, reactionMaps));
+    return comments.map((item) => mapCommentRecord(item, reactionMaps, viewerMembershipId));
   } catch (error) {
     if (!isFallbackEligibleError(error)) {
       throw error;
@@ -1895,7 +1921,7 @@ export async function findCommentById(commentId, { tenantId = null, viewerMember
         }
       }
 
-      return mapCommentRecord(fallbackItem, fallbackReactionMaps);
+      return mapCommentRecord(fallbackItem, fallbackReactionMaps, viewerMembershipId);
     }
 
     const reactionMaps = {
@@ -1916,7 +1942,7 @@ export async function findCommentById(commentId, { tenantId = null, viewerMember
       }
     }
 
-    return mapCommentRecord(item, reactionMaps);
+    return mapCommentRecord(item, reactionMaps, viewerMembershipId);
   } catch (error) {
     if (!isFallbackEligibleError(error)) {
       throw error;
@@ -1942,7 +1968,30 @@ export async function findCommentById(commentId, { tenantId = null, viewerMember
       }
     }
 
-    return mapCommentRecord(item, reactionMaps);
+    return mapCommentRecord(item, reactionMaps, viewerMembershipId);
+  }
+}
+
+export async function findCommentRecordById(commentId, { tenantId = null } = {}) {
+  try {
+    const response = await getSocialDc().executeGraphqlRead(GET_COMMENT_BY_ID_QUERY, {
+      operationName: "GetCommentById",
+      variables: {
+        id: commentId
+      }
+    });
+    const item = response.data.comment;
+    if (!item || item.status === "removed" || (tenantId && item.tenantId !== tenantId)) {
+      return await findFallbackCommentRecordById(commentId, tenantId);
+    }
+
+    return item;
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    return await findFallbackCommentRecordById(commentId, tenantId);
   }
 }
 
@@ -1953,7 +2002,8 @@ export async function updatePost(postId, payload, { tenantId = null, viewerMembe
       id: postId,
       title: payload.title ?? null,
       body: payload.body,
-      location: payload.location ?? null
+      location: payload.location ?? null,
+      allowAnonymousComments: payload.allowAnonymousComments !== false
     }
   });
 

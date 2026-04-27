@@ -52,6 +52,7 @@ export type BackgroundPublishRequest =
       collegeName: string;
       videoFile: File;
       isAnonymous: boolean;
+      allowAnonymousComments: boolean;
     }
   | {
       kind: "story";
@@ -65,6 +66,7 @@ export type BackgroundPublishRequest =
       collegeName: string;
       mediaFiles: File[];
       isAnonymous: boolean;
+      allowAnonymousComments: boolean;
     };
 
 const AUTO_DISMISS_SUCCESS_MS = 7000;
@@ -423,7 +425,8 @@ async function runVibePublish(taskId: string, input: Extract<BackgroundPublishRe
       mediaMimeType: uploadedMedia?.mimeType ?? null,
       mediaSizeBytes: uploadedMedia?.sizeBytes ?? null,
       location: input.collegeName,
-      isAnonymous: input.isAnonymous
+      isAnonymous: input.isAnonymous,
+      allowAnonymousComments: input.allowAnonymousComments
     },
     "Could not publish Vibe."
   );
@@ -636,7 +639,8 @@ async function runPostPublish(taskId: string, input: Extract<BackgroundPublishRe
       kind: uploadedMediaAssets.length > 0 ? "image" : "text",
       mediaAssets: uploadedMediaAssets.length > 0 ? uploadedMediaAssets : undefined,
       location: input.collegeName,
-      isAnonymous: input.isAnonymous
+      isAnonymous: input.isAnonymous,
+      allowAnonymousComments: input.allowAnonymousComments
     },
     "Could not publish post."
   );

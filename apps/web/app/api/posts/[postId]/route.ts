@@ -65,6 +65,7 @@ export async function PATCH(
         title?: string | null;
         body?: string | null;
         location?: string | null;
+        allowAnonymousComments?: boolean;
       }
     | null;
 
@@ -87,7 +88,8 @@ export async function PATCH(
       await updateCampusPost(viewer, postId, {
         title: payload.title ?? null,
         body: payload.body ?? null,
-        location: payload.location ?? null
+        location: payload.location ?? null,
+        allowAnonymousComments: payload.allowAnonymousComments
       })
     );
   } catch (error) {

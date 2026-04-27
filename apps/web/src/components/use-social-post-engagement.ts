@@ -13,6 +13,7 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
   const [threadMediaUrl, setThreadMediaUrl] = useState("");
   const [threadMediaType, setThreadMediaType] = useState<CommentMediaKind>("gif");
   const [threadReplyTarget, setThreadReplyTarget] = useState<CommentItem | null>(null);
+  const [threadIsAnonymous, setThreadIsAnonymous] = useState(false);
   const [threadMessage, setThreadMessage] = useState<string | null>(null);
   const [loadingPostId, setLoadingPostId] = useState<string | null>(null);
   const [threadLoading, setThreadLoading] = useState(false);
@@ -27,6 +28,12 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
     () => posts.find((post) => post.id === selectedPostId) ?? null,
     [posts, selectedPostId]
   );
+
+  useEffect(() => {
+    if (selectedPost?.allowAnonymousComments === false) {
+      setThreadIsAnonymous(false);
+    }
+  }, [selectedPost?.id, selectedPost?.allowAnonymousComments]);
 
   async function loadComments(postId: string) {
     if (commentsByPost[postId]) {
@@ -74,6 +81,7 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
     setThreadMediaUrl("");
     setThreadMediaType("gif");
     setThreadReplyTarget(null);
+    setThreadIsAnonymous(false);
     setThreadMessage(null);
   }
 
@@ -202,7 +210,8 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
           parentCommentId: threadReplyTarget?.id ?? null,
           mediaUrl: mediaUrl || null,
           mediaType: mediaUrl ? threadMediaType : null,
-          mediaMimeType: mediaUrl ? (threadMediaType === "sticker" ? "image/webp" : "image/gif") : null
+          mediaMimeType: mediaUrl ? (threadMediaType === "sticker" ? "image/webp" : "image/gif") : null,
+          isAnonymous: threadIsAnonymous && post.allowAnonymousComments !== false
         })
       });
       const payload = (await response.json().catch(() => null)) as
@@ -234,9 +243,9 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
         )
       );
       setThreadDraft("");
-      setThreadMediaUrl("");
-      setThreadMediaType("gif");
-      setThreadReplyTarget(null);
+    setThreadMediaUrl("");
+    setThreadMediaType("gif");
+    setThreadReplyTarget(null);
     } catch {
       setThreadMessage("We could not publish this comment right now.");
     } finally {
@@ -505,6 +514,8 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
     threadMediaType,
     setThreadMediaType,
     threadReplyTarget,
+    threadIsAnonymous,
+    setThreadIsAnonymous,
     threadMessage,
     setThreadMessage,
     loadingPostId,

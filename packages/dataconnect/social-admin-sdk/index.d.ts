@@ -90,6 +90,8 @@ export interface CreateCommentVariables {
   postId: UUIDString;
   membershipId: UUIDString;
   authorUserId: UUIDString;
+  authorEmail?: string | null;
+  isAnonymous?: boolean;
   parentCommentId?: UUIDString | null;
   body: string;
   mediaUrl?: string | null;
@@ -151,6 +153,7 @@ export interface CreatePostVariables {
   authorName?: string;
   authorEmail?: string | null;
   isAnonymous?: boolean;
+  allowAnonymousComments?: boolean;
   placement?: string;
   kind: string;
   title?: string | null;
@@ -262,6 +265,7 @@ export interface GetPostByIdData {
     authorName?: string | null;
     authorEmail?: string | null;
     isAnonymous: boolean;
+    allowAnonymousComments: boolean;
     placement: string;
     kind: string;
     title?: string | null;
@@ -431,6 +435,8 @@ export interface ListCommentsByPostData {
     postId: UUIDString;
     membershipId: UUIDString;
     authorUserId?: UUIDString | null;
+    authorEmail?: string | null;
+    isAnonymous: boolean;
     parentCommentId?: UUIDString | null;
     body: string;
     mediaUrl?: string | null;
@@ -453,6 +459,8 @@ export interface ListCommentsByTenantData {
     postId: UUIDString;
     membershipId: UUIDString;
     authorUserId?: UUIDString | null;
+    authorEmail?: string | null;
+    isAnonymous: boolean;
     parentCommentId?: UUIDString | null;
     body: string;
     mediaUrl?: string | null;
@@ -480,6 +488,7 @@ export interface ListFeedByTenantData {
     authorName?: string | null;
     authorEmail?: string | null;
     isAnonymous: boolean;
+    allowAnonymousComments: boolean;
     placement: string;
     kind: string;
     title?: string | null;
@@ -543,6 +552,7 @@ export interface ListPostsByAuthorData {
     authorName?: string | null;
     authorEmail?: string | null;
     isAnonymous: boolean;
+    allowAnonymousComments: boolean;
     placement: string;
     kind: string;
     title?: string | null;

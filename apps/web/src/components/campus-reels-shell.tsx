@@ -1251,7 +1251,7 @@ export function CampusReelsShell({
     setActionMessage(key === "hideReactionCount" ? "Like count preference updated." : "Comment count preference updated.");
   }
 
-  async function handleEditPost(post: FeedCard, payload: { title: string | null; body: string; location: string | null }) {
+  async function handleEditPost(post: FeedCard, payload: { title: string | null; body: string; location: string | null; allowAnonymousComments: boolean }) {
     setActionBusy(true);
     setActionMessage(null);
 
@@ -1630,10 +1630,12 @@ export function CampusReelsShell({
         deletingCommentId={engagement.threadDeletingCommentId}
         viewerName={viewerName}
         viewerUsername={viewerUsername}
+        isAnonymousComment={engagement.threadIsAnonymous}
         onClose={engagement.closeThread}
         onDraftChange={engagement.setThreadDraft}
         onMediaUrlChange={engagement.setThreadMediaUrl}
         onMediaTypeChange={engagement.setThreadMediaType}
+        onAnonymousCommentChange={engagement.setThreadIsAnonymous}
         onReply={engagement.beginReply}
         onCommentLike={(commentId) => {
           void engagement.reactToComment(commentId);

@@ -4038,6 +4038,55 @@
   color: #5eead4;
 }
 
+.cs-user-pill--anonymous {
+  background: rgba(148,163,184,0.14);
+  border-color: rgba(148,163,184,0.32);
+  color: #cbd5e1;
+}
+
+.cs-anon-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.78rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid rgba(148,163,184,0.18);
+  background: rgba(15,23,42,0.44);
+  cursor: pointer;
+}
+
+.cs-anon-toggle input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: #22d3ee;
+}
+
+.cs-anon-toggle-copy {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.cs-anon-toggle-copy strong {
+  color: #f8fafc;
+  font-size: 0.9rem;
+}
+
+.cs-anon-toggle-copy small {
+  color: rgba(203,213,225,0.66);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.cs-anon-toggle.is-active {
+  border-color: rgba(34,211,238,0.34);
+  background: rgba(34,211,238,0.09);
+}
+
+.cs-anon-toggle--comments.is-active {
+  border-color: rgba(168,85,247,0.32);
+  background: rgba(168,85,247,0.08);
+}
+
 /* -- Caption textarea ------------------------------------------------------- */
 .cs-caption-wrap { flex: 1; }
 

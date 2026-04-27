@@ -20,12 +20,14 @@ type SocialThreadSheetProps = {
   deletingCommentId: string | null;
   viewerName: string;
   viewerUsername: string;
+  isAnonymousComment: boolean;
   desktopInsetLeft?: string;
   desktopInsetRight?: string;
   onClose: () => void;
   onDraftChange: (value: string) => void;
   onMediaUrlChange: (value: string) => void;
   onMediaTypeChange: (value: ThreadMediaKind) => void;
+  onAnonymousCommentChange: (value: boolean) => void;
   onReply: (comment: CommentItem) => void;
   onCommentLike: (commentId: string) => void;
   onDeleteComment: (comment: CommentItem) => void;
@@ -183,12 +185,14 @@ export function SocialThreadSheet({
   deletingCommentId,
   viewerName,
   viewerUsername,
+  isAnonymousComment,
   desktopInsetLeft = "0px",
   desktopInsetRight = "0px",
   onClose,
   onDraftChange,
   onMediaUrlChange,
   onMediaTypeChange,
+  onAnonymousCommentChange,
   onReply,
   onCommentLike,
   onDeleteComment,
@@ -202,6 +206,9 @@ export function SocialThreadSheet({
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
 
   const canSubmit = draft.trim().length > 0 || mediaUrl.trim().length > 0;
+  const canCommentAnonymously = post?.allowAnonymousComments !== false;
+  const composerName = isAnonymousComment && canCommentAnonymously ? "Anonymous" : viewerName;
+  const composerUsername = isAnonymousComment && canCommentAnonymously ? "anonymous" : viewerUsername;
   const mediaSuggestions = openPicker === "sticker" ? CAMPUS_STICKERS : TRENDING_GIFS;
   const backdropStyle = {
     "--vyb-thread-desktop-left": desktopInsetLeft,
@@ -297,7 +304,9 @@ export function SocialThreadSheet({
     const { comment, replies } = node;
     const replyTargetLabel = getReplyTargetLabel(comment, comments);
     const commentKey = getCommentRenderKey(comment, fallbackKey);
-    const canDeleteComment = Boolean(comment.author?.username === viewerUsername || post?.viewerCanManage);
+    const canDeleteComment = Boolean(
+      comment.viewerCanManage || (!comment.isAnonymous && comment.author?.username === viewerUsername) || post?.viewerCanManage
+    );
     const isDeletingComment = deletingCommentId === comment.id;
 
     return (
@@ -308,7 +317,7 @@ export function SocialThreadSheet({
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: "spring", stiffness: 240, damping: 26 }}
       >
-        <article className={`vyb-thread-comment${depth > 0 ? " is-reply" : ""}`}>
+        <article className={`vyb-thread-comment${depth > 0 ? " is-reply" : ""}${comment.isAnonymous ? " is-anonymous" : ""}`}>
           <div className="vyb-thread-comment-avatar" aria-hidden="true">
              <CampusAvatarContent
                userId={comment.author?.userId}
@@ -324,6 +333,7 @@ export function SocialThreadSheet({
               <div className="vyb-thread-comment-head">
                 <strong>{comment.author?.displayName ?? "Vyb Student"}</strong>
                 <span className="vyb-thread-comment-handle">@{comment.author?.username ?? "vyb_user"}</span>
+                {comment.isAnonymous ? <span className="vyb-thread-anon-chip">Anonymous</span> : null}
               </div>
               {replyTargetLabel ? (
                 <div className="vyb-thread-comment-context">
@@ -467,14 +477,30 @@ export function SocialThreadSheet({
               <div className="vyb-thread-composer">
                 <div className="vyb-thread-composer-avatar" aria-hidden="true">
                   <CampusAvatarContent
-                    username={viewerUsername}
-                    displayName={viewerName}
-                    fallback={getInitials(viewerName || viewerUsername)}
+                    username={composerUsername}
+                    displayName={composerName}
+                    fallback={isAnonymousComment && canCommentAnonymously ? "AN" : getInitials(viewerName || viewerUsername)}
                     decorative
                   />
                 </div>
 
                 <div className="vyb-thread-input-shell">
+                  <div className="vyb-thread-identity-row">
+                    <div>
+                      <strong>{composerName}</strong>
+                      <span>{isAnonymousComment && canCommentAnonymously ? "Hidden from everyone except admins" : `@${viewerUsername}`}</span>
+                    </div>
+                    <label className={`vyb-thread-anon-toggle${isAnonymousComment && canCommentAnonymously ? " is-active" : ""}${!canCommentAnonymously ? " is-disabled" : ""}`}>
+                      <input
+                        type="checkbox"
+                        checked={isAnonymousComment && canCommentAnonymously}
+                        onChange={(event) => onAnonymousCommentChange(event.target.checked)}
+                        disabled={isSubmitting || !canCommentAnonymously}
+                      />
+                      <span>Anonymous</span>
+                    </label>
+                  </div>
+
                   <textarea
                     ref={textareaRef}
                     value={draft}
@@ -535,6 +561,7 @@ export function SocialThreadSheet({
                 </div>
               </div>
 
+              {!canCommentAnonymously ? <p className="vyb-thread-message">Anonymous comments are off for this post.</p> : null}
               {message ? <p className="vyb-thread-message">{message}</p> : null}
             </div>
           </motion.div>

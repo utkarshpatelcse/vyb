@@ -8,6 +8,7 @@ type Post @table(name: "posts", singular: "post", plural: "posts", key: ["id"]) 
   authorName: String @col(name: "author_name")
   authorEmail: String @col(name: "author_email")
   isAnonymous: Boolean! @col(name: "is_anonymous") @default(value: false)
+  allowAnonymousComments: Boolean! @col(name: "allow_anonymous_comments") @default(value: true)
   placement: String! @default(value: "feed")
   kind: String! @default(value: "text")
   title: String
@@ -51,6 +52,8 @@ type Comment @table(name: "comments", singular: "comment", plural: "comments", k
   post: Post!
   membership: TenantMembership!
   authorUserId: UUID @col(name: "author_user_id")
+  authorEmail: String @col(name: "author_email")
+  isAnonymous: Boolean! @col(name: "is_anonymous") @default(value: false)
   parentComment: Comment
   body: String!
   mediaUrl: String @col(name: "media_url")

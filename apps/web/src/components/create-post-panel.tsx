@@ -22,6 +22,7 @@ export function CreatePostPanel({
   const [body, setBody] = useState("");
   const [communityId, setCommunityId] = useState("");
   const [isAnonymous, setIsAnonymous] = useState(false);
+  const [allowAnonymousComments, setAllowAnonymousComments] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
 
   function handleSubmit() {
@@ -41,7 +42,8 @@ export function CreatePostPanel({
           title,
           body,
           communityId: communityId || null,
-          isAnonymous
+          isAnonymous,
+          allowAnonymousComments
         })
       });
 
@@ -58,6 +60,7 @@ export function CreatePostPanel({
       setBody("");
       setCommunityId("");
       setIsAnonymous(false);
+      setAllowAnonymousComments(true);
       setMessage("Post queue ho gaya. Router refresh ke baad latest feed dikh jayega.");
       router.refresh();
     });
@@ -102,6 +105,18 @@ export function CreatePostPanel({
             disabled={!enabled || isPending}
           />
           <span>Post anonymously</span>
+        </div>
+      </label>
+      <label className="cl-field">
+        <span>Comments</span>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+          <input
+            type="checkbox"
+            checked={allowAnonymousComments}
+            onChange={(event) => setAllowAnonymousComments(event.target.checked)}
+            disabled={!enabled || isPending}
+          />
+          <span>Allow anonymous comments</span>
         </div>
       </label>
       <div className="cl-form-actions">

@@ -192,6 +192,7 @@ export interface FeedCard {
   savedCount: number;
   isSaved: boolean;
   isAnonymous: boolean;
+  allowAnonymousComments: boolean;
   viewerCanManage: boolean;
   viewerReactionType: ReactionKind | null;
   createdAt: string;
@@ -218,6 +219,7 @@ export interface CreatePostRequest {
   kind: PostKind;
   placement?: FeedPlacement;
   isAnonymous?: boolean;
+  allowAnonymousComments?: boolean;
   title?: string | null;
   body: string;
   mediaUrl?: string | null;
@@ -324,20 +326,23 @@ export interface UpdateUsernameResponse {
 export interface CommentItem {
   id: string;
   postId: string;
-  membershipId: string;
-  authorUserId: string;
+  membershipId: string | null;
+  authorUserId: string | null;
   parentCommentId: string | null;
   body: string;
   mediaUrl: string | null;
   mediaType: "image" | "gif" | "sticker" | null;
+  isAnonymous: boolean;
   createdAt: string;
   reactions: number;
   viewerHasLiked: boolean;
+  viewerCanManage: boolean;
   author: {
-    userId: string;
+    userId: string | null;
     username: string;
     displayName: string;
     avatarUrl?: string | null;
+    isAnonymous: boolean;
   } | null;
 }
 
@@ -412,6 +417,7 @@ export interface UpdatePostRequest {
   title?: string | null;
   body?: string | null;
   location?: string | null;
+  allowAnonymousComments?: boolean;
 }
 
 export interface UpdatePostResponse {
@@ -434,6 +440,20 @@ export interface TogglePostSaveResponse {
 }
 
 export interface AnonymousPostIdentityResponse {
+  postId: string;
+  tenantId: string;
+  isAnonymous: boolean;
+  author: {
+    userId: string | null;
+    membershipId: string | null;
+    email: string | null;
+    username: string | null;
+    displayName: string | null;
+  };
+}
+
+export interface AnonymousCommentIdentityResponse {
+  commentId: string;
   postId: string;
   tenantId: string;
   isAnonymous: boolean;

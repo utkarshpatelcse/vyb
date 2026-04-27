@@ -16,6 +16,7 @@ import {
   deleteComment,
   deletePost,
   findCommentById,
+  findCommentRecordById,
   findPostById,
   findPostRecordById,
   findStoryById,
@@ -143,7 +144,8 @@ function buildCommentAuthor(profile, authorUserId) {
       userId: profile.userId,
       username: profile.username,
       displayName: profile.fullName,
-      avatarUrl: profile.avatarUrl ?? null
+      avatarUrl: profile.avatarUrl ?? null,
+      isAnonymous: false
     };
   }
 
@@ -155,13 +157,19 @@ function buildCommentAuthor(profile, authorUserId) {
     userId: authorUserId,
     username: "vyb_user",
     displayName: "Vyb Student",
-    avatarUrl: null
+    avatarUrl: null,
+    isAnonymous: false
   };
 }
 
 async function enrichCommentItems(tenantId, items) {
   const uniqueUserIds = Array.from(
-    new Set(items.map((item) => item.authorUserId).filter((value) => typeof value === "string" && value.trim().length > 0))
+    new Set(
+      items
+        .filter((item) => !item.isAnonymous)
+        .map((item) => item.authorUserId)
+        .filter((value) => typeof value === "string" && value.trim().length > 0)
+    )
   );
   const profiles = await Promise.all(
     uniqueUserIds.map(async (userId) => [
@@ -176,7 +184,7 @@ async function enrichCommentItems(tenantId, items) {
 
   return items.map((item) => ({
     ...item,
-    author: buildCommentAuthor(profileMap.get(item.authorUserId) ?? null, item.authorUserId)
+    author: item.isAnonymous ? item.author : buildCommentAuthor(profileMap.get(item.authorUserId) ?? null, item.authorUserId)
   }));
 }
 
@@ -587,6 +595,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       placement: payload.placement === "vibe" ? "vibe" : "feed",
       kind: payload.kind ?? "text",
       isAnonymous: payload.isAnonymous === true,
+      allowAnonymousComments: payload.allowAnonymousComments !== false,
       mediaAssets: Array.isArray(payload.mediaAssets) ? payload.mediaAssets : null,
       mediaUrl: requireNonEmptyString(payload.mediaUrl) ? payload.mediaUrl.trim() : null,
       mediaStoragePath: requireNonEmptyString(payload.mediaStoragePath) ? payload.mediaStoragePath.trim() : null,
@@ -919,6 +928,20 @@ export async function handleSocialRoute({ request, response, url, context }) {
           userId: postRecord.authorUserId
         })
       : null;
+    const reason = url.searchParams.get("reason")?.trim() || "identity review";
+
+    await logSocialActivity({
+      tenantId: postRecord.tenantId,
+      membershipId: resolvedMembershipId,
+      activityType: "anonymous.post.identity.revealed",
+      entityType: "post",
+      entityId: postRecord.id,
+      metadata: {
+        reason,
+        isAnonymous: Boolean(postRecord.isAnonymous)
+      },
+      auditAction: "anonymous.post.identity.revealed"
+    });
 
     sendJson(response, 200, {
       postId: postRecord.id,
@@ -930,6 +953,60 @@ export async function handleSocialRoute({ request, response, url, context }) {
         email: postRecord.authorEmail ?? authorProfile?.primaryEmail ?? null,
         username: authorProfile?.username ?? postRecord.authorUsername ?? null,
         displayName: authorProfile?.fullName ?? postRecord.authorName ?? null
+      }
+    });
+    return true;
+  }
+
+  const adminAnonymousCommentIdentityMatch =
+    request.method === "GET" ? url.pathname.match(/^\/v1\/admin\/comments\/([^/]+)\/identity$/) : null;
+  if (adminAnonymousCommentIdentityMatch) {
+    if (!isAdminRole(resolved.live?.membership?.role ?? null)) {
+      sendError(response, 403, "FORBIDDEN", "Admin access is required.");
+      return true;
+    }
+
+    const commentRecord = await findCommentRecordById(adminAnonymousCommentIdentityMatch[1], {
+      tenantId: resolvedTenantId ?? null
+    });
+    if (!commentRecord) {
+      sendError(response, 404, "COMMENT_NOT_FOUND", "Comment not found.");
+      return true;
+    }
+
+    const authorProfile = commentRecord.authorUserId
+      ? await getProfileByUserId({
+          tenantId: commentRecord.tenantId,
+          userId: commentRecord.authorUserId
+        })
+      : null;
+    const reason = url.searchParams.get("reason")?.trim() || "identity review";
+
+    await logSocialActivity({
+      tenantId: commentRecord.tenantId,
+      membershipId: resolvedMembershipId,
+      activityType: "anonymous.comment.identity.revealed",
+      entityType: "comment",
+      entityId: commentRecord.id,
+      metadata: {
+        postId: commentRecord.postId,
+        reason,
+        isAnonymous: Boolean(commentRecord.isAnonymous)
+      },
+      auditAction: "anonymous.comment.identity.revealed"
+    });
+
+    sendJson(response, 200, {
+      commentId: commentRecord.id,
+      postId: commentRecord.postId,
+      tenantId: commentRecord.tenantId,
+      isAnonymous: Boolean(commentRecord.isAnonymous),
+      author: {
+        userId: commentRecord.authorUserId ?? null,
+        membershipId: commentRecord.membershipId ?? null,
+        email: commentRecord.authorEmail ?? authorProfile?.primaryEmail ?? null,
+        username: authorProfile?.username ?? null,
+        displayName: authorProfile?.fullName ?? null
       }
     });
     return true;
@@ -1040,7 +1117,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
-    if (post.userId !== resolvedUserId) {
+    if (post.authorUserId !== resolvedUserId) {
       sendError(response, 403, "FORBIDDEN", "Only the post author can delete this post.");
       return true;
     }
@@ -1078,7 +1155,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
-    if (post.userId !== resolvedUserId) {
+    if (post.authorUserId !== resolvedUserId) {
       sendError(response, 403, "FORBIDDEN", "Only the post author can edit this post.");
       return true;
     }
@@ -1091,6 +1168,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
         : payload.location === null
           ? null
           : post.location;
+    const nextAllowAnonymousComments =
+      typeof payload.allowAnonymousComments === "boolean" ? payload.allowAnonymousComments : post.allowAnonymousComments !== false;
 
     if (!requireNonEmptyString(nextBody) && !post.mediaUrl) {
       sendError(response, 400, "INVALID_BODY", "Add a caption or keep existing media before saving.");
@@ -1102,7 +1181,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
       {
         title: nextTitle,
         body: nextBody,
-        location: nextLocation
+        location: nextLocation,
+        allowAnonymousComments: nextAllowAnonymousComments
       },
       {
         tenantId: post.tenantId,
@@ -1118,7 +1198,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
       entityType: "post",
       entityId: post.id,
       metadata: {
-        placement: post.placement
+        placement: post.placement,
+        allowAnonymousComments: nextAllowAnonymousComments
       }
     });
 
@@ -1204,6 +1285,12 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
+    const isAnonymousComment = payload.isAnonymous === true;
+    if (isAnonymousComment && post.allowAnonymousComments === false) {
+      sendError(response, 403, "ANONYMOUS_COMMENTS_DISABLED", "Anonymous comments are disabled for this post.");
+      return true;
+    }
+
     let parentCommentId = null;
     if (requireNonEmptyString(payload.parentCommentId)) {
       const parentComment = await findCommentById(payload.parentCommentId.trim(), {
@@ -1218,12 +1305,19 @@ export async function handleSocialRoute({ request, response, url, context }) {
       parentCommentId = parentComment.id;
     }
 
+    const authorProfile = await getProfileByUserId({
+      tenantId: post.tenantId,
+      userId: resolvedUserId
+    });
+
     const item = await createComment({
       tenantId: post.tenantId,
       placement: post.placement,
       postId: commentMatch[1],
       membershipId,
       authorUserId: resolvedUserId,
+      authorEmail: authorProfile?.primaryEmail ?? null,
+      isAnonymous: isAnonymousComment,
       parentCommentId,
       body: trimmedBody,
       mediaUrl: trimmedMediaUrl,
@@ -1231,14 +1325,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
       mediaMimeType: requireNonEmptyString(payload.mediaMimeType) ? payload.mediaMimeType.trim() : null,
       mediaSizeBytes: Number.isFinite(Number(payload.mediaSizeBytes)) ? Number(payload.mediaSizeBytes) : null
     });
-
-    const authorProfile = await getProfileByUserId({
-      tenantId: post.tenantId,
-      userId: resolvedUserId
-    });
     const enrichedItem = {
       ...item,
-      author: buildCommentAuthor(authorProfile, resolvedUserId)
+      author: item.isAnonymous ? item.author : buildCommentAuthor(authorProfile, resolvedUserId)
     };
 
     await logSocialActivity({
@@ -1250,7 +1339,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
       metadata: {
         postId: post.id,
         placement: post.placement,
-        parentCommentId
+        parentCommentId,
+        isAnonymous: isAnonymousComment
       }
     });
 
@@ -1260,9 +1350,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
 
   const deleteCommentMatch = request.method === "DELETE" ? url.pathname.match(/^\/v1\/comments\/([^/]+)$/) : null;
   if (deleteCommentMatch) {
-    const comment = await findCommentById(deleteCommentMatch[1], {
-      tenantId: resolvedTenantId ?? null,
-      viewerMembershipId: resolvedMembershipId
+    const comment = await findCommentRecordById(deleteCommentMatch[1], {
+      tenantId: resolvedTenantId ?? null
     });
     if (!comment) {
       sendError(response, 404, "COMMENT_NOT_FOUND", "Comment not found.");
@@ -1280,7 +1369,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
     const canDelete =
       comment.authorUserId === resolvedUserId ||
       comment.membershipId === resolvedMembershipId ||
-      post.userId === resolvedUserId ||
+      post.authorUserId === resolvedUserId ||
       post.membershipId === resolvedMembershipId;
     if (!canDelete) {
       sendError(response, 403, "COMMENT_DELETE_FORBIDDEN", "Only the comment author or post owner can delete this comment.");

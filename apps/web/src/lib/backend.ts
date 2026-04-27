@@ -520,6 +520,7 @@ export async function createPostComment(
     mediaType?: "image" | "gif" | "sticker" | null;
     mediaMimeType?: string | null;
     mediaSizeBytes?: number | null;
+    isAnonymous?: boolean;
   }
 ) {
   return postBackendJson<CreateCommentResponse>(

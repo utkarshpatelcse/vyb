@@ -69,6 +69,7 @@ export async function POST(
         mediaType?: "image" | "gif" | "sticker" | null;
         mediaMimeType?: string | null;
         mediaSizeBytes?: number | null;
+        isAnonymous?: boolean;
       }
     | null;
 
@@ -94,7 +95,8 @@ export async function POST(
         mediaUrl: payload.mediaUrl ?? null,
         mediaType: payload.mediaType ?? null,
         mediaMimeType: payload.mediaMimeType ?? null,
-        mediaSizeBytes: payload.mediaSizeBytes ?? null
+        mediaSizeBytes: payload.mediaSizeBytes ?? null,
+        isAnonymous: payload.isAnonymous === true
       }),
       { status: 201 }
     );

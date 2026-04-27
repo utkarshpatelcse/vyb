@@ -15,7 +15,7 @@ type SocialPostActionSheetProps = {
   onOpenRepostComposer: () => void;
   onToggleReactionCount: () => void;
   onToggleCommentCount: () => void;
-  onEdit: (payload: { title: string | null; body: string; location: string | null }) => void;
+  onEdit: (payload: { title: string | null; body: string; location: string | null; allowAnonymousComments: boolean }) => void;
   onDelete: () => void;
   onReport: (reason: string) => void;
   onCopyLink: () => void;
@@ -102,11 +102,13 @@ export function SocialPostActionSheet({
   const [mode, setMode] = useState<SheetMode>("menu");
   const [draft, setDraft] = useState("");
   const [locationDraft, setLocationDraft] = useState("");
+  const [allowAnonymousCommentsDraft, setAllowAnonymousCommentsDraft] = useState(true);
 
   useEffect(() => {
     setMode("menu");
     setDraft(post?.body ?? "");
     setLocationDraft(post?.location ?? "");
+    setAllowAnonymousCommentsDraft(post?.allowAnonymousComments !== false);
   }, [post?.id]);
 
   useEffect(() => {
@@ -155,6 +157,7 @@ export function SocialPostActionSheet({
                   onClick={() => {
                     setDraft(post.body ?? "");
                     setLocationDraft(post.location ?? "");
+                    setAllowAnonymousCommentsDraft(post.allowAnonymousComments !== false);
                     setMode("edit");
                   }}
                 >
@@ -238,6 +241,21 @@ export function SocialPostActionSheet({
                 </label>
               ) : null}
 
+              {mode === "edit" ? (
+                <label className={`vyb-post-actions-toggle${allowAnonymousCommentsDraft ? " is-active" : ""}`}>
+                  <input
+                    type="checkbox"
+                    checked={allowAnonymousCommentsDraft}
+                    onChange={(event) => setAllowAnonymousCommentsDraft(event.target.checked)}
+                    disabled={isBusy}
+                  />
+                  <span>
+                    <strong>Allow anonymous comments</strong>
+                    <small>Commenters can choose Anonymous while replying to this {itemLabel}.</small>
+                  </span>
+                </label>
+              ) : null}
+
               <div className="vyb-post-actions-footer modern-footer">
                 <button type="button" className="modern-btn-secondary" onClick={() => setMode("menu")} disabled={isBusy}>
                   Cancel
@@ -251,7 +269,8 @@ export function SocialPostActionSheet({
                       onEdit({
                         title: nextBody ? nextBody.slice(0, 72) : post.title ?? null,
                         body: nextBody,
-                        location: locationDraft.trim() || null
+                        location: locationDraft.trim() || null,
+                        allowAnonymousComments: allowAnonymousCommentsDraft
                       });
                       return;
                     }

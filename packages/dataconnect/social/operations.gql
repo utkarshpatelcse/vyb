@@ -18,6 +18,7 @@ query ListFeedByTenant($tenantId: UUID!, $placement: String! = "feed", $limit: I
     authorName
     authorEmail
     isAnonymous
+    allowAnonymousComments
     placement
     kind
     title
@@ -58,6 +59,7 @@ query ListPostsByAuthor(
     authorName
     authorEmail
     isAnonymous
+    allowAnonymousComments
     placement
     kind
     title
@@ -83,6 +85,7 @@ query GetPostById($id: UUID!) @auth(level: NO_ACCESS) {
     authorName
     authorEmail
     isAnonymous
+    allowAnonymousComments
     placement
     kind
     title
@@ -107,6 +110,8 @@ query ListCommentsByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCES
     postId
     membershipId
     authorUserId
+    authorEmail
+    isAnonymous
     parentCommentId
     body
     mediaUrl
@@ -128,6 +133,8 @@ query ListCommentsByPost($postId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
     postId
     membershipId
     authorUserId
+    authorEmail
+    isAnonymous
     parentCommentId
     body
     mediaUrl
@@ -444,6 +451,7 @@ mutation CreatePost(
   $authorName: String! = "Vyb Student"
   $authorEmail: String
   $isAnonymous: Boolean! = false
+  $allowAnonymousComments: Boolean! = true
   $placement: String! = "feed"
   $kind: String!
   $title: String
@@ -466,6 +474,7 @@ mutation CreatePost(
       authorName: $authorName
       authorEmail: $authorEmail
       isAnonymous: $isAnonymous
+      allowAnonymousComments: $allowAnonymousComments
       placement: $placement
       kind: $kind
       title: $title
@@ -519,6 +528,8 @@ mutation CreateComment(
   $postId: UUID!
   $membershipId: UUID!
   $authorUserId: UUID!
+  $authorEmail: String
+  $isAnonymous: Boolean! = false
   $parentCommentId: UUID
   $body: String!
   $mediaUrl: String
@@ -533,6 +544,8 @@ mutation CreateComment(
       postId: $postId
       membershipId: $membershipId
       authorUserId: $authorUserId
+      authorEmail: $authorEmail
+      isAnonymous: $isAnonymous
       parentCommentId: $parentCommentId
       body: $body
       mediaUrl: $mediaUrl

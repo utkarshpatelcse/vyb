@@ -320,6 +320,7 @@ export function CampusUploadShell({
   const [message, setMessage] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isAnonymous, setIsAnonymous] = useState(false);
+  const [allowAnonymousComments, setAllowAnonymousComments] = useState(true);
 
   /* ── Vibe (single video) ─────────────────────────────────────────────── */
   const [vibeVideoUrl, setVibeVideoUrl] = useState<string | null>(null);
@@ -510,6 +511,7 @@ export function CampusUploadShell({
     setMessage(null);
     if (nextMode === "story") {
       setIsAnonymous(false);
+      setAllowAnonymousComments(true);
     }
     setMode(nextMode);
   }
@@ -799,7 +801,8 @@ export function CampusUploadShell({
           caption,
           collegeName,
           videoFile: vibeVideoFile,
-          isAnonymous
+          isAnonymous,
+          allowAnonymousComments
         });
       } else if (mode === "story") {
         enqueueBackgroundPublish({
@@ -828,7 +831,8 @@ export function CampusUploadShell({
           caption,
           collegeName,
           mediaFiles: momentImages.map((asset) => asset.file),
-          isAnonymous
+          isAnonymous,
+          allowAnonymousComments
         });
       }
 
@@ -1056,6 +1060,19 @@ export function CampusUploadShell({
                 <span className="cs-anon-toggle-copy">
                   <strong>Post anonymously</strong>
                   <small>Hide your profile from the public feed and expose identity only to admins.</small>
+                </span>
+              </label>
+
+              <label className={`cs-anon-toggle cs-anon-toggle--comments${allowAnonymousComments ? " is-active" : ""}`}>
+                <input
+                  type="checkbox"
+                  checked={allowAnonymousComments}
+                  onChange={(event) => setAllowAnonymousComments(event.target.checked)}
+                  disabled={isPublishing}
+                />
+                <span className="cs-anon-toggle-copy">
+                  <strong>Allow anonymous comments</strong>
+                  <small>People can choose a hidden identity while replying to this vibe.</small>
                 </span>
               </label>
 
@@ -1380,6 +1397,19 @@ export function CampusUploadShell({
                   <span className="cs-anon-toggle-copy">
                     <strong>Post anonymously</strong>
                     <small>Public viewers will only see an anonymous profile for this post.</small>
+                  </span>
+                </label>
+
+                <label className={`cs-anon-toggle cs-anon-toggle--comments${allowAnonymousComments ? " is-active" : ""}`}>
+                  <input
+                    type="checkbox"
+                    checked={allowAnonymousComments}
+                    onChange={(event) => setAllowAnonymousComments(event.target.checked)}
+                    disabled={isPublishing}
+                  />
+                  <span className="cs-anon-toggle-copy">
+                    <strong>Allow anonymous comments</strong>
+                    <small>Commenters can choose Anonymous on this post. You can turn it off before publishing.</small>
                   </span>
                 </label>
 
