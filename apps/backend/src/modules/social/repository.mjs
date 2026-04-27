@@ -137,9 +137,7 @@ function isFallbackEligibleError(error) {
     message.includes("enotfound") ||
     message.includes("fetch failed") ||
     message.includes("unrecognized operation query.") ||
-    message.includes("unrecognized operation mutation.") ||
-    message.includes("unrecognized field post.authoremail") ||
-    message.includes("unrecognized field post.isanonymous")
+    message.includes("unrecognized operation mutation.")
   );
 }
 

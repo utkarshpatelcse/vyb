@@ -210,6 +210,13 @@ function updateCommentReaction(dcOrVarsOrOptions, varsOrOptions, options) {
 }
 exports.updateCommentReaction = updateCommentReaction;
 
+function softDeleteComment(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('SoftDeleteComment', inputVars, inputOpts);
+}
+exports.softDeleteComment = softDeleteComment;
+
 function createReaction(dcOrVarsOrOptions, varsOrOptions, options) {
   const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
   dcInstance.useGen(true);

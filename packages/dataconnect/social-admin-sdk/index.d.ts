@@ -149,6 +149,8 @@ export interface CreatePostVariables {
   authorUserId?: UUIDString | null;
   authorUsername?: string;
   authorName?: string;
+  authorEmail?: string | null;
+  isAnonymous?: boolean;
   placement?: string;
   kind: string;
   title?: string | null;
@@ -258,6 +260,8 @@ export interface GetPostByIdData {
     authorUserId?: UUIDString | null;
     authorUsername?: string | null;
     authorName?: string | null;
+    authorEmail?: string | null;
+    isAnonymous: boolean;
     placement: string;
     kind: string;
     title?: string | null;
@@ -474,6 +478,8 @@ export interface ListFeedByTenantData {
     authorUserId?: UUIDString | null;
     authorUsername?: string | null;
     authorName?: string | null;
+    authorEmail?: string | null;
+    isAnonymous: boolean;
     placement: string;
     kind: string;
     title?: string | null;
@@ -535,6 +541,8 @@ export interface ListPostsByAuthorData {
     authorUserId?: UUIDString | null;
     authorUsername?: string | null;
     authorName?: string | null;
+    authorEmail?: string | null;
+    isAnonymous: boolean;
     placement: string;
     kind: string;
     title?: string | null;
@@ -732,6 +740,14 @@ export interface ResourceFile_Key {
 export interface Resource_Key {
   id: UUIDString;
   __typename?: 'Resource_Key';
+}
+
+export interface SoftDeleteCommentData {
+  comment_update?: Comment_Key | null;
+}
+
+export interface SoftDeleteCommentVariables {
+  id: UUIDString;
 }
 
 export interface SoftDeleteFollowData {
@@ -980,6 +996,11 @@ export function createCommentReaction(vars: CreateCommentReactionVariables, opti
 export function updateCommentReaction(dc: DataConnect, vars: UpdateCommentReactionVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateCommentReactionData>>;
 /** Generated Node Admin SDK operation action function for the 'UpdateCommentReaction' Mutation. Allow users to pass in custom DataConnect instances. */
 export function updateCommentReaction(vars: UpdateCommentReactionVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateCommentReactionData>>;
+
+/** Generated Node Admin SDK operation action function for the 'SoftDeleteComment' Mutation. Allow users to execute without passing in DataConnect. */
+export function softDeleteComment(dc: DataConnect, vars: SoftDeleteCommentVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeleteCommentData>>;
+/** Generated Node Admin SDK operation action function for the 'SoftDeleteComment' Mutation. Allow users to pass in custom DataConnect instances. */
+export function softDeleteComment(vars: SoftDeleteCommentVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeleteCommentData>>;
 
 /** Generated Node Admin SDK operation action function for the 'CreateReaction' Mutation. Allow users to execute without passing in DataConnect. */
 export function createReaction(dc: DataConnect, vars: CreateReactionVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateReactionData>>;
