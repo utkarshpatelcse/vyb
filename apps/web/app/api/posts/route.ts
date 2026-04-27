@@ -34,6 +34,7 @@ export async function POST(request: Request) {
         mediaSizeBytes?: number | null;
         location?: string | null;
         placement?: "feed" | "vibe";
+        isAnonymous?: boolean;
         mediaAssets?: {
           url: string;
           kind: "image" | "video";
@@ -79,6 +80,7 @@ export async function POST(request: Request) {
         communityId: payload.communityId ?? null,
         placement: payload.placement ?? "feed",
         kind: payload.kind ?? "text",
+        isAnonymous: payload.isAnonymous === true,
         title: payload.title ?? "",
         body: payload.body ?? "",
         mediaUrl: payload.mediaUrl ?? null,

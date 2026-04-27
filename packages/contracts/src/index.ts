@@ -174,8 +174,8 @@ export interface FeedCard {
   id: string;
   tenantId: string;
   communityId: string | null;
-  userId: string;
-  membershipId: string;
+  userId: string | null;
+  membershipId: string | null;
   placement: FeedPlacement;
   kind: PostKind;
   mediaUrl: string | null;
@@ -191,13 +191,16 @@ export interface FeedCard {
   comments: number;
   savedCount: number;
   isSaved: boolean;
+  isAnonymous: boolean;
+  viewerCanManage: boolean;
   viewerReactionType: ReactionKind | null;
   createdAt: string;
   author: {
-    userId: string;
+    userId: string | null;
     username: string;
     displayName: string;
     avatarUrl?: string | null;
+    isAnonymous: boolean;
   };
 }
 
@@ -214,6 +217,7 @@ export interface CreatePostRequest {
   membershipId: string;
   kind: PostKind;
   placement?: FeedPlacement;
+  isAnonymous?: boolean;
   title?: string | null;
   body: string;
   mediaUrl?: string | null;
@@ -427,6 +431,19 @@ export interface TogglePostSaveResponse {
   postId: string;
   savedCount: number;
   isSaved: boolean;
+}
+
+export interface AnonymousPostIdentityResponse {
+  postId: string;
+  tenantId: string;
+  isAnonymous: boolean;
+  author: {
+    userId: string | null;
+    membershipId: string | null;
+    email: string | null;
+    username: string | null;
+    displayName: string | null;
+  };
 }
 
 export interface CreateReportRequest {
