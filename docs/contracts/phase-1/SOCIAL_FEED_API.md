@@ -1,8 +1,8 @@
 # API Contract
 
 Owner: Architecture Team
-Last Updated: 2026-04-22
-Change Summary: Updated the feed contract for the live campus-social flow with engagement metadata, likers access, repost readiness, and full-screen media consumers.
+Last Updated: 2026-04-28
+Change Summary: Added the companion social WebSocket event contract for active feed and vibe clients.
 
 ## 1. Metadata
 
@@ -83,3 +83,12 @@ Change Summary: Updated the feed contract for the live campus-social flow with e
 - `PUT /v1/comments/{commentId}/reactions` toggles comment likes
 - `PUT /v1/posts/{postId}/reactions` toggles the viewer reaction on a post or vibe
 - `POST /v1/posts/{postId}/repost` creates a direct repost or quote repost
+
+## 12. Realtime Companion Contract
+
+- `GET /api/social/socket-token` mints a short-lived signed backend WebSocket URL for the current web viewer.
+- Backend path: `/ws/social`
+- Scope: tenant-level social events for the authenticated viewer membership.
+- Events: `social.post.created`, `social.post.updated`, `social.post.deleted`, `social.post.reaction.updated`, `social.comment.created`, `social.comment.deleted`, and `social.comment.reaction.updated`.
+- Payload rule: realtime payloads must stay client-safe. Anonymous author metadata, real author IDs for anonymous content, and viewer-specific permissions must not leak through event frames.
+- Source-of-truth rule: events are hints for active clients; feed, vibe, comment, and likers HTTP reads remain the durable recovery path.

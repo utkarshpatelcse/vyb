@@ -1,8 +1,8 @@
 # Vyb
 
 Owner: Product and Engineering
-Last Updated: 2026-04-23
-Change Summary: Added the canonical Locked-In UI theme guidance to the shared design system and kept the repo overview aligned with the live social product.
+Last Updated: 2026-04-28
+Change Summary: Documented the live WebSocket fanout model for social feed updates and hardened direct chat realtime behavior.
 
 Multi-tenant campus platform architecture with a responsive web client in Phase 1 and a future native mobile client.
 
@@ -22,6 +22,7 @@ Multi-tenant campus platform architecture with a responsive web client in Phase 
 - Identity, campus, social, and resources modules now fail closed when Data Connect writes are unavailable instead of mutating local JSON stores
 - Campus post, story, and vibe media now upload to Firebase Storage before publish requests, and large videos are optimized before the final size gate runs
 - The live social surface now supports full-screen post and vibe viewing, likers sheets, repost/report/delete actions, optimistic likes, and responsive threaded comments with replies plus GIF/sticker attachments
+- Social feed and vibe surfaces now receive low-cost WebSocket fanout for post, comment, and reaction updates without constant database polling
 - The story composer now supports royalty-free music search, 15/30/45/60-second clip trimming, draggable music sticker placement, and client-side MP4 export for a single story asset
 - The story lane and viewer now support own-story add affordances, seen-state rings, progress playback, story likes, embedded-audio playback, and mute or unmute controls
 - The dedicated `/vibes` theater now supports immersive desktop and mobile playback, default active audio-on behavior, tap pause or resume, and press-and-hold 2x playback
@@ -31,6 +32,7 @@ Multi-tenant campus platform architecture with a responsive web client in Phase 
 - Local dev can fall back to a configured tenant slug/domain for the current first onboarded college while the stricter domain lookup path is still being hardened
 - Unknown college domains are intended to flow into an admin-reviewed college join-request workflow instead of creating tenants automatically
 - The repo now includes Cloud Run deployment assets for the backend monolith and a deployment guide for the current `vybnet-e2242` project
+- Direct chat rooms use backend WebSocket events for immediate message delivery, with slower reconciliation refreshes reserved for missed-event recovery
 
 ## Starter Commands
 

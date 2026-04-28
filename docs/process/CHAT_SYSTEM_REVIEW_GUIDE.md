@@ -1,8 +1,8 @@
 # Chat System Review Guide
 
 Owner: Product and Engineering
-Last Updated: 2026-04-24
-Change Summary: Consolidated the live chat implementation, E2EE key lifecycle, device-change behavior, sign-out behavior, realtime model, and current implementation gaps into one review document.
+Last Updated: 2026-04-28
+Change Summary: Updated the realtime model for immediate open-room delivery, active conversation loading, and lower-cost reconciliation refreshes.
 
 ## 1. Purpose
 
@@ -61,12 +61,12 @@ Implemented in live code:
 - Delete for everyone within 30 minutes
 - Swipe-to-reply UI
 - WebSocket-based conversation sync
+- Live typing indicators over the same backend WebSocket connection
 - Automatic reconnect plus polling fallback
 - Legacy-message encryption upgrade flow for older messages
 
 Documented but not fully live in current UI flow:
 
-- Typing indicators
 - Online presence indicators
 - Encrypted image attachment sending from the composer
 - Dedicated `vibe_card` and `deal_card` send flow from the composer
@@ -268,19 +268,20 @@ How realtime works today:
    - `chat.read`
    - `chat.sync`
 6. Client does not trust partial event payloads as full source of truth
-7. Client reloads conversation detail after most events
+7. For `chat.message`, the open room appends the message payload immediately and uses detail reload only as recovery or reconciliation
+8. Conversation selection triggers an immediate detail fetch before waiting for the periodic fallback
 
 Resilience behavior:
 
 - reconnect with exponential backoff
 - reconnect on visibility regain
 - reconnect on browser coming online
-- polling fallback every `4000ms` when live and `2200ms` when not live
+- reconciliation refresh every `30000ms` when WebSocket is live
+- degraded fallback refresh every `7000ms` while connecting or reconnecting and the tab is visible
 
 Important note:
 
-- Realtime Database presence and typing paths are documented in design docs, but the current live code path visible here uses backend WebSockets for message-sync events.
-- There is no live typing-indicator logic in `campus-messages-shell.tsx` today.
+- Realtime Database presence paths are documented in design docs, but the current live code path visible here uses backend WebSockets for message-sync and typing events.
 
 ## 8. Message Types
 

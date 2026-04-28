@@ -1688,6 +1688,17 @@ export function CampusMessagesShell({
     }
   }
 
+  function openConversation(conversationId: string) {
+    setActiveConversationId(conversationId);
+    setConversationError(null);
+    setConversationLoading(true);
+    setRealtimeState(navigator.onLine ? "connecting" : "offline");
+    void loadConversationDetail(conversationId, {
+      silent: false,
+      preserveActiveConversation: false
+    });
+  }
+
   useEffect(() => {
     setActiveConversationId(initialConversationId);
     setDraftMessage("");
@@ -3120,6 +3131,7 @@ export function CampusMessagesShell({
       return;
     }
 
+    const intervalMs = realtimeState === "live" ? 30000 : 7000;
     const intervalId = setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") {
         return;
@@ -3133,7 +3145,7 @@ export function CampusMessagesShell({
         silent: true,
         preserveActiveConversation: true
       });
-    }, realtimeState === "live" ? 4000 : 2200);
+    }, intervalMs);
 
     return () => {
       clearInterval(intervalId);
@@ -4462,7 +4474,7 @@ export function CampusMessagesShell({
                           role="listitem"
                           className={`spm-conv-item${item.unreadCount > 0 ? " spm-conv-item-unread" : ""}${isMarket ? " spm-conv-item-market" : ""}${item.id === activeConversationId ? " spm-conv-item-active" : ""}`}
                           aria-label={`Chat with ${item.peer.displayName}${item.unreadCount > 0 ? `, ${item.unreadCount} unread` : ""}`}
-                          onClick={() => setActiveConversationId(item.id)}
+                          onClick={() => openConversation(item.id)}
                         >
                           <div className="spm-conv-avatar-wrap">
                             <div className={`spm-conv-avatar spm-pulse-ring spm-pulse-${statusRing}`}>

@@ -503,6 +503,10 @@ export function CampusHomeShell({
 
   const storyGroups = useMemo(() => buildStoryRailGroups(storyFeed, viewerUsername), [storyFeed, viewerUsername]);
   const storySequence = useMemo(() => storyGroups.flatMap((group) => group.items), [storyGroups]);
+  const mirroredPostLookup = useMemo(
+    () => new Map([...engagement.posts, ...vibeStrip].map((post) => [post.id, post])),
+    [engagement.posts, vibeStrip]
+  );
   const ownStoryGroup = storyGroups.find((group) => group.isOwn) ?? null;
   const otherStoryGroups = storyGroups.filter((group) => !group.isOwn);
   const selectedStory = selectedStoryIndex === null ? null : storySequence[selectedStoryIndex] ?? null;
@@ -743,14 +747,15 @@ export function CampusHomeShell({
     setActionPost((current) => (current?.id === postId ? null : current));
   }
 
-  async function handlePostReaction(post: FeedCard, reactionType: ReactionKind = "like", triggerBurst = false) {
-    const reaction = await engagement.react(post.id, reactionType);
+  async function handlePostReaction(post: FeedCard, reactionType?: ReactionKind, triggerBurst = false) {
+    const requestedReactionType = reactionType ?? post.viewerReactionType ?? "like";
+    const reaction = await engagement.react(post.id, requestedReactionType);
     if (!reaction) {
       setFlashMessage("We could not update that reaction right now.");
       return;
     }
 
-    if (reaction.active && reaction.viewerReactionType === "like" && (triggerBurst || reactionType === "like")) {
+    if (reaction.active && reaction.viewerReactionType === "like" && (triggerBurst || requestedReactionType === "like")) {
       setHeartBurstPostId(post.id);
     }
 
@@ -807,6 +812,20 @@ export function CampusHomeShell({
       setLikesLoadingPostId(null);
     }
   }
+
+  useEffect(() => {
+    const syncLatestPost = (current: FeedCard | null) => {
+      if (!current) {
+        return current;
+      }
+
+      return mirroredPostLookup.get(current.id) ?? null;
+    };
+
+    setLightboxPost(syncLatestPost);
+    setLikesPost(syncLatestPost);
+    setActionPost(syncLatestPost);
+  }, [mirroredPostLookup]);
 
   async function handleTogglePostSave(post: FeedCard) {
     setSaveBusyPostId(post.id);
@@ -1129,7 +1148,7 @@ export function CampusHomeShell({
     }
 
     setReactionTrayPostId(null);
-    void handlePostReaction(post, "like");
+    void handlePostReaction(post);
   }
 
   function handleReactionOptionSelect(post: FeedCard, reactionType: ReactionKind) {
@@ -1985,7 +2004,7 @@ export function CampusHomeShell({
         onClose={() => setLightboxPost(null)}
         onLike={() => {
           if (lightboxPost) {
-            void handlePostReaction(lightboxPost, "like", true);
+            void handlePostReaction(lightboxPost, undefined, true);
           }
         }}
         onOpenComments={() => {

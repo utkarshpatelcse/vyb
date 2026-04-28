@@ -1,8 +1,8 @@
 # Vyb High Level Design
 
 Owner: Architecture Team
-Last Updated: 2026-04-22
-Change Summary: Synced the HLD with the live Phase 1 social surface, including stories, immersive vibes, story music composition through a web-edge helper route, the new encrypted direct-messaging architecture, and the current client-side media architecture limits.
+Last Updated: 2026-04-28
+Change Summary: Synced the HLD with the live Phase 1 WebSocket fanout model for social engagement and direct chat room delivery.
 
 ## 1. Document Purpose
 
@@ -408,7 +408,9 @@ tenants/{tenantId}/users/{userId}/resources/{resourceId}/{fileName}
 ## 13. Realtime and E2EE Notes
 
 - Phase 1 direct messaging stays inside the modular monolith as a `chat` module and does not justify a separate Socket microservice yet.
-- Low-latency presence, typing, and encrypted delivery fanout may use Firebase Realtime Database because it preserves low cost while keeping the backend as the message system of record.
+- Low-latency social engagement updates and direct chat delivery use backend-owned WebSocket fanout in the modular monolith; Data Connect remains the durable system of record.
+- The social module exposes `/ws/social` for tenant-scoped post, comment, and reaction update events. The chat module exposes `/ws/chat` for conversation-scoped message, read, sync, and typing events.
+- In Phase 1 the WebSocket hubs are in-process because the backend is one Cloud Run service. If horizontal scale requires multiple live instances, the hub must move behind Redis Pub/Sub, managed Pub/Sub, or an equivalent documented fanout layer before relying on cross-instance delivery.
 - The backend stores encrypted message payloads and encrypted attachment references only; decryption happens in approved clients through the Web Crypto API.
 - Phase 1 E2EE is scoped to one-to-one chats and starts with one active browser-held device key per account until secure multi-device key sync is designed and approved.
 

@@ -1,8 +1,8 @@
 # Vyb ADR 003: Phase 1 Chat Realtime and E2EE
 
 Owner: Architecture Team
-Last Updated: 2026-04-22
-Change Summary: Accepted one-to-one encrypted campus chat inside the modular monolith, with Firebase Realtime Database for low-cost realtime fanout and Web Crypto based client-side E2EE.
+Last Updated: 2026-04-28
+Change Summary: Updated the accepted Phase 1 realtime implementation to backend-owned WebSocket fanout inside the modular monolith with Web Crypto based client-side E2EE.
 
 ## 1. Metadata
 
@@ -24,7 +24,7 @@ Change Summary: Accepted one-to-one encrypted campus chat inside the modular mon
 
 - Introduce a dedicated `chat` module inside the existing backend monolith.
 - Persist conversation state and encrypted messages in PostgreSQL through Firebase Data Connect.
-- Use Firebase Realtime Database only for approved low-cost realtime fanout of presence, typing, and encrypted delivery events.
+- Use backend-owned WebSocket fanout inside the modular monolith for conversation-scoped message, read, sync, and typing events.
 - Use the Web Crypto API in the client for Phase 1 E2EE.
 - Start with one-to-one conversations only.
 - Start with one active browser-held key per account in Phase 1 and defer secure multi-device key sync.
@@ -34,26 +34,26 @@ Change Summary: Accepted one-to-one encrypted campus chat inside the modular mon
 
 - Option A: Build a dedicated Socket.io microservice for chat.
 - Option B: Use Firebase Realtime Database as both the system of record and realtime layer.
-- Option C: Keep messaging inside the backend monolith, persist ciphertext in Data Connect, and use Firebase Realtime Database only for realtime fanout.
+- Option C: Keep messaging inside the backend monolith, persist ciphertext in Data Connect, and use backend-owned WebSocket fanout for active clients.
 
 ## 5. Why This Decision
 
 - benefits
   - Preserves the Phase 1 rule of one public backend deployable.
   - Keeps durable chat history in the same system-of-record model as the rest of the app.
-  - Uses an existing low-cost Firebase service for presence and typing instead of a second custom service.
+  - Reuses the existing backend process for WebSocket fanout instead of a second custom service.
   - Allows message payloads to remain ciphertext in backend-owned persistence.
 - tradeoffs
-  - Chat now spans both PostgreSQL and Firebase Realtime Database.
+  - Chat realtime delivery is process-local until a documented Pub/Sub fanout layer is added for multi-instance scale.
   - Multi-device E2EE is intentionally incomplete in Phase 1.
-  - Realtime delivery depends on Firebase Realtime Database availability and browser auth state.
+  - Realtime delivery depends on active WebSocket connectivity and signed socket-token validation.
 - operational impact
-  - Chat rollout requires Firebase Realtime Database configuration and rules.
-  - Backend chat writes must mirror encrypted delivery envelopes to the realtime path.
+  - Chat rollout requires the backend `/ws/chat` upgrade path and signed socket-token route to be reachable.
+  - Backend chat writes must emit small conversation-scoped realtime events after durable persistence succeeds.
   - Clients need fallback behavior when realtime is unavailable.
 - cost impact
   - Avoids running a second always-on Socket service.
-  - Uses Firebase Realtime Database only for lightweight fanout instead of full durable message storage.
+  - Uses in-process WebSocket fanout for lightweight active-room delivery instead of polling the database for every open chat.
 
 ## 6. Security and Reliability Impact
 
@@ -63,7 +63,7 @@ Change Summary: Accepted one-to-one encrypted campus chat inside the modular mon
   - Secure multi-device recovery is not solved in Phase 1 and must be documented clearly.
 - failure modes
   - Missing or rotated browser keys can strand old message history for that browser.
-  - Realtime delivery may degrade if Firebase Realtime Database auth or rules are misconfigured.
+  - Realtime delivery may degrade on backend restarts or multi-instance deployments until a shared Pub/Sub fanout is introduced.
   - Browser storage loss can remove the local private key.
 - rollback path
   - Hide chat entry points and disable message sends while preserving ciphertext history.
@@ -81,7 +81,7 @@ Change Summary: Accepted one-to-one encrypted campus chat inside the modular mon
 - step 1: add chat docs, contracts, schema, and backend module
 - step 2: enable client key registration and conversation reads
 - step 3: enable encrypted sends, reactions, and read state
-- step 4: enable Firebase Realtime Database presence, typing, and encrypted delivery fanout
+- step 4: enable backend WebSocket typing and encrypted delivery fanout
 - step 5: wire market-originated deal-card entry and vibe-card share surfaces
 
 ## 9. Exit Criteria
@@ -89,5 +89,5 @@ Change Summary: Accepted one-to-one encrypted campus chat inside the modular mon
 - one-to-one encrypted conversations can be created inside the same tenant
 - plaintext message bodies are never persisted by backend-owned systems
 - inbox and conversation history load from the backend
-- presence, typing, and encrypted delivery fanout work through Firebase Realtime Database on supported clients
+- typing and encrypted delivery fanout work through backend WebSockets on supported clients
 - chat uses the existing modular monolith rather than a new custom microservice

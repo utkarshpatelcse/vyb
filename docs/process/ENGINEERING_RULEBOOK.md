@@ -1,8 +1,8 @@
 # Vyb Engineering Rulebook
 
 Owner: Engineering Leadership
-Last Updated: 2026-04-19
-Change Summary: Updated the rulebook for a Phase 1 modular monolith backend with future microservice extraction only by explicit approval.
+Last Updated: 2026-04-28
+Change Summary: Added realtime delivery documentation requirements while preserving the Phase 1 modular monolith boundary.
 
 This rulebook is mandatory. These rules are not optional and are intended to prevent architectural drift, undocumented changes, and unsafe shortcuts.
 
@@ -56,6 +56,7 @@ This rulebook is mandatory. These rules are not optional and are intended to pre
 5. No endpoint may expose internal database structure directly.
 6. Breaking API changes require versioning or a migration plan.
 7. Cross-module interactions must be listed in the feature LLD.
+8. WebSocket or realtime event changes must document event names, auth scope, payload shape, reconnect behavior, fallback refresh policy, and cost impact.
 
 ## 6. Database Rules
 

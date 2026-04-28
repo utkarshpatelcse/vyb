@@ -1,8 +1,8 @@
 # Vyb Software Requirements Specification
 
 Owner: Product Team
-Last Updated: 2026-04-22
-Change Summary: Added the first-college verified auth rollout, profile completion requirements, the authenticated home-feed landing flow for the current Phase 1 web surface, the Phase 1 hosting topology requirement, the live social requirements for immersive stories, story music, sound-on vibes, reposts, likers, story-viewer state, and responsive threaded comments, plus the new encrypted direct-messaging requirements.
+Last Updated: 2026-04-28
+Change Summary: Added live WebSocket delivery requirements for social engagement and direct chat rooms while keeping Data Connect as the durable source of truth.
 
 ## 1. Introduction
 
@@ -72,6 +72,7 @@ Phase 1 ships through the web client and one backend runtime. The architecture m
 - Users shall reply to comments and like comments.
 - Comment threads shall support approved GIF or sticker attachments.
 - Users shall react to posts.
+- Post, comment, and reaction updates shall appear in active feed and vibe clients through a low-cost realtime fanout channel without requiring manual refresh.
 - Users shall see which verified campus members liked a post or vibe.
 - Users shall direct repost or quote repost eligible posts and vibes inside the same tenant.
 - Post and vibe authors shall edit published copy or location metadata and shall soft-delete their own published content.
@@ -103,6 +104,7 @@ Phase 1 ships through the web client and one backend runtime. The architecture m
 - The chat composer shall include camera, gallery, and microphone entry affordances in both desktop and mobile layouts.
 - Marketplace-originated chats shall render a deal card with accept or decline actions.
 - Realtime presence, typing, and encrypted delivery fanout shall use an approved low-cost realtime channel.
+- Active direct chat rooms shall render newly received messages immediately through WebSocket delivery, with periodic reconciliation reserved for missed-event recovery.
 - Phase 1 E2EE shall start with one active browser-held key per account; secure multi-device key sync is deferred.
 
 ### 2.7 Moderation

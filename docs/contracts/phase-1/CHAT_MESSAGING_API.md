@@ -1,8 +1,8 @@
 # API Contract
 
 Owner: Architecture Team
-Last Updated: 2026-04-22
-Change Summary: Documented the Phase 1 encrypted direct-messaging contract for inbox reads, conversation bootstrap, encrypted message sends, reactions, read state, key publication, and encrypted attachment upload.
+Last Updated: 2026-04-28
+Change Summary: Documented the backend WebSocket socket-token route and conversation-scoped realtime event contract for direct messaging.
 
 ## Endpoint Definition
 
@@ -14,6 +14,7 @@ Change Summary: Documented the Phase 1 encrypted direct-messaging contract for i
 - `PUT /v1/chats/messages/{messageId}/reactions`
 - `PUT /v1/chats/keys`
 - `POST /v1/chats/media/upload`
+- `GET /api/chats/socket-token?conversationId={conversationId}` for the web client to mint a short-lived backend WebSocket URL
 
 ## Request Highlights
 
@@ -38,5 +39,6 @@ Change Summary: Documented the Phase 1 encrypted direct-messaging contract for i
 - only one-to-one conversations are supported in Phase 1
 - backend-owned persistence stores ciphertext payloads and encrypted attachment references only
 - vibe cards and market deal cards are represented as encrypted message payloads with message kinds that clients know how to render
-- Firebase Realtime Database may mirror encrypted delivery envelopes for presence, typing, and fanout, but the system of record remains the backend plus Data Connect path
+- The backend `/ws/chat` WebSocket path emits lightweight conversation events: `chat.message`, `chat.read`, `chat.sync`, and `chat.typing`
+- WebSocket event payloads are optimization hints for active clients; durable truth remains the backend plus Data Connect path
 - Phase 1 starts with one active browser-held key per account and does not promise secure multi-device key sync yet

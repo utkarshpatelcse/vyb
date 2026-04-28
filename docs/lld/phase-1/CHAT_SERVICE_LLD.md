@@ -1,8 +1,8 @@
 # Chat Module LLD
 
 Owner: Messaging Platform
-Last Updated: 2026-04-22
-Change Summary: Defined the Phase 1 encrypted direct-messaging design for one-to-one campus chats, low-cost realtime fanout, market deal cards, and vibe-card sharing.
+Last Updated: 2026-04-28
+Change Summary: Updated the chat design to match the backend WebSocket fanout implementation and lower-cost reconciliation refresh behavior.
 
 ## 1. Metadata
 
@@ -11,7 +11,7 @@ Change Summary: Defined the Phase 1 encrypted direct-messaging design for one-to
 - Runtime: `apps/backend`
 - Phase: Phase 1
 - Date: 2026-04-22
-- Status: Planned
+- Status: Active
 - Linked SRS section: 2.6 Direct Messaging
 - Linked HLD section: Phase 1 Module Map, Realtime and E2EE Notes, Media Architecture
 - Linked ADRs: `ADR_003_PHASE1_CHAT_REALTIME_AND_E2EE.md`
@@ -37,7 +37,7 @@ In scope:
 - read state
 - typing state
 - online presence indicators
-- low-cost realtime fanout through Firebase Realtime Database
+- low-cost realtime fanout through the backend `/ws/chat` WebSocket hub
 
 Out of scope:
 
@@ -60,7 +60,7 @@ Out of scope:
 - Flow 1: user opens `/messages`, sees active chats, and filters them through inbox search.
 - Flow 2: user searches a campus profile and creates or reuses a one-to-one chat.
 - Flow 3: client loads or creates its browser-held E2EE key pair, publishes the public key through the backend, derives a shared secret from the peer public key, encrypts the message payload, and posts only ciphertext to the backend.
-- Flow 4: backend stores ciphertext in PostgreSQL through Data Connect, mirrors the encrypted delivery envelope into Firebase Realtime Database, and the recipient conversation updates without polling.
+- Flow 4: backend stores ciphertext in PostgreSQL through Data Connect, emits a conversation-scoped WebSocket event, and the recipient conversation updates without waiting for inbox refresh.
 - Flow 5: user attaches an image, encrypts the file in the browser, uploads the encrypted blob, and sends an encrypted attachment message.
 - Flow 6: user starts a chat from Marketplace, and the conversation is seeded with a deal card that can be accepted or declined through follow-up messages.
 - Flow 7: user long-presses a message to react or swipes right to quote-reply.
@@ -167,9 +167,9 @@ Out of scope:
 - failure handling: fail closed for invalid listing or request references
 
 - calling module: `chat`
-- target module: Firebase Realtime Database
-- reason: publish presence, typing, and encrypted delivery fanout
-- interaction type: approved external realtime channel
+- target module: backend WebSocket hub
+- reason: publish conversation-scoped typing, read, sync, and encrypted delivery fanout
+- interaction type: in-process realtime channel on `/ws/chat`
 - failure handling: keep encrypted message durable in PostgreSQL and allow the client to recover by refresh
 
 ## 8. Data Model Changes
@@ -208,10 +208,12 @@ Out of scope:
 
 ## 11. Realtime Path Model
 
-- presence path: `/presence/{tenantId}/{userId}`
-- typing path: `/typing/{tenantId}/{conversationId}/{userId}`
-- delivery path: `/chatEvents/{tenantId}/{conversationId}/{messageId}`
-- payload rule: delivery nodes may duplicate encrypted envelopes, but may not expose plaintext bodies
+- socket path: `/ws/chat`
+- token route: `GET /api/chats/socket-token?conversationId={conversationId}`
+- subscription scope: one authenticated conversation per socket
+- event types: `chat.message`, `chat.read`, `chat.sync`, and `chat.typing`
+- payload rule: event frames may include encrypted message records and metadata, but may not expose plaintext bodies
+- recovery rule: clients append safe `chat.message` payloads immediately and use conversation-detail reloads for missed events or reconciliation
 
 ## 12. Observability
 
@@ -224,7 +226,7 @@ Out of scope:
 
 - peer has no published key: conversation can open, but encrypted send must block until the peer publishes a key
 - browser-held key missing after storage clear: old messages become unreadable on that browser until a future recovery flow exists
-- Firebase Realtime Database unavailable: inbox and history still load from backend, but live typing or presence degrades
+- WebSocket unavailable: inbox and history still load from backend, but live typing and instant delivery degrade to reconciliation refresh
 - encrypted attachment upload fails: plaintext is never sent; composer should keep the draft and surface retry
 - invalid deal seed: conversation creation fails with a safe error and no message is written
 

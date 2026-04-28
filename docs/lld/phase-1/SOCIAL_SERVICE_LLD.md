@@ -1,8 +1,8 @@
 # Social Module LLD
 
 Owner: Social Platform
-Last Updated: 2026-04-22
-Change Summary: Expanded the Phase 1 social design for immersive stories and vibes, own-story add affordances, story music search and client-side export, and premium playback controls across desktop and mobile.
+Last Updated: 2026-04-28
+Change Summary: Added the Phase 1 social WebSocket fanout model for post, comment, and reaction updates.
 
 ## 1. Metadata
 
@@ -41,6 +41,7 @@ In scope:
 - author edit and soft delete for posts and vibes
 - responsive desktop and mobile social interaction surfaces
 - immersive vibes playback with default sound-on intent, tap pause or resume, and press-and-hold speed-up
+- tenant-scoped WebSocket fanout for post, comment, and reaction changes on active feed or vibe clients
 - extraction-ready domain boundaries
 
 Out of scope:
@@ -74,6 +75,7 @@ Out of scope:
 - Flow 9: user reports unsafe social content when moderation support is enabled.
 - Flow 10: user selects one story asset, browses the royalty-free music library, previews a 15, 30, 45, or 60 second clip, positions the music sticker, exports the final MP4 in the browser, and then publishes it as a normal story item.
 - Flow 11: viewer opens `/vibes`, the active item attempts sound-on playback, a single tap pauses or resumes, and a press-and-hold temporarily boosts playback speed.
+- Flow 12: backend persists a social mutation, emits a small `/ws/social` event, and active clients patch local feed, comment, and reaction state without polling.
 
 ## 6. API Design
 

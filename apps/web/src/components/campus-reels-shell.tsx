@@ -660,6 +660,21 @@ export function CampusReelsShell({
     setActionPost((current) => (current?.id === postId ? updater(current) : current));
   }
 
+  useEffect(() => {
+    const latestById = new Map(engagement.posts.map((post) => [post.id, post]));
+    const syncLatestPost = (current: FeedCard | null) => {
+      if (!current) {
+        return current;
+      }
+
+      return latestById.get(current.id) ?? null;
+    };
+
+    setLightboxPost(syncLatestPost);
+    setLikesPost(syncLatestPost);
+    setActionPost(syncLatestPost);
+  }, [engagement.posts]);
+
   function removeMirroredPost(postId: string) {
     setLightboxPost((current) => (current?.id === postId ? null : current));
     setLikesPost((current) => (current?.id === postId ? null : current));
@@ -817,11 +832,12 @@ export function CampusReelsShell({
   }
 
   async function handlePostLike(post: FeedCard, triggerBurst = false) {
-    if (triggerBurst) {
+    const requestedReactionType = post.viewerReactionType ?? "like";
+    if (triggerBurst && requestedReactionType === "like") {
       setHeartBurstPostId(post.id);
     }
 
-    const reaction = await engagement.react(post.id);
+    const reaction = await engagement.react(post.id, requestedReactionType);
     if (!reaction) {
       setFlashMessage("We could not update that vibe right now.");
       return;
