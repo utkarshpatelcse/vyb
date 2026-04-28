@@ -6,7 +6,16 @@ import type {
   ConnectHintResponse,
   ConnectSubmitResponse
 } from "@vyb/contracts";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type TouchEvent as ReactTouchEvent
+} from "react";
 
 type ConnectDailyGameProps = {
   onExit: () => void;
@@ -237,10 +246,6 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     };
   }
 
-  function getPointFromPointer(event: ReactPointerEvent<HTMLElement>): ConnectCoordinate | null {
-    return getPointFromClientPosition(event.clientX, event.clientY);
-  }
-
   function buildStraightTargets(from: ConnectCoordinate, to: ConnectCoordinate) {
     if (from.x === to.x) {
       const step = to.y > from.y ? 1 : -1;
@@ -397,6 +402,22 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     applyCell(point);
   }
 
+  function startDragFromClientPosition(clientX: number, clientY: number) {
+    const point = getPointFromClientPosition(clientX, clientY);
+
+    if (point) {
+      startDragAtPoint(point);
+    }
+  }
+
+  function applyCellFromClientPosition(clientX: number, clientY: number) {
+    const point = getPointFromClientPosition(clientX, clientY);
+
+    if (point) {
+      applyCell(point);
+    }
+  }
+
   function handleInputPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     event.preventDefault();
     try {
@@ -404,11 +425,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     } catch {
       // Some embedded browsers release pointer capture when devtools/emulation is active.
     }
-    const point = getPointFromPointer(event);
-
-    if (point) {
-      startDragAtPoint(point);
-    }
+    startDragFromClientPosition(event.clientX, event.clientY);
   }
 
   function handleInputPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
@@ -417,11 +434,47 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     }
 
     event.preventDefault();
-    const point = getPointFromPointer(event);
+    applyCellFromClientPosition(event.clientX, event.clientY);
+  }
 
-    if (point) {
-      applyCell(point);
+  function handleInputMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
+    event.preventDefault();
+    startDragFromClientPosition(event.clientX, event.clientY);
+  }
+
+  function handleInputMouseMove(event: ReactMouseEvent<HTMLDivElement>) {
+    if (!isDraggingRef.current) {
+      return;
     }
+
+    event.preventDefault();
+    applyCellFromClientPosition(event.clientX, event.clientY);
+  }
+
+  function handleInputClick(event: ReactMouseEvent<HTMLDivElement>) {
+    event.preventDefault();
+    lastAppliedCellKeyRef.current = null;
+    applyCellFromClientPosition(event.clientX, event.clientY);
+  }
+
+  function handleInputTouchStart(event: ReactTouchEvent<HTMLDivElement>) {
+    const touch = event.touches[0];
+    if (!touch) {
+      return;
+    }
+
+    event.preventDefault();
+    startDragFromClientPosition(touch.clientX, touch.clientY);
+  }
+
+  function handleInputTouchMove(event: ReactTouchEvent<HTMLDivElement>) {
+    const touch = event.touches[0];
+    if (!touch || !isDraggingRef.current) {
+      return;
+    }
+
+    event.preventDefault();
+    applyCellFromClientPosition(touch.clientX, touch.clientY);
   }
 
   function endDrag() {
@@ -450,12 +503,14 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     document.addEventListener("pointermove", handleGlobalPointerMove, { passive: false });
     document.addEventListener("pointerup", handleGlobalPointerEnd);
     document.addEventListener("pointercancel", handleGlobalPointerEnd);
+    document.addEventListener("mouseup", handleGlobalPointerEnd);
     window.addEventListener("blur", handleGlobalPointerEnd);
 
     return () => {
       document.removeEventListener("pointermove", handleGlobalPointerMove);
       document.removeEventListener("pointerup", handleGlobalPointerEnd);
       document.removeEventListener("pointercancel", handleGlobalPointerEnd);
+      document.removeEventListener("mouseup", handleGlobalPointerEnd);
       window.removeEventListener("blur", handleGlobalPointerEnd);
     };
   });
@@ -694,6 +749,15 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
             onPointerMove={handleInputPointerMove}
             onPointerUp={endDrag}
             onPointerCancel={endDrag}
+            onMouseDown={handleInputMouseDown}
+            onMouseMove={handleInputMouseMove}
+            onMouseUp={endDrag}
+            onMouseLeave={endDrag}
+            onClick={handleInputClick}
+            onTouchStart={handleInputTouchStart}
+            onTouchMove={handleInputTouchMove}
+            onTouchEnd={endDrag}
+            onTouchCancel={endDrag}
           />
         </div>
       </div>
