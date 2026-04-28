@@ -6,7 +6,7 @@ import type {
   ConnectHintResponse,
   ConnectSubmitResponse
 } from "@vyb/contracts";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 
 type ConnectDailyGameProps = {
   onExit: () => void;
@@ -68,6 +68,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const autoSubmitKeyRef = useRef("");
+  const boardRef = useRef<HTMLDivElement | null>(null);
   const lastAppliedCellKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -186,13 +187,13 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     void submitRoute();
   }, [canSubmit, pathCells, result, submitBusy]);
 
-  function getPointFromPointer(event: PointerEvent<HTMLDivElement>): ConnectCoordinate | null {
+  function getPointFromClientPosition(clientX: number, clientY: number): ConnectCoordinate | null {
     if (!level) {
       return null;
     }
 
     const touchedCell = document
-      .elementFromPoint(event.clientX, event.clientY)
+      .elementFromPoint(clientX, clientY)
       ?.closest<HTMLElement>("[data-connect-x][data-connect-y]");
     const touchedX = touchedCell ? Number.parseInt(touchedCell.dataset.connectX ?? "", 10) : Number.NaN;
     const touchedY = touchedCell ? Number.parseInt(touchedCell.dataset.connectY ?? "", 10) : Number.NaN;
@@ -208,7 +209,11 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
       return { x: touchedX, y: touchedY };
     }
 
-    const board = event.currentTarget;
+    const board = boardRef.current;
+    if (!board) {
+      return null;
+    }
+
     const bounds = board.getBoundingClientRect();
     const style = window.getComputedStyle(board);
     const leftPadding = Number.parseFloat(style.paddingLeft) || 0;
@@ -219,8 +224,8 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     const gridTop = bounds.top + topPadding;
     const gridWidth = bounds.width - leftPadding - rightPadding;
     const gridHeight = bounds.height - topPadding - bottomPadding;
-    const relativeX = event.clientX - gridLeft;
-    const relativeY = event.clientY - gridTop;
+    const relativeX = clientX - gridLeft;
+    const relativeY = clientY - gridTop;
 
     if (relativeX < 0 || relativeY < 0 || relativeX > gridWidth || relativeY > gridHeight) {
       return null;
@@ -230,6 +235,10 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
       x: Math.min(level.gridSize - 1, Math.max(0, Math.floor((relativeY / gridHeight) * level.gridSize))),
       y: Math.min(level.gridSize - 1, Math.max(0, Math.floor((relativeX / gridWidth) * level.gridSize)))
     };
+  }
+
+  function getPointFromPointer(event: ReactPointerEvent<HTMLElement>): ConnectCoordinate | null {
+    return getPointFromClientPosition(event.clientX, event.clientY);
   }
 
   function buildStraightTargets(from: ConnectCoordinate, to: ConnectCoordinate) {
@@ -382,25 +391,22 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     });
   }
 
-  function handleBoardPointerDown(event: PointerEvent<HTMLDivElement>) {
-    event.preventDefault();
-    try {
-      if (!event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.setPointerCapture(event.pointerId);
-      }
-    } catch {
-      // Some embedded browsers are picky about pointer capture on bubbled targets.
-    }
+  function startDragAtPoint(point: ConnectCoordinate) {
     isDraggingRef.current = true;
     lastAppliedCellKeyRef.current = null;
+    applyCell(point);
+  }
+
+  function handleBoardPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    event.preventDefault();
     const point = getPointFromPointer(event);
 
     if (point) {
-      applyCell(point);
+      startDragAtPoint(point);
     }
   }
 
-  function handleBoardPointerMove(event: PointerEvent<HTMLDivElement>) {
+  function handleBoardPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
     if (!isDraggingRef.current) {
       return;
     }
@@ -413,17 +419,15 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     }
   }
 
-  function handleBoardPointerEnd(event: PointerEvent<HTMLDivElement>) {
-    try {
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-    } catch {
-      // Capture may already be released by the browser.
-    }
-
+  function endDrag() {
     isDraggingRef.current = false;
     lastAppliedCellKeyRef.current = null;
+  }
+
+  function handleCellPointerDown(event: ReactPointerEvent<HTMLElement>, point: ConnectCoordinate) {
+    event.preventDefault();
+    event.stopPropagation();
+    startDragAtPoint(point);
   }
 
   function handleCellPointerEnter(point: ConnectCoordinate) {
@@ -433,6 +437,59 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
 
     applyCell(point);
   }
+
+  function handleCellPointerMove(event: ReactPointerEvent<HTMLElement>) {
+    if (!isDraggingRef.current) {
+      return;
+    }
+
+    event.preventDefault();
+    const point = getPointFromPointer(event);
+
+    if (point) {
+      applyCell(point);
+    }
+  }
+
+  function handleCellKeyDown(event: KeyboardEvent<HTMLElement>, point: ConnectCoordinate) {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+
+    event.preventDefault();
+    applyCell(point);
+  }
+
+  useEffect(() => {
+    function handleGlobalPointerMove(event: globalThis.PointerEvent) {
+      if (!isDraggingRef.current) {
+        return;
+      }
+
+      event.preventDefault();
+      const point = getPointFromClientPosition(event.clientX, event.clientY);
+
+      if (point) {
+        applyCell(point);
+      }
+    }
+
+    function handleGlobalPointerEnd() {
+      endDrag();
+    }
+
+    document.addEventListener("pointermove", handleGlobalPointerMove, { passive: false });
+    document.addEventListener("pointerup", handleGlobalPointerEnd);
+    document.addEventListener("pointercancel", handleGlobalPointerEnd);
+    window.addEventListener("blur", handleGlobalPointerEnd);
+
+    return () => {
+      document.removeEventListener("pointermove", handleGlobalPointerMove);
+      document.removeEventListener("pointerup", handleGlobalPointerEnd);
+      document.removeEventListener("pointercancel", handleGlobalPointerEnd);
+      window.removeEventListener("blur", handleGlobalPointerEnd);
+    };
+  });
 
   async function requestHint() {
     if (!daily || cooldownRemaining > 0 || hintBusy || result?.solved) {
@@ -564,12 +621,18 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
       const isGhost = ghostHint ? cellKey(ghostHint.next) === key : false;
 
       gridCells.push(
-        <button
+        <div
           key={key}
-          type="button"
+          role="button"
+          tabIndex={0}
           data-connect-x={x}
           data-connect-y={y}
+          onPointerDown={(event) => handleCellPointerDown(event, point)}
           onPointerEnter={() => handleCellPointerEnter(point)}
+          onPointerMove={handleCellPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onKeyDown={(event) => handleCellKeyDown(event, point)}
           className={[
             "vyb-connect-cell",
             dot ? "is-dot" : "",
@@ -585,7 +648,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
         >
           {isPath ? <span className="vyb-connect-step">{pathIndex + 1}</span> : null}
           {dot ? <span className="vyb-connect-dot-label">{dot.id}</span> : null}
-        </button>
+        </div>
       );
     }
   }
@@ -613,12 +676,14 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
 
       <div className="vyb-connect-board-wrap">
         <div
+          ref={boardRef}
           className="vyb-connect-board"
           style={{ "--connect-grid-size": level.gridSize } as CSSProperties}
           onPointerDown={handleBoardPointerDown}
           onPointerMove={handleBoardPointerMove}
-          onPointerUp={handleBoardPointerEnd}
-          onPointerCancel={handleBoardPointerEnd}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onPointerLeave={endDrag}
         >
           <svg className="vyb-connect-path-layer" viewBox={`0 0 ${level.gridSize} ${level.gridSize}`} preserveAspectRatio="none" aria-hidden="true">
             <defs>
