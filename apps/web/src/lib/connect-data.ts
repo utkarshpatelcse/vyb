@@ -102,6 +102,14 @@ type DailyState = {
   nextResetAt: string;
 };
 
+export type ConnectDailyHubSnapshot = {
+  dailyKey: string;
+  totalSolvers: number;
+  viewerBest: ConnectLeaderboardEntry | null;
+  viewerStreak: number;
+  leaderboard: ConnectLeaderboardEntry[];
+};
+
 const emptyStore: ConnectStore = {
   sessions: [],
   scores: []
@@ -396,6 +404,54 @@ function getViewerUsername(viewer: DevSession) {
   return viewer.email.split("@")[0] || "vyb-student";
 }
 
+function compareStoredScores(left: StoredConnectScore, right: StoredConnectScore) {
+  if (left.adjustedTimeSeconds !== right.adjustedTimeSeconds) {
+    return left.adjustedTimeSeconds - right.adjustedTimeSeconds;
+  }
+
+  if (left.elapsedSeconds !== right.elapsedSeconds) {
+    return left.elapsedSeconds - right.elapsedSeconds;
+  }
+
+  if (left.hintsUsed !== right.hintsUsed) {
+    return left.hintsUsed - right.hintsUsed;
+  }
+
+  return new Date(left.completedAt).getTime() - new Date(right.completedAt).getTime();
+}
+
+function getBestScoreForUser(store: ConnectStore, tenantId: string, dailyKey: string, levelId: number, userId: string) {
+  let bestScore: StoredConnectScore | null = null;
+
+  for (const score of store.scores) {
+    if (score.tenantId !== tenantId || score.dailyKey !== dailyKey || score.levelId !== levelId || score.userId !== userId) {
+      continue;
+    }
+
+    if (!bestScore || compareStoredScores(score, bestScore) < 0) {
+      bestScore = score;
+    }
+  }
+
+  return bestScore;
+}
+
+function getLatestSessionForViewer(store: ConnectStore, tenantId: string, dailyKey: string, levelId: number, userId: string) {
+  let latestSession: StoredConnectSession | null = null;
+
+  for (const session of store.sessions) {
+    if (session.tenantId !== tenantId || session.dailyKey !== dailyKey || session.levelId !== levelId || session.userId !== userId) {
+      continue;
+    }
+
+    if (!latestSession || new Date(session.startedAt).getTime() > new Date(latestSession.startedAt).getTime()) {
+      latestSession = session;
+    }
+  }
+
+  return latestSession;
+}
+
 function getRankedEntries(store: ConnectStore, tenantId: string, dailyKey: string, levelId: number): ConnectLeaderboardEntry[] {
   const bestScoresByUser = new Map<string, StoredConnectScore>();
 
@@ -405,28 +461,13 @@ function getRankedEntries(store: ConnectStore, tenantId: string, dailyKey: strin
     }
 
     const currentBest = bestScoresByUser.get(score.userId);
-    if (
-      !currentBest ||
-      score.adjustedTimeSeconds < currentBest.adjustedTimeSeconds ||
-      (score.adjustedTimeSeconds === currentBest.adjustedTimeSeconds && score.elapsedSeconds < currentBest.elapsedSeconds) ||
-      (score.adjustedTimeSeconds === currentBest.adjustedTimeSeconds && score.elapsedSeconds === currentBest.elapsedSeconds && score.hintsUsed < currentBest.hintsUsed)
-    ) {
+    if (!currentBest || compareStoredScores(score, currentBest) < 0) {
       bestScoresByUser.set(score.userId, score);
     }
   }
 
   return [...bestScoresByUser.values()]
-    .sort((left, right) => {
-      if (left.adjustedTimeSeconds !== right.adjustedTimeSeconds) {
-        return left.adjustedTimeSeconds - right.adjustedTimeSeconds;
-      }
-
-      if (left.elapsedSeconds !== right.elapsedSeconds) {
-        return left.elapsedSeconds - right.elapsedSeconds;
-      }
-
-      return left.hintsUsed - right.hintsUsed;
-    })
+    .sort(compareStoredScores)
     .map((score, index) => ({
       rank: index + 1,
       userId: score.userId,
@@ -462,6 +503,48 @@ function pruneOldSessions(store: ConnectStore) {
   store.sessions = store.sessions.filter((session) => new Date(session.startedAt).getTime() >= oldestAllowed || session.completedAt !== null);
 }
 
+function buildViewerStreak(store: ConnectStore, tenantId: string, userId: string, currentDailyKey: string) {
+  const solvedDailyKeys = new Set(
+    store.scores
+      .filter((score) => score.tenantId === tenantId && score.userId === userId)
+      .map((score) => score.dailyKey)
+  );
+  const currentDay = new Date(`${currentDailyKey}T00:00:00.000Z`);
+
+  if (Number.isNaN(currentDay.getTime())) {
+    return 0;
+  }
+
+  let streak = 0;
+
+  while (true) {
+    const dailyKey = currentDay.toISOString().slice(0, 10);
+    if (!solvedDailyKeys.has(dailyKey)) {
+      break;
+    }
+
+    streak += 1;
+    currentDay.setUTCDate(currentDay.getUTCDate() - 1);
+  }
+
+  return streak;
+}
+
+export async function getDailyConnectHubSnapshot(viewer: DevSession): Promise<ConnectDailyHubSnapshot> {
+  const { seedFile, levels } = await loadSeedFile();
+  const dailyState = getDailyState(levels.length, seedFile);
+  const store = await loadStore(viewer.tenantId);
+  const rankedEntries = getRankedEntries(store, viewer.tenantId, dailyState.dailyKey, dailyState.levelId);
+
+  return {
+    dailyKey: dailyState.dailyKey,
+    totalSolvers: rankedEntries.length,
+    viewerBest: rankedEntries.find((entry) => entry.userId === viewer.userId) ?? null,
+    viewerStreak: buildViewerStreak(store, viewer.tenantId, viewer.userId, dailyState.dailyKey),
+    leaderboard: rankedEntries.slice(0, 10)
+  };
+}
+
 export async function startDailyConnectSession(viewer: DevSession): Promise<ConnectDailyLevelResponse> {
   const { seedFile, levels } = await loadSeedFile();
   const dailyState = getDailyState(levels.length, seedFile);
@@ -471,28 +554,43 @@ export async function startDailyConnectSession(viewer: DevSession): Promise<Conn
     throw new Error("Today's Connect level could not be found.");
   }
 
-  const startedAt = new Date().toISOString();
   const username = getViewerUsername(viewer);
-  const session: StoredConnectSession = {
-    sessionId: randomUUID(),
-    tenantId: viewer.tenantId,
-    userId: viewer.userId,
-    username,
-    displayName: viewer.displayName || username,
-    levelId: dailyState.levelId,
-    dailyIndex: dailyState.dailyIndex,
-    dailyKey: dailyState.dailyKey,
-    startedAt,
-    lastHintAt: null,
-    hintsUsed: 0,
-    completedAt: null,
-    elapsedSeconds: null,
-    adjustedTimeSeconds: null
-  };
-
-  const { store } = await transactStore(viewer.tenantId, (store) => {
+  const { store, result: session } = await transactStore(viewer.tenantId, (store) => {
     pruneOldSessions(store);
-    store.sessions.push(session);
+    const existingSession = getLatestSessionForViewer(store, viewer.tenantId, dailyState.dailyKey, dailyState.levelId, viewer.userId);
+    if (existingSession) {
+      existingSession.username = username;
+      existingSession.displayName = viewer.displayName || username;
+      return existingSession;
+    }
+
+    const nextSession: StoredConnectSession = {
+      sessionId: randomUUID(),
+      tenantId: viewer.tenantId,
+      userId: viewer.userId,
+      username,
+      displayName: viewer.displayName || username,
+      levelId: dailyState.levelId,
+      dailyIndex: dailyState.dailyIndex,
+      dailyKey: dailyState.dailyKey,
+      startedAt: new Date().toISOString(),
+      lastHintAt: null,
+      hintsUsed: 0,
+      completedAt: null,
+      elapsedSeconds: null,
+      adjustedTimeSeconds: null
+    };
+
+    const priorBest = getBestScoreForUser(store, viewer.tenantId, dailyState.dailyKey, dailyState.levelId, viewer.userId);
+    if (priorBest) {
+      nextSession.completedAt = priorBest.completedAt;
+      nextSession.elapsedSeconds = priorBest.elapsedSeconds;
+      nextSession.hintsUsed = priorBest.hintsUsed;
+      nextSession.adjustedTimeSeconds = priorBest.adjustedTimeSeconds;
+    }
+
+    store.sessions.push(nextSession);
+    return nextSession;
   });
 
   return buildDailyResponse(store, viewer, session, level, dailyState);
@@ -613,6 +711,16 @@ export async function submitDailyConnectPath(viewer: DevSession, sessionId: stri
   await transactStore(viewer.tenantId, (store) => {
     const session = getSessionOrThrow(store, viewer, sessionId);
     const level = getLevelOrThrow(levels, session.levelId);
+    const priorBest = getBestScoreForUser(store, viewer.tenantId, session.dailyKey, session.levelId, viewer.userId);
+
+    if (priorBest) {
+      session.completedAt = priorBest.completedAt;
+      session.elapsedSeconds = priorBest.elapsedSeconds;
+      session.hintsUsed = priorBest.hintsUsed;
+      session.adjustedTimeSeconds = priorBest.adjustedTimeSeconds;
+      submitResponse = buildSubmitResponse(store, viewer, session, "Already solved. Your first valid solve is locked on today's leaderboard.", true);
+      return;
+    }
 
     if (session.completedAt) {
       submitResponse = buildSubmitResponse(store, viewer, session, "Already solved. Your best time is on the leaderboard.", true);
@@ -620,7 +728,7 @@ export async function submitDailyConnectPath(viewer: DevSession, sessionId: stri
     }
 
     if (!isExactSolution(submittedPath, level.solution_path)) {
-      submitResponse = buildSubmitResponse(store, viewer, session, "Route mismatch. Use a hint or reset to recover the official daily path.", false);
+      submitResponse = buildSubmitResponse(store, viewer, session, "All dots must be connected in order before the solve counts.", false);
       return;
     }
 

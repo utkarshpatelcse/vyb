@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getViewerMe, getViewerProfile } from "../../src/lib/backend";
 import { CampusEventsShell } from "../../src/components/campus-events-shell";
 import { getDisplayCollegeName } from "../../src/lib/college-access";
+import { getDailyConnectHubSnapshot } from "../../src/lib/connect-data";
 import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
 import { getEventsDashboard } from "../../src/lib/events-data";
 
@@ -13,10 +14,11 @@ export default async function HubPage() {
     redirect("/login");
   }
 
-  const [profile, me, dashboard] = await Promise.all([
+  const [profile, me, dashboard, connectSummary] = await Promise.all([
     getViewerProfile(viewer).catch(() => null),
     getViewerMe(viewer).catch(() => null),
-    getEventsDashboard(viewer).catch(() => null)
+    getEventsDashboard(viewer).catch(() => null),
+    getDailyConnectHubSnapshot(viewer).catch(() => null)
   ]);
 
   if (!profile?.profileCompleted) {
@@ -36,6 +38,7 @@ export default async function HubPage() {
       stream={profile.profile?.stream}
       role={me?.membershipSummary.role ?? viewer.role}
       initialDashboard={dashboard}
+      connectSummary={connectSummary}
       initialTab="games"
     />
   );

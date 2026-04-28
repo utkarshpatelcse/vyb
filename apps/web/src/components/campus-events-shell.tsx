@@ -10,13 +10,14 @@ import type {
   CampusEventScope,
   CampusEventsDashboardResponse,
   CampusEventTeamMember,
+  ConnectLeaderboardEntry,
   CampusEventViewerRegistrationResponse,
   ManageCampusEventRegistrationResponse,
   UpsertCampusEventRegistrationResponse
 } from "@vyb/contracts";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
-import { useResolvedAvatarUrl } from "./campus-avatar";
+import { CampusAvatarContent, useResolvedAvatarUrl } from "./campus-avatar";
 import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
 import { ConnectDailyGame } from "./connect-daily-game";
 import { SignOutButton } from "./sign-out-button";
@@ -31,6 +32,13 @@ type CampusEventsShellProps = {
   stream?: string | null;
   role: string;
   initialDashboard?: CampusEventsDashboardResponse | null;
+  connectSummary?: {
+    dailyKey: string;
+    totalSolvers: number;
+    viewerBest: ConnectLeaderboardEntry | null;
+    viewerStreak: number;
+    leaderboard: ConnectLeaderboardEntry[];
+  } | null;
   initialTab?: "games" | "events";
 };
 
@@ -419,6 +427,7 @@ export function CampusEventsShell({
   stream,
   role,
   initialDashboard,
+  connectSummary,
   initialTab = "events"
 }: CampusEventsShellProps) {
   const [dashboard, setDashboard] = useState(initialDashboard ?? buildEmptyDashboard(viewerUsername));
@@ -935,6 +944,20 @@ export function CampusEventsShell({
         .slice(0, 6),
     [dashboard.events]
   );
+  const connectPlayerPreview = connectSummary?.leaderboard.slice(0, 3) ?? [];
+  const connectRankSubtitle = connectSummary?.viewerBest
+    ? `#${connectSummary.viewerBest.rank} on ${connectSummary.dailyKey}`
+    : connectSummary && connectSummary.totalSolvers > 0
+      ? `${connectSummary.totalSolvers} solved on ${connectSummary.dailyKey}`
+      : "No valid solve yet today";
+  const connectPlayerSummary = connectSummary
+    ? connectSummary.totalSolvers > 0
+      ? `${connectSummary.totalSolvers} solver${connectSummary.totalSolvers === 1 ? "" : "s"} today`
+      : "Be the first valid solver today"
+    : "Daily board loading";
+  const connectCountBadge =
+    connectSummary && connectSummary.totalSolvers > connectPlayerPreview.length ? `+${connectSummary.totalSolvers - connectPlayerPreview.length}` : null;
+  const streakLabel = connectSummary ? `${connectSummary.viewerStreak} day${connectSummary.viewerStreak === 1 ? "" : "s"}` : "--";
 
   const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
   const layoutStyle = {
@@ -989,12 +1012,12 @@ export function CampusEventsShell({
                 <div className="vyb-games-rank-icon" style={{ fontSize: "1.3rem" }}>🏆</div>
                 <div>
                   <h5 className="vyb-games-rank-title" style={{ fontSize: "0.8rem", margin: 0 }}>Leaderboard</h5>
-                  <p className="vyb-games-rank-subtitle" style={{ fontSize: "0.65rem", marginTop: "0.15rem" }}>#42 in KIET Group</p>
+                  <p className="vyb-games-rank-subtitle" style={{ fontSize: "0.65rem", marginTop: "0.15rem" }}>{connectRankSubtitle}</p>
                 </div>
               </div>
               <div className="vyb-games-streak">
                 <span className="vyb-games-streak-label">Streak</span>
-                <span className="vyb-games-streak-value">🔥 12</span>
+                <span className="vyb-games-streak-value">🔥 {streakLabel}</span>
               </div>
             </header>
 
@@ -1005,15 +1028,25 @@ export function CampusEventsShell({
               </div>
               <div className="vyb-games-featured-content">
                 <h2>CONNECT</h2>
-                <p>Daily logic puzzle for everyone</p>
+                <p>{connectPlayerSummary}</p>
               </div>
               <div className="vyb-games-featured-bottom">
                 <div className="vyb-games-players">
-                  <div className="vyb-games-player-avatar" style={{ zIndex: 3 }}></div>
-                  <div className="vyb-games-player-avatar" style={{ zIndex: 2 }}></div>
-                  <div className="vyb-games-player-avatar is-count" style={{ zIndex: 1 }}>
-                    1k+
-                  </div>
+                  {connectPlayerPreview.length === 0 ? (
+                    <div className="vyb-games-player-avatar" style={{ zIndex: 3 }}>
+                      <CampusAvatarContent username={viewerUsername} email={viewerEmail} displayName={viewerName} />
+                    </div>
+                  ) : null}
+                  {connectPlayerPreview.map((entry, index) => (
+                    <div key={entry.userId} className="vyb-games-player-avatar" style={{ zIndex: connectPlayerPreview.length - index + 1 }}>
+                      <CampusAvatarContent userId={entry.userId} username={entry.username} displayName={entry.displayName} />
+                    </div>
+                  ))}
+                  {connectCountBadge ? (
+                    <div className="vyb-games-player-avatar is-count" style={{ zIndex: 1 }}>
+                      {connectCountBadge}
+                    </div>
+                  ) : null}
                 </div>
                 <button type="button" className="vyb-games-play-btn" onClick={() => setConnectOpen(true)}>Play</button>
               </div>
@@ -1996,4 +2029,5 @@ export function CampusEventsShell({
     </main>
   );
 }
+
 

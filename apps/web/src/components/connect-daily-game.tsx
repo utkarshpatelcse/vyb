@@ -37,6 +37,23 @@ function isAdjacent(left: ConnectCoordinate, right: ConnectCoordinate) {
   return Math.abs(left.x - right.x) + Math.abs(left.y - right.y) === 1;
 }
 
+function buildSolvedResultFromDaily(daily: ConnectDailyLevelResponse): ConnectSubmitResponse | null {
+  if (!daily.viewerBest) {
+    return null;
+  }
+
+  return {
+    solved: true,
+    message: "Already solved. Your first valid solve is locked on today's leaderboard.",
+    sessionId: daily.sessionId,
+    elapsedSeconds: daily.viewerBest.elapsedSeconds,
+    hintsUsed: daily.viewerBest.hintsUsed,
+    adjustedTimeSeconds: daily.viewerBest.adjustedTimeSeconds,
+    leaderboard: daily.leaderboard,
+    viewerBest: daily.viewerBest
+  };
+}
+
 function formatSeconds(value: number | null) {
   if (value === null || !Number.isFinite(value)) {
     return "--";
@@ -80,6 +97,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const autoSubmitKeyRef = useRef("");
+  const skipSolvedPopupRef = useRef(false);
   const boardRef = useRef<HTMLDivElement | null>(null);
   const activeDragRef = useRef<ActiveDrag | null>(null);
   const lastAppliedCellKeyRef = useRef<string | null>(null);
@@ -92,6 +110,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
       setError(null);
       setMessage(null);
       setResult(null);
+      setShowSuccessPopup(false);
       setPathCells([]);
       setGhostHint(null);
       setCooldownUntil(null);
@@ -102,8 +121,11 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
         const payload = await readJsonResponse<ConnectDailyLevelResponse>(response);
 
         if (!cancelled) {
+          const solvedResult = buildSolvedResultFromDaily(payload);
+          skipSolvedPopupRef.current = Boolean(solvedResult);
           setDaily(payload);
-          setMessage("Start at dot 1, visit every dot in order, and fill the full grid.");
+          setResult(solvedResult);
+          setMessage(solvedResult?.message ?? "Start at dot 1, visit every dot in order, and fill the full grid.");
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -141,7 +163,6 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
   const level = daily?.level ?? null;
   const dotByKey = useMemo(() => new Map((level?.dots ?? []).map((dot) => [cellKey(dot), dot])), [level?.dots]);
   const pathIndexByKey = useMemo(() => new Map(pathCells.map((point, index) => [cellKey(point), index])), [pathCells]);
-  const finalDot = level?.dots[level.dots.length - 1] ?? null;
   const visitedDotIds = useMemo(() => {
     const ids = new Set<number>();
 
@@ -154,16 +175,38 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
 
     return ids;
   }, [dotByKey, pathCells]);
+  const checkpointState = useMemo(() => {
+    let nextRequiredDotId = 1;
+    let hasOrderViolation = false;
 
-  const nextDotId = visitedDotIds.size + 1;
+    for (const point of pathCells) {
+      const dot = dotByKey.get(cellKey(point));
+      if (!dot) {
+        continue;
+      }
+
+      if (dot.id === nextRequiredDotId) {
+        nextRequiredDotId += 1;
+        continue;
+      }
+
+      if (dot.id > nextRequiredDotId) {
+        hasOrderViolation = true;
+        break;
+      }
+    }
+
+    return {
+      hasOrderViolation,
+      nextRequiredDotId
+    };
+  }, [dotByKey, pathCells]);
+  const nextDotId = checkpointState.hasOrderViolation ? null : checkpointState.nextRequiredDotId;
   const elapsedSeconds = result?.elapsedSeconds ?? (daily ? Math.max(0, (nowMs - new Date(daily.serverStartedAt).getTime()) / 1000) : null);
   const cooldownRemaining = cooldownUntil ? Math.max(0, Math.ceil((cooldownUntil - nowMs) / 1000)) : 0;
-  const canSubmit = Boolean(
+  const hasFilledBoard = Boolean(
     level &&
-      !result?.solved &&
-      pathCells.length === level.gridSize * level.gridSize &&
-      visitedDotIds.size === level.dots.length &&
-      Boolean(finalDot && pathCells[pathCells.length - 1] && cellKey(pathCells[pathCells.length - 1]) === cellKey(finalDot))
+      pathCells.length === level.gridSize * level.gridSize
   );
   const pathGradientId = daily ? `connect-path-gradient-${daily.sessionId}` : "connect-path-gradient";
   const hintGradientId = daily ? `connect-hint-gradient-${daily.sessionId}` : "connect-hint-gradient";
@@ -175,6 +218,11 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
 
   useEffect(() => {
     if (result?.solved) {
+      if (skipSolvedPopupRef.current) {
+        skipSolvedPopupRef.current = false;
+        return;
+      }
+
       const timer = setTimeout(() => setShowSuccessPopup(true), 2000);
       return () => clearTimeout(timer);
     }
@@ -183,14 +231,14 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
   useEffect(() => {
     const pathKey = pathCells.map(cellKey).join("|");
 
-    if (!canSubmit || submitBusy || result || autoSubmitKeyRef.current === pathKey) {
+    if (!hasFilledBoard || submitBusy || result?.solved || autoSubmitKeyRef.current === pathKey) {
       return;
     }
 
     autoSubmitKeyRef.current = pathKey;
     setMessage("Route complete. Auto-submitting...");
     void submitRoute();
-  }, [canSubmit, pathCells, result, submitBusy]);
+  }, [hasFilledBoard, pathCells, result?.solved, submitBusy]);
 
   function getPointFromClientPosition(clientX: number, clientY: number): ConnectCoordinate | null {
     if (!level) {
@@ -321,21 +369,32 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     }
 
     if (dot) {
-      const currentVisitedDots = new Set<number>();
+      let nextRequiredDotId = 1;
+      let alreadyOutOfOrder = false;
+
       for (const currentPoint of currentPath) {
         const currentDot = dotByKey.get(cellKey(currentPoint));
-        if (currentDot) {
-          currentVisitedDots.add(currentDot.id);
+        if (!currentDot) {
+          continue;
+        }
+
+        if (!alreadyOutOfOrder && currentDot.id === nextRequiredDotId) {
+          nextRequiredDotId += 1;
+        } else if (currentDot.id > nextRequiredDotId) {
+          alreadyOutOfOrder = true;
         }
       }
 
-      const expectedDotId = currentVisitedDots.size + 1;
-      if (dot.id !== expectedDotId) {
-        return { path: currentPath, message: `Next checkpoint is dot ${expectedDotId}.`, blocked: true };
+      if (!alreadyOutOfOrder && dot.id > nextRequiredDotId) {
+        return {
+          path: [...currentPath, point],
+          message: `Dot ${dot.id} reached before dot ${nextRequiredDotId}. You can continue, but the final solve only counts in order.`,
+          blocked: false
+        };
       }
 
       if (dot.id === level.dots.length && currentPath.length + 1 !== level.gridSize * level.gridSize) {
-        return { path: currentPath, message: `Dot ${dot.id} is the finish. Fill every other cell before ending there.`, blocked: true };
+        return { path: [...currentPath, point], message: `Finish dot reached early. Fill the remaining cells to see whether the route still validates.`, blocked: false };
       }
     }
 
@@ -375,6 +434,15 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
           }
         }
 
+        const reachedTarget = !routeBlocked && cellKey(routePath[routePath.length - 1] ?? point) === pointKey;
+
+        if (reachedTarget) {
+          bestPath = routePath;
+          bestMessage = routeMessage;
+          bestBlocked = routeBlocked;
+          break;
+        }
+
         if (
           routePath.length > bestPath.length ||
           (routePath.length === bestPath.length && !routeBlocked && bestBlocked)
@@ -382,10 +450,6 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
           bestPath = routePath;
           bestMessage = routeMessage;
           bestBlocked = routeBlocked;
-        }
-
-        if (!routeBlocked && cellKey(routePath[routePath.length - 1] ?? point) === pointKey) {
-          break;
         }
       }
 
@@ -611,7 +675,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
   }
 
   async function submitRoute() {
-    if (!daily || !canSubmit || submitBusy) {
+    if (!daily || !hasFilledBoard || submitBusy || result?.solved) {
       return;
     }
 
@@ -649,10 +713,15 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
   }
 
   function resetRoute() {
+    if (result?.solved) {
+      return;
+    }
+
     autoSubmitKeyRef.current = "";
     setPathCells([]);
     setGhostHint(null);
     setResult(null);
+    setShowSuccessPopup(false);
     setMessage("Route reset. Start again from dot 1.");
   }
 
@@ -745,10 +814,13 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
           Difficulty <span>{level.difficulty}</span>
         </div>
 
-        <button type="button" className="vyb-connect-reset-pill" onClick={resetRoute} disabled={submitBusy}>
+        <button type="button" className="vyb-connect-reset-pill" onClick={resetRoute} disabled={submitBusy || result?.solved}>
           Reset
         </button>
       </div>
+
+      {message ? <p className={`vyb-connect-message${result?.solved ? " is-solved" : ""}`}>{message}</p> : null}
+      {error ? <p className="vyb-connect-error">{error}</p> : null}
 
       <div className="vyb-connect-board-wrap">
         <div
@@ -762,17 +834,17 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
         >
           <svg className="vyb-connect-path-layer" viewBox={`0 0 ${level.gridSize} ${level.gridSize}`} preserveAspectRatio="none" aria-hidden="true">
             <defs>
-              <linearGradient id={pathGradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+              <linearGradient id={pathGradientId} gradientUnits="userSpaceOnUse" x1="0" y1="0" x2={level.gridSize} y2={level.gridSize}>
                 <stop offset="0%" stopColor="#2563eb" />
                 <stop offset="48%" stopColor="#6366f1" />
                 <stop offset="100%" stopColor="#34d399" />
               </linearGradient>
-              <linearGradient id={hintGradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+              <linearGradient id={hintGradientId} gradientUnits="userSpaceOnUse" x1="0" y1="0" x2={level.gridSize} y2={level.gridSize}>
                 <stop offset="0%" stopColor="#67e8f9" />
                 <stop offset="100%" stopColor="#34d399" />
               </linearGradient>
-              <marker id={hintMarkerId} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="#34d399" />
+              <marker id={hintMarkerId} markerUnits="userSpaceOnUse" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="0.5" markerHeight="0.5" orient="auto">
+                <path d="M 2 2 L 8 5 L 2 8" fill="none" stroke="#34d399" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </marker>
             </defs>
             {pathCells.length > 1 ? (
@@ -808,11 +880,18 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
         </div>
       </div>
 
-      {message ? <p className={`vyb-connect-message${result?.solved ? " is-solved" : ""}`}>{message}</p> : null}
-      {error ? <p className="vyb-connect-error">{error}</p> : null}
-
       <div className="vyb-connect-actions-modern">
-        <button type="button" className="vyb-connect-action-pill" onClick={() => setPathCells(c => c.slice(0, -1))} disabled={submitBusy || pathCells.length <= 1}>
+        <button
+          type="button"
+          className="vyb-connect-action-pill"
+          onClick={() => {
+            autoSubmitKeyRef.current = "";
+            setResult((current) => (current?.solved ? current : null));
+            setGhostHint(null);
+            setPathCells((currentPath) => currentPath.slice(0, -1));
+          }}
+          disabled={submitBusy || result?.solved || pathCells.length <= 1}
+        >
           Undo
         </button>
         <button type="button" className="vyb-connect-action-pill" onClick={requestHint} disabled={hintBusy || cooldownRemaining > 0 || submitBusy || result?.solved}>
