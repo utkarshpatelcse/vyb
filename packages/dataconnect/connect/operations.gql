@@ -1,0 +1,49 @@
+query GetConnectLevelStore($id: String!) @auth(level: NO_ACCESS) {
+  connectLevelStore(key: { id: $id }) {
+    id
+    payloadJson
+    totalLevels
+    launchDate
+    checksum
+    updatedAt
+  }
+}
+
+mutation CreateConnectLevelStore(
+  $id: String!
+  $payloadJson: String!
+  $totalLevels: Int!
+  $launchDate: String
+  $checksum: String
+) @auth(level: NO_ACCESS) @transaction {
+  connectLevelStore_insert(
+    data: {
+      id: $id
+      payloadJson: $payloadJson
+      totalLevels: $totalLevels
+      launchDate: $launchDate
+      checksum: $checksum
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation UpdateConnectLevelStore(
+  $id: String!
+  $payloadJson: String!
+  $totalLevels: Int!
+  $launchDate: String
+  $checksum: String
+) @auth(level: NO_ACCESS) @transaction {
+  connectLevelStore_update(
+    key: { id: $id }
+    data: {
+      payloadJson: $payloadJson
+      totalLevels: $totalLevels
+      launchDate: $launchDate
+      checksum: $checksum
+      updatedAt_expr: "request.time"
+    }
+  )
+}

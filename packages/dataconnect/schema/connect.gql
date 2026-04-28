@@ -1,0 +1,10 @@
+type ConnectLevelStore
+  @table(name: "connect_level_stores", singular: "connectLevelStore", plural: "connectLevelStores", key: ["id"]) {
+  id: String!
+  payloadJson: String! @col(name: "payload_json")
+  totalLevels: Int! @col(name: "total_levels")
+  launchDate: String @col(name: "launch_date")
+  checksum: String @col(name: "checksum")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+}

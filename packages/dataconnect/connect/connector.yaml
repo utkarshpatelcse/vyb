@@ -1,0 +1,6 @@
+connectorId: connect
+authMode: PUBLIC
+generate:
+  javascriptSdk:
+    package: "@vyb/dataconnect-connect-admin"
+    outputDir: ../connect-admin-sdk

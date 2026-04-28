@@ -13,6 +13,7 @@ import type {
   ConnectPublicLevel,
   ConnectSubmitResponse
 } from "@vyb/contracts";
+import { getFirebaseDataConnect } from "@vyb/config";
 import type { DevSession } from "./dev-session";
 
 const DAY_MS = 24 * 60 * 60_000;
@@ -20,6 +21,25 @@ const HINT_COOLDOWN_SECONDS = 5;
 const HINT_GHOST_SECONDS = 3;
 const HINT_PENALTY_SECONDS = 3;
 const DEFAULT_LAUNCH_DATE = "2026-04-28T00:00:00+05:30";
+const CONNECT_LEVEL_STORE_ID = process.env.VYB_CONNECT_LEVEL_STORE_ID ?? "official-1000";
+const connectConnectorConfig = {
+  connector: "connect",
+  serviceId: "vyb",
+  location: "asia-south1"
+};
+
+const GET_CONNECT_LEVEL_STORE_QUERY = `
+  query GetConnectLevelStoreRuntime($id: String!) {
+    connectLevelStore(key: { id: $id }) {
+      id
+      payloadJson
+      totalLevels
+      launchDate
+      checksum
+      updatedAt
+    }
+  }
+`;
 
 type StoredConnectLevel = {
   level_id: number;
@@ -143,6 +163,10 @@ function getConnectLevelsPath() {
   return process.env.VYB_CONNECT_LEVELS_PATH ? path.resolve(process.env.VYB_CONNECT_LEVELS_PATH) : path.join(getWorkspaceRoot(), "data", "connect-levels.json");
 }
 
+function getConnectDc() {
+  return getFirebaseDataConnect(connectConnectorConfig);
+}
+
 function getConnectStoreRoot() {
   const configuredRoot =
     process.env.VYB_CONNECT_STORE_ROOT ??
@@ -241,19 +265,60 @@ function normalizeLevel(rawLevel: Partial<StoredConnectLevel>): StoredConnectLev
   };
 }
 
-async function loadSeedFile() {
-  const seedPath = getConnectLevelsPath();
-  const payload = JSON.parse(await readFile(seedPath, "utf8")) as ConnectLevelSeedFile;
+function normalizeSeedFile(payload: ConnectLevelSeedFile, sourceLabel: string) {
   const levels = Array.isArray(payload.levels) ? payload.levels.map((level) => normalizeLevel(level)).filter((level): level is StoredConnectLevel => level !== null) : [];
 
   if (levels.length === 0) {
-    throw new Error("Connect levels are not seeded locally. Add the generated payload at `data/connect-levels.json` or set `VYB_CONNECT_LEVELS_PATH`.");
+    throw new Error(`Connect levels are not seeded in ${sourceLabel}.`);
   }
 
   return {
     seedFile: payload,
     levels
   };
+}
+
+async function loadDataconnectSeedFile() {
+  if (process.env.VYB_CONNECT_LEVELS_SOURCE === "local") {
+    return null;
+  }
+
+  try {
+    const response = (await getConnectDc().executeGraphqlRead(GET_CONNECT_LEVEL_STORE_QUERY, {
+      operationName: "GetConnectLevelStoreRuntime",
+      variables: {
+        id: CONNECT_LEVEL_STORE_ID
+      }
+    })) as { data?: { connectLevelStore?: { payloadJson?: string | null } | null } };
+    const store = response.data?.connectLevelStore;
+
+    if (!store?.payloadJson) {
+      return null;
+    }
+
+    return normalizeSeedFile(JSON.parse(store.payloadJson) as ConnectLevelSeedFile, `DataConnect store ${CONNECT_LEVEL_STORE_ID}`);
+  } catch {
+    return null;
+  }
+}
+
+async function loadSeedFile() {
+  const dataconnectSeed = await loadDataconnectSeedFile();
+  if (dataconnectSeed) {
+    return dataconnectSeed;
+  }
+
+  const seedPath = getConnectLevelsPath();
+  try {
+    const payload = JSON.parse(await readFile(seedPath, "utf8")) as ConnectLevelSeedFile;
+    return normalizeSeedFile(payload, seedPath);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Connect levels are not seeded")) {
+      throw error;
+    }
+
+    throw new Error("Connect levels are not seeded. Import the generated payload into DataConnect or add it at `data/connect-levels.json`.");
+  }
 }
 
 function toPublicLevel(level: StoredConnectLevel): ConnectPublicLevel {

@@ -1,4 +1,4 @@
-import { ConnectorConfig, DataConnect, OperationOptions, ExecuteOperationResponse } from 'firebase-admin/data-connect';
+import { ConnectorConfig, DataConnect, QueryRef, QueryPromise, ExecuteQueryOptions, MutationRef, MutationPromise } from 'firebase/data-connect';
 
 export const connectorConfig: ConnectorConfig;
 
@@ -6,6 +6,8 @@ export type TimestampString = string;
 export type UUIDString = string;
 export type Int64String = string;
 export type DateString = string;
+
+
 
 
 export interface AuditLog_Key {
@@ -73,16 +75,16 @@ export interface Course_Key {
   __typename?: 'Course_Key';
 }
 
-export interface CreateUserData {
-  user_insert: User_Key;
+export interface CreateConnectLevelStoreData {
+  connectLevelStore_insert: ConnectLevelStore_Key;
 }
 
-export interface CreateUserVariables {
-  firebaseUid: string;
-  primaryEmail: string;
-  emailVerified: boolean;
-  displayName?: string | null;
-  avatarUrl?: string | null;
+export interface CreateConnectLevelStoreVariables {
+  id: string;
+  payloadJson: string;
+  totalLevels: number;
+  launchDate?: string | null;
+  checksum?: string | null;
 }
 
 export interface Follow_Key {
@@ -90,22 +92,19 @@ export interface Follow_Key {
   __typename?: 'Follow_Key';
 }
 
-export interface GetUserByFirebaseUidData {
-  users: ({
-    id: UUIDString;
-    firebaseUid: string;
-    primaryEmail: string;
-    emailVerified: boolean;
-    displayName?: string | null;
-    avatarUrl?: string | null;
-    status: string;
-    createdAt: TimestampString;
+export interface GetConnectLevelStoreData {
+  connectLevelStore?: {
+    id: string;
+    payloadJson: string;
+    totalLevels: number;
+    launchDate?: string | null;
+    checksum?: string | null;
     updatedAt: TimestampString;
-  } & User_Key)[];
+  } & ConnectLevelStore_Key;
 }
 
-export interface GetUserByFirebaseUidVariables {
-  firebaseUid: string;
+export interface GetConnectLevelStoreVariables {
+  id: string;
 }
 
 export interface MarketListingContact_Key {
@@ -213,14 +212,16 @@ export interface Tenant_Key {
   __typename?: 'Tenant_Key';
 }
 
-export interface UpdateUserProfileData {
-  user_update?: User_Key | null;
+export interface UpdateConnectLevelStoreData {
+  connectLevelStore_update?: ConnectLevelStore_Key | null;
 }
 
-export interface UpdateUserProfileVariables {
-  id: UUIDString;
-  displayName?: string | null;
-  avatarUrl?: string | null;
+export interface UpdateConnectLevelStoreVariables {
+  id: string;
+  payloadJson: string;
+  totalLevels: number;
+  launchDate?: string | null;
+  checksum?: string | null;
 }
 
 export interface UserActivity_Key {
@@ -233,18 +234,38 @@ export interface User_Key {
   __typename?: 'User_Key';
 }
 
-/** Generated Node Admin SDK operation action function for the 'GetUserByFirebaseUid' Query. Allow users to execute without passing in DataConnect. */
-export function getUserByFirebaseUid(dc: DataConnect, vars: GetUserByFirebaseUidVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetUserByFirebaseUidData>>;
-/** Generated Node Admin SDK operation action function for the 'GetUserByFirebaseUid' Query. Allow users to pass in custom DataConnect instances. */
-export function getUserByFirebaseUid(vars: GetUserByFirebaseUidVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetUserByFirebaseUidData>>;
+interface GetConnectLevelStoreRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: GetConnectLevelStoreVariables): QueryRef<GetConnectLevelStoreData, GetConnectLevelStoreVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: GetConnectLevelStoreVariables): QueryRef<GetConnectLevelStoreData, GetConnectLevelStoreVariables>;
+  operationName: string;
+}
+export const getConnectLevelStoreRef: GetConnectLevelStoreRef;
 
-/** Generated Node Admin SDK operation action function for the 'CreateUser' Mutation. Allow users to execute without passing in DataConnect. */
-export function createUser(dc: DataConnect, vars: CreateUserVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateUserData>>;
-/** Generated Node Admin SDK operation action function for the 'CreateUser' Mutation. Allow users to pass in custom DataConnect instances. */
-export function createUser(vars: CreateUserVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateUserData>>;
+export function getConnectLevelStore(vars: GetConnectLevelStoreVariables, options?: ExecuteQueryOptions): QueryPromise<GetConnectLevelStoreData, GetConnectLevelStoreVariables>;
+export function getConnectLevelStore(dc: DataConnect, vars: GetConnectLevelStoreVariables, options?: ExecuteQueryOptions): QueryPromise<GetConnectLevelStoreData, GetConnectLevelStoreVariables>;
 
-/** Generated Node Admin SDK operation action function for the 'UpdateUserProfile' Mutation. Allow users to execute without passing in DataConnect. */
-export function updateUserProfile(dc: DataConnect, vars: UpdateUserProfileVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateUserProfileData>>;
-/** Generated Node Admin SDK operation action function for the 'UpdateUserProfile' Mutation. Allow users to pass in custom DataConnect instances. */
-export function updateUserProfile(vars: UpdateUserProfileVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateUserProfileData>>;
+interface CreateConnectLevelStoreRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: CreateConnectLevelStoreVariables): MutationRef<CreateConnectLevelStoreData, CreateConnectLevelStoreVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: CreateConnectLevelStoreVariables): MutationRef<CreateConnectLevelStoreData, CreateConnectLevelStoreVariables>;
+  operationName: string;
+}
+export const createConnectLevelStoreRef: CreateConnectLevelStoreRef;
 
+export function createConnectLevelStore(vars: CreateConnectLevelStoreVariables): MutationPromise<CreateConnectLevelStoreData, CreateConnectLevelStoreVariables>;
+export function createConnectLevelStore(dc: DataConnect, vars: CreateConnectLevelStoreVariables): MutationPromise<CreateConnectLevelStoreData, CreateConnectLevelStoreVariables>;
+
+interface UpdateConnectLevelStoreRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: UpdateConnectLevelStoreVariables): MutationRef<UpdateConnectLevelStoreData, UpdateConnectLevelStoreVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: UpdateConnectLevelStoreVariables): MutationRef<UpdateConnectLevelStoreData, UpdateConnectLevelStoreVariables>;
+  operationName: string;
+}
+export const updateConnectLevelStoreRef: UpdateConnectLevelStoreRef;
+
+export function updateConnectLevelStore(vars: UpdateConnectLevelStoreVariables): MutationPromise<UpdateConnectLevelStoreData, UpdateConnectLevelStoreVariables>;
+export function updateConnectLevelStore(dc: DataConnect, vars: UpdateConnectLevelStoreVariables): MutationPromise<UpdateConnectLevelStoreData, UpdateConnectLevelStoreVariables>;

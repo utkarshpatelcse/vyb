@@ -63,6 +63,11 @@ export interface Community_Key {
   __typename?: 'Community_Key';
 }
 
+export interface ConnectLevelStore_Key {
+  id: string;
+  __typename?: 'ConnectLevelStore_Key';
+}
+
 export interface Course_Key {
   id: UUIDString;
   __typename?: 'Course_Key';
