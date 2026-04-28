@@ -168,8 +168,15 @@ function getConnectDc() {
 }
 
 function getConnectStoreRoot() {
+  if (process.env.VYB_CONNECT_STORE_ROOT) {
+    return path.join(process.env.VYB_CONNECT_STORE_ROOT, "vyb-connect");
+  }
+
+  if (process.env.VERCEL) {
+    return path.join("/tmp", "vyb-connect");
+  }
+
   const configuredRoot =
-    process.env.VYB_CONNECT_STORE_ROOT ??
     process.env.VYB_LOCAL_MEDIA_ROOT ??
     process.env.TMPDIR ??
     process.env.TEMP ??
