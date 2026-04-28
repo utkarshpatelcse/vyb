@@ -3,6 +3,7 @@ import { getProfileByUserId } from "../identity/profile-repository.mjs";
 import { resolveLiveContext } from "../shared/viewer-context.mjs";
 import {
   deleteChatMessage,
+  editChatMessage,
   canAccessChatConversation,
   createOrGetDirectConversation,
   getChatConversation,
@@ -345,6 +346,27 @@ export async function handleChatRoute({ request, response, url, context }) {
       sendJson(response, 200, await updateChatMessageLifecycle(viewer, lifecycleMatch[1], payload));
     } catch (error) {
       sendChatFailure(response, "chat_lifecycle", resolved, error);
+    }
+    return true;
+  }
+
+  const editMessageMatch = url.pathname.match(/^\/v1\/chats\/messages\/([^/]+)$/);
+  if (request.method === "PATCH" && editMessageMatch) {
+    const payload = await readJson(request);
+    if (!payload || typeof payload !== "object") {
+      sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+      return true;
+    }
+
+    if (!requireNonEmptyString(payload.cipherText) || !requireNonEmptyString(payload.cipherIv)) {
+      sendError(response, 400, "INVALID_MESSAGE", "Edited message data is required.");
+      return true;
+    }
+
+    try {
+      sendJson(response, 200, await editChatMessage(viewer, editMessageMatch[1], payload));
+    } catch (error) {
+      sendChatFailure(response, "chat_edit", resolved, error);
     }
     return true;
   }

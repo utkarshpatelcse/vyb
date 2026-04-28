@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import type { CommentItem, FeedCard } from "@vyb/contracts";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
 import { CampusAvatarContent } from "./campus-avatar";
 
 type ThreadMediaKind = "gif" | "sticker";
@@ -31,6 +31,7 @@ type SocialThreadSheetProps = {
   onReply: (comment: CommentItem) => void;
   onCommentLike: (commentId: string) => void;
   onDeleteComment: (comment: CommentItem) => void;
+  onEditComment: (comment: CommentItem, body: string) => Promise<unknown> | unknown;
   onClearReply: () => void;
   onSubmit: () => void;
 };
@@ -196,6 +197,7 @@ export function SocialThreadSheet({
   onReply,
   onCommentLike,
   onDeleteComment,
+  onEditComment,
   onClearReply,
   onSubmit
 }: SocialThreadSheetProps) {
@@ -204,6 +206,13 @@ export function SocialThreadSheet({
   const [openPicker, setOpenPicker] = useState<ThreadMediaKind | null>(null);
   const [isDesktop, setIsDesktop] = useState(false);
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingCommentDraft, setEditingCommentDraft] = useState("");
+  const [savingCommentId, setSavingCommentId] = useState<string | null>(null);
+  const [commentActionMenuId, setCommentActionMenuId] = useState<string | null>(null);
+  const commentLongPressTimerRef = useRef<number | null>(null);
+  const commentLongPressTriggeredRef = useRef(false);
+  const lastCommentTapRef = useRef<{ commentId: string; timestamp: number } | null>(null);
 
   const canSubmit = draft.trim().length > 0 || mediaUrl.trim().length > 0;
   const canCommentAnonymously = post?.allowAnonymousComments !== false;
@@ -289,6 +298,21 @@ export function SocialThreadSheet({
     }
   }, [post]);
 
+  useEffect(() => {
+    setCommentActionMenuId(null);
+    setEditingCommentId(null);
+    setEditingCommentDraft("");
+  }, [post?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (commentLongPressTimerRef.current) {
+        window.clearTimeout(commentLongPressTimerRef.current);
+        commentLongPressTimerRef.current = null;
+      }
+    };
+  }, []);
+
   function appendEmoji(emoji: string) {
     onDraftChange(draft ? `${draft}${emoji}` : emoji);
   }
@@ -300,14 +324,122 @@ export function SocialThreadSheet({
     focusComposer();
   }
 
+  function clearCommentLongPressTimer() {
+    if (commentLongPressTimerRef.current) {
+      window.clearTimeout(commentLongPressTimerRef.current);
+      commentLongPressTimerRef.current = null;
+    }
+  }
+
+  function isCommentInteractiveTarget(target: EventTarget | null) {
+    return target instanceof HTMLElement && Boolean(target.closest("button, textarea, input, a, [role='menu']"));
+  }
+
+  function openCommentActionMenu(commentId: string) {
+    setCommentActionMenuId((current) => (current === commentId ? null : commentId));
+  }
+
+  function startEditingComment(comment: CommentItem) {
+    setCommentActionMenuId(null);
+    setEditingCommentId(comment.id);
+    setEditingCommentDraft(comment.body ?? "");
+  }
+
+  async function saveEditingComment(comment: CommentItem) {
+    const nextBody = editingCommentDraft.trim();
+    if (nextBody.length < 2 || savingCommentId) {
+      return;
+    }
+
+    setSavingCommentId(comment.id);
+    try {
+      const result = await onEditComment(comment, nextBody);
+      if (result) {
+        setEditingCommentId(null);
+        setEditingCommentDraft("");
+      }
+    } finally {
+      setSavingCommentId(null);
+    }
+  }
+
+  function handleCommentReply(comment: CommentItem) {
+    setCommentActionMenuId(null);
+    onReply(comment);
+    focusComposer(20);
+  }
+
+  function handleCommentLike(comment: CommentItem) {
+    setCommentActionMenuId(null);
+    onCommentLike(comment.id);
+  }
+
+  function handleCommentDelete(comment: CommentItem) {
+    setCommentActionMenuId(null);
+    onDeleteComment(comment);
+  }
+
+  function handleCommentPointerDown(comment: CommentItem, event: PointerEvent<HTMLElement>) {
+    if (event.pointerType === "mouse" || isEditingCommentId(comment.id) || isCommentInteractiveTarget(event.target)) {
+      return;
+    }
+
+    clearCommentLongPressTimer();
+    commentLongPressTriggeredRef.current = false;
+    commentLongPressTimerRef.current = window.setTimeout(() => {
+      commentLongPressTriggeredRef.current = true;
+      setCommentActionMenuId(comment.id);
+      navigator.vibrate?.(12);
+    }, 520);
+  }
+
+  function handleCommentPointerUp(comment: CommentItem, event: PointerEvent<HTMLElement>) {
+    if (event.pointerType === "mouse" || isCommentInteractiveTarget(event.target)) {
+      clearCommentLongPressTimer();
+      return;
+    }
+
+    const didLongPress = commentLongPressTriggeredRef.current;
+    clearCommentLongPressTimer();
+    commentLongPressTriggeredRef.current = false;
+    if (didLongPress) {
+      lastCommentTapRef.current = null;
+      return;
+    }
+
+    const now = Date.now();
+    const lastTap = lastCommentTapRef.current;
+    if (lastTap?.commentId === comment.id && now - lastTap.timestamp < 340) {
+      lastCommentTapRef.current = null;
+      handleCommentLike(comment);
+      return;
+    }
+
+    lastCommentTapRef.current = { commentId: comment.id, timestamp: now };
+  }
+
+  function handleCommentPointerCancel() {
+    clearCommentLongPressTimer();
+    commentLongPressTriggeredRef.current = false;
+  }
+
+  function isEditingCommentId(commentId: string) {
+    return editingCommentId === commentId;
+  }
+
   function renderComment(node: CommentThreadNode, depth = 0, fallbackKey = "comment") {
     const { comment, replies } = node;
     const replyTargetLabel = getReplyTargetLabel(comment, comments);
     const commentKey = getCommentRenderKey(comment, fallbackKey);
+    const canEditComment = Boolean(
+      comment.viewerCanManage || (!comment.isAnonymous && comment.author?.username === viewerUsername)
+    );
     const canDeleteComment = Boolean(
       comment.viewerCanManage || (!comment.isAnonymous && comment.author?.username === viewerUsername) || post?.viewerCanManage
     );
     const isDeletingComment = deletingCommentId === comment.id;
+    const isEditingComment = editingCommentId === comment.id;
+    const isSavingComment = savingCommentId === comment.id;
 
     return (
       <motion.div
@@ -317,7 +449,13 @@ export function SocialThreadSheet({
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: "spring", stiffness: 240, damping: 26 }}
       >
-        <article className={`vyb-thread-comment${depth > 0 ? " is-reply" : ""}${comment.isAnonymous ? " is-anonymous" : ""}`}>
+        <article
+          className={`vyb-thread-comment${depth > 0 ? " is-reply" : ""}${comment.isAnonymous ? " is-anonymous" : ""}${commentActionMenuId === comment.id ? " has-action-menu" : ""}`}
+          onPointerDown={(event) => handleCommentPointerDown(comment, event)}
+          onPointerMove={handleCommentPointerCancel}
+          onPointerCancel={handleCommentPointerCancel}
+          onPointerUp={(event) => handleCommentPointerUp(comment, event)}
+        >
           <div className="vyb-thread-comment-avatar" aria-hidden="true">
              <CampusAvatarContent
                userId={comment.author?.userId}
@@ -340,7 +478,40 @@ export function SocialThreadSheet({
                   <span className="vyb-thread-comment-context-chip">Replying to @{replyTargetLabel}</span>
                 </div>
               ) : null}
-              {comment.body ? <p>{comment.body}</p> : null}
+              {isEditingComment ? (
+                <div className="vyb-thread-comment-edit">
+                  <textarea
+                    value={editingCommentDraft}
+                    onChange={(event) => setEditingCommentDraft(event.target.value)}
+                    rows={3}
+                    autoFocus
+                    aria-label="Edit comment"
+                  />
+                  <div className="vyb-thread-comment-edit-actions">
+                    <button
+                      type="button"
+                      className="vyb-thread-comment-edit-save"
+                      onClick={() => void saveEditingComment(comment)}
+                      disabled={isSavingComment || editingCommentDraft.trim().length < 2}
+                    >
+                      {isSavingComment ? "Saving..." : "Save"}
+                    </button>
+                    <button
+                      type="button"
+                      className="vyb-thread-comment-edit-cancel"
+                      onClick={() => {
+                        setEditingCommentId(null);
+                        setEditingCommentDraft("");
+                      }}
+                      disabled={isSavingComment}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : comment.body ? (
+                <p>{comment.body}</p>
+              ) : null}
               {comment.mediaUrl ? (
                 <div className="vyb-thread-comment-media">
                   <img src={comment.mediaUrl} alt={comment.mediaType ?? "comment media"} />
@@ -350,34 +521,65 @@ export function SocialThreadSheet({
             </div>
             <div className="vyb-thread-comment-meta">
               <span>{formatCommentDate(comment.createdAt)}</span>
-              <div className="vyb-thread-comment-actions">
+              {comment.reactions > 0 ? (
+                <span className={`vyb-thread-comment-reaction-count${comment.viewerHasLiked ? " is-active" : ""}`}>
+                  {comment.viewerHasLiked ? "Liked" : "Likes"} {comment.reactions}
+                </span>
+              ) : null}
+              <div className="vyb-thread-comment-menu-wrap">
                 <button
                   type="button"
-                  className={`vyb-thread-comment-like${comment.viewerHasLiked ? " is-active" : ""}`}
-                  onClick={() => onCommentLike(comment.id)}
+                  className="vyb-thread-comment-menu-trigger"
+                  onClick={() => openCommentActionMenu(comment.id)}
+                  aria-label="Open comment actions"
+                  aria-expanded={commentActionMenuId === comment.id}
                 >
-                  {comment.viewerHasLiked ? "Liked" : "Like"}
-                  {comment.reactions > 0 ? ` • ${comment.reactions}` : ""}
+                  <span />
+                  <span />
+                  <span />
                 </button>
-                <button
-                  type="button"
-                  className="vyb-thread-reply-button"
-                  onClick={() => {
-                    onReply(comment);
-                    focusComposer(20);
-                  }}
-                >
-                  Reply
-                </button>
-                {canDeleteComment ? (
-                  <button
-                    type="button"
-                    className="vyb-thread-delete-button"
-                    onClick={() => onDeleteComment(comment)}
-                    disabled={isDeletingComment}
-                  >
-                    {isDeletingComment ? "Deleting..." : "Delete"}
-                  </button>
+                {commentActionMenuId === comment.id ? (
+                  <div className="vyb-thread-comment-actions" role="menu">
+                    <button
+                      type="button"
+                      className={`vyb-thread-comment-like${comment.viewerHasLiked ? " is-active" : ""}`}
+                      onClick={() => handleCommentLike(comment)}
+                      role="menuitem"
+                    >
+                      {comment.viewerHasLiked ? "Unlike" : "Like"}
+                      {comment.reactions > 0 ? ` (${comment.reactions})` : ""}
+                    </button>
+                    <button
+                      type="button"
+                      className="vyb-thread-reply-button"
+                      onClick={() => handleCommentReply(comment)}
+                      role="menuitem"
+                    >
+                      Reply
+                    </button>
+                    {canEditComment ? (
+                      <button
+                        type="button"
+                        className="vyb-thread-edit-button"
+                        onClick={() => startEditingComment(comment)}
+                        disabled={isDeletingComment || isSavingComment}
+                        role="menuitem"
+                      >
+                        Edit
+                      </button>
+                    ) : null}
+                    {canDeleteComment ? (
+                      <button
+                        type="button"
+                        className="vyb-thread-delete-button"
+                        onClick={() => handleCommentDelete(comment)}
+                        disabled={isDeletingComment}
+                        role="menuitem"
+                      >
+                        {isDeletingComment ? "Deleting..." : "Delete"}
+                      </button>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
             </div>

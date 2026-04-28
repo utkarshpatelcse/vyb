@@ -1,6 +1,6 @@
 "use client";
 
-import type { CommentItem, DeleteCommentResponse, FeedCard, ReactionKind, ReactionResponse } from "@vyb/contracts";
+import type { CommentItem, DeleteCommentResponse, FeedCard, ReactionKind, ReactionResponse, UpdateCommentResponse } from "@vyb/contracts";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type CommentMediaKind = "gif" | "sticker";
@@ -18,6 +18,7 @@ type SocialRealtimeEvent =
   | { type: "social.post.deleted"; payload?: { postId?: string } }
   | { type: "social.post.reaction.updated"; payload?: { postId?: string; aggregateCount?: number } }
   | { type: "social.comment.created"; payload?: { postId?: string; item?: CommentItem } }
+  | { type: "social.comment.updated"; payload?: { postId?: string; item?: CommentItem } }
   | { type: "social.comment.deleted"; payload?: { postId?: string; commentId?: string; deletedCount?: number } }
   | {
       type: "social.comment.reaction.updated";
@@ -257,6 +258,35 @@ export function useSocialPostEngagement(
               : post
           )
         );
+        return;
+      }
+
+      if (event.type === "social.comment.updated") {
+        const item = event.payload?.item;
+        const postId = event.payload?.postId ?? item?.postId;
+        if (!postId || !isCommentItem(item)) {
+          return;
+        }
+
+        setCommentsByPost((current) => {
+          const existing = current[postId];
+          if (!existing) {
+            return current;
+          }
+
+          return {
+            ...current,
+            [postId]: existing.map((comment) =>
+              comment.id === item.id
+                ? {
+                    ...item,
+                    viewerCanManage: comment.viewerCanManage,
+                    viewerHasLiked: comment.viewerHasLiked
+                  }
+                : comment
+            )
+          };
+        });
         return;
       }
 
@@ -919,6 +949,87 @@ export function useSocialPostEngagement(
     }
   }
 
+  async function editComment(commentId: string, body: string) {
+    const post = selectedPost;
+    const trimmedBody = body.trim();
+    if (!post || trimmedBody.length < 2) {
+      setThreadMessage("Comment must be at least 2 characters long.");
+      return null;
+    }
+
+    const currentComments = commentsByPost[post.id] ?? [];
+    const targetComment = currentComments.find((item) => item.id === commentId) ?? null;
+    if (!targetComment) {
+      return null;
+    }
+
+    const optimisticComment: CommentItem = {
+      ...targetComment,
+      body: trimmedBody,
+      updatedAt: new Date().toISOString()
+    };
+
+    setThreadMessage(null);
+    setCommentsByPost((current) => ({
+      ...current,
+      [post.id]: (current[post.id] ?? []).map((item) => (item.id === commentId ? optimisticComment : item))
+    }));
+
+    try {
+      const response = await fetch(`/api/comments/${encodeURIComponent(commentId)}`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          body: trimmedBody
+        })
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | UpdateCommentResponse
+        | {
+          error?: {
+            message?: string;
+          };
+        }
+        | null;
+
+      if (!response.ok || !payload || !("item" in payload) || !payload.item) {
+        setCommentsByPost((current) => ({
+          ...current,
+          [post.id]: currentComments
+        }));
+        setThreadMessage(
+          payload && "error" in payload
+            ? payload.error?.message ?? "We could not edit that comment right now."
+            : "We could not edit that comment right now."
+        );
+        return null;
+      }
+
+      setCommentsByPost((current) => ({
+        ...current,
+        [post.id]: (current[post.id] ?? []).map((item) =>
+          item.id === commentId
+            ? {
+              ...payload.item!,
+              viewerCanManage: item.viewerCanManage,
+              viewerHasLiked: item.viewerHasLiked
+            }
+            : item
+        )
+      }));
+      return payload;
+    } catch {
+      setCommentsByPost((current) => ({
+        ...current,
+        [post.id]: currentComments
+      }));
+      setThreadMessage("We could not edit that comment right now.");
+      return null;
+    }
+  }
+
   function clearReplyTarget() {
     setThreadReplyTarget(null);
   }
@@ -957,6 +1068,7 @@ export function useSocialPostEngagement(
     react,
     reactToComment,
     deleteComment,
+    editComment,
     submitComment
   };
 }

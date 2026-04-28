@@ -54,8 +54,12 @@ import type {
   SendChatMessageRequest,
   SendChatMessageResponse,
   UploadEncryptedChatAttachmentResponse,
+  UpdateChatMessageRequest,
+  UpdateChatMessageResponse,
   UpdateChatMessageLifecycleRequest,
   UpdateChatMessageLifecycleResponse,
+  UpdateCommentRequest,
+  UpdateCommentResponse,
   UpdateMarketListingRequest,
   UpdateMarketListingResponse,
   UpdateMarketRequestRequest,
@@ -616,6 +620,15 @@ export async function deletePostComment(viewer: DevSession, commentId: string) {
   );
 }
 
+export async function updatePostComment(viewer: DevSession, commentId: string, payload: UpdateCommentRequest) {
+  return mutateBackendJson<UpdateCommentResponse>(
+    `/v1/comments/${encodeURIComponent(commentId)}`,
+    "PATCH",
+    payload,
+    viewer
+  );
+}
+
 export async function deleteCampusPost(viewer: DevSession, postId: string) {
   return mutateBackendJson<DeletePostResponse>(`/v1/posts/${encodeURIComponent(postId)}`, "DELETE", {}, viewer);
 }
@@ -810,6 +823,15 @@ export async function deleteChatMessage(viewer: DevSession, messageId: string, p
   return mutateBackendJson<DeleteChatMessageResponse>(
     `/v1/chats/messages/${encodeURIComponent(messageId)}`,
     "DELETE",
+    payload,
+    viewer
+  );
+}
+
+export async function updateChatMessage(viewer: DevSession, messageId: string, payload: UpdateChatMessageRequest) {
+  return mutateBackendJson<UpdateChatMessageResponse>(
+    `/v1/chats/messages/${encodeURIComponent(messageId)}`,
+    "PATCH",
     payload,
     viewer
   );

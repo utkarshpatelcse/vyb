@@ -357,6 +357,7 @@ export interface CommentItem {
   mediaType: "image" | "gif" | "sticker" | null;
   isAnonymous: boolean;
   createdAt: string;
+  updatedAt?: string | null;
   reactions: number;
   viewerHasLiked: boolean;
   viewerCanManage: boolean;
@@ -375,6 +376,14 @@ export interface CommentListResponse {
 }
 
 export interface CreateCommentResponse {
+  item: CommentItem;
+}
+
+export interface UpdateCommentRequest {
+  body: string;
+}
+
+export interface UpdateCommentResponse {
   item: CommentItem;
 }
 
@@ -725,6 +734,7 @@ export interface ChatMessageRecord {
   replyToMessageId: string | null;
   attachment: ChatEncryptedAttachment | null;
   createdAt: string;
+  updatedAt?: string | null;
   expiresAt: string | null;
   isStarred: boolean;
   isSaved: boolean;
@@ -794,6 +804,17 @@ export interface SendChatMessageRequest {
 }
 
 export interface SendChatMessageResponse {
+  item: ChatMessageRecord;
+  conversationPreview: ChatConversationPreview;
+}
+
+export interface UpdateChatMessageRequest {
+  cipherText: string;
+  cipherIv: string;
+  cipherAlgorithm: string;
+}
+
+export interface UpdateChatMessageResponse {
   item: ChatMessageRecord;
   conversationPreview: ChatConversationPreview;
 }

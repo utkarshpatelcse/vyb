@@ -255,6 +255,7 @@ const EXTENDED_COMMENT_FIELDS = `
   mediaSizeBytes
   status
   createdAt
+  updatedAt
 `;
 
 const LIST_COMMENTS_BY_POST_EXTENDED_QUERY = `
@@ -626,6 +627,20 @@ const SOFT_DELETE_COMMENT_MUTATION = `
       data: {
         status: "removed"
         deletedAt_expr: "request.time"
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
+
+const UPDATE_COMMENT_MUTATION = `
+  mutation UpdateComment($id: UUID!, $body: String!) {
+    comment_update(
+      key: { id: $id }
+      data: {
+        body: $body
         updatedAt_expr: "request.time"
       }
     ) {
@@ -1647,6 +1662,7 @@ function mapCommentRecord(item, reactionMaps = null, viewerMembershipId = null) 
     mediaType: item.mediaType ?? null,
     isAnonymous,
     createdAt: toIsoString(item.createdAt),
+    updatedAt: item.updatedAt ? toIsoString(item.updatedAt) : null,
     reactions: Number(reactionMaps?.reactions?.get(item.id) ?? 0),
     viewerHasLiked: Boolean(reactionMaps?.viewerReactions?.get(item.id)),
     viewerCanManage,
@@ -2204,7 +2220,8 @@ export async function createComment(payload) {
       mediaUrl: media.mediaUrl,
       mediaType: payload.mediaType ?? null,
       status: "published",
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     });
     await persistFallbackStore();
   }
@@ -2220,11 +2237,65 @@ export async function createComment(payload) {
     mediaType: payload.mediaType ?? null,
     isAnonymous: Boolean(payload.isAnonymous),
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     reactions: 0,
     viewerHasLiked: false,
     viewerCanManage: true,
     author: payload.isAnonymous ? buildAnonymousAuthor() : null
   };
+}
+
+export async function updateComment(commentId, payload, { tenantId = null, viewerMembershipId = null } = {}) {
+  const body = typeof payload?.body === "string" ? payload.body.trim() : "";
+  if (!body || body.length < 2) {
+    throw new Error("Comment must be at least 2 characters long.");
+  }
+
+  const current = await findCommentRecordById(commentId, { tenantId });
+  if (!current) {
+    throw new Error("Comment not found.");
+  }
+
+  if (!viewerMembershipId || current.membershipId !== viewerMembershipId) {
+    throw new Error("Only the comment author can edit this comment.");
+  }
+
+  const updatedAt = new Date().toISOString();
+  try {
+    await getSocialDc().executeGraphql(UPDATE_COMMENT_MUTATION, {
+      operationName: "UpdateComment",
+      variables: {
+        id: commentId,
+        body
+      }
+    });
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const store = await ensureFallbackStore();
+    const target = store.comments.find((item) => item.id === commentId);
+    if (!target || target.status === "removed" || (tenantId && target.tenantId !== tenantId)) {
+      throw new Error("Comment not found.");
+    }
+
+    if (target.membershipId !== viewerMembershipId) {
+      throw new Error("Only the comment author can edit this comment.");
+    }
+
+    target.body = body;
+    target.updatedAt = updatedAt;
+    await persistFallbackStore();
+  }
+
+  const refreshed = await findCommentRecordById(commentId, { tenantId });
+  const source = refreshed ?? { ...current, body, updatedAt };
+  const reactionMaps = {
+    reactions: new Map([[source.id, await countCommentReactionsByComment(source.id)]]),
+    viewerReactions: new Map()
+  };
+  return mapCommentRecord(source, reactionMaps, viewerMembershipId);
 }
 
 export async function listCommentsByPost({ tenantId, postId, limit = 50, viewerMembershipId = null }) {

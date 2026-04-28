@@ -1995,6 +1995,7 @@ export function CampusHomeShell({
         onDeleteComment={(comment) => {
           void engagement.deleteComment(comment.id);
         }}
+        onEditComment={(comment, body) => engagement.editComment(comment.id, body)}
         onClearReply={engagement.clearReplyTarget}
         onSubmit={() => void engagement.submitComment()}
       />

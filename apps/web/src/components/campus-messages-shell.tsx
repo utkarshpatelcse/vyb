@@ -20,6 +20,7 @@ import type {
   DeleteChatMessageScope,
   FeedListResponse,
   MarketDashboardResponse,
+  UpdateChatMessageResponse,
   UserSearchItem
 } from "@vyb/contracts";
 import Link from "next/link";
@@ -918,6 +919,15 @@ function IconForward() {
   );
 }
 
+function IconEdit() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 20h4.5L19 9.5a2.1 2.1 0 0 0-3-3L5.5 17 4 20Z" />
+      <path d="m14.5 8.5 3 3" />
+    </svg>
+  );
+}
+
 function IconMore() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -1104,6 +1114,7 @@ export function CampusMessagesShell({
   const [shareMenuCollections, setShareMenuCollections] = useState<ShareMenuCollections>(() => buildShareMenuCollections());
   const [activeVibePreview, setActiveVibePreview] = useState<ChatVibeCardPayload | null>(null);
   const [replyingToMessageId, setReplyingToMessageId] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [selectedMessageIds, setSelectedMessageIds] = useState<Record<string, true>>({});
       const [messageActionBusy, setMessageActionBusy] = useState(false);
   const [messageActionError, setMessageActionError] = useState<string | null>(null);
@@ -1817,6 +1828,7 @@ export function CampusMessagesShell({
       setPendingConversationId(null);
     }
     setDraftMessage("");
+    setEditingMessageId(null);
     setPendingShareCard(null);
     setSendError(null);
     setRealtimeState(initialConversationId ? "connecting" : "idle");
@@ -2220,6 +2232,10 @@ export function CampusMessagesShell({
     () => (replyingToMessageId ? messageMap.get(replyingToMessageId) ?? null : null),
     [messageMap, replyingToMessageId]
   );
+  const editingMessage = useMemo(
+    () => (editingMessageId ? messageMap.get(editingMessageId) ?? null : null),
+    [messageMap, editingMessageId]
+  );
 
   const selectedMessageIdsList = useMemo(() => Object.keys(selectedMessageIds), [selectedMessageIds]);
   const selectedMessages = useMemo(
@@ -2229,6 +2245,12 @@ export function CampusMessagesShell({
   const selectedMessageActionIsOwn = selectedMessages.length > 0 && selectedMessages.every(m => isOwnChatMessage(m, viewerUserId, viewerMembershipId));
   const selectedMessageActionIsDeleted = selectedMessages.length > 0 && selectedMessages.every(m => isDeletedChatMessage(m));
   const selectedMessageDeleteForEveryoneAllowed = selectedMessages.length > 0 && selectedMessages.every(m => canDeleteChatMessageForEveryone(m, viewerMembershipId, Date.now()));
+  const selectedMessageCanEdit =
+    selectedMessages.length === 1 &&
+    selectedMessageActionIsOwn &&
+    !selectedMessageActionIsDeleted &&
+    selectedMessages[0]?.messageKind === "text" &&
+    !selectedMessages[0]?.attachment;
   const hasSelection = selectedMessageIdsList.length > 0;
 
   useEffect(() => {
@@ -2273,6 +2295,10 @@ export function CampusMessagesShell({
     if (replyingToMessageId && !messageMap.has(replyingToMessageId)) {
       setReplyingToMessageId(null);
     }
+    if (editingMessageId && !messageMap.has(editingMessageId)) {
+      setEditingMessageId(null);
+      setDraftMessage("");
+    }
     const anyMissing = selectedMessageIdsList.some(id => !messageMap.has(id));
     if (anyMissing) {
       setSelectedMessageIds((prev) => {
@@ -2283,7 +2309,7 @@ export function CampusMessagesShell({
       setReactionPickerMessageId(null);
       setDeleteConfirmOpen(false);
     }
-  }, [messageMap, replyingToMessageId, selectedMessageIdsList]);
+  }, [editingMessageId, messageMap, replyingToMessageId, selectedMessageIdsList]);
 
   useEffect(() => {
     const anyHidden = selectedMessageIdsList.some(id => hiddenMessageIdSet.has(id));
@@ -3140,7 +3166,7 @@ export function CampusMessagesShell({
               return;
             }
 
-            if (payload.type !== "chat.message") {
+            if (payload.type !== "chat.message" && payload.type !== "chat.message.updated") {
               return;
             }
 
@@ -3149,6 +3175,29 @@ export function CampusMessagesShell({
               payload.payload?.item && typeof payload.payload.item === "object"
                 ? (payload.payload.item as ChatMessageRecord)
                 : null;
+
+            if (incomingMessage && payload.type === "chat.message.updated") {
+              const currentConversation = activeConversationRef.current;
+              if (currentConversation?.id === conversationId) {
+                const nextConversation = normalizeConversationMessages({
+                  ...currentConversation,
+                  messages: upsertMessageRecord(currentConversation.messages, incomingMessage)
+                });
+
+                if (incomingMessage.senderUserId !== viewerUserId) {
+                  setMessagePlaintextById((current) => {
+                    const next = { ...current };
+                    delete next[incomingMessage.id];
+                    return next;
+                  });
+                }
+                activeConversationRef.current = nextConversation;
+                messageIdsRef.current = new Set(nextConversation.messages.map((message) => message.id));
+                setActiveConversation(nextConversation);
+                setConversations((current) => upsertConversationItem(current, buildConversationPreview(nextConversation)));
+                return;
+              }
+            }
 
             if (incomingMessage && !messageIdsRef.current.has(incomingMessage.id)) {
               const currentConversation = activeConversationRef.current;
@@ -3954,6 +4003,27 @@ export function CampusMessagesShell({
     clearSelectedMessage();
   }
 
+  function startEditSelectedMessage() {
+    const target = selectedMessages[0] ?? null;
+    if (!target || !selectedMessageCanEdit) {
+      return;
+    }
+
+    const plaintext = messagePlaintextById[target.id] || (!isE2eeCipherAlgorithm(target.cipherAlgorithm) ? target.cipherText : "");
+    if (!plaintext.trim()) {
+      setMessageActionError("This message is still locked on this device.");
+      return;
+    }
+
+    setEditingMessageId(target.id);
+    setDraftMessage(plaintext);
+    setReplyingToMessageId(null);
+    setPendingShareCard(null);
+    clearPendingMediaAttachments();
+    clearSelectedMessage();
+    focusComposerSoon();
+  }
+
   async function handleStartChat(username: string) {
     if (startingChatRef.current) return;
 
@@ -4231,6 +4301,80 @@ export function CampusMessagesShell({
     return sentMessage ?? null;
   }
 
+  async function submitEditedMessage(message: ChatMessageRecord, plaintext: string) {
+    const conversationId = activeConversation?.id;
+    const peerIdentity = activeConversation?.peer.publicKey ?? null;
+    if (!conversationId || message.conversationId !== conversationId) {
+      throw new Error("Open the chat again before editing this message.");
+    }
+
+    const chatReady = await ensureChatIdentity();
+    if (!chatReady) {
+      throw new Error(keySetupError ?? "Secure chat is not ready on this device.");
+    }
+
+    const currentLocalKey = localChatKey ?? (await loadStoredChatKeyMaterial(viewerUserId));
+    if (!currentLocalKey) {
+      throw new Error("This device is missing your private E2EE key.");
+    }
+
+    if (!peerIdentity) {
+      throw new Error("This user has not finished setting up E2EE chat yet.");
+    }
+
+    const encryptedPayload = await encryptChatText(plaintext, currentLocalKey, peerIdentity);
+    const optimisticMessage: ChatMessageRecord = {
+      ...message,
+      cipherText: encryptedPayload.cipherText,
+      cipherIv: encryptedPayload.cipherIv,
+      cipherAlgorithm: encryptedPayload.cipherAlgorithm,
+      updatedAt: new Date().toISOString()
+    };
+    setMessagePlaintextById((current) => ({ ...current, [message.id]: plaintext }));
+    setActiveConversation((current) =>
+      current && current.id === conversationId
+        ? {
+            ...current,
+            messages: upsertMessageRecord(current.messages, optimisticMessage)
+          }
+        : current
+    );
+
+    const response = await fetchChatEndpoint(`/api/chats/messages/${encodeURIComponent(message.id)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(encryptedPayload)
+    });
+    const data = (await response.json().catch(() => null)) as UpdateChatMessageResponse | { error?: { message?: string } } | null;
+
+    if (!response.ok || !data || !("item" in data) || !data.item) {
+      setActiveConversation((current) =>
+        current && current.id === conversationId
+          ? {
+              ...current,
+              messages: upsertMessageRecord(current.messages, message)
+            }
+          : current
+      );
+      setMessagePlaintextById((current) => ({ ...current, [message.id]: messagePlaintextById[message.id] ?? plaintext }));
+      throw new Error(data && "error" in data ? data.error?.message ?? "We could not edit that message." : "We could not edit that message.");
+    }
+
+    setMessagePlaintextById((current) => ({ ...current, [data.item.id]: plaintext }));
+    setActiveConversation((current) =>
+      current && current.id === conversationId
+        ? {
+            ...current,
+            messages: upsertMessageRecord(current.messages, data.item)
+          }
+        : current
+    );
+
+    if (data.conversationPreview) {
+      setConversations((current) => upsertConversationItem(current, { ...data.conversationPreview, unreadCount: 0 }));
+    }
+  }
+
   async function handleChangeDefaultDuration(nextDurationKey: ChatMessageTtlKey) {
     if (nextDurationKey === defaultDurationKey) {
       return;
@@ -4284,6 +4428,28 @@ export function CampusMessagesShell({
     const nextMessage = draftMessage.trim();
     const hasPendingShare = Boolean(pendingShareCard);
     const hasPendingMedia = pendingMediaAttachments.length > 0;
+    if (editingMessage) {
+      if (!conversationId || !nextMessage || sending || uploadingMedia) {
+        return;
+      }
+
+      setSending(true);
+      setSendError(null);
+      clearTypingStopTimer();
+      sendTypingSignal(false);
+      try {
+        await submitEditedMessage(editingMessage, nextMessage);
+        setDraftMessage("");
+        setEditingMessageId(null);
+        focusComposerSoon();
+      } catch (error) {
+        setSendError(error instanceof Error ? error.message : "We could not edit that message.");
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+
     if (!conversationId || (!nextMessage && !hasPendingShare && !hasPendingMedia) || sending || uploadingMedia) {
       return;
     }
@@ -4929,6 +5095,11 @@ export function CampusMessagesShell({
                     <button type="button" className="spm-chat-selection-button" onClick={() => void handleForwardSelectedMessage()} aria-label="Forward message">
                       <IconForward />
                     </button>
+                    {selectedMessageCanEdit ? (
+                      <button type="button" className="spm-chat-selection-button" onClick={startEditSelectedMessage} aria-label="Edit message">
+                        <IconEdit />
+                      </button>
+                    ) : null}
                     <button type="button" className="spm-chat-selection-button spm-chat-selection-button-danger" onClick={() => setDeleteConfirmOpen(true)} aria-label="Delete message">
                       <IconTrash />
                     </button>
@@ -5037,6 +5208,9 @@ export function CampusMessagesShell({
                           !isDeletedMessage;
                         const isScreenshotAlert = plaintext.includes("Suspected screenshot:");
                         const isSystemMessage = message.messageKind === "system" || isScreenshotAlert;
+                        const isEditedMessage =
+                          Boolean(message.updatedAt) &&
+                          Math.abs(new Date(message.updatedAt ?? "").getTime() - new Date(message.createdAt).getTime()) > 2000;
                         if (isSystemMessage) {
                           plaintext = plaintext.replace("Suspected screenshot: ", "");
                         }
@@ -5172,6 +5346,9 @@ export function CampusMessagesShell({
                                   <span className="spm-chat-saved-badge" aria-label="Saved message" title="Saved message">
                                     <IconBookmark />
                                   </span>
+                                ) : null}
+                                {isEditedMessage && !isSystemMessage ? (
+                                  <span className="spm-chat-edited-label">Edited</span>
                                 ) : null}
                                 <span suppressHydrationWarning>{formatMessageTime(message.createdAt)}</span>
                                 {receiptState ? (
@@ -5599,7 +5776,27 @@ export function CampusMessagesShell({
                       </div>
                     )}
 
-                    {replyingToMessage && (
+                    {editingMessage && (
+                      <div className="spm-chat-compose-reply spm-chat-compose-edit">
+                        <div className="spm-chat-compose-reply-copy">
+                          <strong>Editing message</strong>
+                          <span>{messagePlaintextById[editingMessage.id] || "Update your message and save."}</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="spm-chat-compose-reply-clear"
+                          onClick={() => {
+                            setEditingMessageId(null);
+                            setDraftMessage("");
+                          }}
+                          aria-label="Cancel edit"
+                        >
+                          <IconClose />
+                        </button>
+                      </div>
+                    )}
+
+                    {replyingToMessage && !editingMessage && (
                       <div className="spm-chat-compose-reply">
                         <div className="spm-chat-compose-reply-copy">
                           <strong>Replying to {isOwnChatMessage(
@@ -5649,7 +5846,12 @@ export function CampusMessagesShell({
                         type="button"
                         className="spm-chat-share-trigger"
                         aria-label="Select photos or videos"
-                        onClick={() => mediaInputRef.current?.click()}
+                        onClick={() => {
+                          if (!editingMessage) {
+                            mediaInputRef.current?.click();
+                          }
+                        }}
+                        disabled={Boolean(editingMessage)}
                       >
                         <IconPlus />
                       </button>
@@ -5701,8 +5903,8 @@ export function CampusMessagesShell({
                             }
                           }}
                           rows={1}
-                          placeholder="Type a message"
-                          aria-label="Type a message"
+                          placeholder={editingMessage ? "Edit message" : "Type a message"}
+                          aria-label={editingMessage ? "Edit message" : "Type a message"}
                           disabled={isRecordingVoiceNote}
                         />
 

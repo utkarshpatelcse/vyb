@@ -2026,6 +2026,11 @@
   font-weight: 600;
 }
 
+.spm-chat-edited-label {
+  color: rgba(203, 213, 225, 0.72);
+  font-size: 0.62rem;
+}
+
 .spm-chat-saved-badge {
   display: inline-flex;
   align-items: center;
@@ -2979,6 +2984,15 @@
   box-shadow: 0 4px 20px rgba(0,0,0,0.2);
 }
 
+.spm-chat-compose-edit {
+  border-left-color: #22d3ee;
+  background: rgba(8, 47, 73, 0.68);
+}
+
+.spm-chat-compose-edit .spm-chat-compose-reply-copy strong {
+  color: #a5f3fc;
+}
+
 .spm-chat-compose-reply-copy {
   display: grid;
   gap: 0.25rem;
@@ -3059,6 +3073,12 @@
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.16);
   transform: translateY(-1px);
+}
+
+.spm-chat-share-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+  transform: none;
 }
 
 .spm-chat-compose-box {

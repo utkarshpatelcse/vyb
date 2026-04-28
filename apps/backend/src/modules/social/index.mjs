@@ -31,6 +31,7 @@ import {
   listStories,
   markStorySeen,
   unfollowUser,
+  updateComment,
   updatePost,
   upsertCommentReaction,
   upsertReaction,
@@ -1536,6 +1537,77 @@ export async function handleSocialRoute({ request, response, url, context }) {
     });
 
     sendJson(response, 200, item);
+    return true;
+  }
+
+  const updateCommentMatch = request.method === "PATCH" ? url.pathname.match(/^\/v1\/comments\/([^/]+)$/) : null;
+  if (updateCommentMatch) {
+    const payload = await readJson(request);
+    if (!payload || typeof payload !== "object") {
+      sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+      return true;
+    }
+
+    const comment = await findCommentRecordById(updateCommentMatch[1], {
+      tenantId: resolvedTenantId ?? null
+    });
+    if (!comment) {
+      sendError(response, 404, "COMMENT_NOT_FOUND", "Comment not found.");
+      return true;
+    }
+
+    if (comment.membershipId !== resolvedMembershipId) {
+      sendError(response, 403, "COMMENT_EDIT_FORBIDDEN", "Only the comment author can edit this comment.");
+      return true;
+    }
+
+    const trimmedBody = requireNonEmptyString(payload.body) ? payload.body.trim() : "";
+    if (trimmedBody.length < 2) {
+      sendError(response, 400, "INVALID_COMMENT", "Comment must be at least 2 characters long.");
+      return true;
+    }
+
+    const post = await findPostRecordById(comment.postId, {
+      tenantId: resolvedTenantId ?? null
+    });
+    if (!post) {
+      sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
+      return true;
+    }
+
+    const item = await updateComment(
+      comment.id,
+      { body: trimmedBody },
+      {
+        tenantId: post.tenantId,
+        viewerMembershipId: resolvedMembershipId
+      }
+    );
+    const enrichedItem = (await enrichCommentItems(post.tenantId, [item]))[0] ?? item;
+
+    await logSocialActivity({
+      tenantId: post.tenantId,
+      membershipId: resolvedMembershipId ?? comment.membershipId,
+      activityType: "comment.updated",
+      entityType: "comment",
+      entityId: comment.id,
+      metadata: {
+        postId: post.id,
+        placement: post.placement
+      }
+    });
+
+    emitSocialRealtimeEvent({
+      tenantId: post.tenantId,
+      type: "social.comment.updated",
+      payload: {
+        postId: post.id,
+        item: buildRealtimeCommentPayload(enrichedItem)
+      },
+      excludeMembershipId: getRealtimeActorMembershipId(resolvedMembershipId, context)
+    });
+
+    sendJson(response, 200, { item: enrichedItem });
     return true;
   }
 

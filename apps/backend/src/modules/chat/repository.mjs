@@ -1357,6 +1357,7 @@ function mapChatMessage(item, reactionsByMessageId = new Map()) {
           }
         : null,
     createdAt,
+    updatedAt: item.updatedAt ? toIsoString(item.updatedAt) : null,
     expiresAt: item.expiresAt ? toIsoString(item.expiresAt) : fallbackExpiresAt,
     isStarred: normalizeBoolean(item.isStarred),
     isSaved: normalizeBoolean(item.isSaved),
@@ -2321,6 +2322,84 @@ export async function sendChatMessage(viewer, conversationId, payload) {
 
   return {
     item: storedMessage,
+    conversationPreview: preview
+  };
+}
+
+export async function editChatMessage(viewer, messageId, payload) {
+  const message = await getChatMessageById(messageId);
+  if (!message || message.tenantId !== viewer.tenantId) {
+    throw new Error("We could not find that message.");
+  }
+
+  const access = await resolveConversationAccess(viewer, message.conversationId);
+  if (!access) {
+    throw new Error("You can only edit messages inside your own conversations.");
+  }
+
+  if (message.senderMembershipId !== viewer.membershipId) {
+    throw new ChatSecurityError(403, "CHAT_EDIT_OWNER_REQUIRED", "Only the sender can edit this message.");
+  }
+
+  if (message.cipherAlgorithm === CHAT_DELETED_MESSAGE_ALGORITHM) {
+    throw new ChatSecurityError(400, "CHAT_MESSAGE_DELETED", "Deleted messages cannot be edited.");
+  }
+
+  if (message.messageKind !== "text" || message.attachmentUrl) {
+    throw new ChatSecurityError(400, "CHAT_EDIT_UNSUPPORTED", "Only text messages can be edited right now.");
+  }
+
+  const cipherText = normalizeString(payload?.cipherText);
+  const cipherIv = normalizeString(payload?.cipherIv);
+  const cipherAlgorithm = normalizeString(payload?.cipherAlgorithm) ?? END_TO_END_CHAT_ALGORITHM;
+  if (!cipherText || !cipherIv) {
+    throw new ChatSecurityError(400, "INVALID_MESSAGE", "Edited message payload is incomplete.");
+  }
+
+  await getChatDc().executeGraphql(UPDATE_CHAT_MESSAGE_ENCRYPTION_MUTATION, {
+    operationName: "UpdateChatMessageEncryption",
+    variables: {
+      id: messageId,
+      cipherText,
+      cipherIv,
+      cipherAlgorithm
+    }
+  });
+
+  const [updatedMessageRaw, rawReactions] = await Promise.all([
+    getChatMessageById(messageId),
+    listChatMessageReactionsByConversation(message.conversationId)
+  ]);
+  const reactionsByMessageId = buildReactionsMap(rawReactions);
+  const updatedMessage = await hydrateChatMessage(updatedMessageRaw, reactionsByMessageId);
+  if (!updatedMessage) {
+    throw new Error("We could not reload that message after editing it.");
+  }
+
+  const hiddenState = await getHiddenChatMessageState(viewer);
+  const preview = await buildConversationPreview(
+    viewer,
+    access.conversation,
+    access.viewerParticipant,
+    access.peerParticipant,
+    new Set(hiddenState.hiddenMessageIds)
+  );
+
+  emitChatRealtimeEvent({
+    conversationId: message.conversationId,
+    type: "chat.message.updated",
+    payload: {
+      conversationId: message.conversationId,
+      messageId,
+      senderUserId: viewer.userId,
+      senderMembershipId: viewer.membershipId,
+      updatedAt: updatedMessage.updatedAt,
+      item: updatedMessage
+    }
+  });
+
+  return {
+    item: updatedMessage,
     conversationPreview: preview
   };
 }

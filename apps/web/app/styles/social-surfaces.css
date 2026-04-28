@@ -4370,12 +4370,26 @@
 }
 
 .vyb-thread-comment-actions {
-  gap: 0.7rem;
-  flex-wrap: wrap;
+  position: absolute;
+  right: 0;
+  top: auto;
+  bottom: calc(100% + 0.42rem);
+  z-index: 20;
+  min-width: 10.5rem;
+  display: grid;
+  align-items: stretch;
+  gap: 0.2rem;
+  padding: 0.45rem;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 0.85rem;
+  background: rgba(8, 12, 24, 0.96);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(18px);
 }
 
 .vyb-thread-comment-like,
 .vyb-thread-reply-button,
+.vyb-thread-edit-button,
 .vyb-thread-picker-head button,
 .vyb-thread-media-preview-copy button {
   padding: 0;
@@ -4387,8 +4401,144 @@
   cursor: pointer;
 }
 
+.vyb-thread-comment-actions .vyb-thread-comment-like,
+.vyb-thread-comment-actions .vyb-thread-reply-button,
+.vyb-thread-comment-actions .vyb-thread-edit-button,
+.vyb-thread-comment-actions .vyb-thread-delete-button {
+  width: 100%;
+  min-height: 2.15rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  border-radius: 0.58rem;
+  padding: 0 0.65rem;
+  color: rgba(241, 245, 249, 0.92);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.vyb-thread-comment-actions .vyb-thread-comment-like:hover,
+.vyb-thread-comment-actions .vyb-thread-reply-button:hover,
+.vyb-thread-comment-actions .vyb-thread-edit-button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .vyb-thread-comment-like.is-active {
   color: #ff75e1;
+}
+
+.vyb-thread-edit-button {
+  color: rgba(125, 249, 255, 0.92);
+}
+
+.vyb-thread-comment {
+  position: relative;
+  touch-action: pan-y;
+}
+
+.vyb-thread-comment.has-action-menu {
+  z-index: 8;
+}
+
+.vyb-thread-comment-menu-wrap {
+  position: relative;
+  margin-left: auto;
+}
+
+.vyb-thread-comment-menu-trigger {
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.16rem;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(226, 232, 240, 0.86);
+  cursor: pointer;
+}
+
+.vyb-thread-comment-menu-trigger span {
+  width: 0.22rem;
+  height: 0.22rem;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.vyb-thread-comment-menu-trigger:hover,
+.vyb-thread-comment-menu-trigger[aria-expanded="true"] {
+  border-color: rgba(125, 249, 255, 0.42);
+  background: rgba(34, 211, 238, 0.1);
+  color: #e0fbff;
+}
+
+.vyb-thread-comment-reaction-count {
+  color: rgba(203, 213, 225, 0.68);
+  font-size: 0.72rem;
+  font-weight: 760;
+}
+
+.vyb-thread-comment-reaction-count.is-active {
+  color: rgba(255, 117, 225, 0.92);
+}
+
+.vyb-thread-comment-edit {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.5rem;
+}
+
+.vyb-thread-comment-edit textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 4.2rem;
+  border: 1px solid rgba(125, 92, 255, 0.34);
+  border-radius: 0.8rem;
+  background: rgba(5, 8, 20, 0.72);
+  color: #f8fbff;
+  font: inherit;
+  line-height: 1.45;
+  padding: 0.75rem 0.85rem;
+  outline: none;
+}
+
+.vyb-thread-comment-edit textarea:focus {
+  border-color: rgba(125, 249, 255, 0.72);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.12);
+}
+
+.vyb-thread-comment-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.vyb-thread-comment-edit-save,
+.vyb-thread-comment-edit-cancel {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.48rem 0.9rem;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.vyb-thread-comment-edit-save {
+  background: linear-gradient(135deg, #7c5cff, #18c8cf);
+  color: #fff;
+}
+
+.vyb-thread-comment-edit-cancel {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(226, 232, 240, 0.86);
+}
+
+.vyb-thread-comment-edit-save:disabled,
+.vyb-thread-comment-edit-cancel:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
 }
 
 .vyb-thread-reply-branch {
@@ -10459,6 +10609,21 @@ input:checked + .vyb-settings-list-toggle-slider:before {
 .vyb-thread-delete-button:disabled {
   cursor: progress;
   opacity: 0.65;
+}
+
+.vyb-thread-comment-actions .vyb-thread-delete-button {
+  width: 100%;
+  min-height: 2.15rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  border-radius: 0.58rem;
+  padding: 0 0.65rem;
+  color: rgba(248, 113, 113, 0.94);
+}
+
+.vyb-thread-comment-actions .vyb-thread-delete-button:hover {
+  background: rgba(248, 113, 113, 0.1);
 }
 
 .vyb-events-fab-host {
