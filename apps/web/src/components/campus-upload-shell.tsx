@@ -301,6 +301,7 @@ export function CampusUploadShell({
   const router = useRouter();
   const searchParams = useSearchParams();
   const defaultKind = parseKind(searchParams.get("kind"));
+  const draftParam = searchParams.get("draft") ?? "";
   const returnTo =
     searchParams.get("from") || (defaultKind === "vibe" ? "/vibes" : "/home");
 
@@ -316,7 +317,7 @@ export function CampusUploadShell({
   );
 
   /* ── Form state ──────────────────────────────────────────────────────── */
-  const [caption, setCaption] = useState("");
+  const [caption, setCaption] = useState(draftParam);
   const [message, setMessage] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isAnonymous, setIsAnonymous] = useState(false);
@@ -410,6 +411,14 @@ export function CampusUploadShell({
   }, [mode, vibeVideoUrl, vibeIsPortrait, caption, momentImages, storyAssets]);
 
   /* ── progress simulator for demo (real upload doesn't expose events) ─── */
+  useEffect(() => {
+    if (!draftParam) {
+      return;
+    }
+
+    setCaption((current) => (current.trim().length > 0 ? current : draftParam));
+  }, [draftParam]);
+
   useEffect(() => {
     if (storyAssets.length === 0) {
       setActiveStoryAssetId(null);

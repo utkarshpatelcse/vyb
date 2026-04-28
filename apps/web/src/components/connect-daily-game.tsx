@@ -6,6 +6,7 @@ import type {
   ConnectHintResponse,
   ConnectSubmitResponse
 } from "@vyb/contracts";
+import { useRouter } from "next/navigation";
 import {
   useEffect,
   useMemo,
@@ -16,7 +17,8 @@ import {
 } from "react";
 
 type ConnectDailyGameProps = {
-  onExit: () => void;
+  onExit?: () => void;
+  backHref?: string;
 };
 
 type GhostHint = {
@@ -82,7 +84,8 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
   return payload;
 }
 
-export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
+export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: ConnectDailyGameProps) {
+  const router = useRouter();
   const [daily, setDaily] = useState<ConnectDailyLevelResponse | null>(null);
   const [pathCells, setPathCells] = useState<ConnectCoordinate[]>([]);
   const isDraggingRef = useRef(false);
@@ -725,10 +728,19 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     setMessage("Route reset. Start again from dot 1.");
   }
 
+  function handleExit() {
+    if (onExit) {
+      onExit();
+      return;
+    }
+
+    router.push(backHref);
+  }
+
   if (isLoading) {
     return (
       <section className="vyb-connect-shell">
-        <button type="button" className="vyb-connect-back" onClick={onExit}>
+        <button type="button" className="vyb-connect-back" onClick={handleExit}>
           Back to hub
         </button>
         <div className="vyb-connect-loading">Loading today's Connect...</div>
@@ -739,7 +751,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
   if (error && !daily) {
     return (
       <section className="vyb-connect-shell">
-        <button type="button" className="vyb-connect-back" onClick={onExit}>
+        <button type="button" className="vyb-connect-back" onClick={handleExit}>
           Back to hub
         </button>
         <div className="vyb-connect-error">{error}</div>
@@ -801,7 +813,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
   return (
     <section className="vyb-connect-shell">
       <div className="vyb-connect-topbar-modern">
-        <button type="button" className="vyb-connect-back-icon" onClick={onExit} aria-label="Back">
+        <button type="button" className="vyb-connect-back-icon" onClick={handleExit} aria-label="Back">
           <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
         </button>
         
@@ -819,8 +831,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
         </button>
       </div>
 
-      {message ? <p className={`vyb-connect-message${result?.solved ? " is-solved" : ""}`}>{message}</p> : null}
-      {error ? <p className="vyb-connect-error">{error}</p> : null}
+
 
       <div className="vyb-connect-board-wrap">
         <div
@@ -899,6 +910,11 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
         </button>
       </div>
 
+      <div style={{ minHeight: "1rem", marginTop: "1rem" }}>
+        {message ? <p className={`vyb-connect-message${result?.solved ? " is-solved" : ""}`} style={{ margin: 0 }}>{message}</p> : null}
+        {error ? <p className="vyb-connect-error" style={{ margin: 0 }}>{error}</p> : null}
+      </div>
+
       <div className="vyb-connect-how-to-play">
         <div className="vyb-connect-how-to-header">
            <h4>How to play</h4>
@@ -969,7 +985,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
             <h3>Puzzle Solved!</h3>
             <p>Brilliant work. You've completed today's challenge. Ready for your next adventure?</p>
             <div className="vyb-connect-popup-actions">
-              <button type="button" className="vyb-connect-popup-primary" onClick={onExit}>
+              <button type="button" className="vyb-connect-popup-primary" onClick={handleExit}>
                 Explore Other Games
               </button>
               <button type="button" className="vyb-connect-popup-secondary" onClick={() => setShowSuccessPopup(false)}>

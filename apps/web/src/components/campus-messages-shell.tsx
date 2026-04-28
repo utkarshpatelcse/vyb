@@ -7,6 +7,7 @@ import type {
   ChatConversationResponse,
   ChatDealCardPayload,
   ChatEventCardPayload,
+  ChatGameInviteCardPayload,
   ChatIdentitySummary,
   ChatKeyBackupRecord,
   ChatMessageKind,
@@ -169,6 +170,8 @@ function getMessageFallbackLabel(message: ChatMessageRecord) {
       return "Shared a market deal";
     case "profile_card":
       return "Shared a profile";
+    case "game_invite_card":
+      return "Shared a game invite";
     case "system":
       return "System update";
     default:
@@ -269,7 +272,13 @@ function getPendingSharedPostSnippet(post: PendingSharedPost) {
 }
 
 function isShareCardKind(value: ChatMessageKind): value is ChatShareCardKind {
-  return value === "vibe_card" || value === "event_card" || value === "deal_card" || value === "profile_card";
+  return (
+    value === "vibe_card" ||
+    value === "event_card" ||
+    value === "deal_card" ||
+    value === "profile_card" ||
+    value === "game_invite_card"
+  );
 }
 
 function isCardPayloadRecord(value: unknown): value is Record<string, unknown> {
@@ -318,6 +327,8 @@ function getShareCardPreviewText(kind: ChatShareCardKind, payload: ChatShareCard
         return "Shared a market deal";
       case "profile_card":
         return "Shared a profile";
+      case "game_invite_card":
+        return "Shared a game invite";
       default:
         return "Shared a card";
     }
@@ -336,6 +347,10 @@ function getShareCardPreviewText(kind: ChatShareCardKind, payload: ChatShareCard
       return (payload as ChatDealCardPayload).title || "Shared a market deal";
     case "profile_card":
       return `Profile: ${(payload as ChatProfileCardPayload).displayName || (payload as ChatProfileCardPayload).username}`;
+    case "game_invite_card": {
+      const invitePayload = payload as ChatGameInviteCardPayload;
+      return invitePayload.title || (invitePayload.roomId ? `Game invite: ${invitePayload.roomId}` : "Shared a game invite");
+    }
     default:
       return "Shared a card";
   }
@@ -512,6 +527,8 @@ function getConversationPreviewLabel(
       return { text: text || "Market deal", isMarket: true };
     case "profile_card":
       return { text: text || "Shared a profile", isMarket: false };
+    case "game_invite_card":
+      return { text: text || "Game invite", isMarket: false };
     case "system":
       return { text: text || "System update", isMarket: false };
     default:
@@ -5120,6 +5137,14 @@ export function CampusMessagesShell({
                                     onInterestedDeal={handleDealInterested}
                                     onWatchVibe={(payload) => setActiveVibePreview(payload)}
                                     onOpenEvent={() => router.push("/hub")}
+                                    onOpenGameInvite={(payload) => {
+                                      try {
+                                        const target = new URL(payload.inviteUrl, window.location.origin);
+                                        router.push(`${target.pathname}${target.search}`);
+                                      } catch {
+                                        router.push("/hub/gameshub");
+                                      }
+                                    }}
                                     onOpenProfile={(payload) => router.push(`/u/${encodeURIComponent(payload.username)}`)}
                                   />
                                   {showCardCaption && (
@@ -5470,6 +5495,8 @@ export function CampusMessagesShell({
                                     ? "U"
                                     : card.kind === "event_card"
                                       ? "E"
+                                      : card.kind === "game_invite_card"
+                                        ? "G"
                                       : card.kind === "deal_card"
                                         ? "M"
                                         : "V"}
@@ -5513,7 +5540,13 @@ export function CampusMessagesShell({
 
                         <div className="spm-chat-compose-share-copy">
                           <strong>Sharing a {pendingShareCard.kind.replace("_card", "").replace("_", " ")}</strong>
-                          <span>{pendingShareCard.kind === "profile_card" ? `@${(pendingShareCard.payload as ChatProfileCardPayload).username}` : "Encrypted preview"}</span>
+                          <span>
+                            {pendingShareCard.kind === "profile_card"
+                              ? `@${(pendingShareCard.payload as ChatProfileCardPayload).username}`
+                              : pendingShareCard.kind === "game_invite_card"
+                                ? `Room ${(pendingShareCard.payload as ChatGameInviteCardPayload).roomId ?? ""}`.trim()
+                                : "Encrypted preview"}
+                          </span>
                           <p>{getPendingShareCardSnippet(pendingShareCard)}</p>
                         </div>
 

@@ -68,6 +68,7 @@ import type {
   UpsertChatIdentityResponse,
   RecordChatKeyBackupPinAttemptResponse,
   ClearChatKeyBackupPinAttemptResponse,
+  CommunitiesMyResponse,
   UpdateUsernameRequest,
   UpdateUsernameResponse,
   UserSearchResponse
@@ -646,6 +647,10 @@ export async function getCampusResources(viewer: DevSession, options?: { courseI
   }
 
   return fetchBackendJson<ListResourcesResponse>(`/v1/resources?${params.toString()}`, viewer);
+}
+
+export async function getMyCampusCommunities(viewer: DevSession) {
+  return fetchBackendJson<CommunitiesMyResponse>("/v1/communities/my", viewer);
 }
 
 export async function getViewerActivity(viewer: DevSession, limit = 20) {

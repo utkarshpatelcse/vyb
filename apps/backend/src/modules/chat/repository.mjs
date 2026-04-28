@@ -1331,6 +1331,7 @@ function mapChatMessage(item, reactionsByMessageId = new Map()) {
       item.messageKind === "event_card" ||
       item.messageKind === "deal_card" ||
       item.messageKind === "profile_card" ||
+      item.messageKind === "game_invite_card" ||
       item.messageKind === "system"
         ? item.messageKind
         : "text",
@@ -2229,6 +2230,7 @@ export async function sendChatMessage(viewer, conversationId, payload) {
     payload.messageKind === "event_card" ||
     payload.messageKind === "deal_card" ||
     payload.messageKind === "profile_card" ||
+    payload.messageKind === "game_invite_card" ||
     payload.messageKind === "system"
       ? payload.messageKind
       : "text";

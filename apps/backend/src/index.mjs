@@ -12,6 +12,11 @@ import { getModerationModuleHealth, handleModerationRoute } from "./modules/mode
 import { getResourcesModuleHealth, handleResourcesRoute } from "./modules/resources/index.mjs";
 import { canOpenSocialRealtimeConnection, getSocialModuleHealth, handleSocialRoute } from "./modules/social/index.mjs";
 import { attachSocialWebSocketServer } from "./modules/social/realtime-hub.mjs";
+import {
+  attachScribbleWebSocketServer,
+  getScribbleModuleHealth,
+  handleScribblePublicRoomsRoute
+} from "./modules/games/scribble-realtime-hub.mjs";
 
 loadRootEnv();
 
@@ -56,7 +61,8 @@ const server = createServer(async (request, response) => {
             getChatModuleHealth(),
             getResourcesModuleHealth(),
             getMarketModuleHealth(),
-            getModerationModuleHealth()
+            getModerationModuleHealth(),
+            getScribbleModuleHealth()
           ]
         },
         {
@@ -116,6 +122,10 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    if (await handleScribblePublicRoomsRoute({ request, response, url, context })) {
+      return;
+    }
+
     for (const handler of routeHandlers) {
       // Each module decides whether it owns the route and writes the response directly.
       if (await handler({ request, response, url, context })) {
@@ -160,6 +170,8 @@ attachChatWebSocketServer(server, {
 attachSocialWebSocketServer(server, {
   authorizeConnection: canOpenSocialRealtimeConnection
 });
+
+attachScribbleWebSocketServer(server);
 
 server.listen(port, () => {
   console.log(`[backend] listening on http://localhost:${port}`);

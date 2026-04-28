@@ -561,10 +561,21 @@ export interface ActivityListResponse {
 }
 
 export type ChatConversationKind = "direct";
-export type ChatMessageKind = "text" | "image" | "vibe_card" | "event_card" | "deal_card" | "profile_card" | "system";
+export type ChatMessageKind =
+  | "text"
+  | "image"
+  | "vibe_card"
+  | "event_card"
+  | "deal_card"
+  | "profile_card"
+  | "game_invite_card"
+  | "system";
 export type ChatSeedType = "deal" | "vibe";
 export type ChatMessageTtlKey = "instant" | "1h" | "24h" | "7d" | "30d" | "90d";
-export type ChatShareCardKind = Extract<ChatMessageKind, "vibe_card" | "event_card" | "deal_card" | "profile_card">;
+export type ChatShareCardKind = Extract<
+  ChatMessageKind,
+  "vibe_card" | "event_card" | "deal_card" | "profile_card" | "game_invite_card"
+>;
 
 export interface ChatIdentitySummary {
   id: string;
@@ -655,11 +666,22 @@ export interface ChatProfileCardPayload extends ChatCardPayloadBase {
   collegeName?: string | null;
 }
 
+export interface ChatGameInviteCardPayload extends ChatCardPayloadBase {
+  gameSlug: string;
+  title: string;
+  subtitle?: string | null;
+  roomId?: string | null;
+  inviteUrl: string;
+  hostName?: string | null;
+  statusLabel?: string | null;
+}
+
 export type ChatShareCardPayload =
   | ChatVibeCardPayload
   | ChatEventCardPayload
   | ChatDealCardPayload
-  | ChatProfileCardPayload;
+  | ChatProfileCardPayload
+  | ChatGameInviteCardPayload;
 
 export interface ChatMessageReactionItem {
   membershipId: string;

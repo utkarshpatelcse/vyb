@@ -1,6 +1,7 @@
 import type {
   ChatDealCardPayload,
   ChatEventCardPayload,
+  ChatGameInviteCardPayload,
   ChatProfileCardPayload,
   ChatShareCardKind,
   ChatShareCardPayload,
@@ -16,6 +17,7 @@ export type MessageCardRendererProps = {
   onInterestedDeal?: (payload: ChatDealCardPayload) => void;
   onWatchVibe?: (payload: ChatVibeCardPayload) => void;
   onOpenEvent?: (payload: ChatEventCardPayload) => void;
+  onOpenGameInvite?: (payload: ChatGameInviteCardPayload) => void;
   onOpenProfile?: (payload: ChatProfileCardPayload) => void;
 };
 
@@ -64,6 +66,7 @@ export function MessageCardRenderer({
   onInterestedDeal,
   onWatchVibe,
   onOpenEvent,
+  onOpenGameInvite,
   onOpenProfile
 }: MessageCardRendererProps) {
   if (!payload) {
@@ -148,6 +151,28 @@ export function MessageCardRenderer({
             disabled={isOwnMessage}
           >
             {isOwnMessage ? "Shared by you" : "Interested"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (kind === "game_invite_card") {
+    const invite = payload as ChatGameInviteCardPayload;
+    return (
+      <div className="spm-message-card spm-message-card-game_invite_card">
+        <div className="spm-message-card-copy">
+          <strong>{invite.title || "Game invite"}</strong>
+          <span>{invite.statusLabel || "Private invite"}</span>
+          <p>{invite.subtitle || "Join this room on Vyb."}</p>
+          <small>
+            {invite.roomId ? `Room ${invite.roomId}` : "Tap to join"}
+            {invite.hostName ? ` • from ${invite.hostName}` : ""}
+          </small>
+        </div>
+        <div className="spm-message-card-actions">
+          <button type="button" className="spm-message-card-button" onClick={() => onOpenGameInvite?.(invite)}>
+            {invite.gameSlug.toLowerCase() === "scribble" ? "Open Scribble" : "Open game"}
           </button>
         </div>
       </div>

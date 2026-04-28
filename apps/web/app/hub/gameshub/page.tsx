@@ -1,13 +1,13 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { getViewerMe, getViewerProfile } from "../../src/lib/backend";
-import { CampusEventsShell } from "../../src/components/campus-events-shell";
-import { getDisplayCollegeName } from "../../src/lib/college-access";
-import { getDailyConnectHubSnapshot } from "../../src/lib/connect-data";
-import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
-import { getEventsDashboard } from "../../src/lib/events-data";
+import { getViewerMe, getViewerProfile } from "../../../src/lib/backend";
+import { CampusEventsShell } from "../../../src/components/campus-events-shell";
+import { getDisplayCollegeName } from "../../../src/lib/college-access";
+import { getDailyConnectHubSnapshot } from "../../../src/lib/connect-data";
+import { readDevSessionFromCookieStore } from "../../../src/lib/dev-session";
+import { getEventsDashboard } from "../../../src/lib/events-data";
 
-type HubPageProps = {
+type GamesHubPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
@@ -15,7 +15,7 @@ function getSearchParamValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-export default async function HubPage({ searchParams }: HubPageProps) {
+export default async function GamesHubPage({ searchParams }: GamesHubPageProps) {
   const viewer = readDevSessionFromCookieStore(await cookies());
 
   if (!viewer) {
@@ -23,14 +23,14 @@ export default async function HubPage({ searchParams }: HubPageProps) {
   }
 
   const resolvedSearchParams = (await searchParams) ?? {};
-  const initialGame = getSearchParamValue(resolvedSearchParams.game);
-  const initialScribbleCode = getSearchParamValue(resolvedSearchParams.code)
+  const initialGame = getSearchParamValue(resolvedSearchParams.game)?.trim().toLowerCase();
+  const roomCode = getSearchParamValue(resolvedSearchParams.code)
     ?.trim()
     .toUpperCase()
     .replace(/[^A-Z0-9]/gu, "");
 
   if (initialGame === "scribble") {
-    redirect(initialScribbleCode ? `/hub/gameshub/scribble?code=${encodeURIComponent(initialScribbleCode)}` : "/hub/gameshub/scribble");
+    redirect(roomCode ? `/hub/gameshub/scribble?code=${encodeURIComponent(roomCode)}` : "/hub/gameshub/scribble");
   }
 
   if (initialGame === "connect") {

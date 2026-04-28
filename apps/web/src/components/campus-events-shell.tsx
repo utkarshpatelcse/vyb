@@ -19,7 +19,6 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import { CampusAvatarContent, useResolvedAvatarUrl } from "./campus-avatar";
 import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
-import { ConnectDailyGame } from "./connect-daily-game";
 import { SignOutButton } from "./sign-out-button";
 import { VybLogoLockup } from "./vyb-logo";
 
@@ -452,7 +451,6 @@ export function CampusEventsShell({
   const [hostRegistrationQuery, setHostRegistrationQuery] = useState("");
   const [hostRegistrationStatuses, setHostRegistrationStatuses] = useState<CampusEventRegistrationStatus[]>([]);
   const [activeTab, setActiveTab] = useState<"games" | "events">(initialTab);
-  const [connectOpen, setConnectOpen] = useState(false);
   const registrationFileInputRef = useRef<HTMLInputElement | null>(null);
   const resizeState = useRef<{ side: ResizeSide; startX: number; startWidth: number } | null>(null);
   const viewerAvatarUrl = useResolvedAvatarUrl({
@@ -996,16 +994,13 @@ export function CampusEventsShell({
             className={`spm-tab-item ${activeTab === "events" ? "is-active" : ""}`}
             onClick={() => {
               setActiveTab("events");
-              setConnectOpen(false);
             }}
           >
             EVENTS HUB
           </button>
         </div>
 
-        {activeTab === "games" && connectOpen ? (
-          <ConnectDailyGame onExit={() => setConnectOpen(false)} />
-        ) : activeTab === "games" ? (
+        {activeTab === "games" ? (
           <div className="vyb-games-container">
             <header className="vyb-games-header">
               <div className="vyb-games-rank-left">
@@ -1048,18 +1043,52 @@ export function CampusEventsShell({
                     </div>
                   ) : null}
                 </div>
-                <button type="button" className="vyb-games-play-btn" onClick={() => setConnectOpen(true)}>Play</button>
+                <Link href="/hub/gameshub/connect" className="vyb-games-play-btn">Play</Link>
               </div>
             </section>
 
             <div>
               <h3 className="vyb-games-section-title">Game Library</h3>
               <div className="vyb-games-grid">
-                <div className="vyb-games-glass-card">
-                  <div className="vyb-games-icon">🎨</div>
-                  <h4 className="vyb-games-card-title">Scribble</h4>
-                  <p className="vyb-games-card-subtitle">Multiplayer Chat</p>
-                </div>
+                <Link
+                  href="/hub/gameshub/scribble"
+                  className="vyb-games-glass-card"
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.6rem",
+                    background: "linear-gradient(135deg, rgba(99,102,241,0.18) 0%, rgba(139,92,246,0.22) 100%)",
+                    border: "1px solid rgba(139,92,246,0.3)",
+                    position: "relative",
+                    overflow: "hidden",
+                    textDecoration: "none",
+                  }}
+                >
+                  {/* glow top-right */}
+                  <div style={{ position: "absolute", top: "-1.5rem", right: "-1.5rem", width: "5rem", height: "5rem", borderRadius: "50%", background: "rgba(139,92,246,0.2)", filter: "blur(20px)", pointerEvents: "none" }} />
+
+                  {/* top row: icon + LIVE pill */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div className="vyb-games-icon" style={{ background: "rgba(139,92,246,0.15)" }}>🎨</div>
+                    <span style={{ display: "flex", alignItems: "center", gap: "0.3rem", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: "999px", padding: "0.22rem 0.65rem", fontSize: "0.7rem", fontWeight: 800, color: "#34d399", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#34d399", boxShadow: "0 0 6px #34d399" }} />
+                      Live
+                    </span>
+                  </div>
+
+                  {/* title + subtitle */}
+                  <div>
+                    <h4 className="vyb-games-card-title" style={{ color: "#fff", fontSize: "1rem" }}>Scribble</h4>
+                    <p className="vyb-games-card-subtitle">Draw · Guess · Repeat</p>
+                  </div>
+
+                  {/* play button */}
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "0.25rem" }}>
+                    <span style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)", color: "#fff", borderRadius: "999px", padding: "0.45rem 1.2rem", fontSize: "0.82rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em", boxShadow: "0 4px 12px rgba(99,102,241,0.4)" }}>
+                      Play
+                    </span>
+                  </div>
+                </Link>
                 <div className="vyb-games-glass-card">
                   <div className="vyb-games-icon">🃏</div>
                   <h4 className="vyb-games-card-title">Uno Cards</h4>
