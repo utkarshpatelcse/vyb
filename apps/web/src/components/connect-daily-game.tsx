@@ -344,7 +344,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     const distance = Math.hypot(releasePoint.x - targetCenter.x, releasePoint.y - targetCenter.y);
     const releaseCell = getPointFromClientPosition(clientX, clientY);
 
-    return distance <= 0.72 || Boolean(releaseCell && cellKey(releaseCell) === cellKey(targetDot));
+    return distance <= 1.05 || Boolean(releaseCell && cellKey(releaseCell) === cellKey(targetDot));
   }
 
   function buildStraightTargets(from: ConnectCoordinate, to: ConnectCoordinate) {
@@ -569,6 +569,10 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     if (point) {
       scheduleActiveLineUpdate(point);
     }
+
+    if (isNearTarget(clientX, clientY, activeDrag.targetDot)) {
+      finishActiveDrag(clientX, clientY);
+    }
   }
 
   function finishActiveDrag(clientX: number, clientY: number) {
@@ -588,6 +592,26 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
 
     setMessage(`Release on dot ${activeDrag.targetDot.id} to connect.`);
     endDrag({ fade: true });
+  }
+
+  function handleDotPointerMove(event: ReactPointerEvent<HTMLSpanElement>) {
+    const activeDrag = activeDragRef.current;
+    if (!activeDrag || activeDrag.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    updateActiveDrag(event.clientX, event.clientY);
+  }
+
+  function handleDotPointerUp(event: ReactPointerEvent<HTMLSpanElement>) {
+    const activeDrag = activeDragRef.current;
+    if (!activeDrag || activeDrag.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    finishActiveDrag(event.clientX, event.clientY);
   }
 
   useEffect(() => {
@@ -776,7 +800,14 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
         >
           {isPath ? <span className="vyb-connect-step">{pathIndex + 1}</span> : null}
           {dot ? (
-            <span className="vyb-connect-dot-label" onPointerDown={(event) => handleDotPointerDown(event, dot)}>
+            <span
+              className="vyb-connect-dot-label"
+              onPointerDown={(event) => handleDotPointerDown(event, dot)}
+              onPointerMove={handleDotPointerMove}
+              onPointerUp={handleDotPointerUp}
+              onPointerCancel={() => endDrag({ fade: true })}
+              onLostPointerCapture={() => endDrag({ fade: true })}
+            >
               {dot.id}
             </span>
           ) : null}
