@@ -437,6 +437,14 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     applyCellFromClientPosition(event.clientX, event.clientY);
   }
 
+  function handleInputPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+    if (isDraggingRef.current) {
+      applyCellFromClientPosition(event.clientX, event.clientY);
+    }
+
+    endDrag();
+  }
+
   function handleInputMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
     event.preventDefault();
     startDragFromClientPosition(event.clientX, event.clientY);
@@ -451,6 +459,14 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     applyCellFromClientPosition(event.clientX, event.clientY);
   }
 
+  function handleInputMouseUp(event: ReactMouseEvent<HTMLDivElement>) {
+    if (isDraggingRef.current) {
+      applyCellFromClientPosition(event.clientX, event.clientY);
+    }
+
+    endDrag();
+  }
+
   function handleInputClick(event: ReactMouseEvent<HTMLDivElement>) {
     event.preventDefault();
     lastAppliedCellKeyRef.current = null;
@@ -463,7 +479,6 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
       return;
     }
 
-    event.preventDefault();
     startDragFromClientPosition(touch.clientX, touch.clientY);
   }
 
@@ -473,8 +488,16 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
       return;
     }
 
-    event.preventDefault();
     applyCellFromClientPosition(touch.clientX, touch.clientY);
+  }
+
+  function handleInputTouchEnd(event: ReactTouchEvent<HTMLDivElement>) {
+    const touch = event.changedTouches[0];
+    if (touch && isDraggingRef.current) {
+      applyCellFromClientPosition(touch.clientX, touch.clientY);
+    }
+
+    endDrag();
   }
 
   function endDrag() {
@@ -747,16 +770,16 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
             aria-label="Connect board drawing area"
             onPointerDown={handleInputPointerDown}
             onPointerMove={handleInputPointerMove}
-            onPointerUp={endDrag}
+            onPointerUp={handleInputPointerUp}
             onPointerCancel={endDrag}
             onMouseDown={handleInputMouseDown}
             onMouseMove={handleInputMouseMove}
-            onMouseUp={endDrag}
+            onMouseUp={handleInputMouseUp}
             onMouseLeave={endDrag}
             onClick={handleInputClick}
             onTouchStart={handleInputTouchStart}
             onTouchMove={handleInputTouchMove}
-            onTouchEnd={endDrag}
+            onTouchEnd={handleInputTouchEnd}
             onTouchCancel={endDrag}
           />
         </div>
