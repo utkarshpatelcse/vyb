@@ -25,16 +25,8 @@ type GhostHint = {
   expiresAt: string;
 };
 
-type SvgPoint = {
-  x: number;
-  y: number;
-};
-
 type ActiveDrag = {
   pointerId: number;
-  sourceDot: ConnectCoordinate & { id: number };
-  targetDot: ConnectCoordinate & { id: number };
-  start: SvgPoint;
 };
 
 function cellKey(point: ConnectCoordinate) {
@@ -88,10 +80,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const autoSubmitKeyRef = useRef("");
   const boardRef = useRef<HTMLDivElement | null>(null);
-  const activeLineRef = useRef<SVGPathElement | null>(null);
   const activeDragRef = useRef<ActiveDrag | null>(null);
-  const pendingLinePointRef = useRef<SvgPoint | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
   const lastAppliedCellKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -245,108 +234,6 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     };
   }
 
-  function getSvgPointFromClientPosition(clientX: number, clientY: number): SvgPoint | null {
-    if (!level) {
-      return null;
-    }
-
-    const board = boardRef.current;
-    if (!board) {
-      return null;
-    }
-
-    const bounds = board.getBoundingClientRect();
-    const style = window.getComputedStyle(board);
-    const leftPadding = Number.parseFloat(style.paddingLeft) || 0;
-    const topPadding = Number.parseFloat(style.paddingTop) || 0;
-    const rightPadding = Number.parseFloat(style.paddingRight) || leftPadding;
-    const bottomPadding = Number.parseFloat(style.paddingBottom) || topPadding;
-    const gridLeft = bounds.left + leftPadding;
-    const gridTop = bounds.top + topPadding;
-    const gridWidth = bounds.width - leftPadding - rightPadding;
-    const gridHeight = bounds.height - topPadding - bottomPadding;
-    const relativeX = clientX - gridLeft;
-    const relativeY = clientY - gridTop;
-
-    return {
-      x: Math.min(level.gridSize, Math.max(0, (relativeX / gridWidth) * level.gridSize)),
-      y: Math.min(level.gridSize, Math.max(0, (relativeY / gridHeight) * level.gridSize))
-    };
-  }
-
-  function getCenterPoint(point: ConnectCoordinate): SvgPoint {
-    return { x: point.y + 0.5, y: point.x + 0.5 };
-  }
-
-  function setActiveLine(start: SvgPoint, end: SvgPoint, fading = false) {
-    const line = activeLineRef.current;
-    if (!line) {
-      return;
-    }
-
-    line.setAttribute("d", `M ${start.x} ${start.y} L ${end.x} ${end.y}`);
-    line.classList.toggle("is-active", !fading);
-    line.classList.toggle("is-fading", fading);
-  }
-
-  function clearActiveLine() {
-    const line = activeLineRef.current;
-    if (!line) {
-      return;
-    }
-
-    line.setAttribute("d", "");
-    line.classList.remove("is-active", "is-fading");
-  }
-
-  function scheduleActiveLineUpdate(point: SvgPoint) {
-    pendingLinePointRef.current = point;
-
-    if (animationFrameRef.current !== null) {
-      return;
-    }
-
-    animationFrameRef.current = window.requestAnimationFrame(() => {
-      animationFrameRef.current = null;
-      const activeDrag = activeDragRef.current;
-      const endPoint = pendingLinePointRef.current;
-      if (!activeDrag || !endPoint) {
-        return;
-      }
-
-      setActiveLine(activeDrag.start, endPoint);
-    });
-  }
-
-  function getExpectedDragTarget(sourceDot: ConnectCoordinate & { id: number }) {
-    if (!level) {
-      return null;
-    }
-
-    const currentHead = pathCells[pathCells.length - 1] ?? null;
-    const isStartingPath = pathCells.length === 0 && sourceDot.id === 1;
-    const isContinuingFromHead = Boolean(currentHead && cellKey(currentHead) === cellKey(sourceDot));
-
-    if (!isStartingPath && !isContinuingFromHead) {
-      return null;
-    }
-
-    return level.dots.find((dot) => dot.id === sourceDot.id + 1) ?? null;
-  }
-
-  function isNearTarget(clientX: number, clientY: number, targetDot: ConnectCoordinate) {
-    const releasePoint = getSvgPointFromClientPosition(clientX, clientY);
-    if (!releasePoint) {
-      return false;
-    }
-
-    const targetCenter = getCenterPoint(targetDot);
-    const distance = Math.hypot(releasePoint.x - targetCenter.x, releasePoint.y - targetCenter.y);
-    const releaseCell = getPointFromClientPosition(clientX, clientY);
-
-    return distance <= 1.05 || Boolean(releaseCell && cellKey(releaseCell) === cellKey(targetDot));
-  }
-
   function buildStraightTargets(from: ConnectCoordinate, to: ConnectCoordinate) {
     if (from.x === to.x) {
       const step = to.y > from.y ? 1 : -1;
@@ -497,39 +384,48 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     });
   }
 
-  function endDrag(options: { fade?: boolean } = {}) {
-    isDraggingRef.current = false;
-    activeDragRef.current = null;
-    pendingLinePointRef.current = null;
-    lastAppliedCellKeyRef.current = null;
-
-    if (animationFrameRef.current !== null) {
-      window.cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
+  function canStartDragAt(point: ConnectCoordinate) {
+    if (result?.solved) {
+      return false;
     }
 
-    if (options.fade && activeLineRef.current?.getAttribute("d")) {
-      activeLineRef.current.classList.remove("is-active");
-      activeLineRef.current.classList.add("is-fading");
-      window.setTimeout(() => {
-        if (!activeDragRef.current) {
-          clearActiveLine();
-        }
-      }, 180);
-      return;
+    const dot = dotByKey.get(cellKey(point));
+    if (pathCells.length === 0) {
+      return dot?.id === 1;
     }
 
-    clearActiveLine();
+    const currentHead = pathCells[pathCells.length - 1];
+    return Boolean(currentHead && cellKey(currentHead) === cellKey(point));
   }
 
-  function handleDotPointerDown(event: ReactPointerEvent<HTMLSpanElement>, dot: ConnectCoordinate & { id: number }) {
-    if (result?.solved) {
+  function startDragAt(point: ConnectCoordinate, pointerId: number) {
+    activeDragRef.current = { pointerId };
+    isDraggingRef.current = true;
+    lastAppliedCellKeyRef.current = null;
+    applyCell(point);
+  }
+
+  function updateDragAt(clientX: number, clientY: number) {
+    const point = getPointFromClientPosition(clientX, clientY);
+    if (point) {
+      applyCell(point);
+    }
+  }
+
+  function endDrag() {
+    isDraggingRef.current = false;
+    activeDragRef.current = null;
+    lastAppliedCellKeyRef.current = null;
+  }
+
+  function handleBoardPointerDown(event: ReactPointerEvent<HTMLDivElement | HTMLSpanElement>) {
+    const point = getPointFromClientPosition(event.clientX, event.clientY);
+    if (!point) {
       return;
     }
 
-    const targetDot = getExpectedDragTarget(dot);
-    if (!targetDot) {
-      setMessage(pathCells.length === 0 ? "Start from dot 1." : `Continue from dot ${nextDotId - 1}.`);
+    if (!canStartDragAt(point)) {
+      setMessage(pathCells.length === 0 ? "Start from dot 1." : "Continue from the current path head.");
       return;
     }
 
@@ -542,76 +438,28 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
       // Capture can fail in device emulation; window-level pointer listeners still keep the drag alive.
     }
 
-    const start = getCenterPoint(dot);
-    const current = getSvgPointFromClientPosition(event.clientX, event.clientY) ?? start;
-    activeDragRef.current = {
-      pointerId: event.pointerId,
-      sourceDot: dot,
-      targetDot,
-      start
-    };
-    isDraggingRef.current = true;
-    lastAppliedCellKeyRef.current = null;
-    setActiveLine(start, current);
-
-    if (pathCells.length === 0) {
-      applyCell(dot);
-    }
+    startDragAt(point, event.pointerId);
   }
 
-  function updateActiveDrag(clientX: number, clientY: number) {
-    const activeDrag = activeDragRef.current;
-    if (!activeDrag) {
-      return;
-    }
-
-    const point = getSvgPointFromClientPosition(clientX, clientY);
-    if (point) {
-      scheduleActiveLineUpdate(point);
-    }
-
-    if (isNearTarget(clientX, clientY, activeDrag.targetDot)) {
-      finishActiveDrag(clientX, clientY);
-    }
-  }
-
-  function finishActiveDrag(clientX: number, clientY: number) {
-    const activeDrag = activeDragRef.current;
-    if (!activeDrag) {
-      return;
-    }
-
-    if (isNearTarget(clientX, clientY, activeDrag.targetDot)) {
-      const targetCenter = getCenterPoint(activeDrag.targetDot);
-      setActiveLine(activeDrag.start, targetCenter);
-      lastAppliedCellKeyRef.current = null;
-      applyCell(activeDrag.targetDot);
-      endDrag();
-      return;
-    }
-
-    setMessage(`Release on dot ${activeDrag.targetDot.id} to connect.`);
-    endDrag({ fade: true });
-  }
-
-  function handleDotPointerMove(event: ReactPointerEvent<HTMLSpanElement>) {
+  function handleBoardPointerMove(event: ReactPointerEvent<HTMLDivElement | HTMLSpanElement>) {
     const activeDrag = activeDragRef.current;
     if (!activeDrag || activeDrag.pointerId !== event.pointerId) {
       return;
     }
 
     event.preventDefault();
-    updateActiveDrag(event.clientX, event.clientY);
+    updateDragAt(event.clientX, event.clientY);
   }
 
-  function handleDotPointerUp(event: ReactPointerEvent<HTMLSpanElement>) {
+  function handleBoardPointerUp(event: ReactPointerEvent<HTMLDivElement | HTMLSpanElement>) {
     const activeDrag = activeDragRef.current;
     if (!activeDrag || activeDrag.pointerId !== event.pointerId) {
       return;
     }
 
     event.preventDefault();
-    finishActiveDrag(event.clientX, event.clientY);
+    updateDragAt(event.clientX, event.clientY);
+    endDrag();
   }
 
   useEffect(() => {
@@ -622,7 +470,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
       }
 
       event.preventDefault();
-      updateActiveDrag(event.clientX, event.clientY);
+      updateDragAt(event.clientX, event.clientY);
     }
 
     function handleGlobalPointerEnd(event: globalThis.PointerEvent) {
@@ -631,11 +479,12 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
         return;
       }
 
-      finishActiveDrag(event.clientX, event.clientY);
+      updateDragAt(event.clientX, event.clientY);
+      endDrag();
     }
 
     function handleWindowBlur() {
-      endDrag({ fade: true });
+      endDrag();
     }
 
     document.addEventListener("pointermove", handleGlobalPointerMove, { passive: false });
@@ -802,11 +651,11 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
           {dot ? (
             <span
               className="vyb-connect-dot-label"
-              onPointerDown={(event) => handleDotPointerDown(event, dot)}
-              onPointerMove={handleDotPointerMove}
-              onPointerUp={handleDotPointerUp}
-              onPointerCancel={() => endDrag({ fade: true })}
-              onLostPointerCapture={() => endDrag({ fade: true })}
+              onPointerDown={handleBoardPointerDown}
+              onPointerMove={handleBoardPointerMove}
+              onPointerUp={handleBoardPointerUp}
+              onPointerCancel={endDrag}
+              onLostPointerCapture={endDrag}
             >
               {dot.id}
             </span>
@@ -842,6 +691,10 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
           ref={boardRef}
           className="vyb-connect-board"
           style={{ "--connect-grid-size": level.gridSize } as CSSProperties}
+          onPointerDown={handleBoardPointerDown}
+          onPointerMove={handleBoardPointerMove}
+          onPointerUp={handleBoardPointerUp}
+          onPointerCancel={endDrag}
         >
           <svg className="vyb-connect-path-layer" viewBox={`0 0 ${level.gridSize} ${level.gridSize}`} preserveAspectRatio="none" aria-hidden="true">
             <defs>
@@ -869,15 +722,6 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
                 strokeLinejoin="round"
               />
             ) : null}
-            <path
-              ref={activeLineRef}
-              className="vyb-connect-active-line"
-              fill="none"
-              stroke={`url(#${pathGradientId})`}
-              strokeWidth={pathStrokeWidth + 0.08}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
             {hintFromPoint && hintNextPoint ? (
               <line
                 className="vyb-connect-hint-line"
