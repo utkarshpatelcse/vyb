@@ -4540,6 +4540,7 @@
     linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(8, 13, 26, 0.98));
   color: var(--connect-ink);
   min-height: 100%;
+  touch-action: none;
 }
 
 .vyb-connect-topbar,
@@ -4716,6 +4717,22 @@
   animation: vybConnectRouteDraw 0.18s ease-out;
 }
 
+.vyb-connect-active-line {
+  opacity: 0;
+  pointer-events: none;
+  filter: drop-shadow(0 0 0.38rem rgba(34, 211, 238, 0.66)) drop-shadow(0 0 0.9rem rgba(99, 102, 241, 0.36));
+  transition: opacity 0.12s ease;
+}
+
+.vyb-connect-active-line.is-active {
+  opacity: 1;
+}
+
+.vyb-connect-active-line.is-fading {
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
 .vyb-connect-hint-line {
   animation: vybConnectHintLine 0.9s ease-in-out infinite alternate;
 }
@@ -4730,18 +4747,6 @@
   grid-template-columns: repeat(var(--connect-grid-size), minmax(0, 1fr));
   grid-template-rows: repeat(var(--connect-grid-size), minmax(0, 1fr));
   pointer-events: none;
-}
-
-.vyb-connect-input-layer {
-  position: absolute;
-  inset: var(--connect-board-pad);
-  z-index: 10;
-  background: rgba(255, 255, 255, 0);
-  cursor: crosshair;
-  pointer-events: auto;
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
 }
 
 .vyb-connect-cell {
@@ -4823,6 +4828,15 @@
   color: #ffffff;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.48);
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.32);
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.vyb-connect-dot-label:active {
+  cursor: grabbing;
 }
 
 .vyb-connect-step {

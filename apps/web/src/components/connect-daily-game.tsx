@@ -12,9 +12,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type MouseEvent as ReactMouseEvent,
-  type PointerEvent as ReactPointerEvent,
-  type TouchEvent as ReactTouchEvent
+  type PointerEvent as ReactPointerEvent
 } from "react";
 
 type ConnectDailyGameProps = {
@@ -25,6 +23,18 @@ type GhostHint = {
   from: ConnectCoordinate | null;
   next: ConnectCoordinate;
   expiresAt: string;
+};
+
+type SvgPoint = {
+  x: number;
+  y: number;
+};
+
+type ActiveDrag = {
+  pointerId: number;
+  sourceDot: ConnectCoordinate & { id: number };
+  targetDot: ConnectCoordinate & { id: number };
+  start: SvgPoint;
 };
 
 function cellKey(point: ConnectCoordinate) {
@@ -78,6 +88,10 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const autoSubmitKeyRef = useRef("");
   const boardRef = useRef<HTMLDivElement | null>(null);
+  const activeLineRef = useRef<SVGPathElement | null>(null);
+  const activeDragRef = useRef<ActiveDrag | null>(null);
+  const pendingLinePointRef = useRef<SvgPoint | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
   const lastAppliedCellKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -122,21 +136,6 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
   useEffect(() => {
     const intervalId = window.setInterval(() => setNowMs(Date.now()), 250);
     return () => window.clearInterval(intervalId);
-  }, []);
-
-  useEffect(() => {
-    function endDrag() {
-      isDraggingRef.current = false;
-      lastAppliedCellKeyRef.current = null;
-    }
-
-    window.addEventListener("pointerup", endDrag);
-    window.addEventListener("pointercancel", endDrag);
-
-    return () => {
-      window.removeEventListener("pointerup", endDrag);
-      window.removeEventListener("pointercancel", endDrag);
-    };
   }, []);
 
   useEffect(() => {
@@ -244,6 +243,108 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
       x: Math.min(level.gridSize - 1, Math.max(0, Math.floor((relativeY / gridHeight) * level.gridSize))),
       y: Math.min(level.gridSize - 1, Math.max(0, Math.floor((relativeX / gridWidth) * level.gridSize)))
     };
+  }
+
+  function getSvgPointFromClientPosition(clientX: number, clientY: number): SvgPoint | null {
+    if (!level) {
+      return null;
+    }
+
+    const board = boardRef.current;
+    if (!board) {
+      return null;
+    }
+
+    const bounds = board.getBoundingClientRect();
+    const style = window.getComputedStyle(board);
+    const leftPadding = Number.parseFloat(style.paddingLeft) || 0;
+    const topPadding = Number.parseFloat(style.paddingTop) || 0;
+    const rightPadding = Number.parseFloat(style.paddingRight) || leftPadding;
+    const bottomPadding = Number.parseFloat(style.paddingBottom) || topPadding;
+    const gridLeft = bounds.left + leftPadding;
+    const gridTop = bounds.top + topPadding;
+    const gridWidth = bounds.width - leftPadding - rightPadding;
+    const gridHeight = bounds.height - topPadding - bottomPadding;
+    const relativeX = clientX - gridLeft;
+    const relativeY = clientY - gridTop;
+
+    return {
+      x: Math.min(level.gridSize, Math.max(0, (relativeX / gridWidth) * level.gridSize)),
+      y: Math.min(level.gridSize, Math.max(0, (relativeY / gridHeight) * level.gridSize))
+    };
+  }
+
+  function getCenterPoint(point: ConnectCoordinate): SvgPoint {
+    return { x: point.y + 0.5, y: point.x + 0.5 };
+  }
+
+  function setActiveLine(start: SvgPoint, end: SvgPoint, fading = false) {
+    const line = activeLineRef.current;
+    if (!line) {
+      return;
+    }
+
+    line.setAttribute("d", `M ${start.x} ${start.y} L ${end.x} ${end.y}`);
+    line.classList.toggle("is-active", !fading);
+    line.classList.toggle("is-fading", fading);
+  }
+
+  function clearActiveLine() {
+    const line = activeLineRef.current;
+    if (!line) {
+      return;
+    }
+
+    line.setAttribute("d", "");
+    line.classList.remove("is-active", "is-fading");
+  }
+
+  function scheduleActiveLineUpdate(point: SvgPoint) {
+    pendingLinePointRef.current = point;
+
+    if (animationFrameRef.current !== null) {
+      return;
+    }
+
+    animationFrameRef.current = window.requestAnimationFrame(() => {
+      animationFrameRef.current = null;
+      const activeDrag = activeDragRef.current;
+      const endPoint = pendingLinePointRef.current;
+      if (!activeDrag || !endPoint) {
+        return;
+      }
+
+      setActiveLine(activeDrag.start, endPoint);
+    });
+  }
+
+  function getExpectedDragTarget(sourceDot: ConnectCoordinate & { id: number }) {
+    if (!level) {
+      return null;
+    }
+
+    const currentHead = pathCells[pathCells.length - 1] ?? null;
+    const isStartingPath = pathCells.length === 0 && sourceDot.id === 1;
+    const isContinuingFromHead = Boolean(currentHead && cellKey(currentHead) === cellKey(sourceDot));
+
+    if (!isStartingPath && !isContinuingFromHead) {
+      return null;
+    }
+
+    return level.dots.find((dot) => dot.id === sourceDot.id + 1) ?? null;
+  }
+
+  function isNearTarget(clientX: number, clientY: number, targetDot: ConnectCoordinate) {
+    const releasePoint = getSvgPointFromClientPosition(clientX, clientY);
+    if (!releasePoint) {
+      return false;
+    }
+
+    const targetCenter = getCenterPoint(targetDot);
+    const distance = Math.hypot(releasePoint.x - targetCenter.x, releasePoint.y - targetCenter.y);
+    const releaseCell = getPointFromClientPosition(clientX, clientY);
+
+    return distance <= 0.72 || Boolean(releaseCell && cellKey(releaseCell) === cellKey(targetDot));
   }
 
   function buildStraightTargets(from: ConnectCoordinate, to: ConnectCoordinate) {
@@ -396,145 +497,133 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     });
   }
 
-  function startDragAtPoint(point: ConnectCoordinate) {
-    isDraggingRef.current = true;
+  function endDrag(options: { fade?: boolean } = {}) {
+    isDraggingRef.current = false;
+    activeDragRef.current = null;
+    pendingLinePointRef.current = null;
     lastAppliedCellKeyRef.current = null;
-    applyCell(point);
-  }
 
-  function startDragFromClientPosition(clientX: number, clientY: number) {
-    const point = getPointFromClientPosition(clientX, clientY);
-
-    if (point) {
-      startDragAtPoint(point);
+    if (animationFrameRef.current !== null) {
+      window.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
     }
-  }
 
-  function applyCellFromClientPosition(clientX: number, clientY: number) {
-    const point = getPointFromClientPosition(clientX, clientY);
-
-    if (point) {
-      applyCell(point);
+    if (options.fade && activeLineRef.current?.getAttribute("d")) {
+      activeLineRef.current.classList.remove("is-active");
+      activeLineRef.current.classList.add("is-fading");
+      window.setTimeout(() => {
+        if (!activeDragRef.current) {
+          clearActiveLine();
+        }
+      }, 180);
+      return;
     }
+
+    clearActiveLine();
   }
 
-  function handleInputPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+  function handleDotPointerDown(event: ReactPointerEvent<HTMLSpanElement>, dot: ConnectCoordinate & { id: number }) {
+    if (result?.solved) {
+      return;
+    }
+
+    const targetDot = getExpectedDragTarget(dot);
+    if (!targetDot) {
+      setMessage(pathCells.length === 0 ? "Start from dot 1." : `Continue from dot ${nextDotId - 1}.`);
+      return;
+    }
+
     event.preventDefault();
+    event.stopPropagation();
+
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
     } catch {
-      // Some embedded browsers release pointer capture when devtools/emulation is active.
-    }
-    startDragFromClientPosition(event.clientX, event.clientY);
-  }
-
-  function handleInputPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
-    if (!isDraggingRef.current) {
-      return;
+      // Capture can fail in device emulation; window-level pointer listeners still keep the drag alive.
     }
 
-    event.preventDefault();
-    applyCellFromClientPosition(event.clientX, event.clientY);
-  }
-
-  function handleInputPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
-    if (isDraggingRef.current) {
-      applyCellFromClientPosition(event.clientX, event.clientY);
-    }
-
-    endDrag();
-  }
-
-  function handleInputMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
-    event.preventDefault();
-    startDragFromClientPosition(event.clientX, event.clientY);
-  }
-
-  function handleInputMouseMove(event: ReactMouseEvent<HTMLDivElement>) {
-    if (!isDraggingRef.current) {
-      return;
-    }
-
-    event.preventDefault();
-    applyCellFromClientPosition(event.clientX, event.clientY);
-  }
-
-  function handleInputMouseUp(event: ReactMouseEvent<HTMLDivElement>) {
-    if (isDraggingRef.current) {
-      applyCellFromClientPosition(event.clientX, event.clientY);
-    }
-
-    endDrag();
-  }
-
-  function handleInputClick(event: ReactMouseEvent<HTMLDivElement>) {
-    event.preventDefault();
+    const start = getCenterPoint(dot);
+    const current = getSvgPointFromClientPosition(event.clientX, event.clientY) ?? start;
+    activeDragRef.current = {
+      pointerId: event.pointerId,
+      sourceDot: dot,
+      targetDot,
+      start
+    };
+    isDraggingRef.current = true;
     lastAppliedCellKeyRef.current = null;
-    applyCellFromClientPosition(event.clientX, event.clientY);
+    setActiveLine(start, current);
+
+    if (pathCells.length === 0) {
+      applyCell(dot);
+    }
   }
 
-  function handleInputTouchStart(event: ReactTouchEvent<HTMLDivElement>) {
-    const touch = event.touches[0];
-    if (!touch) {
+  function updateActiveDrag(clientX: number, clientY: number) {
+    const activeDrag = activeDragRef.current;
+    if (!activeDrag) {
       return;
     }
 
-    startDragFromClientPosition(touch.clientX, touch.clientY);
+    const point = getSvgPointFromClientPosition(clientX, clientY);
+    if (point) {
+      scheduleActiveLineUpdate(point);
+    }
   }
 
-  function handleInputTouchMove(event: ReactTouchEvent<HTMLDivElement>) {
-    const touch = event.touches[0];
-    if (!touch || !isDraggingRef.current) {
+  function finishActiveDrag(clientX: number, clientY: number) {
+    const activeDrag = activeDragRef.current;
+    if (!activeDrag) {
       return;
     }
 
-    applyCellFromClientPosition(touch.clientX, touch.clientY);
-  }
-
-  function handleInputTouchEnd(event: ReactTouchEvent<HTMLDivElement>) {
-    const touch = event.changedTouches[0];
-    if (touch && isDraggingRef.current) {
-      applyCellFromClientPosition(touch.clientX, touch.clientY);
+    if (isNearTarget(clientX, clientY, activeDrag.targetDot)) {
+      const targetCenter = getCenterPoint(activeDrag.targetDot);
+      setActiveLine(activeDrag.start, targetCenter);
+      lastAppliedCellKeyRef.current = null;
+      applyCell(activeDrag.targetDot);
+      endDrag();
+      return;
     }
 
-    endDrag();
-  }
-
-  function endDrag() {
-    isDraggingRef.current = false;
-    lastAppliedCellKeyRef.current = null;
+    setMessage(`Release on dot ${activeDrag.targetDot.id} to connect.`);
+    endDrag({ fade: true });
   }
 
   useEffect(() => {
     function handleGlobalPointerMove(event: globalThis.PointerEvent) {
-      if (!isDraggingRef.current) {
+      const activeDrag = activeDragRef.current;
+      if (!activeDrag || activeDrag.pointerId !== event.pointerId) {
         return;
       }
 
       event.preventDefault();
-      const point = getPointFromClientPosition(event.clientX, event.clientY);
-
-      if (point) {
-        applyCell(point);
-      }
+      updateActiveDrag(event.clientX, event.clientY);
     }
 
-    function handleGlobalPointerEnd() {
-      endDrag();
+    function handleGlobalPointerEnd(event: globalThis.PointerEvent) {
+      const activeDrag = activeDragRef.current;
+      if (!activeDrag || activeDrag.pointerId !== event.pointerId) {
+        return;
+      }
+
+      finishActiveDrag(event.clientX, event.clientY);
+    }
+
+    function handleWindowBlur() {
+      endDrag({ fade: true });
     }
 
     document.addEventListener("pointermove", handleGlobalPointerMove, { passive: false });
     document.addEventListener("pointerup", handleGlobalPointerEnd);
     document.addEventListener("pointercancel", handleGlobalPointerEnd);
-    document.addEventListener("mouseup", handleGlobalPointerEnd);
-    window.addEventListener("blur", handleGlobalPointerEnd);
+    window.addEventListener("blur", handleWindowBlur);
 
     return () => {
       document.removeEventListener("pointermove", handleGlobalPointerMove);
       document.removeEventListener("pointerup", handleGlobalPointerEnd);
       document.removeEventListener("pointercancel", handleGlobalPointerEnd);
-      document.removeEventListener("mouseup", handleGlobalPointerEnd);
-      window.removeEventListener("blur", handleGlobalPointerEnd);
+      window.removeEventListener("blur", handleWindowBlur);
     };
   });
 
@@ -686,7 +775,11 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
           aria-label={dot ? `Dot ${dot.id}` : `Cell ${x + 1}, ${y + 1}`}
         >
           {isPath ? <span className="vyb-connect-step">{pathIndex + 1}</span> : null}
-          {dot ? <span className="vyb-connect-dot-label">{dot.id}</span> : null}
+          {dot ? (
+            <span className="vyb-connect-dot-label" onPointerDown={(event) => handleDotPointerDown(event, dot)}>
+              {dot.id}
+            </span>
+          ) : null}
         </div>
       );
     }
@@ -745,6 +838,15 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
                 strokeLinejoin="round"
               />
             ) : null}
+            <path
+              ref={activeLineRef}
+              className="vyb-connect-active-line"
+              fill="none"
+              stroke={`url(#${pathGradientId})`}
+              strokeWidth={pathStrokeWidth + 0.08}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
             {hintFromPoint && hintNextPoint ? (
               <line
                 className="vyb-connect-hint-line"
@@ -764,24 +866,6 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
           <div className="vyb-connect-board-grid">
             {gridCells}
           </div>
-          <div
-            className="vyb-connect-input-layer"
-            role="application"
-            aria-label="Connect board drawing area"
-            onPointerDown={handleInputPointerDown}
-            onPointerMove={handleInputPointerMove}
-            onPointerUp={handleInputPointerUp}
-            onPointerCancel={endDrag}
-            onMouseDown={handleInputMouseDown}
-            onMouseMove={handleInputMouseMove}
-            onMouseUp={handleInputMouseUp}
-            onMouseLeave={endDrag}
-            onClick={handleInputClick}
-            onTouchStart={handleInputTouchStart}
-            onTouchMove={handleInputTouchMove}
-            onTouchEnd={handleInputTouchEnd}
-            onTouchCancel={endDrag}
-          />
         </div>
       </div>
 
