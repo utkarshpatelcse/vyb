@@ -56,6 +56,9 @@ const nextConfig: NextConfig = {
   experimental: {
     proxyClientMaxBodySize: 80 * 1024 * 1024
   },
+  outputFileTracingIncludes: {
+    "/api/games/connect/*": ["../../data/connect-levels.json"]
+  },
   async headers() {
     return [
       {

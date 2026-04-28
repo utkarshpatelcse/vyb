@@ -297,7 +297,11 @@ async function loadDataconnectSeedFile() {
     }
 
     return normalizeSeedFile(JSON.parse(store.payloadJson) as ConnectLevelSeedFile, `DataConnect store ${CONNECT_LEVEL_STORE_ID}`);
-  } catch {
+  } catch (error) {
+    console.warn("[connect-data] DataConnect level store unavailable; falling back to local seed file.", {
+      storeId: CONNECT_LEVEL_STORE_ID,
+      message: error instanceof Error ? error.message : String(error)
+    });
     return null;
   }
 }
