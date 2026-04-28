@@ -1,11 +1,43 @@
 "use client";
 
 import type { CommentItem, DeleteCommentResponse, FeedCard, ReactionKind, ReactionResponse } from "@vyb/contracts";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type CommentMediaKind = "gif" | "sticker";
+type RealtimeState = "idle" | "connecting" | "live" | "reconnecting" | "offline";
 
-export function useSocialPostEngagement(initialPosts: FeedCard[]) {
+type SocialRealtimeEvent =
+  | { type: "social.connected"; tenantId?: string; payload?: never }
+  | { type: "social.post.created"; payload?: { item?: FeedCard } }
+  | { type: "social.post.updated"; payload?: { item?: FeedCard } }
+  | { type: "social.post.deleted"; payload?: { postId?: string } }
+  | { type: "social.post.reaction.updated"; payload?: { postId?: string; aggregateCount?: number } }
+  | { type: "social.comment.created"; payload?: { postId?: string; item?: CommentItem } }
+  | { type: "social.comment.deleted"; payload?: { postId?: string; commentId?: string; deletedCount?: number } }
+  | {
+      type: "social.comment.reaction.updated";
+      payload?: { postId?: string; commentId?: string; aggregateCount?: number };
+    };
+
+function isFeedCard(value: unknown): value is FeedCard {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      typeof (value as FeedCard).id === "string" &&
+      typeof (value as FeedCard).placement === "string"
+  );
+}
+
+function isCommentItem(value: unknown): value is CommentItem {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      typeof (value as CommentItem).id === "string" &&
+      typeof (value as CommentItem).postId === "string"
+  );
+}
+
+export function useSocialPostEngagement(initialPosts: FeedCard[], placementFilter: FeedCard["placement"] = "feed") {
   const [posts, setPosts] = useState(initialPosts);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const [commentsByPost, setCommentsByPost] = useState<Record<string, CommentItem[]>>({});
@@ -19,10 +51,316 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
   const [threadLoading, setThreadLoading] = useState(false);
   const [threadSubmitting, setThreadSubmitting] = useState(false);
   const [threadDeletingCommentId, setThreadDeletingCommentId] = useState<string | null>(null);
+  const [realtimeState, setRealtimeState] = useState<RealtimeState>("idle");
+  const seenRealtimeCommentIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     setPosts(initialPosts);
   }, [initialPosts]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    let socket: WebSocket | null = null;
+    let reconnectTimer: number | null = null;
+    let reconnectAttempt = 0;
+    let connectInFlight = false;
+    let closedByCleanup = false;
+
+    function clearReconnectTimer() {
+      if (reconnectTimer) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+    }
+
+    function canKeepSocketAlive() {
+      return navigator.onLine && document.visibilityState === "visible";
+    }
+
+    function scheduleReconnect() {
+      if (closedByCleanup) {
+        return;
+      }
+
+      clearReconnectTimer();
+      if (!canKeepSocketAlive()) {
+        setRealtimeState("offline");
+        return;
+      }
+
+      setRealtimeState("reconnecting");
+      const delayMs = Math.min(15000, 800 * 2 ** reconnectAttempt) + Math.floor(Math.random() * 250);
+      reconnectAttempt += 1;
+      reconnectTimer = window.setTimeout(() => {
+        void connect();
+      }, delayMs);
+    }
+
+    function closeSocket() {
+      if (socket) {
+        socket.onclose = null;
+        socket.close();
+        socket = null;
+      }
+    }
+
+    function applyRealtimeEvent(event: SocialRealtimeEvent) {
+      if (event.type === "social.connected") {
+        return;
+      }
+
+      if (event.type === "social.post.created") {
+        const item = event.payload?.item;
+        if (!isFeedCard(item) || item.placement !== placementFilter) {
+          return;
+        }
+
+        setPosts((current) => (current.some((post) => post.id === item.id) ? current : [item, ...current]));
+        return;
+      }
+
+      if (event.type === "social.post.updated") {
+        const item = event.payload?.item;
+        if (!isFeedCard(item) || item.placement !== placementFilter) {
+          return;
+        }
+
+        setPosts((current) =>
+          current.map((post) =>
+            post.id === item.id
+              ? {
+                  ...item,
+                  isSaved: post.isSaved,
+                  viewerCanManage: post.viewerCanManage,
+                  viewerReactionType: post.viewerReactionType
+                }
+              : post
+          )
+        );
+        return;
+      }
+
+      if (event.type === "social.post.deleted") {
+        const postId = event.payload?.postId;
+        if (!postId) {
+          return;
+        }
+
+        setPosts((current) => current.filter((post) => post.id !== postId));
+        setCommentsByPost((current) => {
+          if (!current[postId]) {
+            return current;
+          }
+
+          const next = { ...current };
+          delete next[postId];
+          return next;
+        });
+        setSelectedPostId((current) => (current === postId ? null : current));
+        return;
+      }
+
+      if (event.type === "social.post.reaction.updated") {
+        const postId = event.payload?.postId;
+        const aggregateCount = event.payload?.aggregateCount;
+        if (!postId || typeof aggregateCount !== "number") {
+          return;
+        }
+
+        setPosts((current) =>
+          current.map((post) =>
+            post.id === postId
+              ? {
+                  ...post,
+                  reactions: aggregateCount
+                }
+              : post
+          )
+        );
+        return;
+      }
+
+      if (event.type === "social.comment.created") {
+        const item = event.payload?.item;
+        const postId = event.payload?.postId ?? item?.postId;
+        if (!postId || !isCommentItem(item)) {
+          return;
+        }
+
+        if (seenRealtimeCommentIdsRef.current.has(item.id)) {
+          return;
+        }
+        seenRealtimeCommentIdsRef.current.add(item.id);
+
+        setCommentsByPost((current) => {
+          const existing = current[postId];
+          if (!existing || existing.some((comment) => comment.id === item.id)) {
+            return current;
+          }
+
+          return {
+            ...current,
+            [postId]: [...existing, item]
+          };
+        });
+        setPosts((current) =>
+          current.map((post) =>
+            post.id === postId
+              ? {
+                  ...post,
+                  comments: post.comments + 1
+                }
+              : post
+          )
+        );
+        return;
+      }
+
+      if (event.type === "social.comment.deleted") {
+        const postId = event.payload?.postId;
+        const commentId = event.payload?.commentId;
+        const deletedCount = typeof event.payload?.deletedCount === "number" ? event.payload.deletedCount : 1;
+        if (!postId || !commentId) {
+          return;
+        }
+
+        setCommentsByPost((current) => {
+          const existing = current[postId];
+          if (!existing) {
+            return current;
+          }
+
+          return {
+            ...current,
+            [postId]: existing.filter((comment) => comment.id !== commentId && comment.parentCommentId !== commentId)
+          };
+        });
+        setPosts((current) =>
+          current.map((post) =>
+            post.id === postId
+              ? {
+                  ...post,
+                  comments: Math.max(0, post.comments - deletedCount)
+                }
+              : post
+          )
+        );
+        return;
+      }
+
+      if (event.type === "social.comment.reaction.updated") {
+        const postId = event.payload?.postId;
+        const commentId = event.payload?.commentId;
+        const aggregateCount = event.payload?.aggregateCount;
+        if (!postId || !commentId || typeof aggregateCount !== "number") {
+          return;
+        }
+
+        setCommentsByPost((current) => {
+          const existing = current[postId];
+          if (!existing) {
+            return current;
+          }
+
+          return {
+            ...current,
+            [postId]: existing.map((comment) =>
+              comment.id === commentId
+                ? {
+                    ...comment,
+                    reactions: aggregateCount
+                  }
+                : comment
+            )
+          };
+        });
+      }
+    }
+
+    async function connect() {
+      if (closedByCleanup || connectInFlight || !canKeepSocketAlive()) {
+        return;
+      }
+
+      if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+
+      connectInFlight = true;
+      setRealtimeState(reconnectAttempt > 0 ? "reconnecting" : "connecting");
+
+      try {
+        const response = await fetch("/api/social/socket-token", { cache: "no-store" });
+        const payload = (await response.json().catch(() => null)) as { wsUrl?: string } | null;
+
+        if (response.status === 401) {
+          setRealtimeState("idle");
+          return;
+        }
+
+        if (!response.ok || typeof payload?.wsUrl !== "string") {
+          scheduleReconnect();
+          return;
+        }
+
+        closeSocket();
+        socket = new WebSocket(payload.wsUrl);
+
+        socket.onopen = () => {
+          reconnectAttempt = 0;
+          setRealtimeState("live");
+        };
+
+        socket.onmessage = (message) => {
+          try {
+            applyRealtimeEvent(JSON.parse(String(message.data)) as SocialRealtimeEvent);
+          } catch {
+            // Ignore malformed realtime frames.
+          }
+        };
+
+        socket.onerror = () => {
+          socket?.close();
+        };
+
+        socket.onclose = () => {
+          socket = null;
+          scheduleReconnect();
+        };
+      } catch {
+        scheduleReconnect();
+      } finally {
+        connectInFlight = false;
+      }
+    }
+
+    function handleVisibilityOrNetworkChange() {
+      if (canKeepSocketAlive()) {
+        void connect();
+        return;
+      }
+
+      closeSocket();
+      setRealtimeState("offline");
+    }
+
+    void connect();
+    window.addEventListener("online", handleVisibilityOrNetworkChange);
+    window.addEventListener("offline", handleVisibilityOrNetworkChange);
+    document.addEventListener("visibilitychange", handleVisibilityOrNetworkChange);
+
+    return () => {
+      closedByCleanup = true;
+      clearReconnectTimer();
+      closeSocket();
+      window.removeEventListener("online", handleVisibilityOrNetworkChange);
+      window.removeEventListener("offline", handleVisibilityOrNetworkChange);
+      document.removeEventListener("visibilitychange", handleVisibilityOrNetworkChange);
+    };
+  }, [placementFilter]);
 
   const selectedPost = useMemo(
     () => posts.find((post) => post.id === selectedPostId) ?? null,
@@ -228,6 +566,7 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
         return;
       }
 
+      seenRealtimeCommentIdsRef.current.add(payload.item.id);
       setCommentsByPost((current) => ({
         ...current,
         [post.id]: [...(current[post.id] ?? []), payload.item!]
@@ -243,9 +582,9 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
         )
       );
       setThreadDraft("");
-    setThreadMediaUrl("");
-    setThreadMediaType("gif");
-    setThreadReplyTarget(null);
+      setThreadMediaUrl("");
+      setThreadMediaType("gif");
+      setThreadReplyTarget(null);
     } catch {
       setThreadMessage("We could not publish this comment right now.");
     } finally {
@@ -522,6 +861,7 @@ export function useSocialPostEngagement(initialPosts: FeedCard[]) {
     threadLoading,
     threadSubmitting,
     threadDeletingCommentId,
+    realtimeState,
     loadComments,
     openThread,
     closeThread,

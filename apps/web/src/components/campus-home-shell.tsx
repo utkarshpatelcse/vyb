@@ -453,7 +453,7 @@ export function CampusHomeShell({
 }: CampusHomeShellProps) {
   const router = useRouter();
   const { isFromSearch, goBack, clearOrigin } = useSearchNavigationGuard("/search");
-  const engagement = useSocialPostEngagement(initialPosts);
+  const engagement = useSocialPostEngagement(initialPosts, "feed");
   const settingsIdentity = useMemo(
     () => ({
       userId: viewerUserId ?? null,

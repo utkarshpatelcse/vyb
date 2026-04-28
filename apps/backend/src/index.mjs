@@ -10,7 +10,8 @@ import { getIdentityModuleHealth, handleIdentityRoute } from "./modules/identity
 import { getMarketModuleHealth, handleMarketRoute } from "./modules/market/index.mjs";
 import { getModerationModuleHealth, handleModerationRoute } from "./modules/moderation/index.mjs";
 import { getResourcesModuleHealth, handleResourcesRoute } from "./modules/resources/index.mjs";
-import { getSocialModuleHealth, handleSocialRoute } from "./modules/social/index.mjs";
+import { canOpenSocialRealtimeConnection, getSocialModuleHealth, handleSocialRoute } from "./modules/social/index.mjs";
+import { attachSocialWebSocketServer } from "./modules/social/realtime-hub.mjs";
 
 loadRootEnv();
 
@@ -154,6 +155,10 @@ const server = createServer(async (request, response) => {
 
 attachChatWebSocketServer(server, {
   authorizeConnection: canOpenChatRealtimeConnection
+});
+
+attachSocialWebSocketServer(server, {
+  authorizeConnection: canOpenSocialRealtimeConnection
 });
 
 server.listen(port, () => {

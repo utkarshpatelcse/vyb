@@ -8,6 +8,7 @@ import {
 import { trackActivity } from "../moderation/repository.mjs";
 import { resolveLiveContext } from "../shared/viewer-context.mjs";
 import { persistSocialMediaAsset } from "./media-storage.mjs";
+import { emitSocialRealtimeEvent } from "./realtime-hub.mjs";
 import {
   countPostsByUser,
   createComment,
@@ -118,6 +119,27 @@ function buildFeedPayload(item) {
   return {
     ...item
   };
+}
+
+function buildRealtimeFeedPayload(item) {
+  return {
+    ...buildFeedPayload(item),
+    isSaved: false,
+    viewerCanManage: false,
+    viewerReactionType: null
+  };
+}
+
+function buildRealtimeCommentPayload(item) {
+  return {
+    ...item,
+    viewerCanManage: false,
+    viewerHasLiked: false
+  };
+}
+
+function getRealtimeActorMembershipId(resolvedMembershipId, context) {
+  return resolvedMembershipId ?? context.actor?.id ?? null;
 }
 
 function buildPostCursor(item) {
@@ -402,6 +424,10 @@ export function getSocialModuleHealth() {
   };
 }
 
+export async function canOpenSocialRealtimeConnection({ tenantId, userId, membershipId }) {
+  return requireNonEmptyString(tenantId) && requireNonEmptyString(userId) && requireNonEmptyString(membershipId);
+}
+
 export async function handleSocialRoute({ request, response, url, context }) {
   if (!context.actor) {
     return false;
@@ -618,6 +644,15 @@ export async function handleSocialRoute({ request, response, url, context }) {
         placement: item.placement,
         kind: item.kind
       }
+    });
+
+    emitSocialRealtimeEvent({
+      tenantId: item.tenantId,
+      type: "social.post.created",
+      payload: {
+        item: buildRealtimeFeedPayload(item)
+      },
+      excludeMembershipId: getRealtimeActorMembershipId(resolvedMembershipId, context)
     });
 
     sendJson(response, 201, {
@@ -1103,6 +1138,15 @@ export async function handleSocialRoute({ request, response, url, context }) {
       }
     });
 
+    emitSocialRealtimeEvent({
+      tenantId: item.tenantId,
+      type: "social.post.created",
+      payload: {
+        item: buildRealtimeFeedPayload(item)
+      },
+      excludeMembershipId: getRealtimeActorMembershipId(resolvedMembershipId, context)
+    });
+
     sendJson(response, 201, { item: buildFeedPayload(item) });
     return true;
   }
@@ -1133,6 +1177,15 @@ export async function handleSocialRoute({ request, response, url, context }) {
       metadata: {
         placement: post.placement
       }
+    });
+
+    emitSocialRealtimeEvent({
+      tenantId: post.tenantId,
+      type: "social.post.deleted",
+      payload: {
+        postId: post.id
+      },
+      excludeMembershipId: getRealtimeActorMembershipId(resolvedMembershipId, context)
     });
 
     sendJson(response, 200, item);
@@ -1201,6 +1254,15 @@ export async function handleSocialRoute({ request, response, url, context }) {
         placement: post.placement,
         allowAnonymousComments: nextAllowAnonymousComments
       }
+    });
+
+    emitSocialRealtimeEvent({
+      tenantId: post.tenantId,
+      type: "social.post.updated",
+      payload: {
+        item: buildRealtimeFeedPayload(item)
+      },
+      excludeMembershipId: getRealtimeActorMembershipId(resolvedMembershipId, context)
     });
 
     sendJson(response, 200, { item: buildFeedPayload(item) });
@@ -1344,6 +1406,16 @@ export async function handleSocialRoute({ request, response, url, context }) {
       }
     });
 
+    emitSocialRealtimeEvent({
+      tenantId: post.tenantId,
+      type: "social.comment.created",
+      payload: {
+        postId: post.id,
+        item: buildRealtimeCommentPayload(enrichedItem)
+      },
+      excludeMembershipId: membershipId
+    });
+
     sendJson(response, 201, { item: enrichedItem });
     return true;
   }
@@ -1394,6 +1466,17 @@ export async function handleSocialRoute({ request, response, url, context }) {
       }
     });
 
+    emitSocialRealtimeEvent({
+      tenantId: post.tenantId,
+      type: "social.comment.deleted",
+      payload: {
+        postId: post.id,
+        commentId: comment.id,
+        deletedCount: item.deletedCount
+      },
+      excludeMembershipId: getRealtimeActorMembershipId(resolvedMembershipId, context)
+    });
+
     sendJson(response, 200, item);
     return true;
   }
@@ -1424,6 +1507,17 @@ export async function handleSocialRoute({ request, response, url, context }) {
       metadata: {
         reactionType: "like"
       }
+    });
+
+    emitSocialRealtimeEvent({
+      tenantId: comment.tenantId ?? resolvedTenantId,
+      type: "social.comment.reaction.updated",
+      payload: {
+        postId: comment.postId,
+        commentId: comment.id,
+        aggregateCount: item.aggregateCount
+      },
+      excludeMembershipId: getRealtimeActorMembershipId(resolvedMembershipId, context)
     });
 
     sendJson(response, 200, item);
@@ -1472,6 +1566,15 @@ export async function handleSocialRoute({ request, response, url, context }) {
         placement: post.placement,
         reactionType
       }
+    });
+    emitSocialRealtimeEvent({
+      tenantId: post.tenantId,
+      type: "social.post.reaction.updated",
+      payload: {
+        postId: post.id,
+        aggregateCount: item.aggregateCount
+      },
+      excludeMembershipId: getRealtimeActorMembershipId(resolvedMembershipId, context)
     });
     sendJson(response, 200, item);
     return true;
