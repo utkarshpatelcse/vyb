@@ -1237,6 +1237,11 @@ async function handleClientMessage(ws, auth, rawMessage) {
 }
 
 function handleSocketClose(ws) {
+  if (ws.__scribbleClosedHandled) {
+    return;
+  }
+
+  ws.__scribbleClosedHandled = true;
   connectedSockets.delete(ws);
 
   const auth = ws.__scribbleAuth;
@@ -1351,13 +1356,14 @@ export function attachScribbleWebSocketServer(server) {
     }
 
     wsServer.handleUpgrade(request, socket, head, (ws) => {
+      ws.__scribbleClosedHandled = false;
       ws.__scribbleAuth = auth;
       connectedSockets.add(ws);
       ws.on("message", (rawMessage) => {
         void handleClientMessage(ws, auth, rawMessage);
       });
       ws.on("close", () => handleSocketClose(ws));
-      ws.on("error", () => handleSocketClose(ws));
+      ws.on("error", () => null);
       sendSocket(ws, {
         type: "scribble.connected",
         payload: {

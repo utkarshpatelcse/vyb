@@ -512,10 +512,13 @@ export function ScribbleMultiplayerGame({
 
   useEffect(() => {
     shouldReconnectRef.current = true;
-    void connectSocket();
+    const timer = setTimeout(() => {
+      void connectSocket();
+    }, 0);
 
     return () => {
       shouldReconnectRef.current = false;
+      clearTimeout(timer);
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current);
       }
@@ -615,6 +618,14 @@ export function ScribbleMultiplayerGame({
       return;
     }
 
+    const activeSocket = socketRef.current;
+    if (activeSocket && (activeSocket.readyState === WebSocket.OPEN || activeSocket.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+    if (connectPromiseRef.current) {
+      return;
+    }
+
     reconnectAttemptRef.current += 1;
     const delay = Math.min(8000, 750 * reconnectAttemptRef.current);
     setConnectionState("reconnecting");
@@ -665,6 +676,10 @@ export function ScribbleMultiplayerGame({
         socketRef.current = socket;
 
         socket.onopen = () => {
+          if (socketRef.current !== socket) {
+            socket.close();
+            return;
+          }
           reconnectAttemptRef.current = 0;
           setConnectionState("live");
           setError(null);
@@ -698,6 +713,10 @@ export function ScribbleMultiplayerGame({
         };
 
         socket.onmessage = (event) => {
+          if (socketRef.current !== socket) {
+            return;
+          }
+
           let message: { type?: string; payload?: unknown } | null = null;
           try {
             message = JSON.parse(String(event.data));
@@ -706,7 +725,20 @@ export function ScribbleMultiplayerGame({
           }
 
           if (message?.type === "scribble.state") {
-            const nextSnapshot = message.payload as ScribbleSnapshot;
+            const incomingSnapshot = message.payload as ScribbleSnapshot;
+            const currentSnapshot = snapshotRef.current;
+            const nextSnapshot =
+              currentSnapshot &&
+              currentSnapshot.roomId === incomingSnapshot.roomId &&
+              currentSnapshot.status === "PLAYING" &&
+              incomingSnapshot.status === "PLAYING" &&
+              currentSnapshot.drawing.length > incomingSnapshot.drawing.length
+                ? {
+                    ...incomingSnapshot,
+                    drawing: currentSnapshot.drawing
+                  }
+                : incomingSnapshot;
+
             snapshotRef.current = nextSnapshot;
             setSnapshot(nextSnapshot);
             setShowCreateForm(false);
@@ -767,12 +799,14 @@ export function ScribbleMultiplayerGame({
         socket.onclose = () => {
           if (socketRef.current === socket) {
             socketRef.current = null;
+            scheduleReconnect();
           }
-          scheduleReconnect();
         };
 
         socket.onerror = () => {
-          setConnectionState("offline");
+          if (socketRef.current === socket) {
+            setConnectionState("offline");
+          }
         };
       } catch {
         setConnectionState("offline");
