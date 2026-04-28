@@ -7520,7 +7520,6 @@ html {
 }
 
 /* --- THEME FIXES --- */
-.vyb-events-header,
 .vyb-reels-header {
   background: rgba(22, 34, 55, 0.85) !important;
   backdrop-filter: blur(20px) !important;
@@ -7529,7 +7528,6 @@ html {
 }
 
 @media (max-width: 899px) {
-  .vyb-events-header,
   .vyb-reels-header {
     gap: 0.4rem 0 !important;
   }
@@ -10461,6 +10459,44 @@ input:checked + .vyb-settings-list-toggle-slider:before {
 .vyb-thread-delete-button:disabled {
   cursor: progress;
   opacity: 0.65;
+}
+
+.vyb-events-fab-host {
+  position: absolute;
+  bottom: 2rem;
+  left: 2rem;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--spm-gradient-market, linear-gradient(135deg, #6366f1 0%, #a855f7 100%));
+  color: #fff;
+  padding: 0.8rem 1.5rem;
+  border-radius: 999px;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.3);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.vyb-events-fab-host:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(99, 102, 241, 0.5);
+  color: #fff;
+}
+
+.vyb-events-fab-host svg {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+@media (max-width: 899px) {
+  .vyb-events-fab-host {
+    bottom: 6rem;
+    left: 1rem;
+    padding: 0.75rem 1.2rem;
+    font-size: 0.9rem;
+  }
 }
 
 
