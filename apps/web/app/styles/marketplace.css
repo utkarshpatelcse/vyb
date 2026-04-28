@@ -4730,7 +4730,7 @@
   display: grid;
   grid-template-columns: repeat(var(--connect-grid-size), minmax(0, 1fr));
   grid-template-rows: repeat(var(--connect-grid-size), minmax(0, 1fr));
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .vyb-connect-cell {
@@ -5178,4 +5178,114 @@
   background: #6366f1;
   margin: 0 -0.25rem;
   z-index: 1;
+}
+
+/* --- CONNECT SUCCESS POPUP --- */
+.vyb-connect-success-popup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 13, 26, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 1.5rem;
+  animation: vybConnectPopupFadeIn 0.4s ease-out;
+}
+
+@keyframes vybConnectPopupFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.vyb-connect-success-popup-content {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(34, 211, 238, 0.2);
+  border-radius: 1.5rem;
+  padding: 2.5rem 2rem;
+  text-align: center;
+  max-width: 380px;
+  width: 100%;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  transform: translateY(0);
+  animation: vybConnectPopupSlideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes vybConnectPopupSlideUp {
+  from { transform: translateY(40px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.vyb-connect-popup-icon {
+  width: 4rem;
+  height: 4rem;
+  margin: 0 auto 1.5rem;
+  background: rgba(52, 211, 153, 0.15);
+  border: 2px solid rgba(52, 211, 153, 0.3);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #34d399;
+}
+
+.vyb-connect-success-popup-content h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #f8fafc;
+  letter-spacing: -0.02em;
+}
+
+.vyb-connect-success-popup-content p {
+  margin: 0 0 2rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: rgba(226, 232, 240, 0.8);
+}
+
+.vyb-connect-popup-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.vyb-connect-popup-primary,
+.vyb-connect-popup-secondary {
+  border: none;
+  border-radius: 999px;
+  padding: 1rem;
+  font-size: 0.9rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.vyb-connect-popup-primary {
+  background: linear-gradient(135deg, #22d3ee, #6366f1);
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3);
+}
+
+.vyb-connect-popup-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 25px rgba(99, 102, 241, 0.4);
+}
+
+.vyb-connect-popup-primary:active {
+  transform: translateY(1px);
+}
+
+.vyb-connect-popup-secondary {
+  background: transparent;
+  color: #94a3b8;
+}
+
+.vyb-connect-popup-secondary:hover {
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.05);
 }

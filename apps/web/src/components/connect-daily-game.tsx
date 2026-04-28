@@ -75,6 +75,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [result, setResult] = useState<ConnectSubmitResponse | null>(null);
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [ghostHint, setGhostHint] = useState<GhostHint | null>(null);
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -173,6 +174,13 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
   const hintNextPoint = ghostHint ? { x: ghostHint.next.y + 0.5, y: ghostHint.next.x + 0.5 } : null;
 
   useEffect(() => {
+    if (result?.solved) {
+      const timer = setTimeout(() => setShowSuccessPopup(true), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [result?.solved]);
+
+  useEffect(() => {
     const pathKey = pathCells.map(cellKey).join("|");
 
     if (!canSubmit || submitBusy || result || autoSubmitKeyRef.current === pathKey) {
@@ -189,6 +197,33 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
       return null;
     }
 
+    // Primary method: compute grid coordinates from board bounding rect.
+    // This is more reliable than elementFromPoint which can be blocked by
+    // overlapping elements (shell container, SVG layers, etc.).
+    const board = boardRef.current;
+    if (board) {
+      const bounds = board.getBoundingClientRect();
+      const style = window.getComputedStyle(board);
+      const leftPadding = Number.parseFloat(style.paddingLeft) || 0;
+      const topPadding = Number.parseFloat(style.paddingTop) || 0;
+      const rightPadding = Number.parseFloat(style.paddingRight) || leftPadding;
+      const bottomPadding = Number.parseFloat(style.paddingBottom) || topPadding;
+      const gridLeft = bounds.left + leftPadding;
+      const gridTop = bounds.top + topPadding;
+      const gridWidth = bounds.width - leftPadding - rightPadding;
+      const gridHeight = bounds.height - topPadding - bottomPadding;
+      const relativeX = clientX - gridLeft;
+      const relativeY = clientY - gridTop;
+
+      if (relativeX >= 0 && relativeY >= 0 && relativeX <= gridWidth && relativeY <= gridHeight) {
+        return {
+          x: Math.min(level.gridSize - 1, Math.max(0, Math.floor((relativeY / gridHeight) * level.gridSize))),
+          y: Math.min(level.gridSize - 1, Math.max(0, Math.floor((relativeX / gridWidth) * level.gridSize)))
+        };
+      }
+    }
+
+    // Fallback: try elementFromPoint hit-test for edge cases.
     const touchedCell = document
       .elementFromPoint(clientX, clientY)
       ?.closest<HTMLElement>("[data-connect-x][data-connect-y]");
@@ -206,32 +241,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
       return { x: touchedX, y: touchedY };
     }
 
-    const board = boardRef.current;
-    if (!board) {
-      return null;
-    }
-
-    const bounds = board.getBoundingClientRect();
-    const style = window.getComputedStyle(board);
-    const leftPadding = Number.parseFloat(style.paddingLeft) || 0;
-    const topPadding = Number.parseFloat(style.paddingTop) || 0;
-    const rightPadding = Number.parseFloat(style.paddingRight) || leftPadding;
-    const bottomPadding = Number.parseFloat(style.paddingBottom) || topPadding;
-    const gridLeft = bounds.left + leftPadding;
-    const gridTop = bounds.top + topPadding;
-    const gridWidth = bounds.width - leftPadding - rightPadding;
-    const gridHeight = bounds.height - topPadding - bottomPadding;
-    const relativeX = clientX - gridLeft;
-    const relativeY = clientY - gridTop;
-
-    if (relativeX < 0 || relativeY < 0 || relativeX > gridWidth || relativeY > gridHeight) {
-      return null;
-    }
-
-    return {
-      x: Math.min(level.gridSize - 1, Math.max(0, Math.floor((relativeY / gridHeight) * level.gridSize))),
-      y: Math.min(level.gridSize - 1, Math.max(0, Math.floor((relativeX / gridWidth) * level.gridSize)))
-    };
+    return null;
   }
 
   function buildStraightTargets(from: ConnectCoordinate, to: ConnectCoordinate) {
@@ -283,11 +293,11 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     const key = cellKey(point);
     const existingIndex = currentPath.findIndex((candidate) => cellKey(candidate) === key);
 
-    if (existingIndex === currentPath.length - 1) {
+    if (existingIndex !== -1 && existingIndex === currentPath.length - 1) {
       return { path: currentPath, message: null, blocked: false };
     }
 
-    if (existingIndex === currentPath.length - 2) {
+    if (existingIndex !== -1 && existingIndex === currentPath.length - 2) {
       return { path: currentPath.slice(0, -1), message: "Stepped back one cell.", blocked: false };
     }
 
@@ -412,10 +422,22 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     }
   }
 
-  function endDrag() {
+  function endDrag(pointerId?: number) {
     isDraggingRef.current = false;
-    activeDragRef.current = null;
     lastAppliedCellKeyRef.current = null;
+
+    // Release pointer capture if we had captured it.
+    const board = boardRef.current;
+    const pid = pointerId ?? activeDragRef.current?.pointerId;
+    if (board && pid != null) {
+      try {
+        board.releasePointerCapture(pid);
+      } catch (_) {
+        // Already released or invalid; safe to ignore.
+      }
+    }
+
+    activeDragRef.current = null;
   }
 
   function handleBoardPointerDown(event: ReactPointerEvent<HTMLDivElement | HTMLSpanElement>) {
@@ -424,16 +446,47 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
       return;
     }
 
-    if (!canStartDragAt(point)) {
-      setMessage(pathCells.length === 0 ? "Start from dot 1." : "Continue from the current path head.");
+    if (result?.solved) {
       return;
     }
 
     event.preventDefault();
     event.stopPropagation();
 
-    startDragAt(point, event.pointerId);
+    // If clicking the current path head, just start dragging from there.
+    if (canStartDragAt(point)) {
+      const board = boardRef.current;
+      if (board && event.pointerId != null) {
+        try {
+          board.setPointerCapture(event.pointerId);
+        } catch (_) {
+          // ignore
+        }
+      }
+      startDragAt(point, event.pointerId);
+      return;
+    }
+
+    // Otherwise, try to apply this cell as a tap-to-extend:
+    // This handles the case where user clicks an adjacent cell
+    // or any reachable cell to extend the path by tapping.
+    applyCell(point);
+
+    // After applying, start drag from the new head so the user
+    // can continue dragging from here.
+    const board = boardRef.current;
+    if (board && event.pointerId != null) {
+      try {
+        board.setPointerCapture(event.pointerId);
+      } catch (_) {
+        // ignore
+      }
+    }
+    activeDragRef.current = { pointerId: event.pointerId };
+    isDraggingRef.current = true;
+    lastAppliedCellKeyRef.current = cellKey(point);
   }
+
 
   function handleBoardPointerMove(event: ReactPointerEvent<HTMLDivElement | HTMLSpanElement>) {
     if (!isDraggingRef.current) {
@@ -451,7 +504,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
 
     event.preventDefault();
     updateDragAt(event.clientX, event.clientY);
-    endDrag();
+    endDrag(event.pointerId);
   }
 
   useEffect(() => {
@@ -470,7 +523,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
       }
 
       updateDragAt(event.clientX, event.clientY);
-      endDrag();
+      endDrag(event.pointerId);
     }
 
     function handleGlobalMouseMove(event: globalThis.MouseEvent) {
@@ -666,7 +719,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
               onPointerDown={handleBoardPointerDown}
               onPointerMove={handleBoardPointerMove}
               onPointerUp={handleBoardPointerUp}
-              onPointerCancel={endDrag}
+              onPointerCancel={(e) => endDrag(e.pointerId)}
             >
               {dot.id}
             </span>
@@ -705,7 +758,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
           onPointerDown={handleBoardPointerDown}
           onPointerMove={handleBoardPointerMove}
           onPointerUp={handleBoardPointerUp}
-          onPointerCancel={endDrag}
+          onPointerCancel={(e) => endDrag(e.pointerId)}
         >
           <svg className="vyb-connect-path-layer" viewBox={`0 0 ${level.gridSize} ${level.gridSize}`} preserveAspectRatio="none" aria-hidden="true">
             <defs>
@@ -824,6 +877,29 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
           </div>
         )}
       </section>
+
+      {showSuccessPopup ? (
+        <div className="vyb-connect-success-popup-overlay">
+          <div className="vyb-connect-success-popup-content">
+            <div className="vyb-connect-popup-icon">
+              <svg viewBox="0 0 24 24" width="32" height="32" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+              </svg>
+            </div>
+            <h3>Puzzle Solved!</h3>
+            <p>Brilliant work. You've completed today's challenge. Ready for your next adventure?</p>
+            <div className="vyb-connect-popup-actions">
+              <button type="button" className="vyb-connect-popup-primary" onClick={onExit}>
+                Explore Other Games
+              </button>
+              <button type="button" className="vyb-connect-popup-secondary" onClick={() => setShowSuccessPopup(false)}>
+                View Leaderboard
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
