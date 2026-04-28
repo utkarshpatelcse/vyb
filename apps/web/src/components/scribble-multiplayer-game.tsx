@@ -372,6 +372,7 @@ export function ScribbleMultiplayerGame({
   const router = useRouter();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  const connectPromiseRef = useRef<Promise<void> | null>(null);
   const snapshotRef = useRef<ScribbleSnapshot | null>(null);
   const scoreListRef = useRef<HTMLDivElement | null>(null);
   const chatListRef = useRef<HTMLDivElement | null>(null);
@@ -624,139 +625,164 @@ export function ScribbleMultiplayerGame({
   }
 
   async function connectSocket() {
-    setConnectionState((current) => (current === "reconnecting" ? "reconnecting" : "connecting"));
-
-    const response = await fetch("/api/games/scribble/socket-token", {
-      method: "GET",
-      cache: "no-store"
-    });
-    const payload = (await response.json().catch(() => null)) as ScribbleSocketTokenResponse | { error?: { message?: string } } | null;
-
-    if (!response.ok || !payload || !("wsUrl" in payload)) {
-      const message = payload && "error" in payload ? payload.error?.message : null;
-      setConnectionState("offline");
-      setError(message || "Could not open Scribble realtime.");
+    const existingSocket = socketRef.current;
+    if (existingSocket && (existingSocket.readyState === WebSocket.OPEN || existingSocket.readyState === WebSocket.CONNECTING)) {
       return;
     }
 
-    const existingSocket = socketRef.current;
-    if (existingSocket) {
-      existingSocket.onclose = null;
-      existingSocket.onerror = null;
-      existingSocket.close();
+    if (connectPromiseRef.current) {
+      await connectPromiseRef.current;
+      return;
     }
 
-    const socket = new WebSocket(payload.wsUrl);
-    socketRef.current = socket;
-
-    socket.onopen = () => {
-      reconnectAttemptRef.current = 0;
-      setConnectionState("live");
-      setError(null);
-      sendSocketMessage({
-        type: "scribble.catalog.subscribe",
-        payload: {}
-      });
-
-      const action = pendingActionRef.current;
-      if (action?.type === "create") {
-        sendSocketMessage({
-          type: "scribble.room.create",
-          payload: {
-            settings: action.settings
-          }
-        });
-        pendingActionRef.current = null;
-        return;
-      }
-
-      const joinRoomId = action?.type === "join" ? action.roomId : roomIdRef.current;
-      if (joinRoomId) {
-        sendSocketMessage({
-          type: "scribble.room.join",
-          payload: {
-            roomId: joinRoomId
-          }
-        });
-        pendingActionRef.current = null;
-      }
-    };
-
-    socket.onmessage = (event) => {
-      let message: { type?: string; payload?: unknown } | null = null;
+    connectPromiseRef.current = (async () => {
       try {
-        message = JSON.parse(String(event.data));
-      } catch {
-        return;
-      }
+        setConnectionState((current) => (current === "reconnecting" ? "reconnecting" : "connecting"));
 
-      if (message?.type === "scribble.state") {
-        const nextSnapshot = message.payload as ScribbleSnapshot;
-        snapshotRef.current = nextSnapshot;
-        setSnapshot(nextSnapshot);
-        setShowCreateForm(false);
-        setNotice(null);
-        requestAnimationFrame(() => {
-          const canvas = canvasRef.current;
-          if (canvas) {
-            renderDrawing(canvas, nextSnapshot.drawing ?? []);
-          }
+        const response = await fetch("/api/games/scribble/socket-token", {
+          method: "GET",
+          cache: "no-store"
         });
-        return;
-      }
+        const payload = (await response.json().catch(() => null)) as ScribbleSocketTokenResponse | { error?: { message?: string } } | null;
 
-      if (message?.type === "scribble.catalog") {
-        const rooms = ((message.payload as { rooms?: ScribbleCatalogRoom[] })?.rooms ?? []).filter(Boolean);
-        setPublicRooms(rooms);
-        return;
-      }
-
-      if (message?.type === "scribble.draw.step") {
-        const payload = message.payload as { roomId?: string; steps?: ScribbleDrawStep[] };
-        if (payload?.roomId && payload.roomId !== snapshotRef.current?.roomId) {
+        if (!response.ok || !payload || !("wsUrl" in payload)) {
+          const message = payload && "error" in payload ? payload.error?.message : null;
+          setConnectionState("offline");
+          setError(message || "Could not open Scribble realtime.");
           return;
         }
 
-        const steps = payload?.steps ?? [];
-        appendDrawingStepsToSnapshot(steps);
-        const canvas = canvasRef.current;
-        if (canvas) {
-          for (const step of steps) {
-            drawStep(canvas, step);
+        const staleSocket = socketRef.current;
+        if (staleSocket && staleSocket.readyState === WebSocket.CLOSING) {
+          return;
+        }
+        if (staleSocket && staleSocket.readyState === WebSocket.CLOSED) {
+          staleSocket.onclose = null;
+          staleSocket.onerror = null;
+        }
+
+        const socket = new WebSocket(payload.wsUrl);
+        socketRef.current = socket;
+
+        socket.onopen = () => {
+          reconnectAttemptRef.current = 0;
+          setConnectionState("live");
+          setError(null);
+          sendSocketMessage({
+            type: "scribble.catalog.subscribe",
+            payload: {}
+          });
+
+          const action = pendingActionRef.current;
+          if (action?.type === "create") {
+            sendSocketMessage({
+              type: "scribble.room.create",
+              payload: {
+                settings: action.settings
+              }
+            });
+            pendingActionRef.current = null;
+            return;
           }
-        }
-        return;
+
+          const joinRoomId = action?.type === "join" ? action.roomId : roomIdRef.current;
+          if (joinRoomId) {
+            sendSocketMessage({
+              type: "scribble.room.join",
+              payload: {
+                roomId: joinRoomId
+              }
+            });
+            pendingActionRef.current = null;
+          }
+        };
+
+        socket.onmessage = (event) => {
+          let message: { type?: string; payload?: unknown } | null = null;
+          try {
+            message = JSON.parse(String(event.data));
+          } catch {
+            return;
+          }
+
+          if (message?.type === "scribble.state") {
+            const nextSnapshot = message.payload as ScribbleSnapshot;
+            snapshotRef.current = nextSnapshot;
+            setSnapshot(nextSnapshot);
+            setShowCreateForm(false);
+            setNotice(null);
+            requestAnimationFrame(() => {
+              const canvas = canvasRef.current;
+              if (canvas) {
+                renderDrawing(canvas, nextSnapshot.drawing ?? []);
+              }
+            });
+            return;
+          }
+
+          if (message?.type === "scribble.catalog") {
+            const rooms = ((message.payload as { rooms?: ScribbleCatalogRoom[] })?.rooms ?? []).filter(Boolean);
+            setPublicRooms(rooms);
+            return;
+          }
+
+          if (message?.type === "scribble.draw.step") {
+            const payload = message.payload as { roomId?: string; steps?: ScribbleDrawStep[] };
+            if (payload?.roomId && payload.roomId !== snapshotRef.current?.roomId) {
+              return;
+            }
+
+            const steps = payload?.steps ?? [];
+            appendDrawingStepsToSnapshot(steps);
+            const canvas = canvasRef.current;
+            if (canvas) {
+              for (const step of steps) {
+                drawStep(canvas, step);
+              }
+            }
+            return;
+          }
+
+          if (message?.type === "scribble.canvas.clear") {
+            resetSnapshotDrawing();
+            const canvas = canvasRef.current;
+            if (canvas) {
+              clearCanvas(canvas);
+            }
+            return;
+          }
+
+          if (message?.type === "scribble.notice") {
+            const nextNotice = (message.payload as { message?: string })?.message;
+            setNotice(nextNotice || null);
+            return;
+          }
+
+          if (message?.type === "scribble.error") {
+            const nextError = (message.payload as { message?: string })?.message;
+            setError(nextError || "Scribble realtime error.");
+          }
+        };
+
+        socket.onclose = () => {
+          if (socketRef.current === socket) {
+            socketRef.current = null;
+          }
+          scheduleReconnect();
+        };
+
+        socket.onerror = () => {
+          setConnectionState("offline");
+        };
+      } catch {
+        setConnectionState("offline");
+        setError("Could not open Scribble realtime.");
+      } finally {
+        connectPromiseRef.current = null;
       }
+    })();
 
-      if (message?.type === "scribble.canvas.clear") {
-        resetSnapshotDrawing();
-        const canvas = canvasRef.current;
-        if (canvas) {
-          clearCanvas(canvas);
-        }
-        return;
-      }
-
-      if (message?.type === "scribble.notice") {
-        const nextNotice = (message.payload as { message?: string })?.message;
-        setNotice(nextNotice || null);
-        return;
-      }
-
-      if (message?.type === "scribble.error") {
-        const nextError = (message.payload as { message?: string })?.message;
-        setError(nextError || "Scribble realtime error.");
-      }
-    };
-
-    socket.onclose = () => {
-      socketRef.current = null;
-      scheduleReconnect();
-    };
-
-    socket.onerror = () => {
-      setConnectionState("offline");
-    };
+    await connectPromiseRef.current;
   }
 
   async function primeAudio() {
