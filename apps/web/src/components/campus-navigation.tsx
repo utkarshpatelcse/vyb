@@ -84,7 +84,7 @@ export function buildPrimaryCampusNav(
 
   return [
     { label: "Home", href: "/home", icon: <HomeIcon />, active: activeSection === "home" },
-    { label: "Events", href: "/events", icon: <EventsIcon />, active: activeSection === "events" },
+    { label: "Hub", href: "/hub", icon: <EventsIcon />, active: activeSection === "events" },
     {
       label: "Chats",
       href: "/messages",

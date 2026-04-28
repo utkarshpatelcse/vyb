@@ -463,7 +463,7 @@ export function CampusEventHostShell({
         throw new Error(payload?.error?.message || "We could not save the event.");
       }
 
-      router.push("/events");
+      router.push("/hub");
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "We could not save the event.");
@@ -476,8 +476,8 @@ export function CampusEventHostShell({
     <main className="vyb-campus-home">
       <section className="vyb-event-host-shell">
         <header className="vyb-event-host-topbar">
-          <Link href="/events" className="vyb-event-host-backlink">
-            Back to events
+          <Link href="/hub" className="vyb-event-host-backlink">
+            Back to hub
           </Link>
           <VybLogoLockup />
         </header>

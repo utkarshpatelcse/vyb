@@ -4874,7 +4874,7 @@ export function CampusMessagesShell({
                                     isDecrypting={isCardDecrypting}
                                     onInterestedDeal={handleDealInterested}
                                     onWatchVibe={(payload) => setActiveVibePreview(payload)}
-                                    onOpenEvent={() => router.push("/events")}
+                                    onOpenEvent={() => router.push("/hub")}
                                     onOpenProfile={(payload) => router.push(`/u/${encodeURIComponent(payload.username)}`)}
                                   />
                                   {showCardCaption && (

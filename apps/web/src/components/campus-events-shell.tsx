@@ -18,6 +18,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import { useResolvedAvatarUrl } from "./campus-avatar";
 import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
+import { ConnectDailyGame } from "./connect-daily-game";
 import { SignOutButton } from "./sign-out-button";
 import { VybLogoLockup } from "./vyb-logo";
 
@@ -30,6 +31,7 @@ type CampusEventsShellProps = {
   stream?: string | null;
   role: string;
   initialDashboard?: CampusEventsDashboardResponse | null;
+  initialTab?: "games" | "events";
 };
 
 type ResizeSide = "left" | "right";
@@ -416,7 +418,8 @@ export function CampusEventsShell({
   course,
   stream,
   role,
-  initialDashboard
+  initialDashboard,
+  initialTab = "events"
 }: CampusEventsShellProps) {
   const [dashboard, setDashboard] = useState(initialDashboard ?? buildEmptyDashboard(viewerUsername));
   const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH);
@@ -439,6 +442,8 @@ export function CampusEventsShell({
   const [hostRegistrationsError, setHostRegistrationsError] = useState<string | null>(null);
   const [hostRegistrationQuery, setHostRegistrationQuery] = useState("");
   const [hostRegistrationStatuses, setHostRegistrationStatuses] = useState<CampusEventRegistrationStatus[]>([]);
+  const [activeTab, setActiveTab] = useState<"games" | "events">(initialTab);
+  const [connectOpen, setConnectOpen] = useState(false);
   const registrationFileInputRef = useRef<HTMLInputElement | null>(null);
   const resizeState = useRef<{ side: ResizeSide; startX: number; startWidth: number } | null>(null);
   const viewerAvatarUrl = useResolvedAvatarUrl({
@@ -838,7 +843,7 @@ export function CampusEventsShell({
     const sharePayload = {
       title: event.title,
       text: `${event.title} by ${event.club} at ${collegeName} • ${formatEventTimeRange(event)}`,
-      url: `${window.location.origin}/events`
+      url: `${window.location.origin}/hub`
     };
 
     try {
@@ -954,37 +959,129 @@ export function CampusEventsShell({
         onPointerDown={(event) => startResizeDrag("left", event)}
       />
 
-      <section className="vyb-campus-main vyb-events-main">
-        <header className="vyb-events-header">
-          <div className="vyb-events-brand-block">
-            <span className="vyb-events-kicker">Campus calendar</span>
-            <strong>Events</strong>
-          </div>
-
-          <label className="vyb-events-search">
-            <SearchIcon />
-            <input
-              type="search"
-              value={searchValue}
-              onChange={(event) => setSearchValue(event.target.value)}
-              placeholder="Search clubs, nights, workshops, or venues"
-              aria-label="Search campus events"
-            />
-          </label>
-
+      <section className="vyb-campus-main vyb-events-main" style={{ position: "relative" }}>
+        <div className="spm-tabs-container">
           <button
             type="button"
-            className={`vyb-events-icon-button${notificationsOpen ? " is-active" : ""}`}
-            aria-label="Open event notifications"
-            onClick={() => setNotificationsOpen((current) => !current)}
+            className={`spm-tab-item ${activeTab === "games" ? "is-active" : ""}`}
+            onClick={() => setActiveTab("games")}
           >
-            <BellIcon />
+            GAMES HUB
           </button>
-          <Link href="/events/host" className="vyb-events-host-button">
-            <TicketIcon />
-            <span>Host event</span>
-          </Link>
-        </header>
+          <button
+            type="button"
+            className={`spm-tab-item ${activeTab === "events" ? "is-active" : ""}`}
+            onClick={() => {
+              setActiveTab("events");
+              setConnectOpen(false);
+            }}
+          >
+            EVENTS HUB
+          </button>
+        </div>
+
+        {activeTab === "games" && connectOpen ? (
+          <ConnectDailyGame onExit={() => setConnectOpen(false)} />
+        ) : activeTab === "games" ? (
+          <div className="vyb-games-container">
+            <header className="vyb-games-header">
+              <div className="vyb-games-rank-left">
+                <div className="vyb-games-rank-icon" style={{ fontSize: "1.3rem" }}>🏆</div>
+                <div>
+                  <h5 className="vyb-games-rank-title" style={{ fontSize: "0.8rem", margin: 0 }}>Leaderboard</h5>
+                  <p className="vyb-games-rank-subtitle" style={{ fontSize: "0.65rem", marginTop: "0.15rem" }}>#42 in KIET Group</p>
+                </div>
+              </div>
+              <div className="vyb-games-streak">
+                <span className="vyb-games-streak-label">Streak</span>
+                <span className="vyb-games-streak-value">🔥 12</span>
+              </div>
+            </header>
+
+            <section className="vyb-games-featured-card">
+              <div className="vyb-games-featured-top">
+                <span className="vyb-games-neon-pill">Featured Challenge</span>
+                <span className="vyb-games-featured-badge">Daily Zip</span>
+              </div>
+              <div className="vyb-games-featured-content">
+                <h2>CONNECT</h2>
+                <p>Daily logic puzzle for everyone</p>
+              </div>
+              <div className="vyb-games-featured-bottom">
+                <div className="vyb-games-players">
+                  <div className="vyb-games-player-avatar" style={{ zIndex: 3 }}></div>
+                  <div className="vyb-games-player-avatar" style={{ zIndex: 2 }}></div>
+                  <div className="vyb-games-player-avatar is-count" style={{ zIndex: 1 }}>
+                    1k+
+                  </div>
+                </div>
+                <button type="button" className="vyb-games-play-btn" onClick={() => setConnectOpen(true)}>Play</button>
+              </div>
+            </section>
+
+            <div>
+              <h3 className="vyb-games-section-title">Game Library</h3>
+              <div className="vyb-games-grid">
+                <div className="vyb-games-glass-card">
+                  <div className="vyb-games-icon">🎨</div>
+                  <h4 className="vyb-games-card-title">Scribble</h4>
+                  <p className="vyb-games-card-subtitle">Multiplayer Chat</p>
+                </div>
+                <div className="vyb-games-glass-card">
+                  <div className="vyb-games-icon">🃏</div>
+                  <h4 className="vyb-games-card-title">Uno Cards</h4>
+                  <p className="vyb-games-card-subtitle">2-4 Players</p>
+                </div>
+                <div className="vyb-games-glass-card">
+                  <div className="vyb-games-icon">⚡</div>
+                  <h4 className="vyb-games-card-title">1% IQ</h4>
+                  <p className="vyb-games-card-subtitle">Fast Reaction</p>
+                </div>
+                <div className="vyb-games-glass-card">
+                  <div className="vyb-games-icon">👑</div>
+                  <h4 className="vyb-games-card-title">N-Queens</h4>
+                  <p className="vyb-games-card-subtitle">Logic Chess</p>
+                </div>
+                <div className="vyb-games-glass-card">
+                  <div className="vyb-games-icon">🌈</div>
+                  <h4 className="vyb-games-card-title">Color Sort</h4>
+                  <p className="vyb-games-card-subtitle">Relaxing Solo</p>
+                </div>
+                <div className="vyb-games-glass-card is-dashed">
+                  <div className="vyb-games-icon">🔒</div>
+                  <h4 className="vyb-games-card-title">More...</h4>
+                  <p className="vyb-games-card-subtitle">TBA</p>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ textAlign: "center", marginTop: "2rem" }}>
+              <p className="vyb-games-subtitle" style={{ margin: 0 }}>Vyb Playground</p>
+            </div>
+          </div>
+        ) : (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "var(--spm-glass)" }}>
+            <header className="vyb-events-header">
+              <label className="vyb-events-search">
+                <SearchIcon />
+                <input
+                  type="search"
+                  value={searchValue}
+                  onChange={(event) => setSearchValue(event.target.value)}
+                  placeholder="Search clubs, nights, workshops, or venues"
+                  aria-label="Search campus events"
+                />
+              </label>
+
+              <button
+                type="button"
+                className={`vyb-events-icon-button${notificationsOpen ? " is-active" : ""}`}
+                aria-label="Open event notifications"
+                onClick={() => setNotificationsOpen((current) => !current)}
+              >
+                <BellIcon />
+              </button>
+            </header>
 
         {flashMessage ? <div className="vyb-campus-flash-message">{flashMessage}</div> : null}
 
@@ -1215,7 +1312,14 @@ export function CampusEventsShell({
             </div>
           )}
         </div>
-      </section>
+        
+        <Link href="/events/host" className="vyb-events-fab-host">
+          <TicketIcon />
+          <span>Host event</span>
+        </Link>
+      </div>
+    )}
+  </section>
 
       <button
         type="button"
@@ -1226,7 +1330,7 @@ export function CampusEventsShell({
 
       <aside className="vyb-campus-right-panel vyb-campus-rail">
         <div className="vyb-campus-side-card vyb-events-side-card">
-          <span className="vyb-campus-side-label">Your event lane</span>
+          <span className="vyb-campus-side-label">Your hub lane</span>
           <div className="vyb-events-side-user">
             <img src={viewerAvatarUrl ?? `https://i.pravatar.cc/120?u=${encodeURIComponent(viewerEmail)}`} alt={viewerName} />
             <div>

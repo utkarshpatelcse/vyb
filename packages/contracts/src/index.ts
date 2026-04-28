@@ -1324,3 +1324,77 @@ export interface ManageCampusEventResponse {
   eventId: string;
   action: "cancelled" | "deleted";
 }
+
+export type ConnectDifficulty = "Intro" | "Intermediate" | "Advanced" | "Pro";
+
+export interface ConnectCoordinate {
+  x: number;
+  y: number;
+}
+
+export interface ConnectDot extends ConnectCoordinate {
+  id: number;
+}
+
+export interface ConnectPublicLevel {
+  levelId: number;
+  gridSize: number;
+  dots: ConnectDot[];
+  difficulty: ConnectDifficulty;
+}
+
+export interface ConnectLeaderboardEntry {
+  rank: number;
+  userId: string;
+  username: string;
+  displayName: string;
+  elapsedSeconds: number;
+  hintsUsed: number;
+  adjustedTimeSeconds: number;
+  completedAt: string;
+}
+
+export interface ConnectDailyLevelResponse {
+  game: "connect";
+  sessionId: string;
+  dailyIndex: number;
+  dailyKey: string;
+  launchDate: string;
+  nextResetAt: string;
+  serverStartedAt: string;
+  hintsUsed: number;
+  level: ConnectPublicLevel;
+  leaderboard: ConnectLeaderboardEntry[];
+  viewerBest: ConnectLeaderboardEntry | null;
+}
+
+export interface ConnectHintRequest {
+  sessionId: string;
+  path: ConnectCoordinate[];
+}
+
+export interface ConnectHintResponse {
+  sessionId: string;
+  nextMove: ConnectCoordinate | null;
+  from: ConnectCoordinate | null;
+  validPrefixLength: number;
+  hintsUsed: number;
+  cooldownSeconds: number;
+  ghostExpiresAt: string | null;
+}
+
+export interface ConnectSubmitRequest {
+  sessionId: string;
+  path: ConnectCoordinate[];
+}
+
+export interface ConnectSubmitResponse {
+  solved: boolean;
+  message: string;
+  sessionId: string;
+  elapsedSeconds: number | null;
+  hintsUsed: number;
+  adjustedTimeSeconds: number | null;
+  leaderboard: ConnectLeaderboardEntry[];
+  viewerBest: ConnectLeaderboardEntry | null;
+}
