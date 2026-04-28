@@ -187,8 +187,51 @@ function upsertMessageRecord(messages: ChatMessageRecord[], incomingMessage: Cha
   return nextMessages;
 }
 
+function replaceOptimisticMessageRecord(
+  messages: ChatMessageRecord[],
+  optimisticMessageId: string | null | undefined,
+  incomingMessage: ChatMessageRecord
+) {
+  if (!optimisticMessageId) {
+    return upsertMessageRecord(messages, incomingMessage);
+  }
+
+  const optimisticIndex = messages.findIndex((message) => message.id === optimisticMessageId);
+  if (optimisticIndex === -1) {
+    return upsertMessageRecord(messages, incomingMessage);
+  }
+
+  const nextMessages = [...messages];
+  nextMessages[optimisticIndex] = incomingMessage;
+  return dedupeMessageRecords(nextMessages);
+}
+
 function dedupeMessageRecords(messages: ChatMessageRecord[]) {
   return messages.reduce<ChatMessageRecord[]>((current, message) => upsertMessageRecord(current, message), []);
+}
+
+function getOptimisticChatReactions(
+  reactions: ChatMessageRecord["reactions"],
+  viewerMembershipId: string,
+  emoji: string
+) {
+  const viewerAlreadyUsedEmoji = reactions.some(
+    (reaction) => reaction.membershipId === viewerMembershipId && reaction.emoji === emoji
+  );
+  const withoutViewerReaction = reactions.filter((reaction) => reaction.membershipId !== viewerMembershipId);
+
+  if (viewerAlreadyUsedEmoji) {
+    return withoutViewerReaction;
+  }
+
+  return [
+    ...withoutViewerReaction,
+    {
+      membershipId: viewerMembershipId,
+      emoji,
+      createdAt: new Date().toISOString()
+    }
+  ];
 }
 
 function normalizeConversationMessages(conversation: ActiveConversation): ActiveConversation {
@@ -3523,8 +3566,23 @@ export function CampusMessagesShell({
       return;
     }
 
+    const previousReactions = targetMessage.reactions;
+    const optimisticReactions = getOptimisticChatReactions(previousReactions, viewerMembershipId, emoji);
+
     setMessageActionBusy(true);
     setMessageActionError(null);
+    setReactionPickerMessageId(null);
+    clearSelectedMessage();
+    setActiveConversation((current) =>
+      current
+        ? {
+            ...current,
+            messages: current.messages.map((message) =>
+              message.id === messageId ? { ...message, reactions: optimisticReactions } : message
+            )
+          }
+        : current
+    );
 
     try {
       const response = await fetchChatEndpoint(`/api/chats/messages/${encodeURIComponent(messageId)}/reactions`, {
@@ -3535,6 +3593,16 @@ export function CampusMessagesShell({
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
+        setActiveConversation((current) =>
+          current
+            ? {
+                ...current,
+                messages: current.messages.map((message) =>
+                  message.id === messageId ? { ...message, reactions: previousReactions } : message
+                )
+              }
+            : current
+        );
         setMessageActionError(data?.error?.message ?? "We could not react to that message.");
         return;
       }
@@ -3550,8 +3618,17 @@ export function CampusMessagesShell({
             }
           : current
       );
-      clearSelectedMessage();
     } catch {
+      setActiveConversation((current) =>
+        current
+          ? {
+              ...current,
+              messages: current.messages.map((message) =>
+                message.id === messageId ? { ...message, reactions: previousReactions } : message
+              )
+            }
+          : current
+      );
       setMessageActionError("Network issue while reacting to that message.");
     } finally {
       setMessageActionBusy(false);
@@ -4057,7 +4134,8 @@ export function CampusMessagesShell({
     messageKind,
     replyToMessageId,
     attachment,
-    durationKey
+    durationKey,
+    optimisticMessageId
   }: {
     conversationId: string;
     plaintext: string;
@@ -4065,6 +4143,7 @@ export function CampusMessagesShell({
     replyToMessageId?: string | null;
     attachment?: ChatEncryptedAttachment | null;
     durationKey?: ChatMessageTtlKey;
+    optimisticMessageId?: string | null;
   }) {
     const peerIdentity = activeConversation?.peer.publicKey ?? null;
     const chatReady = await ensureChatIdentity();
@@ -4108,15 +4187,21 @@ export function CampusMessagesShell({
 
     if (sentMessage) {
       messageIdsRef.current.add(sentMessage.id);
-      setMessagePlaintextById((current) => ({
-        ...current,
-        [sentMessage.id]: plaintext
-      }));
+      if (optimisticMessageId) {
+        messageIdsRef.current.delete(optimisticMessageId);
+      }
+      setMessagePlaintextById((current) => {
+        const next = { ...current, [sentMessage.id]: plaintext };
+        if (optimisticMessageId) {
+          delete next[optimisticMessageId];
+        }
+        return next;
+      });
       setActiveConversation((current) =>
         current && current.id === conversationId
           ? {
               ...current,
-              messages: upsertMessageRecord(current.messages, sentMessage)
+              messages: replaceOptimisticMessageRecord(current.messages, optimisticMessageId, sentMessage)
             }
           : current
       );
@@ -4190,10 +4275,13 @@ export function CampusMessagesShell({
     setSendError(null);
     clearTypingStopTimer();
     sendTypingSignal(false);
+    let failedOptimisticMessageId: string | null = null;
 
     try {
       const queuedMedia = [...pendingMediaAttachments];
-      const outgoingMessageKind: ChatMessageKind = pendingShareCard ? pendingShareCard.kind : queuedMedia.length > 0 ? "image" : "text";
+      const queuedShareCard = pendingShareCard;
+      const queuedReplyToMessageId = replyingToMessageId;
+      const outgoingMessageKind: ChatMessageKind = queuedShareCard ? queuedShareCard.kind : queuedMedia.length > 0 ? "image" : "text";
 
       if (queuedMedia.length > 0) {
         setUploadingMedia(true);
@@ -4205,31 +4293,109 @@ export function CampusMessagesShell({
             conversationId,
             plaintext: index === 0 ? nextMessage : "",
             messageKind: outgoingMessageKind,
-            replyToMessageId: index === 0 ? replyingToMessageId : null,
+            replyToMessageId: index === 0 ? queuedReplyToMessageId : null,
             attachment: uploadedAttachment
           });
         }
       } else {
-        const outgoingText = pendingShareCard
-          ? serializeShareCardPayload(pendingShareCard, nextMessage || null)
+        const outgoingText = queuedShareCard
+          ? serializeShareCardPayload(queuedShareCard, nextMessage || null)
           : nextMessage;
+        const optimisticMessageId = `optimistic-chat-${conversationId}-${Date.now()}`;
+        failedOptimisticMessageId = optimisticMessageId;
+        const optimisticMessage: ChatMessageRecord = {
+          id: optimisticMessageId,
+          conversationId,
+          senderUserId: viewerUserId,
+          senderMembershipId: viewerMembershipId,
+          senderIdentityId: viewerIdentity?.id ?? localChatKey?.identityId ?? "pending",
+          messageKind: outgoingMessageKind,
+          cipherText: "",
+          cipherIv: "",
+          cipherAlgorithm: "pending",
+          replyToMessageId: queuedReplyToMessageId ?? null,
+          attachment: null,
+          createdAt: new Date().toISOString(),
+          expiresAt: null,
+          isStarred: false,
+          isSaved: false,
+          reactions: []
+        };
+
+        messageIdsRef.current.add(optimisticMessageId);
+        setMessagePlaintextById((current) => ({
+          ...current,
+          [optimisticMessageId]: outgoingText
+        }));
+        const optimisticConversation =
+          activeConversation && activeConversation.id === conversationId
+            ? {
+                ...activeConversation,
+                messages: upsertMessageRecord(activeConversation.messages, optimisticMessage)
+              }
+            : null;
+        setActiveConversation((current) => {
+          if (!current || current.id !== conversationId) {
+            return current;
+          }
+
+          return {
+            ...current,
+            messages: upsertMessageRecord(current.messages, optimisticMessage)
+          };
+        });
+        if (optimisticConversation) {
+          setConversations((conversationItems) =>
+            upsertConversationItem(conversationItems, buildConversationPreview(optimisticConversation))
+          );
+        }
+        setDraftMessage("");
+        setPendingShareCard(null);
+        setShareMenuOpen(false);
+        setReplyingToMessageId(null);
+        focusComposerSoon();
+
         await dispatchEncryptedMessage({
           conversationId,
           plaintext: outgoingText,
           messageKind: outgoingMessageKind,
-          replyToMessageId: replyingToMessageId,
-          attachment: null
+          replyToMessageId: queuedReplyToMessageId,
+          attachment: null,
+          optimisticMessageId
         });
+        failedOptimisticMessageId = null;
       }
 
-      setDraftMessage("");
-      setPendingShareCard(null);
+      if (queuedMedia.length > 0) {
+        setDraftMessage("");
+        setPendingShareCard(null);
+        setShareMenuOpen(false);
+        setReplyingToMessageId(null);
+      }
       clearPendingMediaAttachments();
       setViewOnceEnabled(false);
-      setShareMenuOpen(false);
-      setReplyingToMessageId(null);
       focusComposerSoon();
     } catch (error) {
+      if (failedOptimisticMessageId) {
+        const optimisticMessageId = failedOptimisticMessageId;
+        messageIdsRef.current.delete(optimisticMessageId);
+        setMessagePlaintextById((current) => {
+          const next = { ...current };
+          delete next[optimisticMessageId];
+          return next;
+        });
+        setActiveConversation((current) =>
+          current
+            ? {
+                ...current,
+                messages: current.messages.filter((message) => message.id !== optimisticMessageId)
+              }
+            : current
+        );
+      }
+      setDraftMessage(nextMessage);
+      setPendingShareCard(pendingShareCard);
+      setReplyingToMessageId(replyingToMessageId);
       setSendError(error instanceof Error ? error.message : "Network error. Please try again in a moment.");
     } finally {
       setSending(false);

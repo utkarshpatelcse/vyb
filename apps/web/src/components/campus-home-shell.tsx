@@ -453,7 +453,11 @@ export function CampusHomeShell({
 }: CampusHomeShellProps) {
   const router = useRouter();
   const { isFromSearch, goBack, clearOrigin } = useSearchNavigationGuard("/search");
-  const engagement = useSocialPostEngagement(initialPosts, "feed");
+  const engagement = useSocialPostEngagement(initialPosts, "feed", {
+    viewerName,
+    viewerUsername,
+    viewerUserId: viewerUserId ?? null
+  });
   const settingsIdentity = useMemo(
     () => ({
       userId: viewerUserId ?? null,
@@ -731,6 +735,11 @@ export function CampusHomeShell({
   });
   const createPostHref = "/create?kind=post&from=%2Fhome";
   const createStoryHref = "/create?kind=story&from=%2Fhome";
+
+  useEffect(() => {
+    router.prefetch(createPostHref);
+    router.prefetch(createStoryHref);
+  }, [createPostHref, createStoryHref, router]);
 
   function syncPostEverywhere(postId: string, updater: (post: FeedCard) => FeedCard) {
     engagement.setPosts((current) => current.map((post) => (post.id === postId ? updater(post) : post)));
@@ -1401,7 +1410,13 @@ export function CampusHomeShell({
             <button type="button" className="vyb-campus-top-icon" aria-label="Notifications">
               <BellIcon />
             </button>
-            <button type="button" className="vyb-campus-post-trigger" onClick={() => router.push(createPostHref)}>
+            <button
+              type="button"
+              className="vyb-campus-post-trigger"
+              onPointerEnter={() => router.prefetch(createPostHref)}
+              onPointerDown={() => router.prefetch(createPostHref)}
+              onClick={() => router.push(createPostHref)}
+            >
               <AddPostIcon />
               <span>Create post</span>
             </button>

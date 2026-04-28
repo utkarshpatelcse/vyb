@@ -342,7 +342,11 @@ export function CampusReelsShell({
 }: CampusReelsShellProps) {
   const router = useRouter();
   const { isFromSearch, goBack, clearOrigin } = useSearchNavigationGuard("/search");
-  const engagement = useSocialPostEngagement(initialVibes, "vibe");
+  const engagement = useSocialPostEngagement(initialVibes, "vibe", {
+    viewerName,
+    viewerUsername,
+    viewerUserId
+  });
   const settingsIdentity = useMemo(
     () => ({
       userId: viewerUserId,

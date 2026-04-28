@@ -5,6 +5,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 type CommentMediaKind = "gif" | "sticker";
 type RealtimeState = "idle" | "connecting" | "live" | "reconnecting" | "offline";
+type SocialEngagementViewer = {
+  viewerName?: string;
+  viewerUsername?: string;
+  viewerUserId?: string | null;
+};
 
 type SocialRealtimeEvent =
   | { type: "social.connected"; tenantId?: string; payload?: never }
@@ -37,7 +42,11 @@ function isCommentItem(value: unknown): value is CommentItem {
   );
 }
 
-export function useSocialPostEngagement(initialPosts: FeedCard[], placementFilter: FeedCard["placement"] = "feed") {
+export function useSocialPostEngagement(
+  initialPosts: FeedCard[],
+  placementFilter: FeedCard["placement"] = "feed",
+  viewer: SocialEngagementViewer = {}
+) {
   const [posts, setPosts] = useState(initialPosts);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const [commentsByPost, setCommentsByPost] = useState<Record<string, CommentItem[]>>({});
@@ -524,6 +533,9 @@ export function useSocialPostEngagement(initialPosts: FeedCard[], placementFilte
     const post = selectedPost;
     const body = threadDraft.trim();
     const mediaUrl = threadMediaUrl.trim();
+    const replyTarget = threadReplyTarget;
+    const mediaType = threadMediaType;
+    const requestedAnonymous = threadIsAnonymous && post?.allowAnonymousComments !== false;
 
     if (!post) {
       return;
@@ -534,6 +546,57 @@ export function useSocialPostEngagement(initialPosts: FeedCard[], placementFilte
       return;
     }
 
+    const optimisticCommentId = `optimistic-comment-${post.id}-${Date.now()}`;
+    const optimisticComment: CommentItem = {
+      id: optimisticCommentId,
+      postId: post.id,
+      membershipId: null,
+      authorUserId: requestedAnonymous ? null : viewer.viewerUserId ?? null,
+      parentCommentId: replyTarget?.id ?? null,
+      body,
+      mediaUrl: mediaUrl || null,
+      mediaType: mediaUrl ? mediaType : null,
+      isAnonymous: requestedAnonymous,
+      createdAt: new Date().toISOString(),
+      reactions: 0,
+      viewerHasLiked: false,
+      viewerCanManage: true,
+      author: requestedAnonymous
+        ? {
+            userId: null,
+            username: "anonymous",
+            displayName: "Anonymous Vyber",
+            avatarUrl: null,
+            isAnonymous: true
+          }
+        : {
+            userId: viewer.viewerUserId ?? null,
+            username: viewer.viewerUsername || "you",
+            displayName: viewer.viewerName || viewer.viewerUsername || "You",
+            avatarUrl: null,
+            isAnonymous: false
+          }
+    };
+
+    seenRealtimeCommentIdsRef.current.add(optimisticCommentId);
+    setCommentsByPost((current) => ({
+      ...current,
+      [post.id]: [...(current[post.id] ?? []), optimisticComment]
+    }));
+    setPosts((current) =>
+      current.map((item) =>
+        item.id === post.id
+          ? {
+              ...item,
+              comments: item.comments + 1
+            }
+          : item
+      )
+    );
+    setThreadDraft("");
+    setThreadMediaUrl("");
+    setThreadMediaType("gif");
+    setThreadReplyTarget(null);
     setThreadSubmitting(true);
     setThreadMessage(null);
 
@@ -545,11 +608,11 @@ export function useSocialPostEngagement(initialPosts: FeedCard[], placementFilte
         },
         body: JSON.stringify({
           body: body || undefined,
-          parentCommentId: threadReplyTarget?.id ?? null,
+          parentCommentId: replyTarget?.id ?? null,
           mediaUrl: mediaUrl || null,
-          mediaType: mediaUrl ? threadMediaType : null,
-          mediaMimeType: mediaUrl ? (threadMediaType === "sticker" ? "image/webp" : "image/gif") : null,
-          isAnonymous: threadIsAnonymous && post.allowAnonymousComments !== false
+          mediaType: mediaUrl ? mediaType : null,
+          mediaMimeType: mediaUrl ? (mediaType === "sticker" ? "image/webp" : "image/gif") : null,
+          isAnonymous: requestedAnonymous
         })
       });
       const payload = (await response.json().catch(() => null)) as
@@ -562,6 +625,24 @@ export function useSocialPostEngagement(initialPosts: FeedCard[], placementFilte
         | null;
 
       if (!response.ok || !payload?.item) {
+        setCommentsByPost((current) => ({
+          ...current,
+          [post.id]: (current[post.id] ?? []).filter((comment) => comment.id !== optimisticCommentId)
+        }));
+        setPosts((current) =>
+          current.map((item) =>
+            item.id === post.id
+              ? {
+                  ...item,
+                  comments: Math.max(0, item.comments - 1)
+                }
+              : item
+          )
+        );
+        setThreadDraft(body);
+        setThreadMediaUrl(mediaUrl);
+        setThreadMediaType(mediaType);
+        setThreadReplyTarget(replyTarget);
         setThreadMessage(payload?.error?.message ?? "We could not publish this comment right now.");
         return;
       }
@@ -569,23 +650,29 @@ export function useSocialPostEngagement(initialPosts: FeedCard[], placementFilte
       seenRealtimeCommentIdsRef.current.add(payload.item.id);
       setCommentsByPost((current) => ({
         ...current,
-        [post.id]: [...(current[post.id] ?? []), payload.item!]
+        [post.id]: (current[post.id] ?? []).map((comment) =>
+          comment.id === optimisticCommentId ? payload.item! : comment
+        )
+      }));
+    } catch {
+      setCommentsByPost((current) => ({
+        ...current,
+        [post.id]: (current[post.id] ?? []).filter((comment) => comment.id !== optimisticCommentId)
       }));
       setPosts((current) =>
         current.map((item) =>
           item.id === post.id
             ? {
-              ...item,
-              comments: item.comments + 1
-            }
+                ...item,
+                comments: Math.max(0, item.comments - 1)
+              }
             : item
         )
       );
-      setThreadDraft("");
-      setThreadMediaUrl("");
-      setThreadMediaType("gif");
-      setThreadReplyTarget(null);
-    } catch {
+      setThreadDraft(body);
+      setThreadMediaUrl(mediaUrl);
+      setThreadMediaType(mediaType);
+      setThreadReplyTarget(replyTarget);
       setThreadMessage("We could not publish this comment right now.");
     } finally {
       setThreadSubmitting(false);
