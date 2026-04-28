@@ -125,7 +125,7 @@ export function SocialPostActionSheet({
   }
 
   const itemLabel = post.placement === "vibe" || post.kind === "video" ? "vibe" : "post";
-  const authorHandle = post.isAnonymous ? "Anonymous" : `@${post.author.username}`;
+  const authorHandle = post.isAnonymous ? "Anonymous Vyber" : `@${post.author.username}`;
 
   return (
     <div className="vyb-post-actions-backdrop" role="presentation" onClick={onClose}>

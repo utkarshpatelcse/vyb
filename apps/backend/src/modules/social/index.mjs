@@ -37,7 +37,7 @@ import {
 } from "./repository.mjs";
 
 const allowedPostKinds = new Set(["text", "image", "video"]);
-const allowedReactionTypes = new Set(["fire", "support", "like"]);
+const allowedReactionTypes = new Set(["fire", "support", "like", "love", "insight", "funny"]);
 const allowedStoryMediaTypes = new Set(["image", "video"]);
 const allowedCommentMediaTypes = new Set(["image", "gif", "sticker"]);
 const allowedVibeVideoMimeTypes = new Set(["video/mp4", "video/webm", "video/quicktime"]);

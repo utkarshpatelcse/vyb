@@ -364,7 +364,7 @@ export function CampusUploadShell({
     [viewerName, viewerUsername]
   );
   const canPostAnonymously = mode === "vibe" || mode === "moment";
-  const composerDisplayName = canPostAnonymously && isAnonymous ? "Anonymous" : viewerName;
+  const composerDisplayName = canPostAnonymously && isAnonymous ? "Anonymous Vyber" : viewerName;
   const composerUsername = canPostAnonymously && isAnonymous ? "anonymous" : viewerUsername;
   const composerPillLabel =
     mode === "story"

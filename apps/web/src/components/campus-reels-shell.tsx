@@ -309,7 +309,7 @@ function upsertShareTarget(items: SocialShareTarget[], target: SocialShareTarget
 }
 
 function buildSharedPostCardPayload(post: FeedCard) {
-  const authorLabel = post.isAnonymous ? "Anonymous" : post.author.displayName || post.author.username;
+  const authorLabel = post.isAnonymous ? "Anonymous Vyber" : post.author.displayName || post.author.username;
   return JSON.stringify({
     version: 1,
     type: "vibe_card",

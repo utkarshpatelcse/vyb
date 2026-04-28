@@ -207,7 +207,7 @@ export function SocialThreadSheet({
 
   const canSubmit = draft.trim().length > 0 || mediaUrl.trim().length > 0;
   const canCommentAnonymously = post?.allowAnonymousComments !== false;
-  const composerName = isAnonymousComment && canCommentAnonymously ? "Anonymous" : viewerName;
+  const composerName = isAnonymousComment && canCommentAnonymously ? "Anonymous Vyber" : viewerName;
   const composerUsername = isAnonymousComment && canCommentAnonymously ? "anonymous" : viewerUsername;
   const mediaSuggestions = openPicker === "sticker" ? CAMPUS_STICKERS : TRENDING_GIFS;
   const backdropStyle = {

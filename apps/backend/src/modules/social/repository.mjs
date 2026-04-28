@@ -37,9 +37,10 @@ const fallbackStorePath = path.resolve(directoryName, "../../data/social-store.j
 const superAdminStorePath = path.resolve(directoryName, "../../data/super-admin-store.json");
 const TENANT_SCAN_LIMIT = 5000;
 const FEED_SCAN_MULTIPLIER = 4;
-const INACTIVE_COMMENT_REACTION_TYPE = "__inactive__";
+const INACTIVE_REACTION_TYPE = "__inactive__";
+const INACTIVE_COMMENT_REACTION_TYPE = INACTIVE_REACTION_TYPE;
 const ANONYMOUS_AUTHOR_USERNAME = "anonymous";
-const ANONYMOUS_AUTHOR_DISPLAY_NAME = "Anonymous";
+const ANONYMOUS_AUTHOR_DISPLAY_NAME = "Anonymous Vyber";
 
 const defaultFallbackStore = {
   posts: [],
@@ -844,13 +845,14 @@ async function buildPostCountMaps(tenantId, postIds, viewerMembershipId = null) 
     }
 
     for (const item of reactionsResponse.data.reactions) {
-      if (!idSet.has(item.postId)) {
+      const reactionType = item.reactionType ?? "like";
+      if (!idSet.has(item.postId) || reactionType === INACTIVE_REACTION_TYPE) {
         continue;
       }
       reactions.set(item.postId, Number(reactions.get(item.postId) ?? 0) + 1);
 
       if (viewerMembershipId && item.membershipId === viewerMembershipId && !viewerReactions.has(item.postId)) {
-        viewerReactions.set(item.postId, item.reactionType ?? "like");
+        viewerReactions.set(item.postId, reactionType);
       }
     }
 
@@ -878,13 +880,14 @@ async function buildPostCountMaps(tenantId, postIds, viewerMembershipId = null) 
     }
 
     for (const item of store.reactions.map(normalizeFallbackReactionRecord)) {
-      if (item.deletedAt || !idSet.has(item.postId)) {
+      const reactionType = item.reactionType ?? "like";
+      if (item.deletedAt || !idSet.has(item.postId) || reactionType === INACTIVE_REACTION_TYPE) {
         continue;
       }
       reactions.set(item.postId, Number(reactions.get(item.postId) ?? 0) + 1);
 
       if (viewerMembershipId && item.membershipId === viewerMembershipId && !viewerReactions.has(item.postId)) {
-        viewerReactions.set(item.postId, item.reactionType ?? "like");
+        viewerReactions.set(item.postId, reactionType);
       }
     }
 
@@ -911,7 +914,7 @@ async function countReactionsByPost(postId) {
     limit: TENANT_SCAN_LIMIT
   });
 
-  return response.data.reactions.length;
+  return response.data.reactions.filter((item) => (item.reactionType ?? "like") !== INACTIVE_REACTION_TYPE).length;
 }
 
 async function buildStoryReactionMaps(tenantId, storyIds, viewerMembershipId = null) {
@@ -1408,8 +1411,9 @@ export async function findPostById(postId, { tenantId = null, viewerMembershipId
       reactionKey: buildReactionKey(item.id, viewerMembershipId)
     });
     const current = existing.data.reactions[0] ?? null;
-    if (current) {
-      counts.viewerReactions.set(item.id, current.reactionType ?? "like");
+    const reactionType = current?.reactionType ?? null;
+    if (current && reactionType !== INACTIVE_REACTION_TYPE) {
+      counts.viewerReactions.set(item.id, reactionType ?? "like");
     }
   }
 
@@ -1681,11 +1685,17 @@ export async function upsertReaction(payload) {
   const reactionKey = buildReactionKey(payload.postId, payload.membershipId);
   const existing = await getReactionByKeyQuery(getSocialDc(), { reactionKey });
   const current = existing.data.reactions[0] ?? null;
+  const currentReactionType = current?.reactionType ?? null;
+  const isRemovingReaction =
+    currentReactionType !== null &&
+    currentReactionType !== INACTIVE_REACTION_TYPE &&
+    currentReactionType === payload.reactionType;
+  const nextReactionType = isRemovingReaction ? INACTIVE_REACTION_TYPE : payload.reactionType;
 
   if (current) {
     await updateReactionMutation(getSocialDc(), {
       id: current.id,
-      reactionType: payload.reactionType
+      reactionType: nextReactionType
     });
   } else {
     await createReactionMutation(getSocialDc(), {
@@ -1693,17 +1703,17 @@ export async function upsertReaction(payload) {
       reactionKey,
       postId: payload.postId,
       membershipId: payload.membershipId,
-      reactionType: payload.reactionType
+      reactionType: nextReactionType
     });
   }
 
   return {
     postId: payload.postId,
     membershipId: payload.membershipId,
-    reactionType: payload.reactionType,
+    reactionType: isRemovingReaction ? null : payload.reactionType,
     aggregateCount: await countReactionsByPost(payload.postId),
-    active: true,
-    viewerReactionType: payload.reactionType
+    active: !isRemovingReaction,
+    viewerReactionType: isRemovingReaction ? null : payload.reactionType
   };
 }
 
@@ -1713,13 +1723,15 @@ export async function listPostReactions({ postId, limit = 100 }) {
     limit
   });
 
-  return response.data.reactions.map((item) => ({
-    id: item.id,
-    postId: item.postId,
-    membershipId: item.membershipId,
-    reactionType: item.reactionType ?? "like",
-    createdAt: toIsoString(item.createdAt)
-  }));
+  return response.data.reactions
+    .filter((item) => (item.reactionType ?? "like") !== INACTIVE_REACTION_TYPE)
+    .map((item) => ({
+      id: item.id,
+      postId: item.postId,
+      membershipId: item.membershipId,
+      reactionType: item.reactionType ?? "like",
+      createdAt: toIsoString(item.createdAt)
+    }));
 }
 
 export async function togglePostSave({ tenantId, postId, userId }) {

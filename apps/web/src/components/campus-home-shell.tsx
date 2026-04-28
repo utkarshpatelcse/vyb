@@ -409,7 +409,7 @@ function truncateText(value: string, maxLength: number) {
 }
 
 function getPostAuthorLabel(post: FeedCard) {
-  return post.isAnonymous ? "Anonymous" : post.author.displayName || post.author.username;
+  return post.isAnonymous ? "Anonymous Vyber" : post.author.displayName || post.author.username;
 }
 
 function buildInternalShareDraft(post: FeedCard) {
@@ -744,14 +744,14 @@ export function CampusHomeShell({
   }
 
   async function handlePostReaction(post: FeedCard, reactionType: ReactionKind = "like", triggerBurst = false) {
-    if (triggerBurst && reactionType === "like") {
-      setHeartBurstPostId(post.id);
-    }
-
     const reaction = await engagement.react(post.id, reactionType);
     if (!reaction) {
       setFlashMessage("We could not update that reaction right now.");
       return;
+    }
+
+    if (reaction.active && reaction.viewerReactionType === "like" && (triggerBurst || reactionType === "like")) {
+      setHeartBurstPostId(post.id);
     }
 
     syncPostEverywhere(post.id, (current) => ({
@@ -1488,6 +1488,7 @@ export function CampusHomeShell({
                 ? [{ url: post.mediaUrl, kind: post.kind === "video" ? "video" as const : "image" as const }]
                 : [];
               const reactionMeta = getPostReactionMeta(post.viewerReactionType);
+              const hasViewerReaction = Boolean(post.viewerReactionType);
               const displayControls = getPostDisplayControls(storedCampusSettings, post, postDisplayPreferences[post.id]);
 
               return (
@@ -1527,7 +1528,6 @@ export function CampusHomeShell({
                             {post.author.displayName || post.author.username}
                           </Link>
                         )}
-                        {post.isAnonymous ? <span className="fc-anon-badge">Anonymous</span> : null}
                       </div>
                       <div className="fc-header-bottom">
                         <span className="fc-username">{post.isAnonymous ? "Hidden profile" : `@${post.author.username}`}</span>
@@ -1593,8 +1593,10 @@ export function CampusHomeShell({
                       >
                         <button
                           type="button"
-                          className={`fc-action-btn is-reaction-btn reaction-${reactionMeta.tone}${post.viewerReactionType ? " is-active" : ""}`}
+                          className={`fc-action-btn is-reaction-btn${hasViewerReaction ? ` reaction-${reactionMeta.tone} is-active` : ""}`}
                           disabled={engagement.loadingPostId === post.id}
+                          aria-pressed={hasViewerReaction}
+                          title={hasViewerReaction ? `Remove ${reactionMeta.label}` : "Like"}
                           onPointerDown={() => handleReactionButtonPointerDown(post.id)}
                           onPointerUp={handleReactionButtonPointerCancel}
                           onPointerCancel={handleReactionButtonPointerCancel}
