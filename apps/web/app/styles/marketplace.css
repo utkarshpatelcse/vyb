@@ -4729,6 +4729,17 @@
   display: grid;
   grid-template-columns: repeat(var(--connect-grid-size), minmax(0, 1fr));
   grid-template-rows: repeat(var(--connect-grid-size), minmax(0, 1fr));
+  pointer-events: none;
+}
+
+.vyb-connect-input-layer {
+  position: absolute;
+  inset: var(--connect-board-pad);
+  z-index: 10;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .vyb-connect-cell {

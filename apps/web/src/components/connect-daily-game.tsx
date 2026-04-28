@@ -6,7 +6,7 @@ import type {
   ConnectHintResponse,
   ConnectSubmitResponse
 } from "@vyb/contracts";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 
 type ConnectDailyGameProps = {
   onExit: () => void;
@@ -397,8 +397,13 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     applyCell(point);
   }
 
-  function handleBoardPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+  function handleInputPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     event.preventDefault();
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Some embedded browsers release pointer capture when devtools/emulation is active.
+    }
     const point = getPointFromPointer(event);
 
     if (point) {
@@ -406,7 +411,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     }
   }
 
-  function handleBoardPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+  function handleInputPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
     if (!isDraggingRef.current) {
       return;
     }
@@ -422,42 +427,6 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
   function endDrag() {
     isDraggingRef.current = false;
     lastAppliedCellKeyRef.current = null;
-  }
-
-  function handleCellPointerDown(event: ReactPointerEvent<HTMLElement>, point: ConnectCoordinate) {
-    event.preventDefault();
-    event.stopPropagation();
-    startDragAtPoint(point);
-  }
-
-  function handleCellPointerEnter(point: ConnectCoordinate) {
-    if (!isDraggingRef.current) {
-      return;
-    }
-
-    applyCell(point);
-  }
-
-  function handleCellPointerMove(event: ReactPointerEvent<HTMLElement>) {
-    if (!isDraggingRef.current) {
-      return;
-    }
-
-    event.preventDefault();
-    const point = getPointFromPointer(event);
-
-    if (point) {
-      applyCell(point);
-    }
-  }
-
-  function handleCellKeyDown(event: KeyboardEvent<HTMLElement>, point: ConnectCoordinate) {
-    if (event.key !== "Enter" && event.key !== " ") {
-      return;
-    }
-
-    event.preventDefault();
-    applyCell(point);
   }
 
   useEffect(() => {
@@ -623,16 +592,8 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
       gridCells.push(
         <div
           key={key}
-          role="button"
-          tabIndex={0}
           data-connect-x={x}
           data-connect-y={y}
-          onPointerDown={(event) => handleCellPointerDown(event, point)}
-          onPointerEnter={() => handleCellPointerEnter(point)}
-          onPointerMove={handleCellPointerMove}
-          onPointerUp={endDrag}
-          onPointerCancel={endDrag}
-          onKeyDown={(event) => handleCellKeyDown(event, point)}
           className={[
             "vyb-connect-cell",
             dot ? "is-dot" : "",
@@ -679,11 +640,6 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
           ref={boardRef}
           className="vyb-connect-board"
           style={{ "--connect-grid-size": level.gridSize } as CSSProperties}
-          onPointerDown={handleBoardPointerDown}
-          onPointerMove={handleBoardPointerMove}
-          onPointerUp={endDrag}
-          onPointerCancel={endDrag}
-          onPointerLeave={endDrag}
         >
           <svg className="vyb-connect-path-layer" viewBox={`0 0 ${level.gridSize} ${level.gridSize}`} preserveAspectRatio="none" aria-hidden="true">
             <defs>
@@ -730,6 +686,15 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
           <div className="vyb-connect-board-grid">
             {gridCells}
           </div>
+          <div
+            className="vyb-connect-input-layer"
+            role="application"
+            aria-label="Connect board drawing area"
+            onPointerDown={handleInputPointerDown}
+            onPointerMove={handleInputPointerMove}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+          />
         </div>
       </div>
 
