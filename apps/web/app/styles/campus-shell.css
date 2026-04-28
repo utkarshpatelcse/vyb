@@ -162,6 +162,17 @@
   color: var(--vyb-campus-magenta);
 }
 
+.vyb-campus-nav-item.is-routing,
+.vyb-campus-bottom-item.is-routing {
+  transform: translate3d(0, 0, 0) scale(0.98);
+  will-change: transform;
+}
+
+.vyb-campus-nav-item.is-routing .vyb-campus-icon,
+.vyb-campus-bottom-item.is-routing .vyb-campus-icon {
+  color: var(--vyb-campus-teal);
+}
+
 .vyb-campus-sidebar-footer {
   display: grid;
   gap: 0.85rem;

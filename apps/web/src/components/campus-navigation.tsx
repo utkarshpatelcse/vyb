@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { startTransition, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { SignOutButton } from "./sign-out-button";
 import { VybLogoLockup } from "./vyb-logo";
 
@@ -76,6 +77,173 @@ function ProfileIcon() {
   );
 }
 
+function normalizeHref(href: string) {
+  return href.split("?")[0]?.replace(/\/+$/u, "") || "/";
+}
+
+const warmedDevRouteDocuments = new Set<string>();
+
+type IdleWindow = Window & {
+  requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number;
+  cancelIdleCallback?: (handle: number) => void;
+};
+
+function useCampusNavPrefetch(navItems: CampusNavItem[]) {
+  const router = useRouter();
+  const hrefs = useMemo(() => Array.from(new Set(["/home", ...navItems.map((item) => item.href)])), [navItems]);
+
+  useEffect(() => {
+    for (const href of hrefs) {
+      router.prefetch(href);
+    }
+
+    if (process.env.NODE_ENV === "production" || typeof window === "undefined") {
+      return;
+    }
+
+    const controller = new AbortController();
+    const idleWindow = window as IdleWindow;
+    let cancelled = false;
+    let timeoutId: number | null = null;
+    let idleId: number | null = null;
+
+    async function warmRouteDocuments() {
+      for (const href of hrefs) {
+        if (cancelled || warmedDevRouteDocuments.has(href)) {
+          continue;
+        }
+
+        warmedDevRouteDocuments.add(href);
+
+        try {
+          await fetch(href, {
+            cache: "force-cache",
+            credentials: "same-origin",
+            headers: { "x-vyb-route-warm": "1" },
+            signal: controller.signal
+          });
+        } catch {
+          if (!controller.signal.aborted) {
+            warmedDevRouteDocuments.delete(href);
+          }
+        }
+      }
+    }
+
+    timeoutId = window.setTimeout(() => {
+      if (idleWindow.requestIdleCallback) {
+        idleId = idleWindow.requestIdleCallback(() => {
+          void warmRouteDocuments();
+        }, { timeout: 2000 });
+        return;
+      }
+
+      void warmRouteDocuments();
+    }, 500);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+
+      if (idleId !== null) {
+        idleWindow.cancelIdleCallback?.(idleId);
+      }
+    };
+  }, [hrefs, router]);
+
+  return router;
+}
+
+function CampusNavigationLink({
+  item,
+  className,
+  pendingHref,
+  setPendingHref,
+  router
+}: {
+  item: CampusNavItem;
+  className: string;
+  pendingHref: string | null;
+  setPendingHref: (href: string | null) => void;
+  router: ReturnType<typeof useRouter>;
+}) {
+  const pathname = usePathname();
+  const inFlightRef = useRef(false);
+  const normalizedHref = normalizeHref(item.href);
+  const isCurrentRoute = normalizeHref(pathname) === normalizedHref;
+  const isOptimisticActive = item.active || pendingHref === item.href || isCurrentRoute;
+  const composedClassName = `${className}${isOptimisticActive ? " is-active" : ""}${pendingHref === item.href && !isCurrentRoute ? " is-routing" : ""}`;
+
+  useEffect(() => {
+    if (pendingHref && normalizeHref(pathname) === normalizeHref(pendingHref)) {
+      inFlightRef.current = false;
+      setPendingHref(null);
+    }
+  }, [pathname, pendingHref, setPendingHref]);
+
+  function warmRoute() {
+    router.prefetch(item.href);
+  }
+
+  function goToRoute() {
+    if (inFlightRef.current) {
+      return;
+    }
+
+    inFlightRef.current = true;
+    warmRoute();
+    setPendingHref(item.href);
+    startTransition(() => {
+      router.push(item.href);
+    });
+  }
+
+  function shouldLetBrowserHandle(event: MouseEvent<HTMLAnchorElement> | PointerEvent<HTMLAnchorElement>) {
+    return event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || ("button" in event && event.button !== 0);
+  }
+
+  function handlePointerDown(event: PointerEvent<HTMLAnchorElement>) {
+    if (shouldLetBrowserHandle(event) || isCurrentRoute) {
+      return;
+    }
+
+    event.preventDefault();
+    goToRoute();
+  }
+
+  function handleClick(event: MouseEvent<HTMLAnchorElement>) {
+    if (shouldLetBrowserHandle(event) || isCurrentRoute) {
+      return;
+    }
+
+    event.preventDefault();
+    goToRoute();
+  }
+
+  return (
+    <Link
+      href={item.href}
+      prefetch
+      className={composedClassName}
+      aria-current={isOptimisticActive ? "page" : undefined}
+      onPointerDown={handlePointerDown}
+      onMouseEnter={warmRoute}
+      onFocus={warmRoute}
+      onClick={handleClick}
+    >
+      <span className="vyb-campus-nav-item-icon-wrap">
+        {item.icon}
+        {item.badge ? <span className="vyb-campus-nav-badge">{item.badge > 9 ? "9+" : item.badge}</span> : null}
+      </span>
+      <span>{item.label}</span>
+    </Link>
+  );
+}
+
 export function buildPrimaryCampusNav(
   activeSection: CampusSection,
   options?: { unreadCount?: number; profileHref?: string }
@@ -107,6 +275,9 @@ export function CampusDesktopNavigation({
   viewerName: string;
   viewerUsername: string;
 }) {
+  const router = useCampusNavPrefetch(navItems);
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+
   return (
     <aside className="vyb-campus-sidebar vyb-campus-rail">
       <Link href="/home" className="vyb-campus-branding">
@@ -115,18 +286,14 @@ export function CampusDesktopNavigation({
 
       <nav className="vyb-campus-nav" aria-label="Campus navigation">
         {navItems.map((item) => (
-          <Link
+          <CampusNavigationLink
             key={item.label}
-            href={item.href}
-            className={`vyb-campus-nav-item${item.active ? " is-active" : ""}`}
-            aria-current={item.active ? "page" : undefined}
-          >
-            <span className="vyb-campus-nav-item-icon-wrap">
-              {item.icon}
-              {item.badge ? <span className="vyb-campus-nav-badge">{item.badge > 9 ? "9+" : item.badge}</span> : null}
-            </span>
-            <span>{item.label}</span>
-          </Link>
+            item={item}
+            className="vyb-campus-nav-item"
+            pendingHref={pendingHref}
+            setPendingHref={setPendingHref}
+            router={router}
+          />
         ))}
       </nav>
 
@@ -142,23 +309,21 @@ export function CampusDesktopNavigation({
 }
 
 export function CampusMobileNavigation({ navItems }: { navItems: CampusNavItem[] }) {
+  const router = useCampusNavPrefetch(navItems);
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
   const visibleNavItems = navItems.filter((item) => item.href !== "/messages");
 
   return (
     <nav className="vyb-campus-bottom-nav" aria-label="Campus navigation">
       {visibleNavItems.map((item) => (
-        <Link
+        <CampusNavigationLink
           key={item.label}
-          href={item.href}
-          className={`vyb-campus-bottom-item${item.active ? " is-active" : ""}`}
-          aria-current={item.active ? "page" : undefined}
-        >
-          <span className="vyb-campus-nav-item-icon-wrap">
-            {item.icon}
-            {item.badge ? <span className="vyb-campus-nav-badge">{item.badge > 9 ? "9+" : item.badge}</span> : null}
-          </span>
-          <span>{item.label}</span>
-        </Link>
+          item={item}
+          className="vyb-campus-bottom-item"
+          pendingHref={pendingHref}
+          setPendingHref={setPendingHref}
+          router={router}
+        />
       ))}
     </nav>
   );
