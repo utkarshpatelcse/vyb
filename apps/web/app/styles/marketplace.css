@@ -4738,6 +4738,7 @@
   color: var(--connect-ink);
   cursor: pointer;
   touch-action: none;
+  -webkit-user-select: none;
   transition: transform 0.16s ease;
 }
 
@@ -4794,6 +4795,7 @@
   display: grid;
   place-items: center;
   font-weight: 950;
+  pointer-events: none;
 }
 
 .vyb-connect-dot-label {

@@ -68,6 +68,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const autoSubmitKeyRef = useRef("");
+  const lastAppliedCellKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,6 +117,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
   useEffect(() => {
     function endDrag() {
       isDraggingRef.current = false;
+      lastAppliedCellKeyRef.current = null;
     }
 
     window.addEventListener("pointerup", endDrag);
@@ -189,6 +191,23 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
       return null;
     }
 
+    const touchedCell = document
+      .elementFromPoint(event.clientX, event.clientY)
+      ?.closest<HTMLElement>("[data-connect-x][data-connect-y]");
+    const touchedX = touchedCell ? Number.parseInt(touchedCell.dataset.connectX ?? "", 10) : Number.NaN;
+    const touchedY = touchedCell ? Number.parseInt(touchedCell.dataset.connectY ?? "", 10) : Number.NaN;
+
+    if (
+      Number.isInteger(touchedX) &&
+      Number.isInteger(touchedY) &&
+      touchedX >= 0 &&
+      touchedY >= 0 &&
+      touchedX < level.gridSize &&
+      touchedY < level.gridSize
+    ) {
+      return { x: touchedX, y: touchedY };
+    }
+
     const board = event.currentTarget;
     const bounds = board.getBoundingClientRect();
     const style = window.getComputedStyle(board);
@@ -213,30 +232,45 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     };
   }
 
-  function buildDragTargets(currentPath: ConnectCoordinate[], point: ConnectCoordinate) {
+  function buildStraightTargets(from: ConnectCoordinate, to: ConnectCoordinate) {
+    if (from.x === to.x) {
+      const step = to.y > from.y ? 1 : -1;
+      return Array.from({ length: Math.abs(to.y - from.y) }, (_, index) => ({
+        x: from.x,
+        y: from.y + step * (index + 1)
+      }));
+    }
+
+    if (from.y === to.y) {
+      const step = to.x > from.x ? 1 : -1;
+      return Array.from({ length: Math.abs(to.x - from.x) }, (_, index) => ({
+        x: from.x + step * (index + 1),
+        y: from.y
+      }));
+    }
+
+    return [];
+  }
+
+  function buildDragTargetRoutes(currentPath: ConnectCoordinate[], point: ConnectCoordinate) {
     const head = currentPath[currentPath.length - 1];
 
     if (!head || isAdjacent(head, point)) {
-      return [point];
+      return [[point]];
     }
 
-    if (head.x === point.x) {
-      const step = point.y > head.y ? 1 : -1;
-      return Array.from({ length: Math.abs(point.y - head.y) }, (_, index) => ({
-        x: head.x,
-        y: head.y + step * (index + 1)
-      }));
+    const straightTargets = buildStraightTargets(head, point);
+
+    if (straightTargets.length > 0) {
+      return [straightTargets];
     }
 
-    if (head.y === point.y) {
-      const step = point.x > head.x ? 1 : -1;
-      return Array.from({ length: Math.abs(point.x - head.x) }, (_, index) => ({
-        x: head.x + step * (index + 1),
-        y: head.y
-      }));
-    }
+    const rowFirstCorner = { x: head.x, y: point.y };
+    const columnFirstCorner = { x: point.x, y: head.y };
+    const rowFirst = [...buildStraightTargets(head, rowFirstCorner), ...buildStraightTargets(rowFirstCorner, point)];
+    const columnFirst = [...buildStraightTargets(head, columnFirstCorner), ...buildStraightTargets(columnFirstCorner, point)];
 
-    return [point];
+    return [rowFirst, columnFirst].filter((targets) => targets.length > 0);
   }
 
   function advancePath(currentPath: ConnectCoordinate[], point: ConnectCoordinate) {
@@ -301,23 +335,50 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
       return;
     }
 
+    const pointKey = cellKey(point);
+    if (lastAppliedCellKeyRef.current === pointKey) {
+      return;
+    }
+    lastAppliedCellKeyRef.current = pointKey;
+
     setPathCells((currentPath) => {
-      const targets = buildDragTargets(currentPath, point);
-      let nextPath = currentPath;
-      let nextMessage: string | null = null;
+      const routes = buildDragTargetRoutes(currentPath, point);
+      let bestPath = currentPath;
+      let bestMessage: string | null = null;
+      let bestBlocked = true;
 
-      for (const target of targets) {
-        const outcome = advancePath(nextPath, target);
-        nextPath = outcome.path;
-        nextMessage = outcome.message;
+      for (const targets of routes) {
+        let routePath = currentPath;
+        let routeMessage: string | null = null;
+        let routeBlocked = false;
 
-        if (outcome.blocked) {
+        for (const target of targets) {
+          const outcome = advancePath(routePath, target);
+          routePath = outcome.path;
+          routeMessage = outcome.message;
+          routeBlocked = outcome.blocked;
+
+          if (outcome.blocked) {
+            break;
+          }
+        }
+
+        if (
+          routePath.length > bestPath.length ||
+          (routePath.length === bestPath.length && !routeBlocked && bestBlocked)
+        ) {
+          bestPath = routePath;
+          bestMessage = routeMessage;
+          bestBlocked = routeBlocked;
+        }
+
+        if (!routeBlocked && cellKey(routePath[routePath.length - 1] ?? point) === pointKey) {
           break;
         }
       }
 
-      setMessage(nextMessage);
-      return nextPath;
+      setMessage(bestMessage);
+      return bestPath;
     });
   }
 
@@ -331,6 +392,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
       // Some embedded browsers are picky about pointer capture on bubbled targets.
     }
     isDraggingRef.current = true;
+    lastAppliedCellKeyRef.current = null;
     const point = getPointFromPointer(event);
 
     if (point) {
@@ -361,6 +423,15 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     }
 
     isDraggingRef.current = false;
+    lastAppliedCellKeyRef.current = null;
+  }
+
+  function handleCellPointerEnter(point: ConnectCoordinate) {
+    if (!isDraggingRef.current) {
+      return;
+    }
+
+    applyCell(point);
   }
 
   async function requestHint() {
@@ -498,6 +569,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
           type="button"
           data-connect-x={x}
           data-connect-y={y}
+          onPointerEnter={() => handleCellPointerEnter(point)}
           className={[
             "vyb-connect-cell",
             dot ? "is-dot" : "",
