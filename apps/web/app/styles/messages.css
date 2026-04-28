@@ -994,6 +994,30 @@
   box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.15), 0 4px 15px rgba(0,0,0,0.1);
 }
 
+.spm-conv-item-routing {
+  transform: translateX(4px) scale(0.99);
+  will-change: transform;
+}
+
+.spm-conv-item-routing::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, rgba(167, 139, 250, 0.14), transparent);
+  pointer-events: none;
+  animation: spmConversationRouteWarm 0.9s ease-in-out infinite;
+}
+
+@keyframes spmConversationRouteWarm {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
 .spm-chat-pane {
   justify-content: center;
   padding: 0;

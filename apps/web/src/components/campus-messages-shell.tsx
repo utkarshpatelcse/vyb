@@ -23,8 +23,7 @@ import type {
 } from "@vyb/contracts";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { CSSProperties } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
 import { CampusAvatarContent } from "./campus-avatar";
 import {
   CHAT_IDENTITY_ALGORITHM,
@@ -1001,6 +1000,7 @@ export function CampusMessagesShell({
   );
   const [activeTab, setActiveTab] = useState<"chats" | "community">("chats");
   const [activeConversationId, setActiveConversationId] = useState<string | null>(initialConversationId);
+  const [pendingConversationId, setPendingConversationId] = useState<string | null>(null);
   const [activeConversation, setActiveConversation] = useState<ActiveConversation | null>(initialConversation);
   const [conversationLoading, setConversationLoading] = useState(Boolean(initialConversationId && !initialConversation && !activeConversationError));
   const [conversationError, setConversationError] = useState<string | null>(activeConversationError);
@@ -1093,6 +1093,7 @@ export function CampusMessagesShell({
   const keyBackupSyncIdentityRef = useRef<string | null>(null);
   const setupRedirectedRef = useRef(false);
   const migratingMessageIdsRef = useRef<Set<string>>(new Set());
+  const pendingConversationNavigationRef = useRef<string | null>(null);
   const messageIdsRef = useRef<Set<string>>(new Set(initialConversation?.messages.map((message) => message.id) ?? []));
   const activeConversationRef = useRef<ActiveConversation | null>(initialConversation);
   const hasChatIdentity = Boolean(viewerIdentity);
@@ -1699,8 +1700,62 @@ export function CampusMessagesShell({
     });
   }
 
+  function getConversationHref(conversationId: string) {
+    return `/messages/${encodeURIComponent(conversationId)}`;
+  }
+
+  function warmConversationRoute(conversationId: string) {
+    router.prefetch(getConversationHref(conversationId));
+  }
+
+  function shouldLetConversationLinkHandle(
+    event: MouseEvent<HTMLAnchorElement> | PointerEvent<HTMLAnchorElement>
+  ) {
+    return event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || ("button" in event && event.button !== 0);
+  }
+
+  function navigateToConversation(conversationId: string) {
+    if (pendingConversationNavigationRef.current === conversationId) {
+      return;
+    }
+
+    pendingConversationNavigationRef.current = conversationId;
+    setPendingConversationId(conversationId);
+    warmConversationRoute(conversationId);
+    openConversation(conversationId);
+
+    startTransition(() => {
+      router.push(getConversationHref(conversationId));
+    });
+  }
+
+  function handleConversationPointerDown(event: PointerEvent<HTMLAnchorElement>, conversationId: string) {
+    if (shouldLetConversationLinkHandle(event) || activeConversationId === conversationId) {
+      return;
+    }
+
+    event.preventDefault();
+    navigateToConversation(conversationId);
+  }
+
+  function handleConversationClick(event: MouseEvent<HTMLAnchorElement>, conversationId: string) {
+    if (shouldLetConversationLinkHandle(event) || activeConversationId === conversationId) {
+      return;
+    }
+
+    event.preventDefault();
+    navigateToConversation(conversationId);
+  }
+
   useEffect(() => {
     setActiveConversationId(initialConversationId);
+    if (initialConversationId && pendingConversationNavigationRef.current === initialConversationId) {
+      pendingConversationNavigationRef.current = null;
+      setPendingConversationId(null);
+    } else if (!initialConversationId) {
+      pendingConversationNavigationRef.current = null;
+      setPendingConversationId(null);
+    }
     setDraftMessage("");
     setPendingShareCard(null);
     setSendError(null);
@@ -2083,6 +2138,12 @@ export function CampusMessagesShell({
     if (isSearching) return [];
     return dedupeConversationItems(conversations);
   }, [conversations, isSearching]);
+
+  useEffect(() => {
+    visibleConversations.slice(0, 24).forEach((item) => {
+      warmConversationRoute(item.id);
+    });
+  }, [visibleConversations]);
 
   const unreadCount = conversations.filter((item) => item.unreadCount > 0).length;
   const hiddenMessageIdSet = useMemo(() => new Set(Object.keys(hiddenMessageIds)), [hiddenMessageIds]);
@@ -4466,15 +4527,21 @@ export function CampusMessagesShell({
                       const statusRing = canSeePresence ? peerPresence.tone : "away";
                       const statusLabel = canSeePresence ? peerPresence.label : "Last seen hidden";
                       const initials = getInitials(item.peer.displayName);
+                      const conversationHref = getConversationHref(item.id);
+                      const isActiveConversationItem = item.id === activeConversationId || item.id === pendingConversationId;
 
                       return (
                         <Link
                           key={item.id}
-                          href={`/messages/${item.id}`}
+                          href={conversationHref}
+                          prefetch
                           role="listitem"
-                          className={`spm-conv-item${item.unreadCount > 0 ? " spm-conv-item-unread" : ""}${isMarket ? " spm-conv-item-market" : ""}${item.id === activeConversationId ? " spm-conv-item-active" : ""}`}
+                          className={`spm-conv-item${item.unreadCount > 0 ? " spm-conv-item-unread" : ""}${isMarket ? " spm-conv-item-market" : ""}${isActiveConversationItem ? " spm-conv-item-active" : ""}${pendingConversationId === item.id ? " spm-conv-item-routing" : ""}`}
                           aria-label={`Chat with ${item.peer.displayName}${item.unreadCount > 0 ? `, ${item.unreadCount} unread` : ""}`}
-                          onClick={() => openConversation(item.id)}
+                          onPointerDown={(event) => handleConversationPointerDown(event, item.id)}
+                          onMouseEnter={() => warmConversationRoute(item.id)}
+                          onFocus={() => warmConversationRoute(item.id)}
+                          onClick={(event) => handleConversationClick(event, item.id)}
                         >
                           <div className="spm-conv-avatar-wrap">
                             <div className={`spm-conv-avatar spm-pulse-ring spm-pulse-${statusRing}`}>
