@@ -10,6 +10,16 @@ export type UploadedSocialMediaAsset = {
   sizeBytes: number;
   storagePath: string;
   url: string;
+  variants?: {
+    label: string;
+    width: number | null;
+    height: number;
+    mimeType: string;
+    sizeBytes: number;
+    storagePath: string;
+    url: string;
+  }[];
+  processingStatus?: "ready" | "passthrough";
 };
 
 type SocialMediaDirectUploadPlan = {
@@ -280,6 +290,7 @@ export async function prepareSocialUploadFile(
   options?: {
     maxVideoBytes?: number;
     targetVideoBytes?: number;
+    compressVideo?: boolean;
   }
 ) {
   const mediaType = getMediaType(file);
@@ -304,6 +315,10 @@ export async function prepareSocialUploadFile(
       mediaType,
       optimizationSummary: null as string | null
     };
+  }
+
+  if (options?.compressVideo === false) {
+    throw new Error(`Keep this video under ${formatBytes(maxVideoBytes)} before uploading.`);
   }
 
   if (!canCompressVideoInBrowser()) {

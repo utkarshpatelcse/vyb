@@ -1,14 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import ffmpegPath from "ffmpeg-static";
 import { getStorage } from "firebase-admin/storage";
 import { getFirebaseAdminApp, getFirebaseDataConnect } from "../../../../../packages/config/src/index.mjs";
 import {
   connectorConfig as socialConnectorConfig,
   createComment as createCommentMutation,
   createFollow as createFollowMutation,
-  createPostMedia as createPostMediaMutation,
   createReaction as createReactionMutation,
   createStory as createStoryMutation,
   createStoryReaction as createStoryReactionMutation,
@@ -41,6 +43,14 @@ const INACTIVE_REACTION_TYPE = "__inactive__";
 const INACTIVE_COMMENT_REACTION_TYPE = INACTIVE_REACTION_TYPE;
 const ANONYMOUS_AUTHOR_USERNAME = "anonymous";
 const ANONYMOUS_AUTHOR_DISPLAY_NAME = "Anonymous Vyber";
+const POST_MEDIA_SCAN_LIMIT = 5000;
+const MAX_VIBE_VIDEO_BYTES = 40 * 1024 * 1024;
+const VIBE_VIDEO_VARIANT_TARGETS = [
+  { label: "720p", height: 720, crf: 23 },
+  { label: "1080p", height: 1080, crf: 22 },
+  { label: "1440p", height: 1440, crf: 21 },
+  { label: "4k", height: 2160, crf: 20 }
+];
 
 const defaultFallbackStore = {
   posts: [],
@@ -138,7 +148,9 @@ function isFallbackEligibleError(error) {
     message.includes("enotfound") ||
     message.includes("fetch failed") ||
     message.includes("unrecognized operation query.") ||
-    message.includes("unrecognized operation mutation.")
+    message.includes("unrecognized operation mutation.") ||
+    message.includes("cannot query field") ||
+    message.includes("unknown field")
   );
 }
 
@@ -462,6 +474,60 @@ const GET_POST_BY_ID_PRIVATE_QUERY = `
   }
 `;
 
+const LIST_POST_MEDIA_BY_TENANT_PRIVATE_QUERY = `
+  query ListPostMediaByTenantPrivate($tenantId: UUID!, $limit: Int!) {
+    postMediaRecords(
+      where: {
+        tenantId: { eq: $tenantId }
+        deletedAt: { isNull: true }
+      }
+      orderBy: [{ createdAt: ASC }]
+      limit: $limit
+    ) {
+      id
+      tenantId
+      postId
+      mediaUrl
+      storagePath
+      mediaType
+      mimeType
+      sizeBytes
+      width
+      height
+      durationMs
+      processingStatus
+      createdAt
+    }
+  }
+`;
+
+const LIST_POST_MEDIA_BY_POST_PRIVATE_QUERY = `
+  query ListPostMediaByPostPrivate($postId: UUID!, $limit: Int!) {
+    postMediaRecords(
+      where: {
+        postId: { eq: $postId }
+        deletedAt: { isNull: true }
+      }
+      orderBy: [{ createdAt: ASC }]
+      limit: $limit
+    ) {
+      id
+      tenantId
+      postId
+      mediaUrl
+      storagePath
+      mediaType
+      mimeType
+      sizeBytes
+      width
+      height
+      durationMs
+      processingStatus
+      createdAt
+    }
+  }
+`;
+
 const CREATE_POST_PRIVATE_MUTATION = `
   mutation CreatePostPrivate(
     $id: UUID!
@@ -509,6 +575,41 @@ const CREATE_POST_PRIVATE_MUTATION = `
         status: $status
         visibility: "tenant"
         publishedAt_expr: "request.time"
+        createdAt_expr: "request.time"
+        updatedAt_expr: "request.time"
+      }
+    ) {
+      id
+    }
+  }
+`;
+
+const CREATE_POST_MEDIA_PRIVATE_MUTATION = `
+  mutation CreatePostMediaPrivate(
+    $tenantId: UUID!
+    $postId: UUID!
+    $mediaUrl: String
+    $storagePath: String!
+    $mediaType: String!
+    $mimeType: String!
+    $sizeBytes: Int64!
+    $width: Int
+    $height: Int
+    $durationMs: Int
+  ) {
+    postMedia_insert(
+      data: {
+        tenantId: $tenantId
+        postId: $postId
+        mediaUrl: $mediaUrl
+        storagePath: $storagePath
+        mediaType: $mediaType
+        mimeType: $mimeType
+        sizeBytes: $sizeBytes
+        width: $width
+        height: $height
+        durationMs: $durationMs
+        processingStatus: "ready"
         createdAt_expr: "request.time"
         updatedAt_expr: "request.time"
       }
@@ -670,6 +771,258 @@ function buildDownloadUrl(bucketName, storagePath, token) {
   return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
 }
 
+function buildVariantStoragePath(storagePath, label) {
+  const parsed = path.posix.parse(storagePath.replaceAll("\\", "/"));
+  return path.posix.join(parsed.dir, `${parsed.name}-${label}.mp4`);
+}
+
+function parseFfmpegMetadata(stderr) {
+  const durationMatch = stderr.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+  const dimensionMatch = stderr.match(/,\s*(\d{2,5})x(\d{2,5})(?:\s|,)/);
+  const durationSeconds = durationMatch
+    ? Number(durationMatch[1]) * 3600 + Number(durationMatch[2]) * 60 + Number(durationMatch[3])
+    : null;
+
+  return {
+    durationMs: Number.isFinite(durationSeconds) ? Math.round(durationSeconds * 1000) : null,
+    width: dimensionMatch ? Number(dimensionMatch[1]) : null,
+    height: dimensionMatch ? Number(dimensionMatch[2]) : null
+  };
+}
+
+function runFfmpeg(args, options = {}) {
+  const binaryPath = typeof ffmpegPath === "string" ? ffmpegPath : null;
+
+  if (!binaryPath) {
+    throw new Error("FFmpeg binary is not available.");
+  }
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(binaryPath, args, {
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    const stdoutChunks = [];
+    const stderrChunks = [];
+
+    child.stdout.on("data", (chunk) => {
+      stdoutChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+    child.stderr.on("data", (chunk) => {
+      stderrChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      const result = {
+        stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+        stderr: Buffer.concat(stderrChunks).toString("utf8")
+      };
+
+      if (code === 0 || options.allowNonZeroExit) {
+        resolve(result);
+        return;
+      }
+
+      reject(new Error(result.stderr || `FFmpeg failed with exit code ${code}.`));
+    });
+  });
+}
+
+async function readVideoMetadata(inputPath) {
+  const result = await runFfmpeg(["-hide_banner", "-i", inputPath], { allowNonZeroExit: true });
+  return parseFfmpegMetadata(result.stderr);
+}
+
+function resolveVideoVariantTargets(sourceHeight) {
+  if (!sourceHeight || sourceHeight < 720) {
+    return [{ label: "source", height: sourceHeight ?? 720, crf: 23 }];
+  }
+
+  const targets = VIBE_VIDEO_VARIANT_TARGETS.filter((target) => target.height <= sourceHeight);
+  const highestTarget = targets[targets.length - 1] ?? null;
+
+  if (highestTarget && highestTarget.height < sourceHeight && sourceHeight < 2160) {
+    targets.push({ label: `${sourceHeight}p`, height: sourceHeight, crf: highestTarget.crf });
+  }
+
+  return targets.length > 0 ? targets : [VIBE_VIDEO_VARIANT_TARGETS[0]];
+}
+
+async function transcodeVideoVariant({ inputPath, outputPath, height, crf }) {
+  await runFfmpeg([
+    "-y",
+    "-hide_banner",
+    "-i",
+    inputPath,
+    "-map",
+    "0:v:0",
+    "-map",
+    "0:a?",
+    "-vf",
+    `scale=-2:${Math.max(2, height)}`,
+    "-c:v",
+    "libx264",
+    "-preset",
+    "veryfast",
+    "-crf",
+    String(crf),
+    "-pix_fmt",
+    "yuv420p",
+    "-profile:v",
+    "high",
+    "-movflags",
+    "+faststart",
+    "-c:a",
+    "aac",
+    "-b:a",
+    "128k",
+    "-max_muxing_queue_size",
+    "1024",
+    outputPath
+  ]);
+}
+
+async function saveVibeVideoVariant({ bucket, buffer, storagePath, tenantId, userId, label }) {
+  const token = randomUUID();
+  const file = bucket.file(storagePath);
+  await file.save(buffer, {
+    resumable: false,
+    metadata: {
+      contentType: "video/mp4",
+      cacheControl: "public, max-age=31536000, immutable",
+      metadata: {
+        firebaseStorageDownloadTokens: token,
+        tenant_id: tenantId,
+        uploader_id: userId,
+        origin_module: "social",
+        media_intent: "vibe",
+        video_variant: label,
+        source_deleted_after_processing: "true"
+      }
+    }
+  });
+
+  return {
+    url: buildDownloadUrl(bucket.name, storagePath, token),
+    storagePath,
+    mimeType: "video/mp4",
+    sizeBytes: buffer.byteLength
+  };
+}
+
+function toFiniteNumberOrNull(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function normalizeVideoVariantLabel({ label = null, height = null, storagePath = "" } = {}) {
+  if (typeof label === "string" && label.trim()) {
+    return label.trim().slice(0, 24);
+  }
+
+  const parsedHeight = toFiniteNumberOrNull(height);
+  if (parsedHeight && parsedHeight >= 2160) {
+    return "4k";
+  }
+
+  if (parsedHeight && parsedHeight > 0) {
+    return `${parsedHeight}p`;
+  }
+
+  const match = String(storagePath).match(/-(4k|\d+p)\.[a-z0-9]+$/i);
+  return match?.[1]?.toLowerCase() ?? "video";
+}
+
+function normalizePostMediaAsset(value, fallbackKind = "image") {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const url = typeof value.url === "string" ? value.url.trim() : typeof value.mediaUrl === "string" ? value.mediaUrl.trim() : "";
+  const storagePath =
+    typeof value.storagePath === "string" && value.storagePath.trim() ? value.storagePath.trim() : null;
+  const mimeType = typeof value.mimeType === "string" ? value.mimeType.trim() : null;
+  const sizeBytes = toFiniteNumberOrNull(value.sizeBytes);
+  const width = toFiniteNumberOrNull(value.width);
+  const height = toFiniteNumberOrNull(value.height);
+  const durationMs = toFiniteNumberOrNull(value.durationMs);
+  const kind =
+    value.kind === "video" || value.mediaType === "video" || mimeType?.startsWith("video/")
+      ? "video"
+      : fallbackKind === "video"
+        ? "video"
+        : "image";
+
+  if (!url && !storagePath) {
+    return null;
+  }
+
+  const variants = Array.isArray(value.variants)
+    ? value.variants.map((variant) => normalizePostMediaAsset(variant, kind)).filter(Boolean)
+    : [];
+
+  return {
+    url,
+    kind,
+    mimeType,
+    sizeBytes,
+    storagePath,
+    width,
+    height,
+    durationMs,
+    variants,
+    processingStatus: value.processingStatus === "passthrough" ? "passthrough" : "ready"
+  };
+}
+
+function mediaRecordToAsset(record, fallbackKind = "image") {
+  const kind = record.mediaType === "video" || record.mimeType?.startsWith?.("video/") ? "video" : fallbackKind;
+  return {
+    label: normalizeVideoVariantLabel({ height: record.height, storagePath: record.storagePath }),
+    url: record.mediaUrl ?? "",
+    kind,
+    mimeType: record.mimeType ?? null,
+    sizeBytes: toFiniteNumberOrNull(record.sizeBytes),
+    storagePath: record.storagePath ?? null,
+    width: toFiniteNumberOrNull(record.width),
+    height: toFiniteNumberOrNull(record.height),
+    durationMs: toFiniteNumberOrNull(record.durationMs),
+    processingStatus: record.processingStatus === "passthrough" ? "passthrough" : "ready"
+  };
+}
+
+function buildPostMediaFromRecords(post, records = []) {
+  const fallbackKind = post.kind === "video" ? "video" : "image";
+  const hydrated = records.map((record) => mediaRecordToAsset(record, fallbackKind)).filter((asset) => asset.url);
+
+  if (hydrated.length === 0) {
+    return Array.isArray(post.media) && post.media.length > 0 ? post.media : null;
+  }
+
+  const primaryIndex = hydrated.findIndex(
+    (asset) => asset.url === post.mediaUrl || (post.storagePath && asset.storagePath === post.storagePath)
+  );
+  const primary = primaryIndex >= 0 ? hydrated[primaryIndex] : hydrated[0];
+  const variants = hydrated
+    .filter((asset) => asset !== primary)
+    .filter((asset) => asset.kind === primary.kind)
+    .map(({ kind, variants: _variants, processingStatus: _processingStatus, ...variant }) => variant);
+
+  return [
+    {
+      ...primary,
+      variants
+    }
+  ];
+}
+
+function applyPostMedia(records, mediaByPostId) {
+  return records.map((item) => {
+    const media = buildPostMediaFromRecords(item, mediaByPostId.get(item.id) ?? []);
+    return media ? { ...item, media } : item;
+  });
+}
+
 function buildFollowKey(followerUserId, followingUserId) {
   return `${followerUserId}:${followingUserId}`;
 }
@@ -817,6 +1170,102 @@ async function persistMediaAsset({
     mediaMimeType: decoded.mimeType,
     mediaSizeBytes: decoded.buffer.byteLength
   };
+}
+
+async function processStoredVibeVideo({ tenantId, userId, storagePath, mediaUrl, sizeBytes }) {
+  if (!storagePath || !mediaUrl) {
+    return null;
+  }
+
+  const parsedSize = Number(sizeBytes);
+  if (!Number.isFinite(parsedSize) || parsedSize <= 0 || parsedSize > MAX_VIBE_VIDEO_BYTES) {
+    throw new Error("Vibe video must stay under 40 MB before processing.");
+  }
+
+  const bucket = getFirebaseSocialBucket();
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "vyb-vibe-backend-"));
+  const inputPath = path.join(tempRoot, "source-video");
+
+  try {
+    const [sourceBuffer] = await bucket.file(storagePath).download();
+    await writeFile(inputPath, sourceBuffer);
+    const sourceMetadata = await readVideoMetadata(inputPath);
+    const targets = resolveVideoVariantTargets(sourceMetadata.height);
+    const variants = [];
+
+    for (const target of targets) {
+      const outputPath = path.join(tempRoot, `${target.label}.mp4`);
+      const outputStoragePath = buildVariantStoragePath(storagePath, target.label);
+      await transcodeVideoVariant({
+        inputPath,
+        outputPath,
+        height: target.height,
+        crf: target.crf
+      });
+      const outputBuffer = await readFile(outputPath);
+      const persisted = await saveVibeVideoVariant({
+        bucket,
+        buffer: outputBuffer,
+        storagePath: outputStoragePath,
+        tenantId,
+        userId,
+        label: target.label
+      });
+
+      variants.push({
+        label: target.label,
+        width:
+          sourceMetadata.width && sourceMetadata.height
+            ? Math.round((sourceMetadata.width / sourceMetadata.height) * target.height)
+            : null,
+        height: target.height,
+        durationMs: sourceMetadata.durationMs,
+        ...persisted
+      });
+    }
+
+    const preferredVariant =
+      [...variants].sort((left, right) => {
+        const leftScore = Math.abs(left.height - 1080);
+        const rightScore = Math.abs(right.height - 1080);
+        return leftScore - rightScore || right.height - left.height;
+      })[0] ?? variants[0];
+
+    if (!preferredVariant) {
+      throw new Error("No playable video variant was generated.");
+    }
+
+    await bucket.file(storagePath).delete({ ignoreNotFound: true }).catch((error) => {
+      console.warn("[social/repository] original vibe cleanup skipped", {
+        tenantId,
+        storagePath,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    });
+
+    return {
+      media: {
+        mediaUrl: preferredVariant.url,
+        storagePath: preferredVariant.storagePath,
+        mediaMimeType: preferredVariant.mimeType,
+        mediaSizeBytes: preferredVariant.sizeBytes
+      },
+      asset: {
+        url: preferredVariant.url,
+        kind: "video",
+        mimeType: preferredVariant.mimeType,
+        sizeBytes: preferredVariant.sizeBytes,
+        storagePath: preferredVariant.storagePath,
+        width: preferredVariant.width,
+        height: preferredVariant.height,
+        durationMs: preferredVariant.durationMs,
+        variants,
+        processingStatus: "ready"
+      }
+    };
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true }).catch(() => undefined);
+  }
 }
 
 async function buildPostCountMaps(tenantId, postIds, viewerMembershipId = null) {
@@ -1070,6 +1519,64 @@ async function countCommentReactionsByComment(commentId) {
   }
 }
 
+async function listPostMediaByTenant(tenantId, postIds = []) {
+  if (!postIds.length) {
+    return new Map();
+  }
+
+  const wanted = new Set(postIds);
+
+  try {
+    const response = await getSocialDc().executeGraphqlRead(LIST_POST_MEDIA_BY_TENANT_PRIVATE_QUERY, {
+      operationName: "ListPostMediaByTenantPrivate",
+      variables: {
+        tenantId,
+        limit: POST_MEDIA_SCAN_LIMIT
+      }
+    });
+
+    const grouped = new Map();
+    for (const item of response.data.postMediaRecords ?? []) {
+      if (!wanted.has(item.postId)) {
+        continue;
+      }
+      const existing = grouped.get(item.postId) ?? [];
+      existing.push(item);
+      grouped.set(item.postId, existing);
+    }
+    return grouped;
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    console.warn("[social/repository] post media hydration skipped", {
+      tenantId,
+      message: error instanceof Error ? error.message : String(error)
+    });
+    return new Map();
+  }
+}
+
+async function listPostMediaByPost(postId) {
+  try {
+    const response = await getSocialDc().executeGraphqlRead(LIST_POST_MEDIA_BY_POST_PRIVATE_QUERY, {
+      operationName: "ListPostMediaByPostPrivate",
+      variables: {
+        postId,
+        limit: 50
+      }
+    });
+
+    return response.data.postMediaRecords ?? [];
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+    return [];
+  }
+}
+
 function mapPostRecord(item, counts = null, profileMap = null, viewerIdentity = null) {
   const profile = profileMap?.get(item.authorUserId) ?? null;
   const mediaKind = item.kind === "video" ? "video" : "image";
@@ -1098,7 +1605,16 @@ function mapPostRecord(item, counts = null, profileMap = null, viewerIdentity = 
       Array.isArray(item.media) && item.media.length > 0
         ? item.media
         : item.mediaUrl
-          ? [{ url: item.mediaUrl, kind: mediaKind }]
+          ? [
+              {
+                url: item.mediaUrl,
+                kind: mediaKind,
+                mimeType: item.mediaMimeType ?? null,
+                sizeBytes: toFiniteNumberOrNull(item.mediaSizeBytes),
+                storagePath: item.storagePath ?? null,
+                variants: []
+              }
+            ]
           : [],
     location: item.location ?? null,
     title: item.title ?? "Campus update",
@@ -1164,13 +1680,18 @@ async function mapPostList(records, viewerIdentity = null, profileMap = null) {
     return [];
   }
 
-  const counts = await buildPostCountMaps(
+  const mediaByPostId = await listPostMediaByTenant(
     records[0].tenantId,
-    records.map((item) => item.id),
+    records.map((item) => item.id)
+  );
+  const hydratedRecords = applyPostMedia(records, mediaByPostId);
+  const counts = await buildPostCountMaps(
+    hydratedRecords[0].tenantId,
+    hydratedRecords.map((item) => item.id),
     viewerIdentity?.viewerMembershipId ?? null
   );
 
-  return records.map((item) => mapPostRecord(item, counts, profileMap, viewerIdentity));
+  return hydratedRecords.map((item) => mapPostRecord(item, counts, profileMap, viewerIdentity));
 }
 
 async function listFallbackPosts({
@@ -1395,7 +1916,9 @@ export async function findPostRecordById(postId, { tenantId = null } = {}) {
 }
 
 export async function findPostById(postId, { tenantId = null, viewerMembershipId = null, viewerUserId = null } = {}) {
-  const item = await findPostRecordById(postId, { tenantId });
+  const found = await findPostRecordById(postId, { tenantId });
+  const mediaRecords = found ? await listPostMediaByPost(found.id) : [];
+  const item = found ? { ...found, media: buildPostMediaFromRecords(found, mediaRecords) ?? found.media } : null;
   if (!item) {
     return null;
   }
@@ -1424,12 +1947,82 @@ export async function findPostById(postId, { tenantId = null, viewerMembershipId
   });
 }
 
+function buildPostMediaRows({ payload, media, mediaAssets }) {
+  const fallbackKind = payload.kind === "video" ? "video" : "image";
+  const normalizedAssets = mediaAssets.map((asset) => normalizePostMediaAsset(asset, fallbackKind)).filter(Boolean);
+  const primaryAsset = normalizePostMediaAsset(
+    {
+      url: media.mediaUrl,
+      kind: payload.kind,
+      mimeType: media.mediaMimeType,
+      sizeBytes: media.mediaSizeBytes,
+      storagePath: media.storagePath,
+      variants: normalizedAssets.flatMap((asset) => asset.variants ?? [])
+    },
+    fallbackKind
+  );
+  const flattened = [
+    primaryAsset,
+    ...normalizedAssets,
+    ...normalizedAssets.flatMap((asset) => asset.variants ?? [])
+  ].filter(Boolean);
+  const seen = new Set();
+
+  return flattened
+    .filter((asset) => asset.storagePath && asset.mimeType && asset.sizeBytes !== null)
+    .filter((asset) => {
+      const key = asset.storagePath ?? asset.url;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .map((asset) => ({
+      tenantId: payload.tenantId,
+      mediaUrl: asset.url || null,
+      storagePath: asset.storagePath,
+      mediaType: asset.kind,
+      mimeType: asset.mimeType,
+      sizeBytes: String(asset.sizeBytes),
+      width: asset.width,
+      height: asset.height,
+      durationMs: asset.durationMs
+    }));
+}
+
+async function createPostMediaRows(postId, rows) {
+  for (const row of rows) {
+    try {
+      await getSocialDc().executeGraphql(CREATE_POST_MEDIA_PRIVATE_MUTATION, {
+        operationName: "CreatePostMediaPrivate",
+        variables: {
+          ...row,
+          postId
+        }
+      });
+    } catch (error) {
+      if (!isFallbackEligibleError(error)) {
+        throw error;
+      }
+
+      console.warn("[social/repository] createPostMedia skipped because the deployed schema is behind", {
+        tenantId: row.tenantId,
+        postId,
+        storagePath: row.storagePath,
+        message: error instanceof Error ? error.message : String(error)
+      });
+      return;
+    }
+  }
+}
+
 export async function createPost(payload) {
   const id = randomUUID();
   const placement = normalizePlacement(payload.placement);
   const mediaAssets = Array.isArray(payload.mediaAssets) ? payload.mediaAssets : [];
   const primaryMediaAsset = mediaAssets.find((asset) => asset && typeof asset.url === "string" && asset.url.trim()) ?? null;
-  const media = await persistMediaAsset({
+  let media = await persistMediaAsset({
     tenantId: payload.tenantId,
     userId: payload.userId,
     assetId: id,
@@ -1441,6 +2034,27 @@ export async function createPost(payload) {
     mediaMimeTypeOverride: payload.mediaMimeType ?? primaryMediaAsset?.mimeType ?? null,
     mediaSizeBytesOverride: payload.mediaSizeBytes ?? primaryMediaAsset?.sizeBytes ?? null
   });
+  let durableMediaAssets = mediaAssets;
+
+  if (
+    placement === "vibe" &&
+    payload.kind === "video" &&
+    media.storagePath &&
+    !mediaAssets.some((asset) => Array.isArray(asset?.variants) && asset.variants.length > 0)
+  ) {
+    const processed = await processStoredVibeVideo({
+      tenantId: payload.tenantId,
+      userId: payload.userId,
+      storagePath: media.storagePath,
+      mediaUrl: media.mediaUrl,
+      sizeBytes: media.mediaSizeBytes
+    });
+
+    if (processed) {
+      media = processed.media;
+      durableMediaAssets = [processed.asset];
+    }
+  }
 
   const postRecord = {
     id,
@@ -1457,7 +2071,7 @@ export async function createPost(payload) {
     placement,
     kind: payload.kind,
     mediaUrl: media.mediaUrl,
-    media: mediaAssets.length > 0 ? mediaAssets : null,
+    media: durableMediaAssets.length > 0 ? durableMediaAssets : null,
     storagePath: media.storagePath,
     mediaMimeType: media.mediaMimeType,
     mediaSizeBytes: media.mediaSizeBytes,
@@ -1517,30 +2131,8 @@ export async function createPost(payload) {
     wroteFallbackPost = true;
   }
 
-  if (!wroteFallbackPost && media.storagePath && media.mediaMimeType && media.mediaSizeBytes !== null) {
-    try {
-      await createPostMediaMutation(getSocialDc(), {
-        tenantId: payload.tenantId,
-        postId: id,
-        storagePath: media.storagePath,
-        mediaType: payload.kind,
-        mimeType: media.mediaMimeType,
-        sizeBytes: String(media.mediaSizeBytes),
-        width: null,
-        height: null,
-        durationMs: null
-      });
-    } catch (error) {
-      if (!isFallbackEligibleError(error)) {
-        throw error;
-      }
-
-      console.warn("[social/repository] createPostMedia skipped because the deployed schema is behind", {
-        tenantId: payload.tenantId,
-        postId: id,
-        message: error instanceof Error ? error.message : String(error)
-      });
-    }
+  if (!wroteFallbackPost) {
+    await createPostMediaRows(id, buildPostMediaRows({ payload, media, mediaAssets: durableMediaAssets }));
   }
 
   return mapPostRecord(

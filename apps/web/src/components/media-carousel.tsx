@@ -3,9 +3,23 @@
 import { motion, useMotionValue, useTransform, animate } from "framer-motion";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+type MediaVariant = {
+  url: string;
+  mimeType?: string;
+  height?: number | null;
+  width?: number | null;
+  label?: string | null;
+};
+
+type MediaCarouselItem = {
+  url: string;
+  kind: "image" | "video";
+  variants?: MediaVariant[];
+};
+
 interface MediaCarouselProps {
   /** Array of media items — url + kind pairs */
-  items: { url: string; kind: "image" | "video" }[];
+  items: MediaCarouselItem[];
   /** Alt text for images */
   alt?: string;
   /** Called on double-tap (like gesture) */
@@ -107,7 +121,7 @@ export function MediaCarousel({
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleTap(); } }}
       >
         {item.kind === "video" ? (
-          <FeedVideo src={item.url} />
+          <FeedVideo src={item.url} variants={item.variants} />
         ) : (
           <img
             src={item.url}
@@ -149,7 +163,7 @@ export function MediaCarousel({
               style={{ width: `${100 / total}%` }}
             >
               {item.kind === "video" ? (
-                <FeedVideo src={item.url} isActive={i === activeIndex} />
+                <FeedVideo src={item.url} variants={item.variants} isActive={i === activeIndex} />
               ) : (
                 <img
                   src={item.url}
@@ -202,11 +216,40 @@ export function MediaCarousel({
 /* ── FeedVideo: IntersectionObserver auto-play ────────────────────────────── */
 interface FeedVideoProps {
   src: string;
+  variants?: MediaVariant[];
   isActive?: boolean;
 }
 
-export function FeedVideo({ src, isActive = true }: FeedVideoProps) {
+function pickVideoSource(src: string, variants: MediaVariant[] | undefined) {
+  if (!variants?.length || typeof window === "undefined") {
+    return src;
+  }
+
+  const viewportHeight = Math.max(window.innerHeight, window.innerWidth);
+  const connection = navigator as Navigator & {
+    connection?: { saveData?: boolean; effectiveType?: string };
+  };
+  const saveData = Boolean(connection.connection?.saveData);
+  const slowNetwork = /2g|slow-2g/i.test(connection.connection?.effectiveType ?? "");
+  const targetHeight = saveData || slowNetwork ? 720 : viewportHeight > 1100 ? 1440 : 1080;
+  const sorted = [...variants]
+    .filter((variant) => typeof variant.url === "string" && variant.url)
+    .sort((left, right) => (left.height ?? 0) - (right.height ?? 0));
+
+  return (
+    sorted.find((variant) => (variant.height ?? 0) >= targetHeight)?.url ??
+    sorted[sorted.length - 1]?.url ??
+    src
+  );
+}
+
+export function FeedVideo({ src, variants, isActive = true }: FeedVideoProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [playbackSrc, setPlaybackSrc] = useState(src);
+
+  useEffect(() => {
+    setPlaybackSrc(pickVideoSource(src, variants));
+  }, [src, variants]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -232,8 +275,8 @@ export function FeedVideo({ src, isActive = true }: FeedVideoProps) {
   return (
     <video
       ref={videoRef}
-      src={src}
-      className="feed-carousel__slide-img"
+      src={playbackSrc}
+      className="feed-carousel__slide-img feed-carousel__slide-video"
       muted
       playsInline
       loop

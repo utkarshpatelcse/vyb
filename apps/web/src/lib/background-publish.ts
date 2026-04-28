@@ -378,7 +378,9 @@ async function runVibePublish(taskId: string, input: Extract<BackgroundPublishRe
     progress: 0.14
   });
 
-  const preparedVideo = await prepareSocialUploadFile(input.videoFile);
+  const preparedVideo = await prepareSocialUploadFile(input.videoFile, {
+    compressVideo: false
+  });
   appendTaskLog(
     taskId,
     "Prepare",
@@ -413,7 +415,7 @@ async function runVibePublish(taskId: string, input: Extract<BackgroundPublishRe
     progress: 0.82
   });
 
-  await postJson(
+  const publishResult = await postJson(
     taskId,
     "Publish",
     "/api/vibes",
@@ -424,12 +426,35 @@ async function runVibePublish(taskId: string, input: Extract<BackgroundPublishRe
       mediaStoragePath: uploadedMedia?.storagePath ?? null,
       mediaMimeType: uploadedMedia?.mimeType ?? null,
       mediaSizeBytes: uploadedMedia?.sizeBytes ?? null,
+      mediaAssets: uploadedMedia
+        ? [
+            {
+              url: uploadedMedia.url,
+              kind: "video",
+              mimeType: uploadedMedia.mimeType,
+              sizeBytes: uploadedMedia.sizeBytes,
+              storagePath: uploadedMedia.storagePath,
+              variants: uploadedMedia.variants ?? [],
+              processingStatus: uploadedMedia.processingStatus ?? "ready"
+            }
+          ]
+        : undefined,
       location: input.collegeName,
       isAnonymous: input.isAnonymous,
       allowAnonymousComments: input.allowAnonymousComments
     },
     "Could not publish Vibe."
   );
+
+  const createdItem = publishResult as {
+    item?: { media?: Array<{ variants?: unknown[] }> };
+  };
+  const variantCount = Array.isArray(createdItem.item?.media?.[0]?.variants)
+    ? createdItem.item.media[0].variants.length
+    : 0;
+  if (variantCount > 0) {
+    appendTaskLog(taskId, "Process", `${variantCount} playback variants are ready.`);
+  }
 }
 
 async function runStoryPublish(taskId: string, input: Extract<BackgroundPublishRequest, { kind: "story" }>) {

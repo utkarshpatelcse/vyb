@@ -1,8 +1,8 @@
 # Vyb Master Plan
 
 Owner: Product and Engineering
-Last Updated: 2026-04-22
-Change Summary: Added the first-college professional web entry flow, backend-verified session bootstrap, mandatory profile completion gating, the authenticated `/home` feed landing surface, the Phase 1 Cloud Run plus Vercel hosting preparation, the first live campus-social flow for posts, stories, vibes, search, follows, and user IDs, the market dashboard move to live-only Data Connect reads, the richer social engagement layer for likers, reposts, story viewing, immersive vibes, responsive comment threads, story music composition, premium playback controls, and the new encrypted campus-chat rollout plan, plus the campus events hosting and registration flow with team entry, host review, and CSV export.
+Last Updated: 2026-04-29
+Change Summary: Added server-side Vibe video processing with adaptive playback variants while keeping the Phase 1 modular monolith path.
 
 ## 1. Why We Are Building This
 
@@ -32,7 +32,7 @@ What is decided:
 What is not started yet:
 
 - production-ready business flows for college join requests
-- fully managed moderation and transcoding pipelines for uploaded media
+- extracted moderation and high-volume transcoding worker fleets
 
 ## 3. Core Product Thesis
 
@@ -169,7 +169,7 @@ After implementation:
 - live identity, campus, social-create, and resources-create flows were verified against remote Data Connect
 - Phase 1 backend runtime has now been collapsed into one modular monolith app with internal domain modules
 - local development is now intended to run as `pnpm dev` or `web + backend`, not six separate terminals
-- the campus composer now uploads post/story/vibe media into Firebase Storage before publish, with client-side video optimization before the final upload size gate
+- the campus composer now uploads post/story media into Firebase Storage before publish, while Vibe video uploads keep a 40 MB gate and flow through server-side FFmpeg processing for 720p, 1080p, 1440p, and 4K playback variants when the source supports them
 - feed and vibes cards now support full-screen media viewing, likers sheets, repost and quote-repost flows, report actions, author edit/delete actions, and optimistic like feedback
 - story lanes now render unified rings with seen-state tracking, a dedicated add-story affordance on the author bubble, and an immersive viewer with segmented progress bars, tap navigation, long-press pause, story likes, embedded-audio playback, and mute control
 - the story composer now supports royalty-free music search, 15-second to 60-second clip selection, draggable music sticker placement, and client-side MP4 export for one selected story asset before publish

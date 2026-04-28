@@ -1,8 +1,8 @@
 # Vyb
 
 Owner: Product and Engineering
-Last Updated: 2026-04-28
-Change Summary: Documented the live WebSocket fanout model for social feed updates and hardened direct chat realtime behavior.
+Last Updated: 2026-04-29
+Change Summary: Documented server-side Vibe video processing with adaptive playback variants.
 
 Multi-tenant campus platform architecture with a responsive web client in Phase 1 and a future native mobile client.
 
@@ -20,7 +20,7 @@ Multi-tenant campus platform architecture with a responsive web client in Phase 
 - Active identity, social, and resources mutations now use Firebase Data Connect as the authoritative persistence path
 - Firebase Data Connect admin SDKs are generated and the schema/connectors compile successfully
 - Identity, campus, social, and resources modules now fail closed when Data Connect writes are unavailable instead of mutating local JSON stores
-- Campus post, story, and vibe media now upload to Firebase Storage before publish requests, and large videos are optimized before the final size gate runs
+- Campus post and story media upload to Firebase Storage before publish requests; Vibe videos keep a 40 MB gate and are processed server-side into adaptive playback variants before publish metadata is registered
 - The live social surface now supports full-screen post and vibe viewing, likers sheets, repost/report/delete actions, optimistic likes, and responsive threaded comments with replies plus GIF/sticker attachments
 - Social feed and vibe surfaces now receive low-cost WebSocket fanout for post, comment, and reaction updates without constant database polling
 - The story composer now supports royalty-free music search, 15/30/45/60-second clip trimming, draggable music sticker placement, and client-side MP4 export for a single story asset

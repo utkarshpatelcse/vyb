@@ -52,11 +52,16 @@ function normalizeMimeType(value) {
   return typeof value === "string" ? value.split(";")[0]?.trim().toLowerCase() ?? "" : "";
 }
 
-function isSafeVibeStoragePath(value, tenantId, userId) {
+function isSafeVibeStoragePath(value, tenantId, userIds) {
   if (!requireNonEmptyString(value)) {
     return false;
   }
 
+  const allowedUserIds = new Set(
+    (Array.isArray(userIds) ? userIds : [userIds])
+      .filter(requireNonEmptyString)
+      .map((userId) => userId.trim())
+  );
   const segments = value.split("/").filter(Boolean);
   return (
     segments.length === 6 &&
@@ -64,9 +69,45 @@ function isSafeVibeStoragePath(value, tenantId, userId) {
     segments[1] === tenantId &&
     segments[2] === "posts" &&
     segments[3] === "vibe" &&
-    segments[4] === userId &&
+    allowedUserIds.has(segments[4]) &&
     /\.(mp4|webm|mov)$/i.test(segments[5] ?? "")
   );
+}
+
+function decodeStorageObjectPath(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function getLocalMediaObjectPath(mediaUrl) {
+  const localPrefix = "/api/social-media/files/";
+  let pathname = mediaUrl.split(/[?#]/)[0] ?? "";
+
+  try {
+    pathname = new URL(mediaUrl).pathname;
+  } catch {
+    // Relative local URLs are expected in development fallback mode.
+  }
+
+  if (!pathname.startsWith(localPrefix)) {
+    return null;
+  }
+
+  return decodeStorageObjectPath(pathname.slice(localPrefix.length));
+}
+
+function getFirebaseStorageObjectPath(pathname) {
+  const objectMarker = "/o/";
+  const markerIndex = pathname.indexOf(objectMarker);
+
+  if (markerIndex === -1) {
+    return null;
+  }
+
+  return decodeStorageObjectPath(pathname.slice(markerIndex + objectMarker.length));
 }
 
 function isSafeVibeMediaUrl(value, storagePath) {
@@ -75,36 +116,40 @@ function isSafeVibeMediaUrl(value, storagePath) {
   }
 
   const mediaUrl = value.trim();
-  if (mediaUrl.startsWith("/api/social-media/files/")) {
-    return mediaUrl.includes(storagePath.split("/").map(encodeURIComponent).join("/"));
+  const localObjectPath = getLocalMediaObjectPath(mediaUrl);
+
+  if (localObjectPath) {
+    return localObjectPath === storagePath;
   }
 
   try {
     const parsed = new URL(mediaUrl);
-    return (
-      parsed.hostname === "firebasestorage.googleapis.com" &&
-      parsed.pathname.includes(`/o/${encodeURIComponent(storagePath)}`)
-    );
+    const firebaseObjectPath = getFirebaseStorageObjectPath(parsed.pathname);
+
+    return parsed.hostname === "firebasestorage.googleapis.com" && firebaseObjectPath === storagePath;
   } catch {
     return false;
   }
 }
 
-function validateVibePostPayload(payload, tenantId, userId) {
+function getVibePostPayloadChecks(payload, tenantId, userIds) {
   const storagePath = requireNonEmptyString(payload.mediaStoragePath) ? payload.mediaStoragePath.trim() : "";
   const mediaMimeType = normalizeMimeType(payload.mediaMimeType);
   const mediaSizeBytes = Number(payload.mediaSizeBytes);
 
-  return (
-    payload.placement === "vibe" &&
-    payload.kind === "video" &&
-    isSafeVibeStoragePath(storagePath, tenantId, userId) &&
-    isSafeVibeMediaUrl(payload.mediaUrl, storagePath) &&
-    allowedVibeVideoMimeTypes.has(mediaMimeType) &&
-    Number.isFinite(mediaSizeBytes) &&
-    mediaSizeBytes > 0 &&
-    mediaSizeBytes <= MAX_VIBE_VIDEO_BYTES
-  );
+  return {
+    vibePlacement: payload.placement === "vibe",
+    videoKind: payload.kind === "video",
+    safeStoragePath: isSafeVibeStoragePath(storagePath, tenantId, userIds),
+    safeMediaUrl: isSafeVibeMediaUrl(payload.mediaUrl, storagePath),
+    allowedMimeType: allowedVibeVideoMimeTypes.has(mediaMimeType),
+    safeSize: Number.isFinite(mediaSizeBytes) && mediaSizeBytes > 0 && mediaSizeBytes <= MAX_VIBE_VIDEO_BYTES
+  };
+}
+
+function validateVibePostPayload(payload, tenantId, userIds) {
+  const checks = getVibePostPayloadChecks(payload, tenantId, userIds);
+  return Object.values(checks).every(Boolean);
 }
 
 function parseLimit(value, fallback = 20) {
@@ -596,8 +641,21 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
-    if (payload.placement === "vibe" && !validateVibePostPayload(payload, tenantId, resolvedUserId)) {
-      sendError(response, 400, "INVALID_VIBE_MEDIA", "Vibes must use a verified video uploaded by your account.");
+    const vibeUploaderIds = [resolvedUserId, context.actor?.id].filter(requireNonEmptyString);
+    const vibeChecks = getVibePostPayloadChecks(payload, tenantId, vibeUploaderIds);
+    if (payload.placement === "vibe" && !Object.values(vibeChecks).every(Boolean)) {
+      console.warn("[social] invalid-vibe-media", {
+        tenantId,
+        actorId: context.actor?.id ?? null,
+        resolvedUserId,
+        mediaStoragePath: requireNonEmptyString(payload.mediaStoragePath) ? payload.mediaStoragePath.trim() : null,
+        mediaMimeType: normalizeMimeType(payload.mediaMimeType),
+        mediaSizeBytes: Number(payload.mediaSizeBytes),
+        checks: vibeChecks
+      });
+      sendError(response, 400, "INVALID_VIBE_MEDIA", "Vibes must use a verified video uploaded by your account.", {
+        checks: vibeChecks
+      });
       return true;
     }
 

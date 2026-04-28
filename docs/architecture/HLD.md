@@ -1,8 +1,8 @@
 # Vyb High Level Design
 
 Owner: Architecture Team
-Last Updated: 2026-04-28
-Change Summary: Synced the HLD with the live Phase 1 WebSocket fanout model for social engagement and direct chat room delivery.
+Last Updated: 2026-04-29
+Change Summary: Added the server-side Vibe video processing path with adaptive variants and durable media metadata.
 
 ## 1. Document Purpose
 
@@ -391,12 +391,13 @@ Recommended when relevant:
 ## 12. Media Architecture
 
 - File storage: Firebase Storage
-- Web uploads use client-side compression for large images and bounded video optimization before upload
+- Web uploads use client-side compression for large images; Vibe videos keep the 40 MB upload gate and are processed server-side with FFmpeg so browser-side compression does not silently degrade quality
+- Vibe video processing writes playback variants at supported heights such as 720p, 1080p, 1440p, and 4K, stores those files in Firebase Storage, records durable `post_media` metadata through the social module, and deletes temporary originals after processing
 - Story music for one selected story asset is composed client-side through ffmpeg.wasm and uploaded as the final MP4 artifact
 - Chat image attachments are encrypted in the browser before upload and stored as encrypted blobs plus metadata; plaintext message bodies must never be persisted by backend-owned systems
 - Uploads must include metadata such as `tenant_id`, `uploader_id`, `content_type`, and `origin_module`
 - Uploaded media is not publishable until backend metadata registration succeeds
-- Vibes and stories in Phase 1 require validation for size, duration, MIME type, and bounded playback rules without introducing a backend transcoding service yet
+- Vibes and stories in Phase 1 require validation for size, duration, MIME type, tenant ownership, and bounded playback rules; worker or queue extraction for high-volume transcoding requires an ADR before adding a new deployable service
 
 ### Storage Path Convention
 

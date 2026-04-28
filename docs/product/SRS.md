@@ -1,8 +1,8 @@
 # Vyb Software Requirements Specification
 
 Owner: Product Team
-Last Updated: 2026-04-28
-Change Summary: Added live WebSocket delivery requirements for social engagement and direct chat rooms while keeping Data Connect as the durable source of truth.
+Last Updated: 2026-04-29
+Change Summary: Added Vibe video quality and adaptive playback requirements while keeping Data Connect as the durable source of truth.
 
 ## 1. Introduction
 
@@ -64,6 +64,7 @@ Phase 1 ships through the web client and one backend runtime. The architecture m
 
 - Verified users shall create text and image posts.
 - Verified users shall create short-form video vibes for the dedicated discovery surface.
+- Vibe video uploads shall enforce a 40 MB maximum source size and shall use server-side processing to create adaptive playback variants when the source resolution supports them.
 - The home feed shall show the live campus feed, story lane, and a vibes teaser surface that links into dedicated vibe discovery.
 - Posts shall belong to a tenant and optionally to a community.
 - Users shall browse posts in reverse chronological order initially.

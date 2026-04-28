@@ -106,12 +106,6 @@ export function BackgroundPublishManager() {
   const summaryTask = activeTasks[0] ?? completedTasks[0] ?? null;
 
   useEffect(() => {
-    if (activeTasks.length > 0) {
-      setIsExpanded(true);
-    }
-  }, [activeTasks.length]);
-
-  useEffect(() => {
     let shouldRefresh = false;
 
     for (const task of tasks) {
@@ -144,6 +138,26 @@ export function BackgroundPublishManager() {
 
   if (tasks.length === 0 || !summaryTask) {
     return null;
+  }
+
+  if (activeTasks.length > 0) {
+    const activeTask = activeTasks[0]!;
+    const pct = Math.max(0, Math.min(100, Math.round(activeTask.progress * 100)));
+
+    return (
+      <section
+        className="vyb-publish-hub vyb-publish-hub--compact"
+        aria-live="polite"
+        aria-label={`Upload progress ${pct}%`}
+      >
+        <div className="vyb-publish-compact" role="status">
+          <div className="vyb-publish-compact-track" aria-hidden="true">
+            <span style={{ width: `${pct}%` }} />
+          </div>
+          <strong>{pct}%</strong>
+        </div>
+      </section>
+    );
   }
 
   const summaryCount = activeTasks.length > 0 ? activeTasks.length : completedTasks.length;

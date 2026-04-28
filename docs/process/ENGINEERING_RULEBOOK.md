@@ -1,8 +1,8 @@
 # Vyb Engineering Rulebook
 
 Owner: Engineering Leadership
-Last Updated: 2026-04-28
-Change Summary: Added realtime delivery documentation requirements while preserving the Phase 1 modular monolith boundary.
+Last Updated: 2026-04-29
+Change Summary: Added Vibe video processing rules while preserving the Phase 1 modular monolith boundary.
 
 This rulebook is mandatory. These rules are not optional and are intended to prevent architectural drift, undocumented changes, and unsafe shortcuts.
 
@@ -96,6 +96,8 @@ This rulebook is mandatory. These rules are not optional and are intended to pre
 2. Client-side compression is allowed for large images, but original quality rules must be documented.
 3. Metadata registration must succeed before content is published.
 4. Reels or videos require explicit size, duration, and moderation policies.
+5. Vibe videos must keep the public 40 MB upload limit and must not rely on browser-side lossy compression as the primary quality path.
+6. Server-side video processing must store only playback variants and durable metadata needed for discovery; temporary originals must be removed after successful processing.
 
 ## 10. Background Job Rules
 

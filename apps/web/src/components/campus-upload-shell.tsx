@@ -399,7 +399,7 @@ export function CampusUploadShell({
 
   const canPublish = useMemo(() => {
     if (mode === "vibe") {
-      return Boolean(vibeVideoUrl && vibeIsPortrait === true);
+      return Boolean(vibeVideoUrl);
     }
     if (mode === "story") {
       return storyAssets.length > 0;
@@ -408,7 +408,7 @@ export function CampusUploadShell({
       return Boolean(caption.trim() || momentImages.length > 0);
     }
     return false;
-  }, [mode, vibeVideoUrl, vibeIsPortrait, caption, momentImages, storyAssets]);
+  }, [mode, vibeVideoUrl, caption, momentImages, storyAssets]);
 
   /* ── progress simulator for demo (real upload doesn't expose events) ─── */
   useEffect(() => {
@@ -542,15 +542,15 @@ export function CampusUploadShell({
       setVibeIsPortrait(null);
 
       const meta = await loadVideoMetadata(file);
-      const isReadyForVibes = isVibeAspectRatio(meta.width, meta.height);
+      const isPortrait = isVibeAspectRatio(meta.width, meta.height);
       setVibeDuration(meta.duration);
-      setVibeIsPortrait(isReadyForVibes);
+      setVibeIsPortrait(isPortrait);
       setMessage(
-        !isReadyForVibes
-          ? "Use a 9:16 portrait video for Vibes."
-          : file.size > MAX_VIDEO_BYTES
-          ? `Large video detected (${formatBytes(file.size)}). We'll optimize it in background after you post.`
-          : null
+        file.size > MAX_VIDEO_BYTES
+            ? `Large video detected (${formatBytes(file.size)}). We'll optimize it in background after you post.`
+            : isPortrait
+              ? "Portrait video selected. It will fill the Vibes feed nicely."
+              : "Landscape or square video selected. It will be shown fully without cropping."
       );
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not load video preview.");
@@ -782,11 +782,7 @@ export function CampusUploadShell({
   async function handlePublish() {
     if (mode === "vibe") {
       if (!vibeVideoFile) {
-        setMessage("Add a portrait video before posting.");
-        return;
-      }
-      if (vibeIsPortrait !== true) {
-        setMessage("Use a 9:16 portrait video for Vibes.");
+        setMessage("Add a video before posting.");
         return;
       }
     }
@@ -943,7 +939,7 @@ export function CampusUploadShell({
                   <IcoVideo />
                 </div>
                 <strong className="cs-choice-title">Vibe</strong>
-                <span className="cs-choice-desc">9:16 portrait video · Campus reel</span>
+                <span className="cs-choice-desc">Portrait, landscape, or square video</span>
                 <span className="cs-choice-badge">Video</span>
               </button>
 
@@ -1002,7 +998,7 @@ export function CampusUploadShell({
                     </div>
                     {vibeIsPortrait === false && (
                       <div className="cs-vibe-warning">
-                        ⚠ Use a 9:16 portrait video for Vibes
+                        Full video will fit without cropping
                       </div>
                     )}
                   </>
@@ -1013,7 +1009,7 @@ export function CampusUploadShell({
                     </div>
                     <strong>Drop your video here</strong>
                     <span>or click to browse</span>
-                    <span className="cs-vibe-empty-hint">9:16 portrait · MP4 / MOV / WEBM · Max 40 MB</span>
+                    <span className="cs-vibe-empty-hint">MP4 / MOV / WEBM · Max 40 MB</span>
                   </div>
                 )}
               </div>
@@ -1059,39 +1055,41 @@ export function CampusUploadShell({
                 />
               </div>
 
-              <label className={`cs-anon-toggle${isAnonymous ? " is-active" : ""}`}>
-                <input
-                  type="checkbox"
-                  checked={isAnonymous}
-                  onChange={(event) => setIsAnonymous(event.target.checked)}
-                  disabled={isPublishing}
-                />
-                <span className="cs-anon-toggle-copy">
-                  <strong>Post anonymously</strong>
-                  <small>Hide your profile from the public feed and expose identity only to admins.</small>
-                </span>
-              </label>
+              <div className="cs-privacy-row" aria-label="Vibe privacy settings">
+                <label className={`cs-anon-toggle${isAnonymous ? " is-active" : ""}`}>
+                  <input
+                    type="checkbox"
+                    checked={isAnonymous}
+                    onChange={(event) => setIsAnonymous(event.target.checked)}
+                    disabled={isPublishing}
+                  />
+                  <span className="cs-anon-toggle-copy">
+                    <strong>Anonymous</strong>
+                    <small>Hide profile</small>
+                  </span>
+                </label>
 
-              <label className={`cs-anon-toggle cs-anon-toggle--comments${allowAnonymousComments ? " is-active" : ""}`}>
-                <input
-                  type="checkbox"
-                  checked={allowAnonymousComments}
-                  onChange={(event) => setAllowAnonymousComments(event.target.checked)}
-                  disabled={isPublishing}
-                />
-                <span className="cs-anon-toggle-copy">
-                  <strong>Allow anonymous comments</strong>
-                  <small>People can choose a hidden identity while replying to this vibe.</small>
-                </span>
-              </label>
+                <label className={`cs-anon-toggle cs-anon-toggle--comments${allowAnonymousComments ? " is-active" : ""}`}>
+                  <input
+                    type="checkbox"
+                    checked={allowAnonymousComments}
+                    onChange={(event) => setAllowAnonymousComments(event.target.checked)}
+                    disabled={isPublishing}
+                  />
+                  <span className="cs-anon-toggle-copy">
+                    <strong>Anon comments</strong>
+                    <small>Let people hide</small>
+                  </span>
+                </label>
+              </div>
 
               {/* Meta info */}
               {vibeVideoFile && (
                 <div className="cs-vibe-meta">
                   <span>{formatBytes(vibeVideoFile.size)}</span>
                   {vibeDuration && <span>{formatDuration(vibeDuration)}</span>}
-                  <span className={vibeIsPortrait === false ? "cs-meta-warn" : "cs-meta-ok"}>
-                    {vibeIsPortrait === false ? "Needs 9:16" : vibeIsPortrait ? "9:16 ✓" : "—"}
+                  <span className="cs-meta-ok">
+                    {vibeIsPortrait === false ? "Auto-fit" : vibeIsPortrait ? "Portrait" : "-"}
                   </span>
                 </div>
               )}
@@ -1539,7 +1537,7 @@ export function CampusUploadShell({
           <div className="cs-footer">
             <div className="cs-footer-hint">
                 {mode === "vibe"
-                  ? "Portrait 9:16 clip fills the Vibes feed perfectly"
+                  ? "Portrait, landscape, and square videos publish with no-crop playback"
                 : mode === "story"
                   ? "Stories support photos or one video · music clips can export at 15s, 30s, 45s, or 60s"
                   : "Up to 6 photos · Text-only posts are fine too"}

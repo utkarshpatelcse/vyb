@@ -496,6 +496,7 @@ mutation CreatePost(
 mutation CreatePostMedia(
   $tenantId: UUID!
   $postId: UUID!
+  $mediaUrl: String
   $storagePath: String!
   $mediaType: String!
   $mimeType: String!
@@ -508,6 +509,7 @@ mutation CreatePostMedia(
     data: {
       tenantId: $tenantId
       postId: $postId
+      mediaUrl: $mediaUrl
       storagePath: $storagePath
       mediaType: $mediaType
       mimeType: $mimeType

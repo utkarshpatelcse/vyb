@@ -182,6 +182,19 @@ export interface FeedCard {
   media: {
     url: string;
     kind: "image" | "video";
+    mimeType?: string;
+    sizeBytes?: number;
+    storagePath?: string;
+    variants?: {
+      label: string | null;
+      width: number | null;
+      height: number | null;
+      mimeType: string;
+      sizeBytes: number;
+      storagePath: string;
+      url: string;
+    }[];
+    processingStatus?: "ready" | "passthrough";
   }[];
   location: string | null;
   title: string;
@@ -229,6 +242,16 @@ export interface CreatePostRequest {
     mimeType?: string;
     sizeBytes?: number;
     storagePath?: string;
+    variants?: {
+      label: string | null;
+      width: number | null;
+      height: number | null;
+      mimeType: string;
+      sizeBytes: number;
+      storagePath: string;
+      url: string;
+    }[];
+    processingStatus?: "ready" | "passthrough";
   }[];
   location?: string | null;
 }
