@@ -26,7 +26,7 @@ type GhostHint = {
 };
 
 type ActiveDrag = {
-  pointerId: number;
+  pointerId: number | null;
 };
 
 function cellKey(point: ConnectCoordinate) {
@@ -398,7 +398,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     return Boolean(currentHead && cellKey(currentHead) === cellKey(point));
   }
 
-  function startDragAt(point: ConnectCoordinate, pointerId: number) {
+  function startDragAt(point: ConnectCoordinate, pointerId: number | null) {
     activeDragRef.current = { pointerId };
     isDraggingRef.current = true;
     lastAppliedCellKeyRef.current = null;
@@ -436,8 +436,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
   }
 
   function handleBoardPointerMove(event: ReactPointerEvent<HTMLDivElement | HTMLSpanElement>) {
-    const activeDrag = activeDragRef.current;
-    if (!activeDrag || activeDrag.pointerId !== event.pointerId) {
+    if (!isDraggingRef.current) {
       return;
     }
 
@@ -446,8 +445,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
   }
 
   function handleBoardPointerUp(event: ReactPointerEvent<HTMLDivElement | HTMLSpanElement>) {
-    const activeDrag = activeDragRef.current;
-    if (!activeDrag || activeDrag.pointerId !== event.pointerId) {
+    if (!isDraggingRef.current) {
       return;
     }
 
@@ -458,8 +456,7 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
 
   useEffect(() => {
     function handleGlobalPointerMove(event: globalThis.PointerEvent) {
-      const activeDrag = activeDragRef.current;
-      if (!activeDrag || activeDrag.pointerId !== event.pointerId) {
+      if (!isDraggingRef.current) {
         return;
       }
 
@@ -468,8 +465,25 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     }
 
     function handleGlobalPointerEnd(event: globalThis.PointerEvent) {
-      const activeDrag = activeDragRef.current;
-      if (!activeDrag || activeDrag.pointerId !== event.pointerId) {
+      if (!isDraggingRef.current) {
+        return;
+      }
+
+      updateDragAt(event.clientX, event.clientY);
+      endDrag();
+    }
+
+    function handleGlobalMouseMove(event: globalThis.MouseEvent) {
+      if (!isDraggingRef.current) {
+        return;
+      }
+
+      event.preventDefault();
+      updateDragAt(event.clientX, event.clientY);
+    }
+
+    function handleGlobalMouseEnd(event: globalThis.MouseEvent) {
+      if (!isDraggingRef.current) {
         return;
       }
 
@@ -484,12 +498,16 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     document.addEventListener("pointermove", handleGlobalPointerMove, { passive: false });
     document.addEventListener("pointerup", handleGlobalPointerEnd);
     document.addEventListener("pointercancel", handleGlobalPointerEnd);
+    document.addEventListener("mousemove", handleGlobalMouseMove, { passive: false });
+    document.addEventListener("mouseup", handleGlobalMouseEnd);
     window.addEventListener("blur", handleWindowBlur);
 
     return () => {
       document.removeEventListener("pointermove", handleGlobalPointerMove);
       document.removeEventListener("pointerup", handleGlobalPointerEnd);
       document.removeEventListener("pointercancel", handleGlobalPointerEnd);
+      document.removeEventListener("mousemove", handleGlobalMouseMove);
+      document.removeEventListener("mouseup", handleGlobalMouseEnd);
       window.removeEventListener("blur", handleWindowBlur);
     };
   });
