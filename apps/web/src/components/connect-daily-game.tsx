@@ -432,12 +432,6 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
     event.preventDefault();
     event.stopPropagation();
 
-    try {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    } catch {
-      // Capture can fail in device emulation; window-level pointer listeners still keep the drag alive.
-    }
-
     startDragAt(point, event.pointerId);
   }
 
@@ -655,7 +649,6 @@ export function ConnectDailyGame({ onExit }: ConnectDailyGameProps) {
               onPointerMove={handleBoardPointerMove}
               onPointerUp={handleBoardPointerUp}
               onPointerCancel={endDrag}
-              onLostPointerCapture={endDrag}
             >
               {dot.id}
             </span>
