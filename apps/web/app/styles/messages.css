@@ -40,9 +40,12 @@
   --spm-chat-bubble-peer-border: color-mix(in srgb, var(--spm-market) 38%, rgba(255, 255, 255, 0.12));
   --spm-shadow-panel: var(--cl-shadow-panel);
   --spm-shadow-neon: var(--cl-shadow-neon);
+  --spm-visual-viewport-height: 100dvh;
+  --spm-keyboard-inset: 0px;
   position: relative;
   display: flex;
-  height: 100dvh;
+  height: var(--spm-visual-viewport-height, 100dvh);
+  min-height: var(--spm-visual-viewport-height, 100dvh);
   background:
     radial-gradient(circle at 14% 14%, rgba(99, 102, 241, 0.16), transparent 28%),
     radial-gradient(circle at 82% 16%, rgba(20, 184, 166, 0.14), transparent 24%),
@@ -94,7 +97,8 @@
   z-index: 1;
   display: flex;
   width: 100%;
-  height: 100dvh;
+  height: var(--spm-visual-viewport-height, 100dvh);
+  min-height: 0;
 }
 
 /* ─── Pane 1: Slim Nav Sidebar ─────────────────────────────── */
@@ -217,7 +221,8 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  height: 100dvh;
+  height: var(--spm-visual-viewport-height, 100dvh);
+  min-height: 0;
   background: rgba(15, 23, 42, 0.64);
   backdrop-filter: var(--cl-glass-blur);
   border-right: 1px solid var(--spm-border);
@@ -807,7 +812,8 @@
 
   .spm-shell {
     flex-direction: column;
-    height: 100dvh;
+    height: var(--spm-visual-viewport-height, 100dvh);
+    min-height: 0;
   }
 
   .spm-list-back {
@@ -922,7 +928,8 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  height: 100dvh;
+  height: var(--spm-visual-viewport-height, 100dvh);
+  min-height: 0;
   background: #000;
   position: relative;
   overflow: hidden;
@@ -3363,6 +3370,8 @@
 @media (max-width: 767px) {
   .spm-shell {
     flex-direction: column;
+    height: var(--spm-visual-viewport-height, 100dvh);
+    min-height: 0;
   }
 
   .spm-nav {
@@ -3403,7 +3412,7 @@
   }
 
   .spm-conv-list {
-    max-height: calc(100dvh - 13rem);
+    max-height: calc(var(--spm-visual-viewport-height, 100dvh) - 13rem);
   }
 
   .spm-chat-pane {
@@ -3411,7 +3420,8 @@
   }
 
   .spm-shell-chat-open {
-    height: 100dvh;
+    height: var(--spm-visual-viewport-height, 100dvh);
+    min-height: 0;
   }
 
   .spm-shell-chat-open .spm-list-pane {
@@ -3421,6 +3431,7 @@
   .spm-shell-chat-open .spm-chat-pane {
     display: flex;
     height: 100%;
+    min-height: 0;
     padding: 0;
   }
 
@@ -3428,6 +3439,8 @@
     border-radius: 0;
     border: none;
     box-shadow: none;
+    height: 100%;
+    min-height: 0;
   }
 
   .spm-chat-header {
@@ -3439,7 +3452,10 @@
   }
 
   .spm-chat-thread {
+    flex: 1 1 auto;
+    min-height: 0;
     padding: 0.75rem 0.6rem;
+    overscroll-behavior: contain;
   }
 
   .spm-chat-bubble {
@@ -3498,11 +3514,21 @@
   }
 
   .spm-chat-composer {
-    padding: 0.3rem 0.6rem 0.4rem;
+    flex: 0 0 auto;
+    padding: 0.3rem 0.6rem max(0.4rem, env(safe-area-inset-bottom));
   }
 
   .spm-chat-compose-form {
     border-radius: 1.5rem;
+  }
+
+  .spm-page.spm-keyboard-open .spm-chat-header {
+    padding-top: 0.65rem;
+    padding-bottom: 0.65rem;
+  }
+
+  .spm-page.spm-keyboard-open .spm-chat-thread {
+    padding-bottom: 0.55rem;
   }
 }
 @media (min-width: 768px) and (max-width: 1023px) {

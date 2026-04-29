@@ -91,14 +91,49 @@ async function handleSocketMessage(auth, rawMessage) {
     return;
   }
 
-  if (payload?.type !== "chat.typing" || !payload.payload || typeof payload.payload !== "object") {
+  if (!payload?.type || !payload.payload || typeof payload.payload !== "object") {
+    return;
+  }
+
+  const conversationId =
+    typeof payload.payload.conversationId === "string" ? payload.payload.conversationId : auth.conversationId;
+  if (conversationId !== auth.conversationId) {
+    return;
+  }
+
+  if (payload.type === "chat.delivered") {
+    const rawMessageIds = Array.isArray(payload.payload.messageIds)
+      ? payload.payload.messageIds
+      : typeof payload.payload.messageId === "string"
+        ? [payload.payload.messageId]
+        : [];
+    const messageIds = [...new Set(rawMessageIds.filter((messageId) => typeof messageId === "string" && messageId.trim().length > 0))]
+      .slice(0, 50);
+
+    if (messageIds.length === 0) {
+      return;
+    }
+
+    emitChatRealtimeEvent({
+      conversationId: auth.conversationId,
+      type: "chat.delivered",
+      payload: {
+        conversationId: auth.conversationId,
+        userId: auth.userId,
+        membershipId: auth.membershipId,
+        messageIds,
+        deliveredAt: new Date().toISOString()
+      }
+    });
+    return;
+  }
+
+  if (payload.type !== "chat.typing") {
     return;
   }
 
   const isTyping = typeof payload.payload.isTyping === "boolean" ? payload.payload.isTyping : null;
-  const conversationId =
-    typeof payload.payload.conversationId === "string" ? payload.payload.conversationId : auth.conversationId;
-  if (isTyping === null || conversationId !== auth.conversationId) {
+  if (isTyping === null) {
     return;
   }
 

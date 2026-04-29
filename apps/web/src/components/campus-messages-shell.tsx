@@ -1144,6 +1144,7 @@ export function CampusMessagesShell({
   const [chatSettingsOpen, setChatSettingsOpen] = useState(false);
   const [showE2eeAssurance, setShowE2eeAssurance] = useState(false);
   const [expandedReceiptMessageId, setExpandedReceiptMessageId] = useState<string | null>(null);
+  const [deliveredMessageIdsByConversation, setDeliveredMessageIdsByConversation] = useState<Record<string, Record<string, true>>>({});
   const [calendarDayMarker, setCalendarDayMarker] = useState(() => new Date().toDateString());
   const [defaultDurationKey, setDefaultDurationKey] = useState<ChatMessageTtlKey>("30d");
   const [dismissedDecryptionWarningIds, setDismissedDecryptionWarningIds] = useState<Record<string, true>>({});
@@ -1153,6 +1154,7 @@ export function CampusMessagesShell({
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const mediaInputRef = useRef<HTMLInputElement | null>(null);
   const threadRef = useRef<HTMLDivElement | null>(null);
+  const pageRef = useRef<HTMLElement | null>(null);
   const pendingMediaUrlsRef = useRef<string[]>([]);
   const attachmentObjectUrlsRef = useRef<Record<string, string>>({});
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -1166,6 +1168,9 @@ export function CampusMessagesShell({
   const typingStopTimerRef = useRef<number | null>(null);
   const lastTypingSignalRef = useRef<{ conversationId: string; isTyping: boolean } | null>(null);
   const pendingOptimisticMessagesRef = useRef<Map<string, Array<{ id: string; plaintext: string }>>>(new Map());
+  const deliveredMessageIdsRef = useRef<Map<string, Set<string>>>(new Map());
+  const deliveredAckedMessageIdsRef = useRef<Set<string>>(new Set());
+  const chatThreadStickToBottomRef = useRef(true);
   const appliedShareIntentRef = useRef<string | null>(null);
   const isMountedRef = useRef(false);
   const composerFocusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1467,6 +1472,94 @@ export function CampusMessagesShell({
         }
       };
     });
+  }
+
+  function markMessagesDelivered(conversationId: string | null | undefined, messageIds: Array<string | null | undefined>) {
+    if (!conversationId) {
+      return;
+    }
+
+    const normalizedMessageIds = [
+      ...new Set(messageIds.filter((messageId): messageId is string => typeof messageId === "string" && messageId.trim().length > 0))
+    ];
+    if (normalizedMessageIds.length === 0) {
+      return;
+    }
+
+    const currentSet = deliveredMessageIdsRef.current.get(conversationId) ?? new Set<string>();
+    let refChanged = false;
+    for (const messageId of normalizedMessageIds) {
+      if (!currentSet.has(messageId)) {
+        currentSet.add(messageId);
+        refChanged = true;
+      }
+    }
+
+    if (!refChanged) {
+      return;
+    }
+
+    deliveredMessageIdsRef.current.set(conversationId, currentSet);
+    setDeliveredMessageIdsByConversation((current) => {
+      const previousConversationIds = current[conversationId] ?? {};
+      const nextConversationIds = { ...previousConversationIds };
+      let stateChanged = false;
+
+      for (const messageId of normalizedMessageIds) {
+        if (!nextConversationIds[messageId]) {
+          nextConversationIds[messageId] = true;
+          stateChanged = true;
+        }
+      }
+
+      return stateChanged
+        ? {
+            ...current,
+            [conversationId]: nextConversationIds
+          }
+        : current;
+    });
+  }
+
+  function acknowledgeIncomingMessages(messages: ChatMessageRecord | ChatMessageRecord[] | null | undefined) {
+    const conversationId = activeConversationRef.current?.id ?? null;
+    const socket = chatSocketRef.current;
+    if (!conversationId || !socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const incomingMessages = Array.isArray(messages) ? messages : messages ? [messages] : [];
+    const messageIds = incomingMessages
+      .filter((message) => {
+        if (message.conversationId !== conversationId || isOwnChatMessage(message, viewerUserId, viewerMembershipId)) {
+          return false;
+        }
+
+        return !deliveredAckedMessageIdsRef.current.has(`${conversationId}:${message.id}`);
+      })
+      .map((message) => message.id);
+
+    if (messageIds.length === 0) {
+      return;
+    }
+
+    for (let index = 0; index < messageIds.length; index += 40) {
+      const chunk = messageIds.slice(index, index + 40);
+      try {
+        socket.send(
+          JSON.stringify({
+            type: "chat.delivered",
+            payload: {
+              conversationId,
+              messageIds: chunk
+            }
+          })
+        );
+        chunk.forEach((messageId) => deliveredAckedMessageIdsRef.current.add(`${conversationId}:${messageId}`));
+      } catch {
+        return;
+      }
+    }
   }
 
   function sendTypingSignal(isTyping: boolean) {
@@ -2498,7 +2591,7 @@ export function CampusMessagesShell({
 
   // Auto-focus composer whenever a conversation is opened
   useEffect(() => {
-    if (activeConversationId) {
+    if (activeConversationId && shouldAutoFocusComposerOnOpen()) {
       focusComposerSoon();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2940,6 +3033,15 @@ export function CampusMessagesShell({
     return seenIds;
   }, [activeConversation, viewerMembershipId, viewerUserId]);
 
+  const deliveredOwnMessageIds = useMemo(() => {
+    const conversationId = activeConversation?.id ?? null;
+    if (!conversationId) {
+      return new Set<string>();
+    }
+
+    return new Set(Object.keys(deliveredMessageIdsByConversation[conversationId] ?? {}));
+  }, [activeConversation?.id, deliveredMessageIdsByConversation]);
+
   function clearPendingMediaAttachments() {
     setPendingMediaAttachments((current) => {
       if (typeof window !== "undefined") {
@@ -3282,7 +3384,7 @@ export function CampusMessagesShell({
         candidate.senderMembershipId !== viewerMembershipId && new Date(candidate.createdAt).getTime() > createdAt
     );
 
-    if (hasLaterPeerMessage || realtimeState === "live") {
+    if (deliveredOwnMessageIds.has(message.id) || hasLaterPeerMessage) {
       return "delivered";
     }
 
@@ -3314,25 +3416,6 @@ export function CampusMessagesShell({
 
     return null;
   }, [activeConversation, viewerUserId]);
-
-  useEffect(() => {
-    if (!activeConversationId) return;
-
-    if (composerFocusTimeoutRef.current) {
-      clearTimeout(composerFocusTimeoutRef.current);
-    }
-
-    composerFocusTimeoutRef.current = setTimeout(() => {
-      composerRef.current?.focus();
-    }, 60);
-
-    return () => {
-      if (composerFocusTimeoutRef.current) {
-        clearTimeout(composerFocusTimeoutRef.current);
-        composerFocusTimeoutRef.current = null;
-      }
-    };
-  }, [activeConversationId]);
 
   useEffect(() => {
     if (activeConversationId && realtimeState === "live") {
@@ -3473,6 +3556,7 @@ export function CampusMessagesShell({
           reconnectAttempt = 0;
           setSessionExpired(false);
           setRealtimeState("live");
+          acknowledgeIncomingMessages(activeConversationRef.current?.messages ?? []);
           if (syncOnOpen) {
             syncMissedMessages();
           }
@@ -3489,12 +3573,14 @@ export function CampusMessagesShell({
               payload?: {
                 conversationId?: string;
                 messageId?: string;
+                messageIds?: string[];
                 item?: ChatMessageRecord;
                 userId?: string;
                 membershipId?: string;
                 isTyping?: boolean;
                 typedAt?: string;
                 readAt?: string;
+                deliveredAt?: string;
               };
             };
 
@@ -3516,6 +3602,27 @@ export function CampusMessagesShell({
                   preserveActiveConversation: true
                 });
               }
+              return;
+            }
+
+            if (payload.type === "chat.delivered") {
+              const deliveryUserId = typeof payload.payload?.userId === "string" ? payload.payload.userId : null;
+              const deliveryMembershipId =
+                typeof payload.payload?.membershipId === "string" ? payload.payload.membershipId : null;
+              if (deliveryUserId === viewerUserId || deliveryMembershipId === viewerMembershipId) {
+                return;
+              }
+
+              const deliveredConversationId =
+                typeof payload.payload?.conversationId === "string"
+                  ? payload.payload.conversationId
+                  : conversationId;
+              const deliveredMessageIds = Array.isArray(payload.payload?.messageIds)
+                ? payload.payload.messageIds
+                : typeof payload.payload?.messageId === "string"
+                  ? [payload.payload.messageId]
+                  : [];
+              markMessagesDelivered(deliveredConversationId, deliveredMessageIds);
               return;
             }
 
@@ -3602,6 +3709,9 @@ export function CampusMessagesShell({
                 messageIdsRef.current = new Set(nextConversation.messages.map((message) => message.id));
                 setActiveConversation(nextConversation);
                 setConversations((current) => upsertConversationItem(current, buildConversationPreview(nextConversation)));
+                if (incomingMessage.senderUserId !== viewerUserId) {
+                  acknowledgeIncomingMessages(incomingMessage);
+                }
                 return;
               }
             }
@@ -3701,7 +3811,15 @@ export function CampusMessagesShell({
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       closeSocket("cleanup");
     };
-  }, [activeConversationId, viewerUserId]);
+  }, [activeConversationId, viewerMembershipId, viewerUserId]);
+
+  useEffect(() => {
+    if (realtimeState !== "live" || !activeConversation) {
+      return;
+    }
+
+    acknowledgeIncomingMessages(activeConversation.messages);
+  }, [activeConversation, realtimeState, viewerMembershipId, viewerUserId]);
 
   useEffect(() => {
     if (!activeConversationId) {
@@ -3731,9 +3849,67 @@ export function CampusMessagesShell({
 
   useEffect(() => {
     const thread = threadRef.current;
-    if (!thread) return;
-    thread.scrollTop = thread.scrollHeight;
-  }, [activeConversation?.id, activeConversation?.messages.length]);
+    if (!thread) {
+      return;
+    }
+
+    const latestMessage =
+      activeConversation && activeConversation.messages.length > 0
+        ? activeConversation.messages[activeConversation.messages.length - 1]
+        : null;
+    const latestMessageIsOwn = latestMessage ? isOwnChatMessage(latestMessage, viewerUserId, viewerMembershipId) : false;
+    scrollChatThreadToBottom({
+      force: latestMessageIsOwn || chatThreadStickToBottomRef.current
+    });
+  }, [activeConversation?.id, activeConversation?.messages.length, viewerMembershipId, viewerUserId]);
+
+  useEffect(() => {
+    const page = pageRef.current;
+    if (!page || typeof window === "undefined") {
+      return;
+    }
+
+    let frameId: number | null = null;
+    const updateVisualViewportSize = () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+
+      frameId = window.requestAnimationFrame(() => {
+        const visualViewport = window.visualViewport;
+        const layoutHeight = window.innerHeight;
+        const viewportHeight = Math.max(320, Math.round(visualViewport?.height ?? layoutHeight));
+        const keyboardInset = visualViewport
+          ? Math.max(0, Math.round(layoutHeight - visualViewport.height - visualViewport.offsetTop))
+          : 0;
+
+        page.style.setProperty("--spm-visual-viewport-height", `${viewportHeight}px`);
+        page.style.setProperty("--spm-keyboard-inset", `${keyboardInset}px`);
+        page.classList.toggle("spm-keyboard-open", keyboardInset > 80);
+
+        if (keyboardInset > 80) {
+          scrollChatThreadToBottom({ force: false });
+        }
+      });
+    };
+
+    updateVisualViewportSize();
+    window.visualViewport?.addEventListener("resize", updateVisualViewportSize);
+    window.visualViewport?.addEventListener("scroll", updateVisualViewportSize);
+    window.addEventListener("resize", updateVisualViewportSize);
+
+    return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      window.visualViewport?.removeEventListener("resize", updateVisualViewportSize);
+      window.visualViewport?.removeEventListener("scroll", updateVisualViewportSize);
+      window.removeEventListener("resize", updateVisualViewportSize);
+      page.style.removeProperty("--spm-visual-viewport-height");
+      page.style.removeProperty("--spm-keyboard-inset");
+      page.classList.remove("spm-keyboard-open");
+    };
+  }, [activeConversationId]);
 
   useEffect(() => {
     if (!activeConversation || !latestIncomingMessage) {
@@ -3802,6 +3978,49 @@ export function CampusMessagesShell({
     };
   }, [activeConversation, latestIncomingMessage, storedCampusSettings.readReceipts]);
 
+  function isChatThreadNearBottom(thread: HTMLDivElement, threshold = 160) {
+    return thread.scrollHeight - thread.scrollTop - thread.clientHeight <= threshold;
+  }
+
+  function scrollChatThreadToBottom(options?: { force?: boolean }) {
+    const thread = threadRef.current;
+    if (!thread) {
+      return;
+    }
+
+    if (!options?.force && !chatThreadStickToBottomRef.current) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      const latestThread = threadRef.current;
+      if (!latestThread) {
+        return;
+      }
+
+      latestThread.scrollTop = latestThread.scrollHeight;
+      chatThreadStickToBottomRef.current = true;
+    });
+  }
+
+  function handleChatThreadScroll() {
+    const thread = threadRef.current;
+    if (!thread) {
+      return;
+    }
+
+    chatThreadStickToBottomRef.current =
+      thread.scrollHeight <= thread.clientHeight + 2 || isChatThreadNearBottom(thread, 180);
+  }
+
+  function shouldAutoFocusComposerOnOpen() {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    return window.innerWidth >= 768 && window.matchMedia("(pointer: fine)").matches;
+  }
+
   function focusComposerSoon() {
     if (composerFocusTimeoutRef.current) {
       clearTimeout(composerFocusTimeoutRef.current);
@@ -3815,6 +4034,7 @@ export function CampusMessagesShell({
       const currentValue = composerRef.current?.value ?? "";
       const length = currentValue.length;
       composerRef.current?.setSelectionRange(length, length);
+      scrollChatThreadToBottom({ force: false });
     }, 0);
   }
 
@@ -5100,7 +5320,7 @@ export function CampusMessagesShell({
   }, [chatSetupIntent, localChatKeyLoaded, remoteKeyBackupLoaded, router]);
 
   return (
-    <main className="spm-page">
+    <main ref={pageRef} className="spm-page">
       <div className="spm-blob spm-blob-one" aria-hidden="true" />
       <div className="spm-blob spm-blob-two" aria-hidden="true" />
       <div className="spm-blob spm-blob-three" aria-hidden="true" />
@@ -5535,7 +5755,7 @@ export function CampusMessagesShell({
                 <>
                   {renderBackupPanel}
 
-                  <div className="spm-chat-thread" ref={threadRef}>
+                  <div className="spm-chat-thread" ref={threadRef} onScroll={handleChatThreadScroll}>
                     {messageTimeline.length === 0 ? (
                       <div className="spm-chat-empty">
                         <div className="spm-chat-empty-icon">
@@ -6288,6 +6508,7 @@ export function CampusMessagesShell({
                           ref={composerRef}
                           value={draftMessage}
                           onChange={(event) => handleDraftMessageChange(event.target.value)}
+                          onFocus={() => scrollChatThreadToBottom({ force: false })}
                           onBlur={() => {
                             clearTypingStopTimer();
                             sendTypingSignal(false);
