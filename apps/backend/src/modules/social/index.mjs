@@ -315,6 +315,11 @@ function isRecoverableReadError(error) {
   return (
     message.includes("oauth2.googleapis.com/token") ||
     message.includes("failed to fetch a valid google oauth2 access token") ||
+    message.includes("could not load the default credentials") ||
+    message.includes("default credentials") ||
+    message.includes("metadata lookup") ||
+    message.includes("metadata server") ||
+    message.includes("all promises were rejected") ||
     message.includes("connect eacces") ||
     message.includes("econnrefused") ||
     message.includes("enotfound") ||

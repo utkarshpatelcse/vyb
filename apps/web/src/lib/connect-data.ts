@@ -28,6 +28,7 @@ const connectConnectorConfig = {
   serviceId: "vyb",
   location: "asia-south1"
 };
+let connectLevelStoreSkipLogged = false;
 
 const GET_CONNECT_LEVEL_STORE_QUERY = `
   query GetConnectLevelStoreRuntime($id: String!) {
@@ -292,6 +293,35 @@ function getConnectDc() {
   return getFirebaseDataConnect(connectConnectorConfig);
 }
 
+function hasExplicitFirebaseAdminCredentials() {
+  return Boolean(
+    process.env.FIREBASE_ADMIN_CREDENTIALS_JSON ||
+      process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
+      process.env.FIREBASE_ADMIN_CREDENTIALS_BASE64 ||
+      process.env.FIREBASE_SERVICE_ACCOUNT_BASE64 ||
+      process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+      (process.env.FIREBASE_PROJECT_ID &&
+        (process.env.FIREBASE_ADMIN_CLIENT_EMAIL || process.env.FIREBASE_SERVICE_ACCOUNT_CLIENT_EMAIL || process.env.FIREBASE_CLIENT_EMAIL) &&
+        (process.env.FIREBASE_ADMIN_PRIVATE_KEY || process.env.FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY || process.env.FIREBASE_PRIVATE_KEY))
+  );
+}
+
+function canUseGoogleMetadataCredentials() {
+  return Boolean(process.env.K_SERVICE || process.env.K_REVISION || process.env.K_CONFIGURATION);
+}
+
+function shouldLoadDataconnectLevelStore() {
+  if (process.env.VYB_CONNECT_LEVELS_SOURCE === "local") {
+    return false;
+  }
+
+  if (process.env.VYB_CONNECT_LEVELS_SOURCE === "dataconnect") {
+    return true;
+  }
+
+  return hasExplicitFirebaseAdminCredentials() || canUseGoogleMetadataCredentials();
+}
+
 function getConnectStoreRoot() {
   if (process.env.VYB_CONNECT_STORE_ROOT) {
     return path.join(process.env.VYB_CONNECT_STORE_ROOT, "vyb-connect");
@@ -411,7 +441,14 @@ function normalizeSeedFile(payload: ConnectLevelSeedFile, sourceLabel: string) {
 }
 
 async function loadDataconnectSeedFile() {
-  if (process.env.VYB_CONNECT_LEVELS_SOURCE === "local") {
+  if (!shouldLoadDataconnectLevelStore()) {
+    if (!connectLevelStoreSkipLogged) {
+      connectLevelStoreSkipLogged = true;
+      console.info("[connect-data] DataConnect level store skipped; using local seed file.", {
+        storeId: CONNECT_LEVEL_STORE_ID,
+        reason: "firebase-admin-credentials-unavailable"
+      });
+    }
     return null;
   }
 
