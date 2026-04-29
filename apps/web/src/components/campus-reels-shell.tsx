@@ -1225,6 +1225,32 @@ export function CampusReelsShell({
     }
   }
 
+  async function handleReportComment(commentId: string) {
+    try {
+      const response = await fetch("/api/reports", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          targetType: "comment",
+          targetId: commentId,
+          reason: "Reported from comment actions"
+        })
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+        setFlashMessage(payload?.error?.message ?? "We could not report that comment right now.");
+        return;
+      }
+
+      setFlashMessage("Comment reported for review.");
+    } catch {
+      setFlashMessage("We could not report that comment right now.");
+    }
+  }
+
   async function handleCopyPostLink(post: FeedCard) {
     try {
       await navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}#post-${post.id}`);
@@ -1664,6 +1690,9 @@ export function CampusReelsShell({
           void engagement.deleteComment(comment.id);
         }}
         onEditComment={(comment, body) => engagement.editComment(comment.id, body)}
+        onReportComment={(comment) => {
+          void handleReportComment(comment.id);
+        }}
         onClearReply={engagement.clearReplyTarget}
         onSubmit={() => void engagement.submitComment()}
       />

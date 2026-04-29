@@ -1,6 +1,6 @@
 "use client";
 
-import type { FeedCard, PostLikerItem, ReactionKind, StoryCard, UserSearchItem } from "@vyb/contracts";
+import type { ChatConversationPreview, ChatIdentitySummary, FeedCard, PostLikerItem, ReactionKind, StoryCard, UserSearchItem } from "@vyb/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
@@ -9,7 +9,7 @@ import { SocialPostActionSheet } from "./social-post-action-sheet";
 import { SocialPostLightbox } from "./social-post-lightbox";
 import { SocialPostLikersSheet } from "./social-post-likers-sheet";
 import { SocialPostRepostSheet } from "./social-post-repost-sheet";
-import { SocialPostShareSheet } from "./social-post-share-sheet";
+import { SocialPostShareSheet, type SocialShareTarget } from "./social-post-share-sheet";
 import { SocialThreadSheet } from "./social-thread-sheet";
 import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
 import { SignOutButton } from "./sign-out-button";
@@ -17,6 +17,16 @@ import { useSocialPostEngagement } from "./use-social-post-engagement";
 import { VybLogoLockup, VybLogoMark } from "./vyb-logo";
 import { MediaCarousel } from "./media-carousel";
 import { useSearchNavigationGuard } from "../lib/search-navigation";
+import {
+  CHAT_IDENTITY_ALGORITHM,
+  createStoredChatKeyMaterial,
+  encryptChatText,
+  isStoredChatKeyCompatible,
+  loadStoredChatKeyMaterial,
+  saveStoredChatKeyMaterial,
+  syncStoredChatKeyIdentity,
+  type StoredChatKeyMaterial
+} from "../lib/chat-e2ee";
 import {
   createDefaultCampusSettings,
   getPostDisplayControls,
@@ -81,9 +91,9 @@ type CampusHomeShellProps = {
   trendingVibes: FeedCard[];
   suggestedUsers: UserSearchItem[];
   unreadChatCount: number;
-  recentChats?: unknown[];
+  recentChats?: ChatConversationPreview[];
   viewerUserId?: string;
-  initialViewerIdentity?: unknown;
+  initialViewerIdentity?: ChatIdentitySummary | null;
   initialFocusedPostId?: string | null;
 };
 
@@ -412,9 +422,82 @@ function getPostAuthorLabel(post: FeedCard) {
   return post.isAnonymous ? "Anonymous Vyber" : post.author.displayName || post.author.username;
 }
 
-function buildInternalShareDraft(post: FeedCard) {
-  const caption = truncateText(post.body || post.title || `Post from ${getPostAuthorLabel(post)}`, 140);
-  return `${caption}\n\n${window.location.origin}${window.location.pathname}#post-${post.id}`;
+function buildRecentShareTarget(item: ChatConversationPreview): SocialShareTarget {
+  return {
+    userId: item.peer.userId,
+    username: item.peer.username,
+    displayName: item.peer.displayName,
+    avatarUrl: item.peer.avatarUrl ?? null,
+    conversationId: item.id,
+    peerIdentity: item.peer.publicKey ?? null,
+    lastActivityAt: item.lastActivityAt,
+    source: "recent"
+  };
+}
+
+function buildSuggestedShareTarget(item: UserSearchItem): SocialShareTarget {
+  return {
+    userId: item.userId,
+    username: item.username,
+    displayName: item.displayName,
+    avatarUrl: item.avatarUrl ?? null,
+    source: "suggested"
+  };
+}
+
+function buildShareTargets(recentChats: ChatConversationPreview[], suggestedUsers: UserSearchItem[]) {
+  const targets: SocialShareTarget[] = [];
+  const seen = new Set<string>();
+
+  for (const item of [...recentChats].sort((left, right) => new Date(right.lastActivityAt).getTime() - new Date(left.lastActivityAt).getTime())) {
+    const key = item.peer.userId || item.peer.username.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    targets.push(buildRecentShareTarget(item));
+  }
+
+  for (const item of suggestedUsers) {
+    const key = item.userId || item.username.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    targets.push(buildSuggestedShareTarget(item));
+  }
+
+  return targets;
+}
+
+function upsertShareTarget(items: SocialShareTarget[], target: SocialShareTarget): SocialShareTarget[] {
+  const normalizedUsername = target.username.toLowerCase();
+  const remaining = items.filter(
+    (item) =>
+      item.userId !== target.userId &&
+      item.username.toLowerCase() !== normalizedUsername &&
+      (!target.conversationId || item.conversationId !== target.conversationId)
+  );
+
+  return [{ ...target, source: "recent" as const }, ...remaining];
+}
+
+function buildSharedPostCardPayload(post: FeedCard) {
+  const authorLabel = post.isAnonymous ? "Anonymous Vyber" : post.author.displayName || post.author.username;
+  return JSON.stringify({
+    version: 1,
+    type: "vibe_card",
+    postId: post.id,
+    title: truncateText(post.title || "Shared vibe", 80),
+    body: truncateText(post.body || "", 140),
+    mediaUrl: post.media?.[0]?.url ?? post.mediaUrl ?? null,
+    thumbnailUrl: post.media?.[0]?.url ?? post.mediaUrl ?? null,
+    authorUsername: post.isAnonymous ? "anonymous" : post.author.username,
+    authorDisplayName: authorLabel,
+    caption: null
+  });
 }
 
 const POST_REACTION_OPTIONS: Array<{
@@ -448,7 +531,9 @@ export function CampusHomeShell({
   trendingVibes,
   suggestedUsers,
   unreadChatCount,
+  recentChats = [],
   viewerUserId,
+  initialViewerIdentity = null,
   initialFocusedPostId = null
 }: CampusHomeShellProps) {
   const router = useRouter();
@@ -467,6 +552,9 @@ export function CampusHomeShell({
     [viewerEmail, viewerUserId, viewerUsername]
   );
   const [recommendedUsers, setRecommendedUsers] = useState(suggestedUsers);
+  const [shareTargets, setShareTargets] = useState(() => buildShareTargets(recentChats, suggestedUsers));
+  const [viewerChatIdentity, setViewerChatIdentity] = useState<ChatIdentitySummary | null>(initialViewerIdentity);
+  const [localChatKey, setLocalChatKey] = useState<StoredChatKeyMaterial | null>(null);
   const [storyFeed, setStoryFeed] = useState(stories);
   const [vibeStrip, setVibeStrip] = useState(trendingVibes);
   const [selectedStoryIndex, setSelectedStoryIndex] = useState<number | null>(null);
@@ -503,6 +591,7 @@ export function CampusHomeShell({
   const reactionHoldTimeoutRef = useRef<number | null>(null);
   const suppressReactionClickPostIdRef = useRef<string | null>(null);
   const reactionShellRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const chatIdentityPromiseRef = useRef<Promise<StoredChatKeyMaterial> | null>(null);
   const hasAppliedInitialPostRef = useRef(false);
 
   const storyGroups = useMemo(() => buildStoryRailGroups(storyFeed, viewerUsername), [storyFeed, viewerUsername]);
@@ -530,6 +619,10 @@ export function CampusHomeShell({
     setStoryFeed(stories);
     setSeenStoryIds(buildSeenStoryMap(stories));
   }, [stories]);
+
+  useEffect(() => {
+    setShareTargets(buildShareTargets(recentChats, recommendedUsers));
+  }, [recentChats, recommendedUsers]);
 
   useEffect(() => {
     setStoryMessageDraft("");
@@ -1076,8 +1169,171 @@ export function CampusHomeShell({
     setSharePost(post);
   }
 
-  async function handleShareToChat(post: FeedCard, username: string) {
-    const normalizedUsername = username.trim().replace(/^@+/u, "");
+  async function fetchChatEndpoint(input: string, init?: RequestInit) {
+    return fetch(input, {
+      cache: "no-store",
+      credentials: "same-origin",
+      ...(init ?? {})
+    });
+  }
+
+  async function ensureChatIdentityReady() {
+    if (viewerChatIdentity && localChatKey && isStoredChatKeyCompatible(localChatKey, viewerChatIdentity)) {
+      return localChatKey;
+    }
+
+    const stored = localChatKey ?? (await loadStoredChatKeyMaterial(viewerUserId ?? viewerUsername));
+    if (viewerChatIdentity && stored && isStoredChatKeyCompatible(stored, viewerChatIdentity)) {
+      const synced = (await syncStoredChatKeyIdentity(viewerUserId ?? viewerUsername, viewerChatIdentity)) ?? stored;
+      await saveStoredChatKeyMaterial(synced);
+      setLocalChatKey(synced);
+      return synced;
+    }
+
+    if (viewerChatIdentity) {
+      throw new Error("Restore your secure chat key from Settings / Security before sharing from this browser.");
+    }
+
+    if (chatIdentityPromiseRef.current) {
+      return chatIdentityPromiseRef.current;
+    }
+
+    const pending = (async () => {
+      const material = stored ?? (await createStoredChatKeyMaterial(viewerUserId ?? viewerUsername));
+      await saveStoredChatKeyMaterial(material);
+      setLocalChatKey(material);
+
+      const response = await fetchChatEndpoint("/api/chats/keys", {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          publicKey: material.publicKey,
+          algorithm: material.algorithm || CHAT_IDENTITY_ALGORITHM,
+          keyVersion: material.keyVersion
+        })
+      });
+      const data = (await response.json().catch(() => null)) as
+        | {
+            identity?: ChatIdentitySummary;
+            error?: {
+              message?: string;
+            };
+          }
+        | null;
+
+      if (!response.ok || !data?.identity) {
+        throw new Error(data?.error?.message ?? "We could not enable secure sharing on this browser.");
+      }
+
+      const synced = (await syncStoredChatKeyIdentity(viewerUserId ?? viewerUsername, data.identity)) ?? {
+        ...material,
+        identityId: data.identity.id,
+        algorithm: data.identity.algorithm,
+        keyVersion: data.identity.keyVersion,
+        updatedAt: data.identity.updatedAt
+      };
+
+      await saveStoredChatKeyMaterial(synced);
+      setViewerChatIdentity(data.identity);
+      setLocalChatKey(synced);
+      return synced;
+    })();
+
+    chatIdentityPromiseRef.current = pending;
+
+    try {
+      return await pending;
+    } finally {
+      chatIdentityPromiseRef.current = null;
+    }
+  }
+
+  async function handleReportComment(commentId: string) {
+    try {
+      const response = await fetch("/api/reports", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          targetType: "comment",
+          targetId: commentId,
+          reason: "Reported from comment actions"
+        })
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+        setFlashMessage(payload?.error?.message ?? "We could not report that comment right now.");
+        return;
+      }
+
+      setFlashMessage("Comment reported for review.");
+    } catch {
+      setFlashMessage("We could not report that comment right now.");
+    }
+  }
+
+  async function resolveShareTarget(target: SocialShareTarget) {
+    if (target.conversationId && target.peerIdentity) {
+      return target;
+    }
+
+    const normalizedUsername = target.username.trim().replace(/^@+/u, "");
+    const response = await fetchChatEndpoint("/api/chats", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(
+        target.userId.startsWith("lookup:")
+          ? { recipientUsername: normalizedUsername }
+          : {
+              recipientUserId: target.userId,
+              recipientUsername: normalizedUsername
+            }
+      )
+    });
+    const payload = (await response.json().catch(() => null)) as
+      | {
+          conversation?: {
+            id?: string;
+            peer?: {
+              userId?: string;
+              username?: string;
+              displayName?: string;
+              avatarUrl?: string | null;
+              publicKey?: ChatIdentitySummary | null;
+            };
+            messages?: Array<{ createdAt?: string }>;
+            lastReadAt?: string | null;
+          };
+          error?: {
+            message?: string;
+          };
+        }
+      | null;
+
+    if (!response.ok || !payload?.conversation?.id || !payload.conversation.peer?.username || !payload.conversation.peer.userId) {
+      throw new Error(payload?.error?.message ?? "We could not open that chat right now.");
+    }
+
+    return {
+      userId: payload.conversation.peer.userId,
+      username: payload.conversation.peer.username,
+      displayName: payload.conversation.peer.displayName || payload.conversation.peer.username,
+      avatarUrl: payload.conversation.peer.avatarUrl ?? null,
+      conversationId: payload.conversation.id,
+      peerIdentity: payload.conversation.peer.publicKey ?? null,
+      lastActivityAt: payload.conversation.messages?.[payload.conversation.messages.length - 1]?.createdAt ?? payload.conversation.lastReadAt ?? null,
+      source: "recent" as const
+    };
+  }
+
+  async function handleShareToChat(post: FeedCard, target: SocialShareTarget) {
+    const normalizedUsername = target.username.trim().replace(/^@+/u, "");
 
     if (!normalizedUsername) {
       setShareMessage("Enter a valid username first.");
@@ -1088,43 +1344,48 @@ export function CampusHomeShell({
     setShareMessage(null);
 
     try {
-      const response = await fetch("/api/chats", {
+      const resolvedTarget = await resolveShareTarget(target);
+      if (!resolvedTarget.conversationId || !resolvedTarget.peerIdentity) {
+        throw new Error("This user has not finished setting up secure chat yet.");
+      }
+
+      const keyMaterial = await ensureChatIdentityReady();
+      const encryptedPayload = await encryptChatText(buildSharedPostCardPayload(post), keyMaterial, resolvedTarget.peerIdentity);
+      const response = await fetchChatEndpoint(`/api/chats/${encodeURIComponent(resolvedTarget.conversationId)}/messages`, {
         method: "POST",
         headers: {
           "content-type": "application/json"
         },
-        body: JSON.stringify({ recipientUsername: normalizedUsername })
+        body: JSON.stringify({
+          messageKind: "vibe_card",
+          ...encryptedPayload
+        })
       });
       const payload = (await response.json().catch(() => null)) as
         | {
-            conversation?: {
-              id?: string;
-            };
+            conversationPreview?: ChatConversationPreview;
             error?: {
               message?: string;
             };
           }
         | null;
 
-      if (!response.ok || !payload?.conversation?.id) {
-        setShareMessage(payload?.error?.message ?? "We could not open that chat right now.");
-        return;
+      if (!response.ok) {
+        throw new Error(payload?.error?.message ?? "We could not share this post right now.");
       }
 
-      const shareParams = new URLSearchParams({
-        draft: buildInternalShareDraft(post),
-        sharedPostId: post.id,
-        sharedPostAuthor: getPostAuthorLabel(post),
-        sharedPostTitle: truncateText(post.title || "", 80),
-        sharedPostBody: truncateText(post.body || "", 140),
-        sharedPostMediaUrl: post.media?.[0]?.url ?? post.mediaUrl ?? "",
-        sharedPostMediaKind: post.media?.[0]?.kind ?? (post.mediaUrl ? (post.kind === "video" ? "video" : "image") : "")
-      });
+      const conversationPreview = payload?.conversationPreview;
+      if (conversationPreview) {
+        setShareTargets((current) => upsertShareTarget(current, buildRecentShareTarget(conversationPreview)));
+      } else {
+        setShareTargets((current) => upsertShareTarget(current, resolvedTarget));
+      }
 
       setSharePost(null);
-      router.push(`/messages/${encodeURIComponent(payload.conversation.id)}?${shareParams.toString()}`);
-    } catch {
-      setShareMessage("Network issue while opening that chat.");
+      setShareMessage(null);
+      setFlashMessage(`Shared with ${resolvedTarget.displayName || resolvedTarget.username}.`);
+    } catch (error) {
+      setShareMessage(error instanceof Error ? error.message : "Network issue while sharing this post.");
     } finally {
       setShareBusyUsername(null);
     }
@@ -1608,8 +1869,24 @@ export function CampusHomeShell({
                   {/* ── Metrics Bar ── */}
                   <div className="fc-metrics-bar">
                     <div className="fc-metrics-left">
-                      {displayControls.hideReactionCount ? null : <span>{formatMetric(post.reactions)} reactions</span>}
-                      {displayControls.hideCommentCount ? null : <span>{formatMetric(post.comments)} comments</span>}
+                      {displayControls.hideReactionCount ? null : (
+                        <button
+                          type="button"
+                          className="fc-metrics-button"
+                          onClick={() => void openPostLikes(post)}
+                        >
+                          {formatMetric(post.reactions)} reactions
+                        </button>
+                      )}
+                      {displayControls.hideCommentCount ? null : (
+                        <button
+                          type="button"
+                          className="fc-metrics-button"
+                          onClick={() => void engagement.openThread(post.id)}
+                        >
+                          {formatMetric(post.comments)} comments
+                        </button>
+                      )}
                     </div>
                     <div className="fc-metrics-right">
                       <span>{formatMetric(post.savedCount || 0)} shares</span>
@@ -1710,7 +1987,7 @@ export function CampusHomeShell({
 
                     <div className="vyb-home-vibes-teaser-list">
                       {vibeStrip.slice(0, 6).map((vibe) => (
-                        <button key={vibe.id} type="button" className="vyb-home-vibes-teaser-card" onClick={() => void openPostLightbox(vibe)}>
+                        <button key={vibe.id} type="button" className="vyb-home-vibes-teaser-card" onClick={() => router.push("/vibes")}>
                           <div className="vyb-home-vibes-teaser-media">
                             {vibe.mediaUrl ? (
                               vibe.kind === "video" ? (
@@ -1996,6 +2273,9 @@ export function CampusHomeShell({
           void engagement.deleteComment(comment.id);
         }}
         onEditComment={(comment, body) => engagement.editComment(comment.id, body)}
+        onReportComment={(comment) => {
+          void handleReportComment(comment.id);
+        }}
         onClearReply={engagement.clearReplyTarget}
         onSubmit={() => void engagement.submitComment()}
       />
@@ -2131,12 +2411,7 @@ export function CampusHomeShell({
 
       <SocialPostShareSheet
         post={sharePost}
-        shareTargets={recommendedUsers.map((user) => ({
-          userId: user.userId,
-          username: user.username,
-          displayName: user.displayName,
-          source: "suggested" as const
-        }))}
+        shareTargets={shareTargets}
         busyUsername={shareBusyUsername}
         message={shareMessage}
         onClose={() => {
@@ -2145,10 +2420,14 @@ export function CampusHomeShell({
             setShareMessage(null);
           }
         }}
-        onAddToStory={() => {}}
+        onAddToStory={() => {
+          setSharePost(null);
+          setShareMessage(null);
+          router.push("/create?kind=story&from=%2Fhome");
+        }}
         onShare={(target) => {
           if (sharePost) {
-            void handleShareToChat(sharePost, target.username);
+            void handleShareToChat(sharePost, target);
           }
         }}
       />

@@ -48,6 +48,15 @@ function ExternalShareIcon() {
   );
 }
 
+function WhatsAppIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="vyb-campus-icon">
+      <path d="M4.7 19.3 6 15.9a8 8 0 1 1 2.1 2.1l-3.4 1.3Z" />
+      <path d="M9.1 8.9c.3-.4.6-.4.9-.2l.8 1.3c.2.3.2.6 0 .9l-.3.4c.5.9 1.2 1.6 2.2 2.1l.4-.3c.3-.2.6-.2.9 0l1.2.8c.3.2.3.6.1.9-.3.5-.9.8-1.5.7-2.8-.5-4.9-2.5-5.4-5.3-.1-.5.1-1 .7-1.3Z" />
+    </svg>
+  );
+}
+
 function PlusIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="vyb-campus-icon">
@@ -55,6 +64,19 @@ function PlusIcon() {
       <line x1="5" y1="12" x2="19" y2="12" />
     </svg>
   );
+}
+
+function getPostShareUrl(post: FeedCard) {
+  const path = post.kind === "video" || post.placement === "vibe" ? "/vibes" : "/home";
+  const url = new URL(path, window.location.origin);
+  url.searchParams.set("post", post.id);
+  return url.toString();
+}
+
+function getPostShareText(post: FeedCard, url: string) {
+  const authorLabel = post.isAnonymous ? "Anonymous Vyber" : post.author.displayName || post.author.username;
+  const title = post.title?.trim() || post.body?.trim() || `Vyb by ${authorLabel}`;
+  return `${title}\n${url}`;
 }
 
 export function SocialPostShareSheet({
@@ -100,8 +122,8 @@ export function SocialPostShareSheet({
   async function handleCopyLink() {
     if (!post) return;
     try {
-      await navigator.clipboard.writeText(`${window.location.origin}/post/${post.id}`);
-      setCopyStatus("Link copied!");
+      await navigator.clipboard.writeText(getPostShareUrl(post));
+      setCopyStatus("Link copied");
       setTimeout(() => setCopyStatus(null), 2000);
     } catch {
       setCopyStatus("Failed to copy");
@@ -109,15 +131,26 @@ export function SocialPostShareSheet({
   }
 
   async function handleSystemShare() {
-    if (!post || !navigator.share) return;
+    if (!post || !navigator.share) {
+      await handleCopyLink();
+      return;
+    }
+    const url = getPostShareUrl(post);
     try {
       await navigator.share({
-        title: post.title || 'Vyb Post',
-        url: `${window.location.origin}/post/${post.id}`
+        title: post.title || "Vyb",
+        text: post.body?.trim() || "Check this out on Vyb",
+        url
       });
     } catch (err) {
       console.error('Share failed:', err);
     }
+  }
+
+  function handleWhatsAppShare() {
+    if (!post) return;
+    const url = getPostShareUrl(post);
+    window.open(`https://wa.me/?text=${encodeURIComponent(getPostShareText(post, url))}`, "_blank", "noopener,noreferrer");
   }
 
   if (!post) return null;
@@ -151,12 +184,14 @@ export function SocialPostShareSheet({
             <span className="vyb-post-share-icon-label">Copy</span>
             {copyStatus && <span className="vyb-post-share-copy-toast">{copyStatus}</span>}
           </button>
-          {typeof navigator !== "undefined" && typeof navigator.share === "function" && (
-            <button type="button" className="vyb-post-share-icon-btn" onClick={handleSystemShare} disabled={isSheetBusy}>
-              <div className="vyb-post-share-icon-wrap"><ExternalShareIcon /></div>
-              <span className="vyb-post-share-icon-label">Share</span>
-            </button>
-          )}
+          <button type="button" className="vyb-post-share-icon-btn" onClick={handleWhatsAppShare} disabled={isSheetBusy}>
+            <div className="vyb-post-share-icon-wrap"><WhatsAppIcon /></div>
+            <span className="vyb-post-share-icon-label">WhatsApp</span>
+          </button>
+          <button type="button" className="vyb-post-share-icon-btn" onClick={handleSystemShare} disabled={isSheetBusy}>
+            <div className="vyb-post-share-icon-wrap"><ExternalShareIcon /></div>
+            <span className="vyb-post-share-icon-label">More apps</span>
+          </button>
         </div>
 
         <div className="vyb-post-share-divider">

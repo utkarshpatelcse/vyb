@@ -201,7 +201,8 @@ function normalizeFallbackCommentRecord(item) {
     mediaUrl: item.mediaUrl ?? null,
     mediaType: item.mediaType ?? null,
     status: item.status ?? "published",
-    createdAt: item.createdAt ?? new Date().toISOString()
+    createdAt: item.createdAt ?? new Date().toISOString(),
+    updatedAt: item.updatedAt ?? item.createdAt ?? new Date().toISOString()
   };
 }
 

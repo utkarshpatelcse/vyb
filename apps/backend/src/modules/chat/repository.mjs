@@ -171,7 +171,7 @@ const LIST_CHAT_PARTICIPANTS_BY_CONVERSATION_QUERY = `
         conversationId: { eq: $conversationId }
         deletedAt: { isNull: true }
       }
-      orderBy: [{ createdAt: ASC }]
+      orderBy: [{ createdAt: DESC }]
       limit: $limit
     ) {
       id
@@ -1541,7 +1541,9 @@ async function listChatMessagesByConversation(conversationId) {
     }
   });
 
-  return Array.isArray(response.data.chatMessages) ? response.data.chatMessages : [];
+  return Array.isArray(response.data.chatMessages)
+    ? [...response.data.chatMessages].sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime())
+    : [];
 }
 
 async function listChatMessageReactionsByConversation(conversationId) {

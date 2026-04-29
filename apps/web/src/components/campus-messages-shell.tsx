@@ -5210,7 +5210,7 @@ export function CampusMessagesShell({
                         const isSystemMessage = message.messageKind === "system" || isScreenshotAlert;
                         const isEditedMessage =
                           Boolean(message.updatedAt) &&
-                          Math.abs(new Date(message.updatedAt ?? "").getTime() - new Date(message.createdAt).getTime()) > 2000;
+                          new Date(message.updatedAt ?? "").getTime() - new Date(message.createdAt).getTime() > 100;
                         if (isSystemMessage) {
                           plaintext = plaintext.replace("Suspected screenshot: ", "");
                         }
@@ -5348,7 +5348,7 @@ export function CampusMessagesShell({
                                   </span>
                                 ) : null}
                                 {isEditedMessage && !isSystemMessage ? (
-                                  <span className="spm-chat-edited-label">Edited</span>
+                                  <span className="spm-chat-edited-label">edited</span>
                                 ) : null}
                                 <span suppressHydrationWarning>{formatMessageTime(message.createdAt)}</span>
                                 {receiptState ? (

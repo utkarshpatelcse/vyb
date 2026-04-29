@@ -32,6 +32,7 @@ type SocialThreadSheetProps = {
   onCommentLike: (commentId: string) => void;
   onDeleteComment: (comment: CommentItem) => void;
   onEditComment: (comment: CommentItem, body: string) => Promise<unknown> | unknown;
+  onReportComment?: (comment: CommentItem) => void;
   onClearReply: () => void;
   onSubmit: () => void;
 };
@@ -91,6 +92,16 @@ function formatCommentDate(value: string) {
     hour: "numeric",
     minute: "2-digit"
   });
+}
+
+function isEditedTimestamp(createdAt: string, updatedAt?: string | null) {
+  if (!updatedAt) {
+    return false;
+  }
+
+  const createdAtTime = new Date(createdAt).getTime();
+  const updatedAtTime = new Date(updatedAt).getTime();
+  return Number.isFinite(createdAtTime) && Number.isFinite(updatedAtTime) && updatedAtTime - createdAtTime > 100;
 }
 
 function buildCommentThread(comments: CommentItem[]) {
@@ -198,6 +209,7 @@ export function SocialThreadSheet({
   onCommentLike,
   onDeleteComment,
   onEditComment,
+  onReportComment,
   onClearReply,
   onSubmit
 }: SocialThreadSheetProps) {
@@ -440,6 +452,8 @@ export function SocialThreadSheet({
     const isDeletingComment = deletingCommentId === comment.id;
     const isEditingComment = editingCommentId === comment.id;
     const isSavingComment = savingCommentId === comment.id;
+    const isEditedComment = isEditedTimestamp(comment.createdAt, comment.updatedAt);
+    const canReportComment = Boolean(onReportComment && !comment.viewerCanManage);
 
     return (
       <motion.div
@@ -521,11 +535,28 @@ export function SocialThreadSheet({
             </div>
             <div className="vyb-thread-comment-meta">
               <span>{formatCommentDate(comment.createdAt)}</span>
+              {isEditedComment ? <span className="vyb-thread-comment-edited-label">edited</span> : null}
               {comment.reactions > 0 ? (
                 <span className={`vyb-thread-comment-reaction-count${comment.viewerHasLiked ? " is-active" : ""}`}>
                   {comment.viewerHasLiked ? "Liked" : "Likes"} {comment.reactions}
                 </span>
               ) : null}
+              <div className="vyb-thread-comment-quick-actions">
+                <button
+                  type="button"
+                  className={`vyb-thread-comment-like${comment.viewerHasLiked ? " is-active" : ""}`}
+                  onClick={() => handleCommentLike(comment)}
+                >
+                  {comment.viewerHasLiked ? "Liked" : "Like"}
+                </button>
+                <button
+                  type="button"
+                  className="vyb-thread-reply-button"
+                  onClick={() => handleCommentReply(comment)}
+                >
+                  Reply
+                </button>
+              </div>
               <div className="vyb-thread-comment-menu-wrap">
                 <button
                   type="button"
@@ -540,23 +571,6 @@ export function SocialThreadSheet({
                 </button>
                 {commentActionMenuId === comment.id ? (
                   <div className="vyb-thread-comment-actions" role="menu">
-                    <button
-                      type="button"
-                      className={`vyb-thread-comment-like${comment.viewerHasLiked ? " is-active" : ""}`}
-                      onClick={() => handleCommentLike(comment)}
-                      role="menuitem"
-                    >
-                      {comment.viewerHasLiked ? "Unlike" : "Like"}
-                      {comment.reactions > 0 ? ` (${comment.reactions})` : ""}
-                    </button>
-                    <button
-                      type="button"
-                      className="vyb-thread-reply-button"
-                      onClick={() => handleCommentReply(comment)}
-                      role="menuitem"
-                    >
-                      Reply
-                    </button>
                     {canEditComment ? (
                       <button
                         type="button"
@@ -577,6 +591,19 @@ export function SocialThreadSheet({
                         role="menuitem"
                       >
                         {isDeletingComment ? "Deleting..." : "Delete"}
+                      </button>
+                    ) : null}
+                    {canReportComment ? (
+                      <button
+                        type="button"
+                        className="vyb-thread-report-button"
+                        onClick={() => {
+                          setCommentActionMenuId(null);
+                          onReportComment?.(comment);
+                        }}
+                        role="menuitem"
+                      >
+                        Report
                       </button>
                     ) : null}
                   </div>
