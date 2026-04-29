@@ -1165,6 +1165,7 @@ export function CampusMessagesShell({
   const chatSocketRef = useRef<WebSocket | null>(null);
   const typingStopTimerRef = useRef<number | null>(null);
   const lastTypingSignalRef = useRef<{ conversationId: string; isTyping: boolean } | null>(null);
+  const pendingOptimisticMessagesRef = useRef<Map<string, Array<{ id: string; plaintext: string }>>>(new Map());
   const appliedShareIntentRef = useRef<string | null>(null);
   const isMountedRef = useRef(false);
   const composerFocusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1748,6 +1749,87 @@ export function CampusMessagesShell({
 
     const preview = conversations.find((item) => item.id === conversationId);
     return preview ? buildConversationFromPreview(preview) : null;
+  }
+
+  function commitActiveConversation(nextConversation: ActiveConversation) {
+    const normalizedConversation = normalizeConversationMessages(nextConversation);
+    activeConversationRef.current = normalizedConversation;
+    conversationDetailCacheRef.current.set(normalizedConversation.id, normalizedConversation);
+    messageIdsRef.current = new Set(normalizedConversation.messages.map((message) => message.id));
+    setActiveConversation(normalizedConversation);
+    setConversations((current) => upsertConversationItem(current, buildConversationPreview(normalizedConversation)));
+    return normalizedConversation;
+  }
+
+  function queueOptimisticMessage(conversationId: string, optimisticMessageId: string, plaintext: string) {
+    const queued = pendingOptimisticMessagesRef.current.get(conversationId) ?? [];
+    pendingOptimisticMessagesRef.current.set(conversationId, [...queued, { id: optimisticMessageId, plaintext }]);
+  }
+
+  function removeQueuedOptimisticMessage(conversationId: string, optimisticMessageId: string | null | undefined) {
+    if (!optimisticMessageId) {
+      return null;
+    }
+
+    const queued = pendingOptimisticMessagesRef.current.get(conversationId) ?? [];
+    const matched = queued.find((item) => item.id === optimisticMessageId) ?? null;
+    const remaining = queued.filter((item) => item.id !== optimisticMessageId);
+    if (remaining.length > 0) {
+      pendingOptimisticMessagesRef.current.set(conversationId, remaining);
+    } else {
+      pendingOptimisticMessagesRef.current.delete(conversationId);
+    }
+    return matched;
+  }
+
+  function consumeQueuedOptimisticMessage(conversationId: string) {
+    const queued = pendingOptimisticMessagesRef.current.get(conversationId) ?? [];
+    const [matched, ...remaining] = queued;
+    if (!matched) {
+      return null;
+    }
+
+    if (remaining.length > 0) {
+      pendingOptimisticMessagesRef.current.set(conversationId, remaining);
+    } else {
+      pendingOptimisticMessagesRef.current.delete(conversationId);
+    }
+
+    return matched;
+  }
+
+  function applyRealtimeReadReceipt(payload: {
+    conversationId?: string;
+    userId?: string;
+    membershipId?: string;
+    messageId?: string;
+    readAt?: string;
+  }) {
+    const conversationId = typeof payload.conversationId === "string" ? payload.conversationId : null;
+    const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+    const readerUserId = typeof payload.userId === "string" ? payload.userId : null;
+    const readAt = typeof payload.readAt === "string" ? payload.readAt : new Date().toISOString();
+    const currentConversation = activeConversationRef.current;
+
+    if (!conversationId || !messageId || !readerUserId || currentConversation?.id !== conversationId) {
+      return false;
+    }
+
+    const nextConversation =
+      readerUserId === viewerUserId
+        ? {
+            ...currentConversation,
+            lastReadMessageId: messageId,
+            lastReadAt: readAt
+          }
+        : {
+            ...currentConversation,
+            peerLastReadMessageId: messageId,
+            peerLastReadAt: readAt
+          };
+
+    commitActiveConversation(nextConversation);
+    return true;
   }
 
   async function loadConversationDetail(
@@ -2823,16 +2905,34 @@ export function CampusMessagesShell({
 
   const seenOwnMessageIds = useMemo(() => {
     const seenIds = new Set<string>();
-    if (!activeConversation?.peerLastReadMessageId) {
+    if (!activeConversation?.peerLastReadMessageId && !activeConversation?.peerLastReadAt) {
       return seenIds;
     }
 
+    const peerReadAtTime = activeConversation.peerLastReadAt
+      ? new Date(activeConversation.peerLastReadAt).getTime()
+      : null;
+    const hasPeerReadAtTime = typeof peerReadAtTime === "number" && Number.isFinite(peerReadAtTime);
+
     for (const message of activeConversation.messages) {
-      if (isOwnChatMessage(message, viewerUserId, viewerMembershipId)) {
+      const messageCreatedAt = new Date(message.createdAt).getTime();
+      const isBeforePeerReadAt =
+        hasPeerReadAtTime && Number.isFinite(messageCreatedAt) && messageCreatedAt <= peerReadAtTime;
+
+      if (isOwnChatMessage(message, viewerUserId, viewerMembershipId) && isBeforePeerReadAt) {
         seenIds.add(message.id);
       }
 
       if (message.id === activeConversation.peerLastReadMessageId) {
+        for (const candidate of activeConversation.messages) {
+          if (isOwnChatMessage(candidate, viewerUserId, viewerMembershipId)) {
+            seenIds.add(candidate.id);
+          }
+
+          if (candidate.id === activeConversation.peerLastReadMessageId) {
+            break;
+          }
+        }
         break;
       }
     }
@@ -3387,16 +3487,39 @@ export function CampusMessagesShell({
             const payload = JSON.parse(event.data) as {
               type?: string;
               payload?: {
+                conversationId?: string;
                 messageId?: string;
                 item?: ChatMessageRecord;
                 userId?: string;
                 membershipId?: string;
                 isTyping?: boolean;
                 typedAt?: string;
+                readAt?: string;
               };
             };
 
-            if (payload.type === "chat.sync" || payload.type === "chat.read") {
+            if (payload.type === "chat.read") {
+              const applied = applyRealtimeReadReceipt({
+                conversationId:
+                  typeof payload.payload?.conversationId === "string"
+                    ? payload.payload.conversationId
+                    : conversationId,
+                userId: payload.payload?.userId,
+                membershipId: payload.payload?.membershipId,
+                messageId: payload.payload?.messageId,
+                readAt: payload.payload?.readAt
+              });
+
+              if (!applied) {
+                void loadConversationDetail(conversationId, {
+                  silent: true,
+                  preserveActiveConversation: true
+                });
+              }
+              return;
+            }
+
+            if (payload.type === "chat.sync") {
               void loadConversationDetail(conversationId, {
                 silent: true,
                 preserveActiveConversation: true
@@ -3432,6 +3555,33 @@ export function CampusMessagesShell({
               payload.payload?.item && typeof payload.payload.item === "object"
                 ? (payload.payload.item as ChatMessageRecord)
                 : null;
+
+            if (incomingMessage && payload.type === "chat.message" && incomingMessage.senderUserId === viewerUserId) {
+              const currentConversation = activeConversationRef.current;
+              if (currentConversation?.id === conversationId) {
+                const queuedOptimisticMessage = consumeQueuedOptimisticMessage(conversationId);
+                if (queuedOptimisticMessage) {
+                  const nextConversation = normalizeConversationMessages({
+                    ...currentConversation,
+                    messages: replaceOptimisticMessageRecord(
+                      currentConversation.messages,
+                      queuedOptimisticMessage.id,
+                      incomingMessage
+                    )
+                  });
+
+                  messageIdsRef.current.delete(queuedOptimisticMessage.id);
+                  messageIdsRef.current.add(incomingMessage.id);
+                  setMessagePlaintextById((current) => {
+                    const next = { ...current, [incomingMessage.id]: queuedOptimisticMessage.plaintext };
+                    delete next[queuedOptimisticMessage.id];
+                    return next;
+                  });
+                  commitActiveConversation(nextConversation);
+                  return;
+                }
+              }
+            }
 
             if (incomingMessage && payload.type === "chat.message.updated") {
               const currentConversation = activeConversationRef.current;
@@ -3619,12 +3769,15 @@ export function CampusMessagesShell({
         setSessionExpired(false);
         const payload = (await response.json().catch(() => null)) as { readAt?: string } | null;
         const readAt = payload?.readAt ?? new Date().toISOString();
+        const nextConversation = {
+          ...activeConversation,
+          lastReadMessageId: latestIncomingMessage.id,
+          lastReadAt: readAt
+        };
 
-        setActiveConversation((current) =>
-          current && current.id === activeConversation.id
-            ? { ...current, lastReadMessageId: latestIncomingMessage.id, lastReadAt: readAt }
-            : current
-        );
+        activeConversationRef.current = nextConversation;
+        conversationDetailCacheRef.current.set(nextConversation.id, nextConversation);
+        setActiveConversation((current) => (current && current.id === activeConversation.id ? nextConversation : current));
 
         setConversations((current) =>
           current.map((item) =>
@@ -4516,6 +4669,7 @@ export function CampusMessagesShell({
       messageIdsRef.current.add(sentMessage.id);
       if (optimisticMessageId) {
         messageIdsRef.current.delete(optimisticMessageId);
+        removeQueuedOptimisticMessage(conversationId, optimisticMessageId);
       }
       setMessagePlaintextById((current) => {
         const next = { ...current, [sentMessage.id]: plaintext };
@@ -4730,6 +4884,7 @@ export function CampusMessagesShell({
         };
 
         messageIdsRef.current.add(optimisticMessageId);
+        queueOptimisticMessage(conversationId, optimisticMessageId, outgoingText);
         setMessagePlaintextById((current) => ({
           ...current,
           [optimisticMessageId]: outgoingText
@@ -4786,6 +4941,7 @@ export function CampusMessagesShell({
       if (failedOptimisticMessageId) {
         const optimisticMessageId = failedOptimisticMessageId;
         messageIdsRef.current.delete(optimisticMessageId);
+        removeQueuedOptimisticMessage(conversationId, optimisticMessageId);
         setMessagePlaintextById((current) => {
           const next = { ...current };
           delete next[optimisticMessageId];
