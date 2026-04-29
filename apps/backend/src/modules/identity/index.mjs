@@ -57,6 +57,19 @@ const profileSchema = z
       .union([z.string().trim().regex(/^[+\d][\d\s-]{7,18}$/u, "Phone number format is invalid."), z.literal(""), z.null()])
       .optional(),
     bio: z.union([z.string().trim().max(180, "Bio must be 180 characters or fewer."), z.literal(""), z.null()]).optional(),
+    socialLinks: z
+      .object({
+        linkedin: z.string().trim().max(220).optional(),
+        github: z.string().trim().max(220).optional(),
+        instagram: z.string().trim().max(220).optional(),
+        email: z.string().trim().max(220).optional(),
+        twitter: z.string().trim().max(220).optional(),
+        codeforces: z.string().trim().max(220).optional(),
+        leetcode: z.string().trim().max(220).optional()
+      })
+      .partial()
+      .nullable()
+      .optional(),
     avatarUrl: z.union([z.string().trim().min(1).max(2_500_000), z.literal(""), z.null()]).optional()
   })
   .superRefine((payload, ctx) => {
@@ -365,7 +378,7 @@ export async function handleIdentityRoute({ request, response, url, context }) {
 
     let profile;
     try {
-      profile = await upsertProfile({
+      const profileInput = {
         userId: resolved.live.user.id,
         tenantId: resolved.live.tenant.id,
         primaryEmail: resolved.viewer.primaryEmail,
@@ -383,7 +396,11 @@ export async function handleIdentityRoute({ request, response, url, context }) {
         phoneNumber: normalizePhoneNumber(normalizedPayload.phoneNumber),
         bio: normalizeOptionalString(normalizedPayload.bio),
         avatarUrl: normalizeOptionalString(normalizedPayload.avatarUrl)
-      });
+      };
+      if (Object.prototype.hasOwnProperty.call(normalizedPayload, "socialLinks")) {
+        profileInput.socialLinks = normalizedPayload.socialLinks;
+      }
+      profile = await upsertProfile(profileInput);
     } catch (error) {
       if (error?.code === "USERNAME_TAKEN") {
         sendError(response, 409, "USERNAME_TAKEN", "That user ID is already taken.");

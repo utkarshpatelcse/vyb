@@ -12,6 +12,7 @@ const TENANT_PROFILE_LIMIT = 5000;
 const directoryName = path.dirname(fileURLToPath(import.meta.url));
 const avatarStorePath = path.resolve(directoryName, "../../data/avatar-store.json");
 const profileSettingsStorePath = path.resolve(directoryName, "../../data/profile-settings-store.json");
+const SOCIAL_LINK_KEYS = ["linkedin", "github", "instagram", "email", "twitter", "codeforces", "leetcode"];
 const defaultAvatarStore = {
   avatars: {}
 };
@@ -203,6 +204,27 @@ function normalizeBio(value) {
   return normalized ? normalized.slice(0, 180) : null;
 }
 
+function normalizeSocialLinks(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const links = {};
+  for (const key of SOCIAL_LINK_KEYS) {
+    const rawValue = value[key];
+    if (typeof rawValue !== "string") {
+      continue;
+    }
+
+    const normalized = rawValue.trim().slice(0, 220);
+    if (normalized) {
+      links[key] = normalized;
+    }
+  }
+
+  return Object.keys(links).length > 0 ? links : null;
+}
+
 async function ensureAvatarStore() {
   if (avatarStoreCache) {
     return avatarStoreCache;
@@ -315,7 +337,8 @@ async function readProfileSettingsMap(tenantId, userIds) {
 
     const item = store.profiles[key];
     map.set(userId, {
-      bio: item && typeof item === "object" ? normalizeBio(item.bio) : null
+      bio: item && typeof item === "object" ? normalizeBio(item.bio) : null,
+      socialLinks: item && typeof item === "object" ? normalizeSocialLinks(item.socialLinks) : null
     });
   }
 
@@ -335,7 +358,8 @@ async function readAvatarUrl({ tenantId, userId }) {
 async function readProfileSettings({ tenantId, userId }) {
   if (!tenantId || !userId) {
     return {
-      bio: null
+      bio: null,
+      socialLinks: null
     };
   }
 
@@ -343,11 +367,12 @@ async function readProfileSettings({ tenantId, userId }) {
   const key = buildProfileSettingsStoreKey(tenantId, userId);
   const item = key ? store.profiles[key] : null;
   return {
-    bio: item && typeof item === "object" ? normalizeBio(item.bio) : null
+    bio: item && typeof item === "object" ? normalizeBio(item.bio) : null,
+    socialLinks: item && typeof item === "object" ? normalizeSocialLinks(item.socialLinks) : null
   };
 }
 
-function attachProfileDisplayFields(profile, { avatarUrl = null, bio = null } = {}) {
+function attachProfileDisplayFields(profile, { avatarUrl = null, bio = null, socialLinks = null } = {}) {
   if (!profile) {
     return null;
   }
@@ -355,7 +380,8 @@ function attachProfileDisplayFields(profile, { avatarUrl = null, bio = null } = 
   return {
     ...profile,
     avatarUrl: avatarUrl ?? profile.avatarUrl ?? null,
-    bio: bio ?? null
+    bio: bio ?? null,
+    socialLinks: socialLinks ?? null
   };
 }
 
@@ -399,57 +425,57 @@ export async function storeAvatarUrl({ tenantId, userId, avatarUrl }) {
   return normalizedAvatarUrl;
 }
 
-export async function storeProfileSettings({ tenantId, userId, bio }) {
+export async function storeProfileSettings({ tenantId, userId, bio, socialLinks }) {
   const key = buildProfileSettingsStoreKey(tenantId, userId);
   if (!key) {
     return {
-      bio: null
+      bio: null,
+      socialLinks: null
     };
   }
 
   const store = await ensureProfileSettingsStore();
   const current = store.profiles[key] && typeof store.profiles[key] === "object" ? store.profiles[key] : {};
-  const normalizedBio = normalizeBio(bio);
+  const hasBio = Object.prototype.hasOwnProperty.call(arguments[0], "bio");
+  const hasSocialLinks = Object.prototype.hasOwnProperty.call(arguments[0], "socialLinks");
+  const normalizedBio = hasBio ? normalizeBio(bio) : normalizeBio(current.bio);
+  const normalizedSocialLinks = hasSocialLinks
+    ? normalizeSocialLinks(socialLinks)
+    : normalizeSocialLinks(current.socialLinks);
 
-  if (!normalizedBio) {
-    if (!current.bio) {
-      return {
-        bio: null
-      };
-    }
+  const next = {};
+  if (normalizedBio) {
+    next.bio = normalizedBio;
+  }
+  if (normalizedSocialLinks) {
+    next.socialLinks = normalizedSocialLinks;
+  }
 
-    const next = { ...current };
-    delete next.bio;
-
-    if (Object.keys(next).length === 0) {
-      delete store.profiles[key];
-    } else {
-      store.profiles[key] = {
-        ...next,
-        updatedAt: new Date().toISOString()
-      };
-    }
-
-    await persistProfileSettingsStore();
+  const currentBio = normalizeBio(current.bio);
+  const currentSocialLinks = normalizeSocialLinks(current.socialLinks);
+  if (
+    currentBio === normalizedBio &&
+    JSON.stringify(currentSocialLinks ?? null) === JSON.stringify(normalizedSocialLinks ?? null)
+  ) {
     return {
-      bio: null
+      bio: normalizedBio,
+      socialLinks: normalizedSocialLinks
     };
   }
 
-  if (current.bio === normalizedBio) {
-    return {
-      bio: normalizedBio
+  if (Object.keys(next).length === 0) {
+    delete store.profiles[key];
+  } else {
+    store.profiles[key] = {
+      ...next,
+      updatedAt: new Date().toISOString()
     };
   }
 
-  store.profiles[key] = {
-    ...current,
-    bio: normalizedBio,
-    updatedAt: new Date().toISOString()
-  };
   await persistProfileSettingsStore();
   return {
-    bio: normalizedBio
+    bio: normalizedBio,
+    socialLinks: normalizedSocialLinks
   };
 }
 
@@ -599,7 +625,8 @@ export async function getProfileByUserId({ tenantId, userId }) {
 
   return attachProfileDisplayFields(profile, {
     avatarUrl,
-    bio: profileSettings.bio
+    bio: profileSettings.bio,
+    socialLinks: profileSettings.socialLinks
   });
 }
 
@@ -618,7 +645,8 @@ export async function getProfileByUsername({ tenantId, username }) {
 
   return attachProfileDisplayFields(profile, {
     avatarUrl,
-    bio: profileSettings.bio
+    bio: profileSettings.bio,
+    socialLinks: profileSettings.socialLinks
   });
 }
 
@@ -648,7 +676,8 @@ export async function listProfilesByTenant(tenantId) {
   return profiles.map((profile) =>
     attachProfileDisplayFields(profile, {
       avatarUrl: avatarMap.get(profile.userId) ?? null,
-      bio: settingsMap.get(profile.userId)?.bio ?? null
+      bio: settingsMap.get(profile.userId)?.bio ?? null,
+      socialLinks: settingsMap.get(profile.userId)?.socialLinks ?? null
     })
   );
 }
@@ -754,12 +783,20 @@ export async function upsertProfile(input) {
     });
   }
 
-  if (Object.prototype.hasOwnProperty.call(input, "bio")) {
-    await storeProfileSettings({
+  const hasProfileBio = Object.prototype.hasOwnProperty.call(input, "bio");
+  const hasProfileSocialLinks = Object.prototype.hasOwnProperty.call(input, "socialLinks");
+  if (hasProfileBio || hasProfileSocialLinks) {
+    const settingsInput = {
       tenantId: input.tenantId,
-      userId: input.userId,
-      bio: input.bio
-    });
+      userId: input.userId
+    };
+    if (hasProfileBio) {
+      settingsInput.bio = input.bio;
+    }
+    if (hasProfileSocialLinks) {
+      settingsInput.socialLinks = input.socialLinks;
+    }
+    await storeProfileSettings(settingsInput);
   }
 
   return getProfileByUserId({

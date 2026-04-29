@@ -51,6 +51,9 @@ export interface UserProfile {
   status: "active" | "blocked";
 }
 
+export type ProfileSocialLinkKey = "linkedin" | "github" | "instagram" | "email" | "twitter" | "codeforces" | "leetcode";
+export type ProfileSocialLinks = Partial<Record<ProfileSocialLinkKey, string>>;
+
 export interface AuthBootstrapRequest {
   displayName?: string;
   avatarUrl?: string;
@@ -112,6 +115,7 @@ export interface ProfileRecord {
   hostelName: string | null;
   phoneNumber: string | null;
   bio?: string | null;
+  socialLinks?: ProfileSocialLinks | null;
   profileCompleted: boolean;
   createdAt: string;
   updatedAt: string;
@@ -136,6 +140,7 @@ export interface UpsertProfileRequest {
   hostelName?: string | null;
   phoneNumber?: string | null;
   bio?: string | null;
+  socialLinks?: ProfileSocialLinks | null;
   avatarUrl?: string | null;
 }
 
@@ -304,6 +309,7 @@ export interface PublicProfileSummary {
   course: string;
   stream: string;
   bio?: string | null;
+  socialLinks?: ProfileSocialLinks | null;
 }
 
 export interface SocialProfileStats {

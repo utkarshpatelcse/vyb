@@ -55,6 +55,7 @@ export default async function PublicProfilePage({
       isFollowing={publicProfile.isFollowing}
       initialAvatarUrl={publicProfile.profile.avatarUrl ?? null}
       profileBio={publicProfile.profile.bio ?? null}
+      profileSocialLinks={publicProfile.profile.socialLinks ?? null}
       stories={stories.items}
     />
   );

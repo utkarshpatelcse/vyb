@@ -15,6 +15,20 @@ export const usernameSchema = z
   .max(24, "User ID must be 24 characters or fewer.")
   .regex(/^[a-z0-9](?:[a-z0-9._]{1,22}[a-z0-9])?$/u, "Use lowercase letters, numbers, dots, and underscores only.");
 
+const profileSocialLinksSchema = z
+  .object({
+    linkedin: z.string().trim().max(220).optional(),
+    github: z.string().trim().max(220).optional(),
+    instagram: z.string().trim().max(220).optional(),
+    email: z.string().trim().max(220).optional(),
+    twitter: z.string().trim().max(220).optional(),
+    codeforces: z.string().trim().max(220).optional(),
+    leetcode: z.string().trim().max(220).optional()
+  })
+  .partial()
+  .nullable()
+  .optional();
+
 export const onboardingProfileSchema = z
   .object({
     username: usernameSchema,
@@ -32,6 +46,7 @@ export const onboardingProfileSchema = z
       .union([z.string().trim().regex(/^[+\d][\d\s-]{7,18}$/u, "Phone number format is invalid."), z.literal(""), z.null()])
       .optional(),
     bio: z.union([z.string().trim().max(180, "Bio must be 180 characters or fewer."), z.literal(""), z.null()]).optional(),
+    socialLinks: profileSocialLinksSchema,
     avatarUrl: z.union([z.string().trim().min(1).max(2_500_000), z.literal(""), z.null()]).optional()
   })
   .superRefine((payload, ctx) => {

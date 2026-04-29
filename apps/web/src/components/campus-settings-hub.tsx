@@ -21,6 +21,7 @@ import {
   createDefaultCampusSettings,
   createDefaultCampusSocialLinks,
   normalizeCampusSocialLink,
+  normalizeStoredSocialLinks,
   persistStoredCampusSettings,
   readStoredCampusSettings,
   type CampusSettingsIdentity,
@@ -239,11 +240,12 @@ function buildInitialAccountDraft({
   };
 }
 
-function buildInitialSocialDraft(settings: StoredCampusSettings): CampusSocialLinks {
-  return {
-    ...createDefaultCampusSocialLinks(),
-    ...settings.socialLinks
-  };
+function buildInitialSocialDraft(settings: StoredCampusSettings, initialProfile?: ProfileRecord | null): CampusSocialLinks {
+  const persistedLinks = normalizeStoredSocialLinks(initialProfile?.socialLinks);
+  return CAMPUS_SOCIAL_LINK_KEYS.reduce<CampusSocialLinks>((links, key) => {
+    links[key] = settings.socialLinks[key].trim() || persistedLinks[key] || "";
+    return links;
+  }, createDefaultCampusSocialLinks());
 }
 
 function normalizeSocialDraft(draft: CampusSocialLinks): CampusSocialLinks {
@@ -298,7 +300,7 @@ export function CampusSettingsHub({
     })
   );
   const [socialDraft, setSocialDraft] = useState<CampusSocialLinks>(() =>
-    buildInitialSocialDraft(readStoredCampusSettings(settingsIdentity))
+    buildInitialSocialDraft(readStoredCampusSettings(settingsIdentity), initialProfile)
   );
   const [activePanel, setActivePanel] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
@@ -356,8 +358,8 @@ export function CampusSettingsHub({
   ]);
 
   useEffect(() => {
-    setSocialDraft(buildInitialSocialDraft(settings));
-  }, [settings.socialLinks]);
+    setSocialDraft(buildInitialSocialDraft(settings, initialProfile));
+  }, [initialProfile, settings.socialLinks]);
 
   useEffect(() => {
     if (!feedback) {
@@ -400,6 +402,28 @@ export function CampusSettingsHub({
     }));
   }
 
+  function buildProfileSyncPayload(options?: { avatarUrl?: string | null; socialLinks?: CampusSocialLinks }) {
+    const splitName = splitDisplayName(accountDraft.displayName.trim() || viewerName);
+    const socialLinks = options?.socialLinks ?? settings.socialLinks;
+    const hasSocialLinks = CAMPUS_SOCIAL_LINK_KEYS.some((key) => socialLinks[key].trim());
+
+    return {
+      username: initialProfile?.username ?? viewerUsername,
+      firstName: splitName.firstName.trim(),
+      lastName: splitName.lastName.trim() || null,
+      course: initialProfile?.course ?? (accountDraft.branchDepartment.trim() || "Campus"),
+      stream: initialProfile?.stream ?? (accountDraft.branchDepartment.trim() || "General"),
+      year: Number(accountDraft.batchYear) || initialProfile?.year || 1,
+      section: initialProfile?.section ?? "A",
+      isHosteller: initialProfile?.isHosteller ?? false,
+      hostelName: initialProfile?.hostelName ?? null,
+      phoneNumber: accountDraft.phoneNumber.trim() || null,
+      bio: accountDraft.bio.trim() || null,
+      avatarUrl: options?.avatarUrl ?? (avatarUrl || null),
+      ...(options?.socialLinks || hasSocialLinks ? { socialLinks } : {})
+    };
+  }
+
   async function handleProfilePhotoSelection(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -421,25 +445,12 @@ export function CampusSettingsHub({
     try {
       const nextAvatarUrl = await readFileAsDataUrl(file);
       persistStoredAvatarUrl(settingsIdentity, nextAvatarUrl);
-      const splitName = splitDisplayName(accountDraft.displayName.trim() || viewerName);
       const response = await fetch("/api/profile", {
         method: "PUT",
         headers: {
           "content-type": "application/json"
         },
-        body: JSON.stringify({
-          username: initialProfile?.username ?? viewerUsername,
-          firstName: splitName.firstName.trim(),
-          lastName: splitName.lastName.trim() || null,
-          course: initialProfile?.course ?? (accountDraft.branchDepartment.trim() || "Campus"),
-          stream: initialProfile?.stream ?? (accountDraft.branchDepartment.trim() || "General"),
-          year: Number(accountDraft.batchYear) || initialProfile?.year || 1,
-          section: initialProfile?.section ?? "A",
-          isHosteller: initialProfile?.isHosteller ?? false,
-          hostelName: initialProfile?.hostelName ?? null,
-          phoneNumber: accountDraft.phoneNumber.trim() || null,
-          avatarUrl: nextAvatarUrl
-        })
+        body: JSON.stringify(buildProfileSyncPayload({ avatarUrl: nextAvatarUrl }))
       });
 
       const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
@@ -468,26 +479,12 @@ export function CampusSettingsHub({
     setSettings(nextStoredSettings);
 
     try {
-      const splitName = splitDisplayName(accountDraft.displayName.trim() || viewerName);
       const response = await fetch("/api/profile", {
         method: "PUT",
         headers: {
           "content-type": "application/json"
         },
-        body: JSON.stringify({
-          username: initialProfile?.username ?? viewerUsername,
-          firstName: splitName.firstName.trim(),
-          lastName: splitName.lastName.trim() || null,
-          course: initialProfile?.course ?? (accountDraft.branchDepartment.trim() || "Campus"),
-          stream: initialProfile?.stream ?? (accountDraft.branchDepartment.trim() || "General"),
-          year: Number(accountDraft.batchYear) || initialProfile?.year || 1,
-          section: initialProfile?.section ?? "A",
-          isHosteller: initialProfile?.isHosteller ?? false,
-          hostelName: initialProfile?.hostelName ?? null,
-          phoneNumber: accountDraft.phoneNumber.trim() || null,
-          bio: accountDraft.bio.trim() || null,
-          avatarUrl: avatarUrl ?? null
-        })
+        body: JSON.stringify(buildProfileSyncPayload({ socialLinks: nextStoredSettings.socialLinks }))
       });
 
       const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
@@ -505,11 +502,38 @@ export function CampusSettingsHub({
     }
   }
 
-  function handleSocialLinksSave() {
+  async function handleSocialLinksSave() {
     const nextSocialLinks = normalizeSocialDraft(socialDraft);
-    updateSettings("socialLinks", nextSocialLinks);
+    const nextStoredSettings = {
+      ...settings,
+      socialLinks: nextSocialLinks
+    };
+    setProfileBusy(true);
+    setSettings(nextStoredSettings);
     setSocialDraft(nextSocialLinks);
-    showFeedback("success", "Social account links saved to your profile bio.");
+
+    try {
+      const response = await fetch("/api/profile", {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(buildProfileSyncPayload({ socialLinks: nextSocialLinks }))
+      });
+
+      const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+      if (!response.ok) {
+        showFeedback("error", payload?.error?.message ?? "We could not save your social links.");
+        return;
+      }
+
+      showFeedback("success", "Social account links saved to your profile bio.");
+      router.refresh();
+    } catch {
+      showFeedback("error", "We could not save your social links.");
+    } finally {
+      setProfileBusy(false);
+    }
   }
 
   async function handlePasswordReset() {
@@ -837,6 +861,10 @@ export function CampusSettingsHub({
                                     ? "name@college.edu"
                                     : key === "linkedin"
                                       ? "linkedin.com/in/username"
+                                      : key === "codeforces"
+                                        ? "codeforces.com/profile/handle"
+                                        : key === "leetcode"
+                                          ? "leetcode.com/u/username"
                                       : `@${key}_handle or profile URL`
                                 }
                               />

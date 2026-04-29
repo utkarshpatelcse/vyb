@@ -50,6 +50,7 @@ export default async function DashboardPage() {
       recentActivity={activity.items}
       initialProfile={profile.profile}
       initialAvatarUrl={publicProfile?.profile.avatarUrl ?? profile.profile.avatarUrl ?? null}
+      profileSocialLinks={publicProfile?.profile.socialLinks ?? profile.profile.socialLinks ?? null}
       stories={stories.items}
     />
   );

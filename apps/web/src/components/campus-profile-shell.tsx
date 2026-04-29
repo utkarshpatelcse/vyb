@@ -26,6 +26,7 @@ import {
   CAMPUS_SOCIAL_LINK_LABELS,
   getCampusSocialLinkHref,
   getPostDisplayControls,
+  normalizeStoredSocialLinks,
   readPostDisplayPreferences,
   createDefaultCampusSettings,
   readStoredCampusSettings,
@@ -58,6 +59,7 @@ type CampusProfileShellProps = {
   initialProfile?: ProfileRecord | null;
   initialAvatarUrl?: string | null;
   profileBio?: string | null;
+  profileSocialLinks?: Partial<Record<CampusSocialLinkKey, string>> | null;
   stories?: StoryCard[];
 };
 
@@ -254,6 +256,26 @@ function SocialBrandIcon({ brand }: { brand: CampusSocialLinkKey }) {
         <rect x="4.5" y="4.5" width="15" height="15" rx="4.2" fill="none" stroke="currentColor" strokeWidth="1.8" />
         <circle cx="12" cy="12" r="3.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
         <circle cx="16.8" cy="7.4" r="1" fill="currentColor" />
+      </svg>
+    );
+  }
+
+  if (brand === "codeforces") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="5" y="9.5" width="3.2" height="8.5" rx="1" fill="currentColor" opacity="0.9" />
+        <rect x="10.4" y="5.5" width="3.2" height="12.5" rx="1" fill="currentColor" />
+        <rect x="15.8" y="11.5" width="3.2" height="6.5" rx="1" fill="currentColor" opacity="0.75" />
+      </svg>
+    );
+  }
+
+  if (brand === "leetcode") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M14.9 4.5 8.2 11a3.8 3.8 0 0 0 0 5.5l2.2 2.1a3.8 3.8 0 0 0 5.4 0l2-2" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M10.1 11.9h7.1" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" />
+        <path d="M12.2 7.1 15 4.4" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" />
       </svg>
     );
   }
@@ -682,6 +704,7 @@ export function CampusProfileShell({
   initialProfile = null,
   initialAvatarUrl = null,
   profileBio: initialProfileBio = null,
+  profileSocialLinks = null,
   stories = []
 }: CampusProfileShellProps) {
   const router = useRouter();
@@ -696,6 +719,7 @@ export function CampusProfileShell({
   } | null>(null);
   const avatarSyncAttemptedRef = useRef(false);
   const bioSyncAttemptedRef = useRef(false);
+  const socialLinksSyncAttemptedRef = useRef(false);
   const initialAvatar = initialAvatarUrl ?? initialProfile?.avatarUrl ?? null;
   const [message, setMessage] = useState<ToastState | null>(null);
   const [busy, setBusy] = useState(false);
@@ -752,6 +776,10 @@ export function CampusProfileShell({
   const identityLine = campusBadgeLine || collegeName;
   const persistedProfileBio = (initialProfileBio ?? initialProfile?.bio ?? "").trim();
   const profileBio = persistedProfileBio || (isOwnProfile ? storedCampusSettings.bio.trim() : "");
+  const persistedProfileSocialLinks = useMemo(
+    () => normalizeStoredSocialLinks(profileSocialLinks ?? initialProfile?.socialLinks),
+    [initialProfile?.socialLinks, profileSocialLinks]
+  );
   const profileSeed = `${username}-${viewerName}`;
   const profileStory = useMemo(
     () => stories.find((story) => story.username.toLowerCase() === username.toLowerCase()) ?? null,
@@ -782,12 +810,19 @@ export function CampusProfileShell({
   );
   const resolvedAvatarUrl = avatarUrl ?? buildAvatarUrl(profileSeed, viewerName, username);
   const visibleSocialLinks = useMemo(
-    () =>
-      CAMPUS_SOCIAL_LINK_KEYS.map((key) => ({
+    () => {
+      const links = CAMPUS_SOCIAL_LINK_KEYS.reduce<Record<CampusSocialLinkKey, string>>((next, key) => {
+        const localValue = isOwnProfile ? storedCampusSettings.socialLinks[key].trim() : "";
+        next[key] = localValue || persistedProfileSocialLinks[key] || "";
+        return next;
+      }, {} as Record<CampusSocialLinkKey, string>);
+
+      return CAMPUS_SOCIAL_LINK_KEYS.map((key) => ({
         key,
-        href: getCampusSocialLinkHref(key, storedCampusSettings.socialLinks[key])
-      })).filter((item) => item.href),
-    [storedCampusSettings.socialLinks]
+        href: getCampusSocialLinkHref(key, links[key])
+      })).filter((item) => item.href);
+    },
+    [isOwnProfile, persistedProfileSocialLinks, storedCampusSettings.socialLinks]
   );
   const avatarCropMetrics = avatarCropDraft
     ? getAvatarCropMetrics(avatarCropDraft.imageWidth, avatarCropDraft.imageHeight, avatarCropDraft.zoom)
@@ -897,6 +932,27 @@ export function CampusProfileShell({
         bioSyncAttemptedRef.current = false;
       });
   }, [avatarUrl, isOwnProfile, persistedProfileBio, router, storedCampusSettings.bio]);
+
+  useEffect(() => {
+    if (!isOwnProfile || socialLinksSyncAttemptedRef.current) {
+      return;
+    }
+
+    const hasPersistedLinks = CAMPUS_SOCIAL_LINK_KEYS.some((key) => persistedProfileSocialLinks[key].trim());
+    const hasLocalLinks = CAMPUS_SOCIAL_LINK_KEYS.some((key) => storedCampusSettings.socialLinks[key].trim());
+    if (hasPersistedLinks || !hasLocalLinks) {
+      return;
+    }
+
+    socialLinksSyncAttemptedRef.current = true;
+    saveProfileSettings(avatarUrl)
+      .then(() => {
+        router.refresh();
+      })
+      .catch(() => {
+        socialLinksSyncAttemptedRef.current = false;
+      });
+  }, [avatarUrl, isOwnProfile, persistedProfileSocialLinks, router, storedCampusSettings.socialLinks]);
 
   useEffect(() => {
     return () => {
@@ -1181,6 +1237,15 @@ export function CampusProfileShell({
   }
 
   function buildProfileSavePayload(nextAvatarUrl: string | null = avatarUrl) {
+    const localSocialLinks = CAMPUS_SOCIAL_LINK_KEYS.reduce<Partial<Record<CampusSocialLinkKey, string>>>((links, key) => {
+      const value = storedCampusSettings.socialLinks[key].trim();
+      if (value) {
+        links[key] = value;
+      }
+      return links;
+    }, {});
+    const hasLocalSocialLinks = Object.keys(localSocialLinks).length > 0;
+
     return {
       username: sanitizeUsername(profileDraft.username),
       firstName: profileDraft.firstName.trim(),
@@ -1193,6 +1258,7 @@ export function CampusProfileShell({
       hostelName: profileDraft.isHosteller ? profileDraft.hostelName.trim() || null : null,
       phoneNumber: profileDraft.phoneNumber.trim() || null,
       bio: storedCampusSettings.bio.trim() || persistedProfileBio || null,
+      ...(hasLocalSocialLinks ? { socialLinks: localSocialLinks } : {}),
       avatarUrl: nextAvatarUrl ?? null
     };
   }

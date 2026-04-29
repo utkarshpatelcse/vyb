@@ -15,7 +15,7 @@ export type CampusVisibilityOption = "Everyone" | "My Contacts" | "Contacts" | "
 export type CampusMessageTimerOption = "Instant" | "24h" | "7d" | "30d" | "90d";
 export type CampusAutoDownloadOption = "WiFi & Cellular" | "WiFi Only" | "Never";
 export type CampusUploadQualityOption = "Standard" | "High";
-export type CampusSocialLinkKey = "linkedin" | "github" | "instagram" | "email" | "twitter";
+export type CampusSocialLinkKey = "linkedin" | "github" | "instagram" | "email" | "twitter" | "codeforces" | "leetcode";
 export type CampusSocialLinks = Record<CampusSocialLinkKey, string>;
 export type PostDisplayPreference = {
   hideReactionCount: boolean;
@@ -25,13 +25,15 @@ export type PostDisplayPreference = {
   updatedAt: string;
 };
 
-export const CAMPUS_SOCIAL_LINK_KEYS: CampusSocialLinkKey[] = ["linkedin", "github", "instagram", "email", "twitter"];
+export const CAMPUS_SOCIAL_LINK_KEYS: CampusSocialLinkKey[] = ["linkedin", "github", "instagram", "email", "twitter", "codeforces", "leetcode"];
 export const CAMPUS_SOCIAL_LINK_LABELS: Record<CampusSocialLinkKey, string> = {
   linkedin: "LinkedIn",
   github: "GitHub",
   instagram: "Instagram",
   email: "Email",
-  twitter: "Twitter"
+  twitter: "Twitter",
+  codeforces: "Codeforces",
+  leetcode: "LeetCode"
 };
 
 export type StoredCampusSettings = {
@@ -102,7 +104,9 @@ export function createDefaultCampusSocialLinks(): CampusSocialLinks {
     github: "",
     instagram: "",
     email: "",
-    twitter: ""
+    twitter: "",
+    codeforces: "",
+    leetcode: ""
   };
 }
 
@@ -150,7 +154,7 @@ function isVisibilityOption(value: unknown): value is Extract<CampusVisibilityOp
   return value === "Everyone" || value === "Contacts" || value === "Nobody";
 }
 
-function normalizeStoredSocialLinks(value: unknown): CampusSocialLinks {
+export function normalizeStoredSocialLinks(value: unknown): CampusSocialLinks {
   const fallback = createDefaultCampusSocialLinks();
   const parsed = value as Partial<Record<CampusSocialLinkKey, unknown>> | null | undefined;
   if (!parsed || typeof parsed !== "object") {
@@ -181,7 +185,7 @@ export function normalizeCampusSocialLink(key: CampusSocialLinkKey, value: strin
     return rawValue;
   }
 
-  if (/^(www\.|linkedin\.com\/|github\.com\/|instagram\.com\/|twitter\.com\/|x\.com\/)/iu.test(rawValue)) {
+  if (/^(www\.|linkedin\.com\/|github\.com\/|instagram\.com\/|twitter\.com\/|x\.com\/|codeforces\.com\/|leetcode\.com\/)/iu.test(rawValue)) {
     return `https://${rawValue}`;
   }
 
@@ -190,7 +194,9 @@ export function normalizeCampusSocialLink(key: CampusSocialLinkKey, value: strin
     linkedin: "https://www.linkedin.com/in/",
     github: "https://github.com/",
     instagram: "https://www.instagram.com/",
-    twitter: "https://twitter.com/"
+    twitter: "https://twitter.com/",
+    codeforces: "https://codeforces.com/profile/",
+    leetcode: "https://leetcode.com/u/"
   };
 
   if (key === "email") {

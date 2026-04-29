@@ -118,6 +118,8 @@ export async function upsertFallbackProfile(viewer: DevSession, payload: UpsertP
     isHosteller: Boolean(payload.isHosteller),
     hostelName: payload.isHosteller ? toOptionalString(payload.hostelName) : null,
     phoneNumber: toOptionalString(payload.phoneNumber),
+    bio: toOptionalString(payload.bio),
+    socialLinks: payload.socialLinks ?? existing?.socialLinks ?? null,
     profileCompleted: true,
     createdAt: existing?.createdAt ?? timestamp,
     updatedAt: timestamp
