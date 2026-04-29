@@ -31,6 +31,7 @@ export const onboardingProfileSchema = z
     phoneNumber: z
       .union([z.string().trim().regex(/^[+\d][\d\s-]{7,18}$/u, "Phone number format is invalid."), z.literal(""), z.null()])
       .optional(),
+    bio: z.union([z.string().trim().max(180, "Bio must be 180 characters or fewer."), z.literal(""), z.null()]).optional(),
     avatarUrl: z.union([z.string().trim().min(1).max(2_500_000), z.literal(""), z.null()]).optional()
   })
   .superRefine((payload, ctx) => {

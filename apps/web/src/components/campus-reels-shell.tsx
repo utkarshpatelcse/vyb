@@ -1,6 +1,6 @@
 "use client";
 
-import type { ChatConversationPreview, ChatIdentitySummary, FeedCard, FeedListResponse, PostLikerItem, UserSearchItem } from "@vyb/contracts";
+import type { ChatConversationPreview, ChatIdentitySummary, FeedCard, FeedListResponse, PostLikerItem, StoryCard, UserSearchItem } from "@vyb/contracts";
 import { animate, motion, useReducedMotion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -15,7 +15,7 @@ import {
   syncStoredChatKeyIdentity,
   type StoredChatKeyMaterial
 } from "../lib/chat-e2ee";
-import { CampusAvatarContent } from "./campus-avatar";
+import { buildDefaultAvatarUrl, CampusAvatarContent } from "./campus-avatar";
 import { SocialPostActionSheet } from "./social-post-action-sheet";
 import { SocialPostLightbox } from "./social-post-lightbox";
 import { SocialPostLikersSheet } from "./social-post-likers-sheet";
@@ -53,6 +53,7 @@ type CampusReelsShellProps = {
   recentChats: ChatConversationPreview[];
   initialViewerIdentity?: ChatIdentitySummary | null;
   initialFocusedPostId?: string | null;
+  stories?: StoryCard[];
 };
 
 function IconBase({ children }: { children: ReactNode }) {
@@ -168,6 +169,14 @@ function MenuIcon() {
   return (
     <IconBase>
       <path d="M12 6h.01M12 12h.01M12 18h.01" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+    </IconBase>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <IconBase>
+      <path d="m7 7 10 10M17 7 7 17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </IconBase>
   );
 }
@@ -338,7 +347,8 @@ export function CampusReelsShell({
   suggestedUsers,
   recentChats,
   initialViewerIdentity = null,
-  initialFocusedPostId = null
+  initialFocusedPostId = null,
+  stories = []
 }: CampusReelsShellProps) {
   const router = useRouter();
   const { isFromSearch, goBack, clearOrigin } = useSearchNavigationGuard("/search");
@@ -383,6 +393,11 @@ export function CampusReelsShell({
   const [likesByPost, setLikesByPost] = useState<Record<string, PostLikerItem[]>>({});
   const [likesLoadingPostId, setLikesLoadingPostId] = useState<string | null>(null);
   const [likesMessage, setLikesMessage] = useState<string | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<{
+    displayName: string;
+    username: string;
+    avatarUrl: string;
+  } | null>(null);
   const [actionPost, setActionPost] = useState<FeedCard | null>(null);
   const [repostComposerPost, setRepostComposerPost] = useState<FeedCard | null>(null);
   const [sharePost, setSharePost] = useState<FeedCard | null>(null);
@@ -403,6 +418,19 @@ export function CampusReelsShell({
   const [isLoadingMoreVibes, setIsLoadingMoreVibes] = useState(false);
   const [storedCampusSettings, setStoredCampusSettings] = useState(createDefaultCampusSettings);
   const [postDisplayPreferences, setPostDisplayPreferences] = useState<Record<string, PostDisplayPreference>>({});
+  const storyStateByUsername = useMemo(() => {
+    const next = new Map<string, { allSeen: boolean }>();
+
+    for (const story of stories) {
+      const storyUsername = story.username.trim().toLowerCase();
+      const current = next.get(storyUsername);
+      next.set(storyUsername, {
+        allSeen: (current?.allSeen ?? true) && story.viewerHasSeen
+      });
+    }
+
+    return next;
+  }, [stories]);
 
   const navItems = useMemo(() => buildPrimaryCampusNav("vibes"), []);
 
@@ -1297,6 +1325,41 @@ export function CampusReelsShell({
     setActionMessage(key === "hideReactionCount" ? "Like count preference updated." : "Comment count preference updated.");
   }
 
+  function handleAuthorAvatarClick(post: FeedCard) {
+    if (post.isAnonymous || post.author.isAnonymous) {
+      return;
+    }
+
+    const hasStory = storyStateByUsername.has(post.author.username.toLowerCase());
+    if (hasStory) {
+      router.push(`/home?story=${encodeURIComponent(post.author.username)}`);
+      return;
+    }
+
+    setAvatarPreview({
+      displayName: post.author.displayName || post.author.username,
+      username: post.author.username,
+      avatarUrl:
+        post.author.avatarUrl ??
+        buildDefaultAvatarUrl({
+          seed: post.author.userId ?? post.author.username,
+          displayName: post.author.displayName || post.author.username,
+          username: post.author.username,
+          size: 640
+        })
+    });
+  }
+
+  function getStoryRingClassForUsername(value: string) {
+    const storyState = storyStateByUsername.get(value.trim().toLowerCase());
+
+    if (!storyState) {
+      return "";
+    }
+
+    return storyState.allSeen ? " is-story-seen" : " is-story-active";
+  }
+
   async function handleEditPost(post: FeedCard, payload: { title: string | null; body: string; location: string | null; allowAnonymousComments: boolean }) {
     setActionBusy(true);
     setActionMessage(null);
@@ -1425,10 +1488,7 @@ export function CampusReelsShell({
                 const isActive = activePost?.id === item.id;
                 const distanceFromActive = Math.abs(index - activeIndex);
                 const shouldMountMedia = distanceFromActive <= 1;
-                const profileHref =
-                  item.isAnonymous || item.author.username !== viewerUsername
-                    ? `/u/${encodeURIComponent(item.author.username)}`
-                    : "/dashboard";
+                const profileHref = item.author.username !== viewerUsername ? `/u/${encodeURIComponent(item.author.username)}` : "/dashboard";
                 const progress = progressByPost[item.id] ?? 0;
                 const displayControls = getPostDisplayControls(storedCampusSettings, item, postDisplayPreferences[item.id]);
 
@@ -1533,27 +1593,24 @@ export function CampusReelsShell({
                         >
                           <div className="vyb-vibes-author-row">
                             {item.isAnonymous ? (
-                              <span className="vyb-vibes-author-avatar" aria-label="Anonymous author">
-                                <CampusAvatarContent
-                                  userId={item.author.userId}
-                                  username={item.author.username}
-                                  displayName={item.author.displayName}
-                                  avatarUrl={item.author.avatarUrl ?? null}
-                                  fallback={getInitials(item.author.displayName)}
-                                  decorative
-                                />
+                              <span className="vyb-vibes-author-avatar vyb-vibes-author-avatar-anonymous" aria-label="Anonymous author">
+                                <span>Anonymous Vyber</span>
                               </span>
                             ) : (
-                              <Link href={profileHref} className="vyb-vibes-author-avatar" aria-label={`Open ${item.author.displayName} profile`}>
+                              <button
+                                type="button"
+                                className={`vyb-vibes-author-avatar vyb-vibes-author-avatar-button${getStoryRingClassForUsername(item.author.username)}`}
+                                aria-label={`Open ${item.author.displayName || item.author.username} avatar`}
+                                onClick={() => handleAuthorAvatarClick(item)}
+                              >
                                 <CampusAvatarContent
                                   userId={item.author.userId}
                                   username={item.author.username}
                                   displayName={item.author.displayName}
                                   avatarUrl={item.author.avatarUrl ?? null}
-                                  fallback={getInitials(item.author.displayName)}
                                   decorative
                                 />
-                              </Link>
+                              </button>
                             )}
                             <div className="vyb-vibes-author-copy">
                               {item.isAnonymous ? (
@@ -1848,6 +1905,24 @@ export function CampusReelsShell({
           }
         }}
       />
+      {avatarPreview ? (
+        <div className="vyb-avatar-preview-backdrop" role="presentation" onClick={() => setAvatarPreview(null)}>
+          <div
+            className="vyb-avatar-preview-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${avatarPreview.displayName} profile image`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button type="button" className="vyb-avatar-preview-close" aria-label="Close profile image" onClick={() => setAvatarPreview(null)}>
+              <CloseIcon />
+            </button>
+            <img src={avatarPreview.avatarUrl} alt={avatarPreview.displayName} />
+            <strong>{avatarPreview.displayName}</strong>
+            <span>@{avatarPreview.username}</span>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

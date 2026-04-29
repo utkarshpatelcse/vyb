@@ -33,11 +33,11 @@ function HomeIcon() {
   );
 }
 
-function EventsIcon() {
+function HubIcon() {
   return (
     <IconBase>
-      <rect width="18" height="18" x="3" y="4" rx="2" ry="2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </IconBase>
   );
 }
@@ -252,7 +252,7 @@ export function buildPrimaryCampusNav(
 
   return [
     { label: "Home", href: "/home", icon: <HomeIcon />, active: activeSection === "home" },
-    { label: "Hub", href: "/hub", icon: <EventsIcon />, active: activeSection === "events" },
+    { label: "Hub", href: "/hub", icon: <HubIcon />, active: activeSection === "events" },
     {
       label: "Chats",
       href: "/messages",

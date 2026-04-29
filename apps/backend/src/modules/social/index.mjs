@@ -905,7 +905,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
         avatarUrl: profile.avatarUrl ?? null,
         collegeName: profile.collegeName,
         course: profile.course,
-        stream: profile.stream
+        stream: profile.stream,
+        bio: profile.bio ?? null
       },
       stats: {
         posts: posts.length,

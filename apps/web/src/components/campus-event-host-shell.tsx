@@ -4,7 +4,7 @@ import type { CampusEvent, CampusEventFormField, CampusEventFormFieldType, Campu
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
-import { useResolvedAvatarUrl } from "./campus-avatar";
+import { buildDefaultAvatarUrl, useResolvedAvatarUrl } from "./campus-avatar";
 import { VybLogoLockup } from "./vyb-logo";
 
 type CampusEventHostShellProps = {
@@ -824,7 +824,10 @@ export function CampusEventHostShell({
             <div className="vyb-campus-side-card">
               <span className="vyb-campus-side-label">Host identity</span>
               <div className="vyb-events-side-user">
-                <img src={viewerAvatarUrl ?? `https://i.pravatar.cc/120?u=${encodeURIComponent(viewerUsername)}`} alt={viewerName} />
+                    <img
+                      src={viewerAvatarUrl ?? buildDefaultAvatarUrl({ seed: viewerUsername, displayName: viewerName, username: viewerUsername, size: 120 })}
+                      alt={viewerName}
+                    />
                 <div>
                   <strong>{viewerName}</strong>
                   <span>{role} • @{viewerUsername}</span>

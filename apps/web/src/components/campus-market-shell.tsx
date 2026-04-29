@@ -21,7 +21,7 @@ import {
   hasExplicitMarketCampusSpot,
   hasExplicitMarketLocation
 } from "../lib/market-defaults";
-import { CampusAvatarContent, useResolvedAvatarUrl } from "./campus-avatar";
+import { buildDefaultAvatarUrl, CampusAvatarContent, useResolvedAvatarUrl } from "./campus-avatar";
 import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
 import { SignOutButton } from "./sign-out-button";
 import { VybLogoLockup } from "./vyb-logo";
@@ -1672,7 +1672,10 @@ export function CampusMarketShell({
         <div className="vyb-campus-side-card vyb-market-side-card">
           <span className="vyb-campus-side-label">Your market vibe</span>
           <div className="vyb-market-side-user">
-            <img src={viewerAvatarUrl ?? `https://i.pravatar.cc/120?u=${encodeURIComponent(viewerEmail)}`} alt={viewerName} />
+              <img
+                src={viewerAvatarUrl ?? buildDefaultAvatarUrl({ seed: viewerEmail, displayName: viewerName, username: viewerUsername, size: 120 })}
+                alt={viewerName}
+              />
             <div>
               <strong>{viewerName}</strong>
               <span>{identityLine}</span>

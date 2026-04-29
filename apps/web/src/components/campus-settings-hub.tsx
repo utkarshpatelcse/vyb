@@ -230,7 +230,7 @@ function buildInitialAccountDraft({
 }) {
   return {
     displayName: initialProfile?.fullName ?? viewerName,
-    bio: storedSettings.bio,
+    bio: initialProfile?.bio ?? storedSettings.bio,
     branchDepartment: storedSettings.branchDepartment || initialProfile?.stream || "",
     batchYear: String(initialProfile?.year ?? 1),
     hostelRoomNo: storedSettings.hostelRoomNo,
@@ -485,6 +485,7 @@ export function CampusSettingsHub({
           isHosteller: initialProfile?.isHosteller ?? false,
           hostelName: initialProfile?.hostelName ?? null,
           phoneNumber: accountDraft.phoneNumber.trim() || null,
+          bio: accountDraft.bio.trim() || null,
           avatarUrl: avatarUrl ?? null
         })
       });

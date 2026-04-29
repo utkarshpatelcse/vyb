@@ -4,7 +4,7 @@ import type { ChatConversationPreview, ChatIdentitySummary, FeedCard, PostLikerI
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { CampusAvatarContent, useResolvedAvatarUrl } from "./campus-avatar";
+import { buildDefaultAvatarUrl, CampusAvatarContent, useResolvedAvatarUrl } from "./campus-avatar";
 import { SocialPostActionSheet } from "./social-post-action-sheet";
 import { SocialPostLightbox } from "./social-post-lightbox";
 import { SocialPostLikersSheet } from "./social-post-likers-sheet";
@@ -95,6 +95,7 @@ type CampusHomeShellProps = {
   viewerUserId?: string;
   initialViewerIdentity?: ChatIdentitySummary | null;
   initialFocusedPostId?: string | null;
+  initialFocusedStoryUsername?: string | null;
 };
 
 function formatMetric(value: number) {
@@ -186,15 +187,7 @@ function renderStoryRailPreview(story: StoryCard, alt: string) {
 
   return (
     <span className="vyb-campus-story-preview is-video" aria-hidden="true">
-      <span className="vyb-campus-story-preview-avatar">
-        <CampusAvatarContent
-          userId={story.userId}
-          username={story.username}
-          displayName={story.displayName}
-          avatarUrl={story.avatarUrl ?? null}
-          decorative
-        />
-      </span>
+      <video src={story.mediaUrl} muted playsInline preload="metadata" aria-label={alt} />
       <span className="vyb-campus-story-video-badge">
         <PlayIcon />
       </span>
@@ -534,7 +527,8 @@ export function CampusHomeShell({
   recentChats = [],
   viewerUserId,
   initialViewerIdentity = null,
-  initialFocusedPostId = null
+  initialFocusedPostId = null,
+  initialFocusedStoryUsername = null
 }: CampusHomeShellProps) {
   const router = useRouter();
   const { isFromSearch, goBack, clearOrigin } = useSearchNavigationGuard("/search");
@@ -568,6 +562,11 @@ export function CampusHomeShell({
   const [storyBusyId, setStoryBusyId] = useState<string | null>(null);
   const [heartBurstPostId, setHeartBurstPostId] = useState<string | null>(null);
   const [lightboxPost, setLightboxPost] = useState<FeedCard | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<{
+    displayName: string;
+    username: string;
+    avatarUrl: string;
+  } | null>(null);
   const [likesPost, setLikesPost] = useState<FeedCard | null>(null);
   const [likesByPost, setLikesByPost] = useState<Record<string, PostLikerItem[]>>({});
   const [likesLoadingPostId, setLikesLoadingPostId] = useState<string | null>(null);
@@ -593,6 +592,7 @@ export function CampusHomeShell({
   const reactionShellRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const chatIdentityPromiseRef = useRef<Promise<StoredChatKeyMaterial> | null>(null);
   const hasAppliedInitialPostRef = useRef(false);
+  const hasAppliedInitialStoryRef = useRef(false);
 
   const storyGroups = useMemo(() => buildStoryRailGroups(storyFeed, viewerUsername), [storyFeed, viewerUsername]);
   const storySequence = useMemo(() => storyGroups.flatMap((group) => group.items), [storyGroups]);
@@ -614,6 +614,7 @@ export function CampusHomeShell({
     selectedStoryGroupStartIndex >= 0 && selectedStoryIndex !== null
       ? selectedStoryIndex - selectedStoryGroupStartIndex
       : 0;
+  const ownStoryRingClass = ownStoryGroup ? (ownStoryGroup.allSeen ? " is-story-seen" : " is-story-active") : "";
 
   useEffect(() => {
     setStoryFeed(stories);
@@ -1128,6 +1129,21 @@ export function CampusHomeShell({
     void openPostLightbox(targetPost);
   }, [engagement.posts, initialFocusedPostId]);
 
+  useEffect(() => {
+    if (!initialFocusedStoryUsername || hasAppliedInitialStoryRef.current || storyGroups.length === 0) {
+      return;
+    }
+
+    const normalizedUsername = initialFocusedStoryUsername.trim().toLowerCase();
+    const targetGroup = storyGroups.find((group) => group.username.toLowerCase() === normalizedUsername);
+    if (!targetGroup) {
+      return;
+    }
+
+    hasAppliedInitialStoryRef.current = true;
+    openStoryGroup(targetGroup);
+  }, [initialFocusedStoryUsername, storyGroups]);
+
   function updatePostDisplayPreference(post: FeedCard, key: "hideReactionCount" | "hideCommentCount") {
     const currentPreference = postDisplayPreferences[post.id] ?? {
       hideReactionCount: false,
@@ -1440,6 +1456,79 @@ export function CampusHomeShell({
     setSelectedStoryIndex(nextIndex >= 0 ? nextIndex : null);
   }
 
+  function openStoryForUser(userId?: string | null, username?: string | null) {
+    const normalizedUsername = username?.trim().toLowerCase() ?? null;
+    const group = storyGroups.find(
+      (candidate) =>
+        (userId && candidate.userId === userId) ||
+        (normalizedUsername && candidate.username.toLowerCase() === normalizedUsername)
+    );
+
+    if (!group) {
+      return false;
+    }
+
+    openStoryGroup(group);
+    return true;
+  }
+
+  function getStoryRingClass(userId?: string | null, username?: string | null) {
+    const normalizedUsername = username?.trim().toLowerCase() ?? null;
+    const group = storyGroups.find(
+      (candidate) =>
+        (userId && candidate.userId === userId) ||
+        (normalizedUsername && candidate.username.toLowerCase() === normalizedUsername)
+    );
+
+    if (!group) {
+      return "";
+    }
+
+    return group.allSeen ? " is-story-seen" : " is-story-active";
+  }
+
+  function openAvatarPreviewForUser({
+    userId,
+    username,
+    displayName,
+    avatarUrl
+  }: {
+    userId?: string | null;
+    username: string;
+    displayName: string;
+    avatarUrl?: string | null;
+  }) {
+    setAvatarPreview({
+      displayName,
+      username,
+      avatarUrl:
+        avatarUrl ??
+        buildDefaultAvatarUrl({
+          seed: userId ?? username,
+          displayName,
+          username,
+          size: 640
+        })
+    });
+  }
+
+  function handlePostAuthorAvatarClick(post: FeedCard) {
+    if (post.isAnonymous || post.author.isAnonymous) {
+      return;
+    }
+
+    if (openStoryForUser(post.author.userId, post.author.username)) {
+      return;
+    }
+
+    openAvatarPreviewForUser({
+      userId: post.author.userId,
+      username: post.author.username,
+      displayName: post.author.displayName || post.author.username,
+      avatarUrl: post.author.avatarUrl ?? null
+    });
+  }
+
   function moveStory(offset: number) {
     setStoryProgress(0);
     setSelectedStoryIndex((current) => {
@@ -1455,6 +1544,15 @@ export function CampusHomeShell({
   function closeStoryViewer() {
     setStoryProgress(0);
     setSelectedStoryIndex(null);
+  }
+
+  function openSelectedStoryProfile() {
+    if (!selectedStory) {
+      return;
+    }
+
+    closeStoryViewer();
+    router.push(selectedStory.isOwn ? "/dashboard" : `/u/${encodeURIComponent(selectedStory.username)}`);
   }
 
   function clearStoryHoldTimer() {
@@ -1793,26 +1891,23 @@ export function CampusHomeShell({
                   <div className="fc-header">
                     {post.isAnonymous ? (
                       <span className="fc-avatar fc-avatar--anonymous" aria-label="Anonymous author">
-                        <CampusAvatarContent
-                          userId={post.author.userId}
-                          username={post.author.username}
-                          displayName={post.author.displayName}
-                          avatarUrl={post.author.avatarUrl ?? null}
-                          fallback={(post.author.displayName || "Anonymous").slice(0, 2).toUpperCase()}
-                          decorative
-                        />
+                        <span className="fc-anonymous-avatar-label">Anonymous Vyber</span>
                       </span>
                     ) : (
-                      <Link href={getProfileHref(post.author.username, viewerUsername)} className="fc-avatar" aria-label={post.author.username}>
+                      <button
+                        type="button"
+                        className={`fc-avatar fc-avatar-button${getStoryRingClass(post.author.userId, post.author.username)}`}
+                        aria-label={`Open ${post.author.displayName || post.author.username} avatar`}
+                        onClick={() => handlePostAuthorAvatarClick(post)}
+                      >
                         <CampusAvatarContent
                           userId={post.author.userId}
                           username={post.author.username}
                           displayName={post.author.displayName}
                           avatarUrl={post.author.avatarUrl ?? null}
-                          fallback={post.author.displayName.slice(0, 1).toUpperCase()}
                           decorative
                         />
-                      </Link>
+                      </button>
                     )}
                     <div className="fc-header-info">
                       <div className="fc-header-top">
@@ -2021,8 +2116,13 @@ export function CampusHomeShell({
       <aside className="vyb-campus-right-panel vyb-campus-rail">
         <div className="vyb-campus-side-card">
           <span className="vyb-campus-side-label">Your vibe</span>
-          <div className="vyb-campus-side-user">
-            <img src={viewerAvatarUrl ?? `https://i.pravatar.cc/120?u=${encodeURIComponent(viewerEmail)}`} alt={viewerName} />
+          <div className={`vyb-campus-side-user${ownStoryRingClass}`}>
+            <span className="vyb-campus-side-avatar">
+              <img
+                src={viewerAvatarUrl ?? buildDefaultAvatarUrl({ seed: viewerEmail, displayName: viewerName, username: viewerUsername, size: 120 })}
+                alt={viewerName}
+              />
+            </span>
             <div>
               <strong>{viewerName}</strong>
               <span>@{viewerUsername}</span>
@@ -2117,16 +2217,22 @@ export function CampusHomeShell({
 
             <div className="vyb-story-viewer-head">
               <div className="vyb-story-viewer-user">
-                <span className="vyb-story-viewer-avatar" aria-hidden="true">
-                   <CampusAvatarContent
-                     userId={selectedStory.userId}
-                     username={selectedStory.username}
-                     displayName={selectedStory.displayName}
-                     avatarUrl={selectedStory.avatarUrl ?? null}
-                     fallback={(selectedStory.displayName.trim() || selectedStory.username).slice(0, 2).toUpperCase()}
-                     decorative
-                   />
-                </span>
+                <button
+                  type="button"
+                  className={`vyb-story-viewer-avatar-button${getStoryRingClass(selectedStory.userId, selectedStory.username)}`}
+                  aria-label={`Open ${selectedStory.displayName} profile`}
+                  onClick={openSelectedStoryProfile}
+                >
+                  <span className="vyb-story-viewer-avatar" aria-hidden="true">
+                    <CampusAvatarContent
+                      userId={selectedStory.userId}
+                      username={selectedStory.username}
+                      displayName={selectedStory.displayName}
+                      avatarUrl={selectedStory.avatarUrl ?? null}
+                      decorative
+                    />
+                  </span>
+                </button>
                 <div className="vyb-story-viewer-user-copy">
                   <strong>{selectedStory.isOwn ? "Your story" : selectedStory.displayName}</strong>
                   <span>
@@ -2240,6 +2346,25 @@ export function CampusHomeShell({
                 <span>{formatMetric(selectedStory.reactions)}</span>
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {avatarPreview ? (
+        <div className="vyb-avatar-preview-backdrop" role="presentation" onClick={() => setAvatarPreview(null)}>
+          <div
+            className="vyb-avatar-preview-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${avatarPreview.displayName} profile image`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button type="button" className="vyb-avatar-preview-close" aria-label="Close profile image" onClick={() => setAvatarPreview(null)}>
+              <CloseIcon />
+            </button>
+            <img src={avatarPreview.avatarUrl} alt={avatarPreview.displayName} />
+            <strong>{avatarPreview.displayName}</strong>
+            <span>@{avatarPreview.username}</span>
           </div>
         </div>
       ) : null}

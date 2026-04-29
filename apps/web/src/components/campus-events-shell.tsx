@@ -17,7 +17,7 @@ import type {
 } from "@vyb/contracts";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
-import { CampusAvatarContent, useResolvedAvatarUrl } from "./campus-avatar";
+import { buildDefaultAvatarUrl, CampusAvatarContent, useResolvedAvatarUrl } from "./campus-avatar";
 import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
 import { SignOutButton } from "./sign-out-button";
 import { VybLogoLockup } from "./vyb-logo";
@@ -1394,7 +1394,10 @@ export function CampusEventsShell({
         <div className="vyb-campus-side-card vyb-events-side-card">
           <span className="vyb-campus-side-label">Your hub lane</span>
           <div className="vyb-events-side-user">
-            <img src={viewerAvatarUrl ?? `https://i.pravatar.cc/120?u=${encodeURIComponent(viewerEmail)}`} alt={viewerName} />
+                      <img
+                        src={viewerAvatarUrl ?? buildDefaultAvatarUrl({ seed: viewerEmail, displayName: viewerName, username: viewerUsername, size: 120 })}
+                        alt={viewerName}
+                      />
             <div>
               <strong>{viewerName}</strong>
               <span>{identityLine}</span>

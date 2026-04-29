@@ -7,7 +7,8 @@ import type {
   ProfileConnectionItem,
   ProfileConnectionsResponse,
   ProfileRecord,
-  ResourceItem
+  ResourceItem,
+  StoryCard
 } from "@vyb/contracts";
 import { sendPasswordResetEmail } from "firebase/auth";
 import Link from "next/link";
@@ -15,7 +16,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { courseOptions, defaultCourse, getStreamOptions, getYearOptionsForCourse, splitDisplayName } from "../lib/college-access";
 import { getFirebaseClientAuth, isFirebaseClientConfigured } from "../lib/firebase-client";
-import { persistStoredAvatarUrl, readStoredAvatarUrl } from "./campus-avatar";
+import { buildDefaultAvatarUrl, clearStoredAvatarUrl, persistStoredAvatarUrl, readStoredAvatarUrl } from "./campus-avatar";
 import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
 import { SignOutButton } from "./sign-out-button";
 import { VybLogoLockup, VybLogoMark } from "./vyb-logo";
@@ -56,6 +57,8 @@ type CampusProfileShellProps = {
   recentActivity?: ActivityItem[];
   initialProfile?: ProfileRecord | null;
   initialAvatarUrl?: string | null;
+  profileBio?: string | null;
+  stories?: StoryCard[];
 };
 
 type ProfileTab = "posts" | "vibes" | "saved";
@@ -416,8 +419,8 @@ function formatMetric(value: number) {
   }).format(value);
 }
 
-function buildAvatarUrl(seed: string) {
-  return `https://i.pravatar.cc/240?u=${encodeURIComponent(seed || "vyb-user")}`;
+function buildAvatarUrl(seed: string, displayName?: string | null, username?: string | null) {
+  return buildDefaultAvatarUrl({ seed, displayName, username });
 }
 
 const AVATAR_CROP_FRAME_SIZE = 320;
@@ -584,6 +587,11 @@ function buildEmptyMessage(tab: ProfileTab, isOwnProfile: boolean) {
   return isOwnProfile ? "Your posts will appear here as soon as you publish them." : "This profile has not posted anything yet.";
 }
 
+function buildProfilePostHref(post: FeedCard) {
+  const targetPath = post.placement === "vibe" || post.kind === "video" ? "/vibes" : "/home";
+  return `${targetPath}?post=${encodeURIComponent(post.id)}`;
+}
+
 function formatActivityLabel(value: string) {
   return value
     .split(".")
@@ -672,7 +680,9 @@ export function CampusProfileShell({
   recentCourses = [],
   recentActivity = [],
   initialProfile = null,
-  initialAvatarUrl = null
+  initialAvatarUrl = null,
+  profileBio: initialProfileBio = null,
+  stories = []
 }: CampusProfileShellProps) {
   const router = useRouter();
   const { isFromSearch, goBack } = useSearchNavigationGuard("/search");
@@ -685,6 +695,7 @@ export function CampusProfileShell({
     originY: number;
   } | null>(null);
   const avatarSyncAttemptedRef = useRef(false);
+  const bioSyncAttemptedRef = useRef(false);
   const initialAvatar = initialAvatarUrl ?? initialProfile?.avatarUrl ?? null;
   const [message, setMessage] = useState<ToastState | null>(null);
   const [busy, setBusy] = useState(false);
@@ -728,6 +739,8 @@ export function CampusProfileShell({
   });
   const [connectionBusyUsernames, setConnectionBusyUsernames] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<ProfileTab>("posts");
+  const [avatarActionOpen, setAvatarActionOpen] = useState(false);
+  const [avatarPreviewOpen, setAvatarPreviewOpen] = useState(false);
 
   const streamOptions = useMemo(() => getStreamOptions(profileDraft.course), [profileDraft.course]);
   const yearOptions = useMemo(() => getYearOptionsForCourse(profileDraft.course), [profileDraft.course]);
@@ -737,8 +750,28 @@ export function CampusProfileShell({
   const visiblePosts = activeTab === "posts" ? posts : activeTab === "vibes" ? vibePosts : ([] as FeedCard[]);
   const campusBadgeLine = storedCampusSettings.branchDepartment.trim() || [course, stream].filter(Boolean).join(" / ");
   const identityLine = campusBadgeLine || collegeName;
-  const profileBio = storedCampusSettings.bio.trim();
+  const persistedProfileBio = (initialProfileBio ?? initialProfile?.bio ?? "").trim();
+  const profileBio = persistedProfileBio || (isOwnProfile ? storedCampusSettings.bio.trim() : "");
   const profileSeed = `${username}-${viewerName}`;
+  const profileStory = useMemo(
+    () => stories.find((story) => story.username.toLowerCase() === username.toLowerCase()) ?? null,
+    [stories, username]
+  );
+  const storyStateByUsername = useMemo(() => {
+    const next = new Map<string, { allSeen: boolean }>();
+
+    for (const story of stories) {
+      const storyUsername = story.username.trim().toLowerCase();
+      const current = next.get(storyUsername);
+      next.set(storyUsername, {
+        allSeen: (current?.allSeen ?? true) && story.viewerHasSeen
+      });
+    }
+
+    return next;
+  }, [stories]);
+  const profileStoryState = storyStateByUsername.get(username.toLowerCase()) ?? null;
+  const profileStoryRingClass = profileStoryState ? (profileStoryState.allSeen ? " is-story-seen" : " is-story-active") : "";
   const avatarStorageIdentity = useMemo(
     () => ({
       userId: initialProfile?.userId ?? null,
@@ -747,7 +780,7 @@ export function CampusProfileShell({
     }),
     [initialProfile?.userId, username, viewerEmail]
   );
-  const resolvedAvatarUrl = avatarUrl ?? buildAvatarUrl(profileSeed);
+  const resolvedAvatarUrl = avatarUrl ?? buildAvatarUrl(profileSeed, viewerName, username);
   const visibleSocialLinks = useMemo(
     () =>
       CAMPUS_SOCIAL_LINK_KEYS.map((key) => ({
@@ -846,6 +879,26 @@ export function CampusProfileShell({
   }, [avatarUrl, initialAvatar, isOwnProfile, router]);
 
   useEffect(() => {
+    if (!isOwnProfile || persistedProfileBio || bioSyncAttemptedRef.current) {
+      return;
+    }
+
+    const localBio = storedCampusSettings.bio.trim();
+    if (!localBio) {
+      return;
+    }
+
+    bioSyncAttemptedRef.current = true;
+    saveProfileSettings(avatarUrl)
+      .then(() => {
+        router.refresh();
+      })
+      .catch(() => {
+        bioSyncAttemptedRef.current = false;
+      });
+  }, [avatarUrl, isOwnProfile, persistedProfileBio, router, storedCampusSettings.bio]);
+
+  useEffect(() => {
     return () => {
       revokeObjectUrl(avatarCropDraft?.sourceUrl);
     };
@@ -877,7 +930,7 @@ export function CampusProfileShell({
   }, [mutedAccounts, isOwnProfile]);
 
   useEffect(() => {
-    if (!settingsOpen && !editProfileOpen && !connectionsSheet.open) {
+    if (!settingsOpen && !editProfileOpen && !connectionsSheet.open && !avatarActionOpen && !avatarPreviewOpen) {
       return;
     }
     function handleEscape(event: KeyboardEvent) {
@@ -885,11 +938,13 @@ export function CampusProfileShell({
         setSettingsOpen(false);
         setEditProfileOpen(false);
         setConnectionsSheet((current) => ({ ...current, open: false, loading: false, error: null }));
+        setAvatarActionOpen(false);
+        setAvatarPreviewOpen(false);
       }
     }
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
-  }, [connectionsSheet.open, editProfileOpen, settingsOpen]);
+  }, [avatarActionOpen, avatarPreviewOpen, connectionsSheet.open, editProfileOpen, settingsOpen]);
 
   useEffect(() => {
     if (!message) {
@@ -1031,6 +1086,58 @@ export function CampusProfileShell({
     }
   }
 
+  async function handleAvatarRemove() {
+    if (!isOwnProfile || avatarBusy || !avatarUrl) {
+      return;
+    }
+
+    const previousAvatarUrl = avatarUrl;
+    setAvatarBusy(true);
+    setMessage(null);
+    setAvatarUrl(null);
+    clearStoredAvatarUrl(avatarStorageIdentity);
+
+    try {
+      await saveProfileSettings(null);
+      showSuccess("Profile photo removed.");
+      router.refresh();
+    } catch (error) {
+      setAvatarUrl(previousAvatarUrl);
+      persistStoredAvatarUrl(avatarStorageIdentity, previousAvatarUrl);
+      showError(error instanceof Error ? error.message : "We could not remove your profile photo right now.");
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
+  function handleProfileAvatarClick() {
+    setAvatarActionOpen(true);
+  }
+
+  function handleViewProfileStory() {
+    if (!profileStory) {
+      return;
+    }
+
+    setAvatarActionOpen(false);
+    router.push(`/home?story=${encodeURIComponent(username)}`);
+  }
+
+  function handleViewProfileImage() {
+    setAvatarActionOpen(false);
+    setAvatarPreviewOpen(true);
+  }
+
+  function getStoryRingClassForUsername(value: string) {
+    const storyState = storyStateByUsername.get(value.trim().toLowerCase());
+
+    if (!storyState) {
+      return "";
+    }
+
+    return storyState.allSeen ? " is-story-seen" : " is-story-active";
+  }
+
   function applyTheme(nextTheme: ThemeMode) {
     document.documentElement.dataset.theme = nextTheme;
     window.localStorage.setItem("vyb-theme", nextTheme);
@@ -1085,6 +1192,7 @@ export function CampusProfileShell({
       isHosteller: profileDraft.isHosteller,
       hostelName: profileDraft.isHosteller ? profileDraft.hostelName.trim() || null : null,
       phoneNumber: profileDraft.phoneNumber.trim() || null,
+      bio: storedCampusSettings.bio.trim() || persistedProfileBio || null,
       avatarUrl: nextAvatarUrl ?? null
     };
   }
@@ -1640,7 +1748,7 @@ export function CampusProfileShell({
         <div className="vyb-insta-profile-shell" style={{ display: (settingsOpen || editProfileOpen) ? "none" : "block" }}>
           <section className="vyb-insta-header">
             <div className="vyb-insta-header-main">
-              <div className="vyb-insta-avatar-container">
+              <div className="vyb-insta-avatar-container" style={{ position: "relative" }}>
                 <input
                   ref={avatarInputRef}
                   type="file"
@@ -1648,12 +1756,105 @@ export function CampusProfileShell({
                   className="vyb-insta-avatar-input"
                   onChange={handleAvatarFileChange}
                 />
-                <div className="vyb-insta-avatar">
+                <button
+                  type="button"
+                  className={`vyb-insta-avatar vyb-insta-avatar-button${profileStoryRingClass}`}
+                  aria-label={`Open ${viewerName} avatar options`}
+                  onClick={handleProfileAvatarClick}
+                >
                   <img src={resolvedAvatarUrl} alt={viewerName} />
                   <span className="vyb-insta-avatar-fallback" aria-hidden="true">
                     {getInitials(viewerName)}
                   </span>
-                </div>
+                </button>
+
+                {avatarActionOpen ? (
+                  <>
+                    <div
+                      role="presentation"
+                      onClick={() => setAvatarActionOpen(false)}
+                      style={{
+                        position: "fixed",
+                        inset: 0,
+                        zIndex: 40,
+                      }}
+                    />
+                    <div
+                      className="vyb-profile-avatar-popover"
+                      role="dialog"
+                      style={{
+                        position: "absolute",
+                        top: "100%",
+                        left: "0",
+                        marginTop: "12px",
+                        zIndex: 50,
+                        background: "rgba(15, 23, 42, 0.85)",
+                        backdropFilter: "blur(16px)",
+                        WebkitBackdropFilter: "blur(16px)",
+                        border: "1px solid rgba(255, 255, 255, 0.1)",
+                        borderRadius: "16px",
+                        padding: "8px",
+                        minWidth: "220px",
+                        boxShadow: "0 10px 40px -10px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05) inset",
+                        animation: "vyb-slide-up 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "4px"
+                      }}
+                    >
+                      <strong style={{ padding: "8px 12px", fontSize: "0.75rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                        {viewerName}
+                      </strong>
+                      <button 
+                        type="button" 
+                        onClick={handleViewProfileStory} 
+                        disabled={!profileStory}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          textAlign: "left",
+                          padding: "10px 12px",
+                          background: "transparent",
+                          border: "none",
+                          color: profileStory ? "#f8fafc" : "rgba(255, 255, 255, 0.3)",
+                          fontSize: "0.95rem",
+                          borderRadius: "10px",
+                          cursor: profileStory ? "pointer" : "not-allowed",
+                          transition: "all 0.2s ease"
+                        }}
+                        onMouseEnter={(e) => { if (profileStory) e.currentTarget.style.background = "rgba(255,255,255,0.1)" }}
+                        onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                      >
+                        <div style={{ width: 18, height: 18, flexShrink: 0 }}><SparkIcon /></div>
+                        {profileStory ? "View story" : "No story active"}
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={handleViewProfileImage}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          textAlign: "left",
+                          padding: "10px 12px",
+                          background: "transparent",
+                          border: "none",
+                          color: "#f8fafc",
+                          fontSize: "0.95rem",
+                          borderRadius: "10px",
+                          cursor: "pointer",
+                          transition: "all 0.2s ease"
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
+                        onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                      >
+                        <div style={{ width: 18, height: 18, flexShrink: 0 }}><ProfileIcon /></div>
+                        View profile image
+                      </button>
+                    </div>
+                  </>
+                ) : null}
               </div>
 
               <div className="vyb-insta-header-info">
@@ -1748,16 +1949,14 @@ export function CampusProfileShell({
                 const previewMedia = mediaAssets[0] ?? null;
                 const isVideo = previewMedia?.kind === "video";
                 const hasMultipleMedia = mediaAssets.length > 1;
-                const displayControls = getPostDisplayControls(storedCampusSettings, post, postDisplayPreferences[post.id]);
-                const overlayMetric = displayControls.hideReactionCount
-                  ? displayControls.hideCommentCount
-                    ? null
-                    : post.comments
-                  : displayControls.hideCommentCount
-                    ? post.reactions
-                    : Math.max(post.reactions, post.comments, 0);
+                const postHref = buildProfilePostHref(post);
                 return (
-                  <article key={post.id} className="vyb-insta-grid-item">
+                  <Link
+                    key={post.id}
+                    href={postHref}
+                    className="vyb-insta-grid-item"
+                    aria-label={`Open ${post.placement === "vibe" || post.kind === "video" ? "vibe" : "post"} with ${formatMetric(post.reactions)} likes`}
+                  >
                     {previewMedia ? (
                       isVideo ? (
                         <video src={previewMedia.url} muted playsInline preload="metadata" />
@@ -1785,14 +1984,11 @@ export function CampusProfileShell({
                       </div>
                     ) : null}
 
-                    {overlayMetric === null ? null : (
-                      <div className="vyb-insta-grid-overlay">
-                        <div className="vyb-overlay-stat">
-                          <HeartIcon /> <span>{formatMetric(overlayMetric)}</span>
-                        </div>
-                      </div>
-                    )}
-                  </article>
+                    <div className="vyb-insta-grid-bottom-stat" aria-hidden="true">
+                      <HeartIcon />
+                      <span>{formatMetric(post.reactions)}</span>
+                    </div>
+                  </Link>
                 );
               })}
             </div>
@@ -1820,14 +2016,26 @@ export function CampusProfileShell({
                       <strong>Profile photo</strong>
                       <span>Choose a photo, adjust it, then save your cropped avatar.</span>
                     </div>
-                    <button
-                      type="button"
-                      className="vyb-insta-outline-btn"
-                      onClick={() => avatarInputRef.current?.click()}
-                      disabled={avatarBusy}
-                    >
-                      {avatarBusy ? "Working..." : avatarUrl ? "Change photo" : "Add photo"}
-                    </button>
+                    <div className="vyb-insta-photo-actions">
+                      <button
+                        type="button"
+                        className="vyb-insta-outline-btn"
+                        onClick={() => avatarInputRef.current?.click()}
+                        disabled={avatarBusy}
+                      >
+                        {avatarBusy ? "Working..." : avatarUrl ? "Change photo" : "Add photo"}
+                      </button>
+                      {avatarUrl ? (
+                        <button
+                          type="button"
+                          className="vyb-insta-outline-btn is-danger"
+                          onClick={handleAvatarRemove}
+                          disabled={avatarBusy}
+                        >
+                          Remove photo
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
 
                   <label className="vyb-insta-field">
@@ -2051,8 +2259,10 @@ export function CampusProfileShell({
       <aside className="vyb-campus-right-panel vyb-campus-rail vyb-profile-right-panel">
         <div className="vyb-campus-side-card vyb-profile-side-card">
           <span className="vyb-campus-side-label">Profile control</span>
-          <div className="vyb-campus-side-user">
-            <img src={resolvedAvatarUrl} alt={viewerName} />
+          <div className={`vyb-campus-side-user${profileStoryRingClass}`}>
+            <span className="vyb-campus-side-avatar">
+              <img src={resolvedAvatarUrl} alt={viewerName} />
+            </span>
             <div>
               <strong>{viewerName}</strong>
               <span>@{username}</span>
@@ -2097,6 +2307,25 @@ export function CampusProfileShell({
 
       <CampusMobileNavigation navItems={navItems} />
     </main>
+
+    {avatarPreviewOpen ? (
+      <div className="vyb-avatar-preview-backdrop" role="presentation" onClick={() => setAvatarPreviewOpen(false)}>
+        <div
+          className="vyb-avatar-preview-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${viewerName} profile image`}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button type="button" className="vyb-avatar-preview-close" aria-label="Close profile image" onClick={() => setAvatarPreviewOpen(false)}>
+            <CloseIcon />
+          </button>
+          <img src={resolvedAvatarUrl} alt={viewerName} />
+          <strong>{viewerName}</strong>
+          <span>@{username}</span>
+        </div>
+      </div>
+    ) : null}
     {connectionsSheet.open ? (
       <div className="vyb-profile-connections-backdrop" role="presentation" onClick={closeConnectionsSheet}>
         <div
@@ -2143,8 +2372,8 @@ export function CampusProfileShell({
                     className="vyb-profile-connections-user"
                     onClick={closeConnectionsSheet}
                   >
-                    <span className="vyb-profile-connections-avatar">
-                      <img src={buildAvatarUrl(item.username)} alt={item.displayName} />
+                    <span className={`vyb-profile-connections-avatar${getStoryRingClassForUsername(item.username)}`}>
+                      <img src={buildAvatarUrl(item.username, item.displayName, item.username)} alt={item.displayName} />
                     </span>
                     <span className="vyb-profile-connections-copy">
                       <strong>{item.displayName}</strong>

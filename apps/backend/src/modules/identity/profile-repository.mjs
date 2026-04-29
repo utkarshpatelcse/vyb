@@ -7,12 +7,18 @@ import { fileURLToPath } from "node:url";
 const TENANT_PROFILE_LIMIT = 5000;
 const directoryName = path.dirname(fileURLToPath(import.meta.url));
 const avatarStorePath = path.resolve(directoryName, "../../data/avatar-store.json");
+const profileSettingsStorePath = path.resolve(directoryName, "../../data/profile-settings-store.json");
 const defaultAvatarStore = {
   avatars: {}
+};
+const defaultProfileSettingsStore = {
+  profiles: {}
 };
 
 let avatarStoreCache = null;
 let avatarWriteQueue = Promise.resolve();
+let profileSettingsStoreCache = null;
+let profileSettingsWriteQueue = Promise.resolve();
 
 const PROFILE_FIELDS = `
   id
@@ -158,6 +164,14 @@ function buildAvatarStoreKey(tenantId, userId) {
   return `${tenantId}:${userId}`;
 }
 
+function buildProfileSettingsStoreKey(tenantId, userId) {
+  if (!tenantId || !userId) {
+    return null;
+  }
+
+  return `${tenantId}:${userId}`;
+}
+
 function normalizeAvatarUrl(value) {
   if (typeof value !== "string") {
     return null;
@@ -169,6 +183,15 @@ function normalizeAvatarUrl(value) {
   }
 
   return normalized.slice(0, 2_500_000);
+}
+
+function normalizeBio(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized ? normalized.slice(0, 180) : null;
 }
 
 async function ensureAvatarStore() {
@@ -195,6 +218,30 @@ async function ensureAvatarStore() {
   return avatarStoreCache;
 }
 
+async function ensureProfileSettingsStore() {
+  if (profileSettingsStoreCache) {
+    return profileSettingsStoreCache;
+  }
+
+  await mkdir(path.dirname(profileSettingsStorePath), { recursive: true });
+
+  try {
+    const raw = await readFile(profileSettingsStorePath, "utf8");
+    const parsed = JSON.parse(raw);
+    profileSettingsStoreCache = {
+      profiles:
+        parsed && typeof parsed === "object" && parsed.profiles && typeof parsed.profiles === "object"
+          ? parsed.profiles
+          : {}
+    };
+  } catch {
+    profileSettingsStoreCache = { ...defaultProfileSettingsStore };
+    await persistProfileSettingsStore();
+  }
+
+  return profileSettingsStoreCache;
+}
+
 async function persistAvatarStore() {
   if (!avatarStoreCache) {
     return;
@@ -203,6 +250,16 @@ async function persistAvatarStore() {
   const snapshot = JSON.stringify(avatarStoreCache, null, 2);
   avatarWriteQueue = avatarWriteQueue.then(() => writeFile(avatarStorePath, snapshot, "utf8"));
   await avatarWriteQueue;
+}
+
+async function persistProfileSettingsStore() {
+  if (!profileSettingsStoreCache) {
+    return;
+  }
+
+  const snapshot = JSON.stringify(profileSettingsStoreCache, null, 2);
+  profileSettingsWriteQueue = profileSettingsWriteQueue.then(() => writeFile(profileSettingsStorePath, snapshot, "utf8"));
+  await profileSettingsWriteQueue;
 }
 
 async function readAvatarMap(tenantId, userIds) {
@@ -229,6 +286,33 @@ async function readAvatarMap(tenantId, userIds) {
   return map;
 }
 
+async function readProfileSettingsMap(tenantId, userIds) {
+  const normalizedUserIds = Array.from(
+    new Set(userIds.filter((value) => typeof value === "string" && value.trim().length > 0))
+  );
+  const map = new Map();
+
+  if (!tenantId || normalizedUserIds.length === 0) {
+    return map;
+  }
+
+  const store = await ensureProfileSettingsStore();
+
+  for (const userId of normalizedUserIds) {
+    const key = buildProfileSettingsStoreKey(tenantId, userId);
+    if (!key) {
+      continue;
+    }
+
+    const item = store.profiles[key];
+    map.set(userId, {
+      bio: item && typeof item === "object" ? normalizeBio(item.bio) : null
+    });
+  }
+
+  return map;
+}
+
 async function readAvatarUrl({ tenantId, userId }) {
   if (!tenantId || !userId) {
     return null;
@@ -239,14 +323,30 @@ async function readAvatarUrl({ tenantId, userId }) {
   return key ? normalizeAvatarUrl(store.avatars[key]) ?? null : null;
 }
 
-function attachAvatarUrl(profile, avatarUrl) {
+async function readProfileSettings({ tenantId, userId }) {
+  if (!tenantId || !userId) {
+    return {
+      bio: null
+    };
+  }
+
+  const store = await ensureProfileSettingsStore();
+  const key = buildProfileSettingsStoreKey(tenantId, userId);
+  const item = key ? store.profiles[key] : null;
+  return {
+    bio: item && typeof item === "object" ? normalizeBio(item.bio) : null
+  };
+}
+
+function attachProfileDisplayFields(profile, { avatarUrl = null, bio = null } = {}) {
   if (!profile) {
     return null;
   }
 
   return {
     ...profile,
-    avatarUrl: avatarUrl ?? null
+    avatarUrl: avatarUrl ?? null,
+    bio: bio ?? null
   };
 }
 
@@ -276,6 +376,60 @@ export async function storeAvatarUrl({ tenantId, userId, avatarUrl }) {
   store.avatars[key] = normalizedAvatarUrl;
   await persistAvatarStore();
   return normalizedAvatarUrl;
+}
+
+export async function storeProfileSettings({ tenantId, userId, bio }) {
+  const key = buildProfileSettingsStoreKey(tenantId, userId);
+  if (!key) {
+    return {
+      bio: null
+    };
+  }
+
+  const store = await ensureProfileSettingsStore();
+  const current = store.profiles[key] && typeof store.profiles[key] === "object" ? store.profiles[key] : {};
+  const normalizedBio = normalizeBio(bio);
+
+  if (!normalizedBio) {
+    if (!current.bio) {
+      return {
+        bio: null
+      };
+    }
+
+    const next = { ...current };
+    delete next.bio;
+
+    if (Object.keys(next).length === 0) {
+      delete store.profiles[key];
+    } else {
+      store.profiles[key] = {
+        ...next,
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    await persistProfileSettingsStore();
+    return {
+      bio: null
+    };
+  }
+
+  if (current.bio === normalizedBio) {
+    return {
+      bio: normalizedBio
+    };
+  }
+
+  store.profiles[key] = {
+    ...current,
+    bio: normalizedBio,
+    updatedAt: new Date().toISOString()
+  };
+  await persistProfileSettingsStore();
+  return {
+    bio: normalizedBio
+  };
 }
 
 function toNonEmptyString(value) {
@@ -416,7 +570,15 @@ export async function getProfileByUserId({ tenantId, userId }) {
     })
   );
 
-  return attachAvatarUrl(profile, await readAvatarUrl({ tenantId, userId }));
+  const [avatarUrl, profileSettings] = await Promise.all([
+    readAvatarUrl({ tenantId, userId }),
+    readProfileSettings({ tenantId, userId })
+  ]);
+
+  return attachProfileDisplayFields(profile, {
+    avatarUrl,
+    bio: profileSettings.bio
+  });
 }
 
 export async function getProfileByUsername({ tenantId, username }) {
@@ -427,7 +589,15 @@ export async function getProfileByUsername({ tenantId, username }) {
     })
   );
 
-  return attachAvatarUrl(profile, await readAvatarUrl({ tenantId, userId: profile?.userId ?? null }));
+  const [avatarUrl, profileSettings] = await Promise.all([
+    readAvatarUrl({ tenantId, userId: profile?.userId ?? null }),
+    readProfileSettings({ tenantId, userId: profile?.userId ?? null })
+  ]);
+
+  return attachProfileDisplayFields(profile, {
+    avatarUrl,
+    bio: profileSettings.bio
+  });
 }
 
 export async function listProfilesByTenant(tenantId) {
@@ -448,8 +618,17 @@ export async function listProfilesByTenant(tenantId) {
     tenantId,
     profiles.map((profile) => profile.userId)
   );
+  const settingsMap = await readProfileSettingsMap(
+    tenantId,
+    profiles.map((profile) => profile.userId)
+  );
 
-  return profiles.map((profile) => attachAvatarUrl(profile, avatarMap.get(profile.userId) ?? null));
+  return profiles.map((profile) =>
+    attachProfileDisplayFields(profile, {
+      avatarUrl: avatarMap.get(profile.userId) ?? null,
+      bio: settingsMap.get(profile.userId)?.bio ?? null
+    })
+  );
 }
 
 export async function searchProfiles({ tenantId, query, limit = 12, excludedUserId = null }) {
@@ -545,6 +724,14 @@ export async function upsertProfile(input) {
       tenantId: input.tenantId,
       userId: input.userId,
       avatarUrl: input.avatarUrl
+    });
+  }
+
+  if (Object.prototype.hasOwnProperty.call(input, "bio")) {
+    await storeProfileSettings({
+      tenantId: input.tenantId,
+      userId: input.userId,
+      bio: input.bio
     });
   }
 

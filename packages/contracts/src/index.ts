@@ -111,6 +111,7 @@ export interface ProfileRecord {
   isHosteller: boolean;
   hostelName: string | null;
   phoneNumber: string | null;
+  bio?: string | null;
   profileCompleted: boolean;
   createdAt: string;
   updatedAt: string;
@@ -134,6 +135,7 @@ export interface UpsertProfileRequest {
   isHosteller: boolean;
   hostelName?: string | null;
   phoneNumber?: string | null;
+  bio?: string | null;
   avatarUrl?: string | null;
 }
 
@@ -301,6 +303,7 @@ export interface PublicProfileSummary {
   collegeName: string;
   course: string;
   stream: string;
+  bio?: string | null;
 }
 
 export interface SocialProfileStats {

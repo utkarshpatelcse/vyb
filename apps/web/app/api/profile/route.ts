@@ -97,6 +97,7 @@ export async function PUT(request: Request) {
       "PUT",
       {
         ...parsedPayload.data,
+        bio: parsedPayload.data.bio?.trim() || null,
         branch: parsedPayload.data.stream
       },
       viewer

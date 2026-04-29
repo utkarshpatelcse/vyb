@@ -23,15 +23,36 @@ function normalizeIdentifier(value?: string | null) {
   return normalized ? normalized.toLowerCase() : null;
 }
 
-function buildDefaultInitials(displayName?: string | null, username?: string | null) {
-  const source = (displayName?.trim() || username?.trim() || "V").trim();
-  const parts = source.split(/\s+/u).filter(Boolean).slice(0, 2);
-
-  if (parts.length > 1) {
-    return parts.map((part) => part[0]?.toUpperCase() ?? "").join("");
+function hashString(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
   }
+  return hash;
+}
 
-  return source.slice(0, 2).toUpperCase();
+export function buildDefaultAvatarUrl({
+  seed,
+  displayName,
+  username,
+  size = 240
+}: {
+  seed?: string | null;
+  displayName?: string | null;
+  username?: string | null;
+  size?: number;
+}) {
+  const source = seed?.trim() || displayName?.trim() || username?.trim() || "vyb-user";
+  const palette = [
+    ["#23395d", "#1fb6a8"],
+    ["#3f3c8f", "#14b8a6"],
+    ["#26324f", "#f59e0b"],
+    ["#164e63", "#a855f7"],
+    ["#365314", "#38bdf8"]
+  ];
+  const [background, accent] = palette[hashString(source) % palette.length] ?? palette[0];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><defs><radialGradient id="g" cx="32%" cy="24%" r="78%"><stop offset="0" stop-color="${accent}"/><stop offset="0.52" stop-color="${background}"/><stop offset="1" stop-color="#07111f"/></radialGradient></defs><rect width="${size}" height="${size}" rx="${Math.round(size / 2)}" fill="url(#g)"/><circle cx="${Math.round(size / 2)}" cy="${Math.round(size * 0.39)}" r="${Math.round(size * 0.18)}" fill="#f8fafc" opacity="0.94"/><path d="M${Math.round(size * 0.22)} ${Math.round(size * 0.82)}c${Math.round(size * 0.06)}-${Math.round(size * 0.22)} ${Math.round(size * 0.23)}-${Math.round(size * 0.34)} ${Math.round(size * 0.28)}-${Math.round(size * 0.34)}s${Math.round(size * 0.22)} ${Math.round(size * 0.12)} ${Math.round(size * 0.28)} ${Math.round(size * 0.34)}" fill="#f8fafc" opacity="0.94"/><circle cx="${Math.round(size * 0.76)}" cy="${Math.round(size * 0.24)}" r="${Math.round(size * 0.06)}" fill="${accent}" opacity="0.95"/></svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 
 export function buildAvatarStorageKeys({ userId, username, email }: AvatarIdentity) {
@@ -106,6 +127,35 @@ export function persistStoredAvatarUrl(identity: AvatarIdentity, avatarUrl: stri
   }
 }
 
+export function clearStoredAvatarUrl(identity: AvatarIdentity) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const keys = buildAvatarStorageKeys(identity);
+
+  if (keys.length === 0) {
+    return;
+  }
+
+  try {
+    for (const key of keys) {
+      window.localStorage.removeItem(key);
+    }
+
+    window.dispatchEvent(
+      new CustomEvent(AVATAR_UPDATED_EVENT, {
+        detail: {
+          keys,
+          avatarUrl: null
+        }
+      })
+    );
+  } catch {
+    // Ignore storage failures and let the server value decide after refresh.
+  }
+}
+
 export function useResolvedAvatarUrl(identity: AvatarIdentity) {
   const storageKeys = useMemo(
     () =>
@@ -121,7 +171,7 @@ export function useResolvedAvatarUrl(identity: AvatarIdentity) {
 
   useEffect(() => {
     const syncAvatar = () => {
-      setStoredAvatarUrl(readAvatarFromKeys(storageKeys) ?? identity.avatarUrl ?? null);
+      setStoredAvatarUrl(identity.avatarUrl ?? readAvatarFromKeys(storageKeys));
     };
 
     syncAvatar();
@@ -147,7 +197,7 @@ export function useResolvedAvatarUrl(identity: AvatarIdentity) {
     };
   }, [identity.avatarUrl, storageKeySignature, storageKeys]);
 
-  return storedAvatarUrl ?? identity.avatarUrl ?? null;
+  return identity.avatarUrl ?? storedAvatarUrl ?? null;
 }
 
 export function CampusAvatarContent({
@@ -166,13 +216,20 @@ export function CampusAvatarContent({
     email,
     avatarUrl
   });
+  const defaultAvatarUrl = buildDefaultAvatarUrl({ seed: userId ?? username ?? email, displayName, username });
+  const [imageFailed, setImageFailed] = useState(false);
 
-  if (resolvedAvatarUrl) {
+  useEffect(() => {
+    setImageFailed(false);
+  }, [resolvedAvatarUrl, defaultAvatarUrl]);
+
+  if (resolvedAvatarUrl && !imageFailed) {
     return (
       <img
         src={resolvedAvatarUrl}
         alt={decorative ? "" : alt ?? displayName ?? username ?? "Profile photo"}
         aria-hidden={decorative || undefined}
+        onError={() => setImageFailed(true)}
         style={{
           width: "100%",
           height: "100%",
@@ -184,5 +241,18 @@ export function CampusAvatarContent({
     );
   }
 
-  return <>{fallback ?? buildDefaultInitials(displayName, username)}</>;
+  return (
+    <img
+      src={defaultAvatarUrl}
+      alt={decorative ? "" : alt ?? displayName ?? username ?? "Profile avatar"}
+      aria-hidden={decorative || undefined}
+      style={{
+        width: "100%",
+        height: "100%",
+        objectFit: "cover",
+        borderRadius: "inherit",
+        display: "block"
+      }}
+    />
+  );
 }

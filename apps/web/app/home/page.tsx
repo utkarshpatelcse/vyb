@@ -20,6 +20,7 @@ export default async function AuthenticatedHomePage({
 }: {
   searchParams: Promise<{
     post?: string;
+    story?: string;
   }>;
 }) {
   const viewer = readDevSessionFromCookieStore(await cookies());
@@ -60,7 +61,7 @@ export default async function AuthenticatedHomePage({
   const displayCollegeName = getDisplayCollegeName(profile.collegeName);
   const unreadChatCount = chatInbox.items.reduce((sum, item) => sum + item.unreadCount, 0);
 
-  const { post: initialFocusedPostId } = await searchParams;
+  const { post: initialFocusedPostId, story: initialFocusedStoryUsername } = await searchParams;
 
   return (
     <CampusHomeShell
@@ -80,6 +81,7 @@ export default async function AuthenticatedHomePage({
       viewerUserId={viewer.userId}
       initialViewerIdentity={chatInbox.viewer?.activeIdentity ?? null}
       initialFocusedPostId={initialFocusedPostId?.trim() || null}
+      initialFocusedStoryUsername={initialFocusedStoryUsername?.trim() || null}
     />
   );
 }

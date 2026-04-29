@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { ChatInboxResponse } from "@vyb/contracts";
 import { CampusReelsShell } from "../../src/components/campus-reels-shell";
-import { getCampusVibes, getChatInbox, getSuggestedCampusUsers, getViewerMe, getViewerProfile } from "../../src/lib/backend";
+import { getCampusStories, getCampusVibes, getChatInbox, getSuggestedCampusUsers, getViewerMe, getViewerProfile } from "../../src/lib/backend";
 import { getDisplayCollegeName } from "../../src/lib/college-access";
 import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
 
@@ -19,7 +19,7 @@ export default async function VibesPage({
     redirect("/login");
   }
 
-  const [profile, me, vibes, suggestedResponse, chatInbox] = await Promise.all([
+  const [profile, me, vibes, suggestedResponse, chatInbox, stories] = await Promise.all([
     getViewerProfile(viewer).catch(() => null),
     getViewerMe(viewer).catch(() => null),
     getCampusVibes(viewer).catch(() => ({ tenantId: viewer.tenantId, communityId: null, items: [], nextCursor: null })),
@@ -34,7 +34,8 @@ export default async function VibesPage({
           },
           items: []
         }) satisfies ChatInboxResponse
-    )
+    ),
+    getCampusStories(viewer).catch(() => ({ items: [] }))
   ]);
 
   if (!profile?.profileCompleted) {
@@ -62,6 +63,7 @@ export default async function VibesPage({
       recentChats={chatInbox.items}
       initialViewerIdentity={chatInbox.viewer?.activeIdentity ?? null}
       initialFocusedPostId={initialFocusedPostId?.trim() || null}
+      stories={stories.items}
     />
   );
 }

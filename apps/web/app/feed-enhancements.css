@@ -56,11 +56,49 @@
   overflow: hidden;
   box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3), 0 0 12px rgba(99, 102, 241, 0.2);
   transition: box-shadow 0.18s ease, transform 0.15s ease;
+  box-sizing: border-box;
 }
 
 .fc-avatar:hover {
   box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.5), 0 0 20px rgba(99, 102, 241, 0.3);
   transform: scale(1.04);
+}
+
+.fc-avatar-button {
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.fc-avatar-button:focus-visible {
+  outline: 2px solid rgba(125, 211, 252, 0.9);
+  outline-offset: 3px;
+}
+
+.fc-avatar.is-story-active {
+  padding: 2px;
+  background: var(--vyb-campus-gradient, linear-gradient(135deg, #4f46e5 0%, #22d3ee 100%));
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.24), 0 0 22px rgba(79, 70, 229, 0.35);
+}
+
+.fc-avatar.is-story-seen {
+  padding: 2px;
+  background: linear-gradient(135deg, rgba(148, 163, 184, 0.78), rgba(71, 85, 105, 0.78));
+  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.24);
+}
+
+.fc-avatar--anonymous {
+  border-radius: 12px;
+  padding: 0.28rem;
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(30, 41, 59, 0.98));
+}
+
+.fc-anonymous-avatar-label {
+  font-size: 0.48rem;
+  line-height: 1.05;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0;
 }
 
 .fc-header-info {

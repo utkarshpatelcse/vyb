@@ -105,6 +105,8 @@ export function SocialPostLightbox({
 }: SocialPostLightboxProps) {
   const [isZoomed, setIsZoomed] = useState(false);
   const [mediaIndex, setMediaIndex] = useState(0);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [initialPinchDistance, setInitialPinchDistance] = useState<number | null>(null);
 
   useEffect(() => {
     setIsZoomed(false);
@@ -138,12 +140,58 @@ export function SocialPostLightbox({
 
   return (
     <div className="vyb-post-lightbox-backdrop is-immersive" role="presentation" onClick={onClose}>
-      <button type="button" className="vyb-post-lightbox-close-btn" onClick={onClose} aria-label="Close">
+      <button 
+        type="button" 
+        className="vyb-post-lightbox-close-btn" 
+        onClick={onClose} 
+        aria-label="Close"
+        style={{ opacity: isZoomed ? 0 : 1, pointerEvents: isZoomed ? "none" : "auto", transition: "opacity 0.2s" }}
+      >
         ✕
       </button>
 
       <div className="vyb-post-lightbox is-full-view" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
-        <div className={`vyb-post-lightbox-media-shell${isZoomed ? " is-zoomed" : ""}`} onDoubleClick={onLike}>
+        <div 
+          className={`vyb-post-lightbox-media-shell${isZoomed ? " is-zoomed" : ""}`} 
+          onDoubleClick={onLike}
+          onTouchStart={(e) => {
+            if (e.touches.length === 2 && canZoomImage) {
+              const touch1 = e.touches[0];
+              const touch2 = e.touches[1];
+              const distance = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
+              setInitialPinchDistance(distance);
+            } else if (e.touches.length === 1) {
+              setTouchStartX(e.targetTouches[0].clientX);
+            }
+          }}
+          onTouchMove={(e) => {
+            if (e.touches.length === 2 && canZoomImage && initialPinchDistance !== null) {
+              const touch1 = e.touches[0];
+              const touch2 = e.touches[1];
+              const distance = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
+              if (distance > initialPinchDistance + 20) {
+                setIsZoomed(true);
+              } else if (distance < initialPinchDistance - 20) {
+                setIsZoomed(false);
+              }
+            }
+          }}
+          onTouchEnd={(e) => {
+            if (initialPinchDistance !== null && e.touches.length < 2) {
+              setInitialPinchDistance(null);
+            }
+            if (touchStartX !== null && mediaItems.length > 1 && e.changedTouches.length > 0) {
+              const touchEndX = e.changedTouches[0].clientX;
+              const distance = touchStartX - touchEndX;
+              if (distance > 50 && mediaIndex < mediaItems.length - 1) {
+                setMediaIndex((prev) => prev + 1);
+              } else if (distance < -50 && mediaIndex > 0) {
+                setMediaIndex((prev) => prev - 1);
+              }
+            }
+            setTouchStartX(null);
+          }}
+        >
           {currentMedia ? (
             currentMedia.kind === "video" ? (
               <video src={currentMedia.url} className="vyb-post-lightbox-media" controls autoPlay muted playsInline loop />
@@ -204,7 +252,7 @@ export function SocialPostLightbox({
           ) : null}
         </div>
 
-        <div className="vyb-post-lightbox-overlay-bottom">
+        <div className="vyb-post-lightbox-overlay-bottom" style={{ opacity: isZoomed ? 0 : 1, pointerEvents: isZoomed ? 'none' : 'auto', transition: 'opacity 0.2s' }}>
           <div className="vyb-post-lightbox-user-info">
             <div className="vyb-post-lightbox-user-avatar">
               <CampusAvatarContent

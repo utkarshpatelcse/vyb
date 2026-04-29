@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { CampusProfileShell } from "../../../src/components/campus-profile-shell";
-import { getCampusUserProfile, getViewerMe, getViewerProfile } from "../../../src/lib/backend";
+import { getCampusStories, getCampusUserProfile, getViewerMe, getViewerProfile } from "../../../src/lib/backend";
 import { getDisplayCollegeName } from "../../../src/lib/college-access";
 import { readDevSessionFromCookieStore } from "../../../src/lib/dev-session";
 
@@ -19,10 +19,11 @@ export default async function PublicProfilePage({
   }
 
   const { username } = await params;
-  const [profile, me, publicProfile] = await Promise.all([
+  const [profile, me, publicProfile, stories] = await Promise.all([
     getViewerProfile(viewer).catch(() => null),
     getViewerMe(viewer).catch(() => null),
-    getCampusUserProfile(viewer, username).catch(() => null)
+    getCampusUserProfile(viewer, username).catch(() => null),
+    getCampusStories(viewer).catch(() => ({ items: [] }))
   ]);
 
   if (!profile?.profileCompleted || !profile.profile?.username) {
@@ -53,6 +54,8 @@ export default async function PublicProfilePage({
       isOwnProfile={false}
       isFollowing={publicProfile.isFollowing}
       initialAvatarUrl={publicProfile.profile.avatarUrl ?? null}
+      profileBio={publicProfile.profile.bio ?? null}
+      stories={stories.items}
     />
   );
 }
