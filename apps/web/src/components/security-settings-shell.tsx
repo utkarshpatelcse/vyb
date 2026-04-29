@@ -96,6 +96,21 @@ function getChatPairingPrivateKeyStorageKey(pairingId: string) {
   return `vyb-chat-device-pairing-private:${pairingId}`;
 }
 
+function getChatPairingIdFromLink(value: string) {
+  const trimmed = value.trim();
+  if (/^[0-9a-f-]{36}$/iu.test(trimmed)) {
+    return trimmed;
+  }
+
+  try {
+    const url = new URL(trimmed, window.location.origin);
+    const pairingId = url.searchParams.get("pair");
+    return pairingId && /^[0-9a-f-]{36}$/iu.test(pairingId) ? pairingId : null;
+  } catch {
+    return null;
+  }
+}
+
 function detectTrustedDevicePlatform(): ChatTrustedDevicePlatform {
   const userAgent = navigator.userAgent.toLowerCase();
   if (userAgent.includes("android")) {
@@ -509,6 +524,33 @@ export function SecuritySettingsShell({
       setPageSuccess("Pairing request found. Check the browser name, then approve it.");
     } catch (error) {
       setPageError(error instanceof Error ? error.message : "We could not find that pairing code.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleLoadDevicePairingLink(value: string) {
+    resetFeedback();
+    const pairingId = getChatPairingIdFromLink(value);
+    if (!pairingId) {
+      setPageError("This QR is not a valid device pairing request.");
+      return;
+    }
+
+    setBusyAction("device-pairing-scan");
+
+    try {
+      const data = await fetchSecurityJson<{ pairing: ChatDevicePairingSession }>(
+        `/api/chats/device-pairings/${encodeURIComponent(pairingId)}`,
+        {
+          method: "GET"
+        }
+      );
+      setIncomingPairing(data.pairing);
+      setDevicePairing(null);
+      setPageSuccess("Pairing request scanned. Check the device name, then approve it.");
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : "We could not load that pairing QR.");
     } finally {
       setBusyAction(null);
     }
@@ -1005,6 +1047,9 @@ export function SecuritySettingsShell({
           }}
           onLoadDevicePairingCode={() => {
             void handleLoadDevicePairingCode();
+          }}
+          onLoadDevicePairingLink={(value) => {
+            void handleLoadDevicePairingLink(value);
           }}
           lastBackupUpdatedLabel={formatUpdatedAt(remoteKeyBackup?.updatedAt ?? null)}
           backToHref={returnTo ?? "/messages"}

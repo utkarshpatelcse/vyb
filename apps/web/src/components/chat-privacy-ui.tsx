@@ -4,7 +4,7 @@ import type { ChatDevicePairingSession, ChatServerPinAttemptState, ChatTrustedDe
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import QRCode from "qrcode";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 type ChatPrivacyModal = "create-backup" | "change-pin" | "verify-recovery" | null;
 type StatusTone = "secured" | "warning" | "risk";
@@ -82,6 +82,7 @@ type ChatPrivacyUIProps = {
   onStartDevicePairing: () => void;
   onApproveDevicePairing: () => void;
   onLoadDevicePairingCode: () => void;
+  onLoadDevicePairingLink: (value: string) => void;
   lastBackupUpdatedLabel: string;
 };
 
@@ -257,6 +258,99 @@ function PairingQrCode({ value, showLinkActions = true }: { value: string; showL
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function PairingQrScanner({ onScan }: { onScan: (value: string) => void }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const timerRef = useRef<number | null>(null);
+  const [active, setActive] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+
+  function stopScanner() {
+    if (timerRef.current) {
+      window.clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    setActive(false);
+  }
+
+  useEffect(() => stopScanner, []);
+
+  async function startScanner() {
+    setScanError(null);
+    const BarcodeDetectorCtor = (window as unknown as {
+      BarcodeDetector?: new (options: { formats: string[] }) => {
+        detect: (source: HTMLVideoElement) => Promise<Array<{ rawValue?: string }>>;
+      };
+    }).BarcodeDetector;
+
+    if (!BarcodeDetectorCtor) {
+      setScanError("QR scanner is not supported in this browser. Enter the 6-digit code instead.");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false
+      });
+      streamRef.current = stream;
+      setActive(true);
+
+      window.setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          void videoRef.current.play();
+        }
+      }, 0);
+
+      const detector = new BarcodeDetectorCtor({ formats: ["qr_code"] });
+      timerRef.current = window.setInterval(() => {
+        const video = videoRef.current;
+        if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+          return;
+        }
+
+        void detector.detect(video).then((codes) => {
+          const value = codes.find((code) => code.rawValue)?.rawValue;
+          if (value) {
+            stopScanner();
+            onScan(value);
+          }
+        }).catch(() => {
+          setScanError("Could not read the QR. Try again or enter the 6-digit code.");
+        });
+      }, 550);
+    } catch {
+      stopScanner();
+      setScanError("Camera permission is needed to scan. You can still enter the 6-digit code.");
+    }
+  }
+
+  return (
+    <div className="vyb-chat-privacy-scanner-panel">
+      <div>
+        <strong>Scan QR</strong>
+        <span>Use this trusted device camera to approve the new device.</span>
+      </div>
+      {active ? (
+        <>
+          <video ref={videoRef} className="vyb-chat-privacy-scanner-video" muted playsInline />
+          <button type="button" className="vyb-cp-btn-ghost" onClick={stopScanner}>
+            Stop scanner
+          </button>
+        </>
+      ) : (
+        <button type="button" className="vyb-cp-btn-white" onClick={() => void startScanner()}>
+          Scan QR
+        </button>
+      )}
+      {scanError && <span className="vyb-chat-privacy-scanner-error">{scanError}</span>}
     </div>
   );
 }
@@ -722,29 +816,32 @@ export function ChatPrivacyUI(props: ChatPrivacyUIProps) {
                       </div>
 
                       {props.hasCompatibleLocalChatKey && (
-                        <div className="vyb-chat-privacy-code-panel">
-                          <div>
-                            <strong>Approve with code</strong>
-                            <span>Enter the 6-digit code shown on the device you want to unlock.</span>
+                        <>
+                          <PairingQrScanner onScan={props.onLoadDevicePairingLink} />
+                          <div className="vyb-chat-privacy-code-panel">
+                            <div>
+                              <strong>Approve with code</strong>
+                              <span>Enter the 6-digit code shown on the device you want to unlock.</span>
+                            </div>
+                            <label className="vyb-chat-privacy-code-input">
+                              <input
+                                value={props.pairingCodeInput}
+                                onChange={(event) => props.onPairingCodeInputChange(event.target.value)}
+                                placeholder="000000"
+                                inputMode="numeric"
+                                maxLength={6}
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              className="vyb-cp-btn-white"
+                              onClick={props.onLoadDevicePairingCode}
+                              disabled={props.pairingCodeInput.length !== 6 || props.busyAction === "device-pairing-code"}
+                            >
+                              {props.busyAction === "device-pairing-code" ? "Checking..." : "Find request"}
+                            </button>
                           </div>
-                          <label className="vyb-chat-privacy-code-input">
-                            <input
-                              value={props.pairingCodeInput}
-                              onChange={(event) => props.onPairingCodeInputChange(event.target.value)}
-                              placeholder="000000"
-                              inputMode="numeric"
-                              maxLength={6}
-                            />
-                          </label>
-                          <button
-                            type="button"
-                            className="vyb-cp-btn-white"
-                            onClick={props.onLoadDevicePairingCode}
-                            disabled={props.pairingCodeInput.length !== 6 || props.busyAction === "device-pairing-code"}
-                          >
-                            {props.busyAction === "device-pairing-code" ? "Checking..." : "Find request"}
-                          </button>
-                        </div>
+                        </>
                       )}
                     </>
                   )

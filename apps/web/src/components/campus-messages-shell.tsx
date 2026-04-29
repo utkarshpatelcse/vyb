@@ -736,6 +736,20 @@ function buildConversationPreview(conversation: ActiveConversation): ChatConvers
   };
 }
 
+function buildConversationFromPreview(preview: ChatConversationPreview): ActiveConversation {
+  return {
+    id: preview.id,
+    tenantId: preview.tenantId,
+    kind: preview.kind,
+    peer: preview.peer,
+    messages: preview.lastMessage ? [preview.lastMessage] : [],
+    lastReadMessageId: null,
+    lastReadAt: null,
+    peerLastReadMessageId: null,
+    peerLastReadAt: null
+  };
+}
+
 function upsertConversationItem(
   items: ChatConversationPreview[],
   preview: ChatConversationPreview
@@ -1173,6 +1187,13 @@ export function CampusMessagesShell({
   const pendingConversationNavigationRef = useRef<string | null>(null);
   const messageIdsRef = useRef<Set<string>>(new Set(initialConversation?.messages.map((message) => message.id) ?? []));
   const activeConversationRef = useRef<ActiveConversation | null>(initialConversation);
+  const conversationDetailCacheRef = useRef<Map<string, ActiveConversation>>(
+    new Map(
+      initialConversation
+        ? [[initialConversation.id, normalizeConversationMessages(initialConversation)]]
+        : []
+    )
+  );
   const hasChatIdentity = Boolean(viewerIdentity);
   const [swipeReplyPreview, setSwipeReplyPreview] = useState<{ messageId: string; offsetX: number } | null>(null);
 
@@ -1719,6 +1740,16 @@ export function CampusMessagesShell({
     };
   }, [remoteKeyBackup, remoteKeyBackupLoaded, viewerIdentity, viewerUserId]);
 
+  function getInstantConversation(conversationId: string) {
+    const cachedConversation = conversationDetailCacheRef.current.get(conversationId);
+    if (cachedConversation) {
+      return cachedConversation;
+    }
+
+    const preview = conversations.find((item) => item.id === conversationId);
+    return preview ? buildConversationFromPreview(preview) : null;
+  }
+
   async function loadConversationDetail(
     conversationId: string,
     options?: {
@@ -1780,6 +1811,8 @@ export function CampusMessagesShell({
       }
 
       const conversation = normalizeConversationMessages(conversationRecord);
+      conversationDetailCacheRef.current.set(conversation.id, conversation);
+      activeConversationRef.current = conversation;
       setSessionExpired(false);
       setViewerIdentity((data?.viewer?.activeIdentity as ChatIdentitySummary | null | undefined) ?? null);
       setActiveConversation(conversation);
@@ -1823,13 +1856,21 @@ export function CampusMessagesShell({
   }
 
   function openConversation(conversationId: string) {
+    const instantConversation = getInstantConversation(conversationId);
+
     setActiveConversationId(conversationId);
     setConversationError(null);
     setConversationLoading(true);
     setRealtimeState(navigator.onLine ? "connecting" : "offline");
+
+    if (instantConversation) {
+      activeConversationRef.current = instantConversation;
+      setActiveConversation(instantConversation);
+    }
+
     void loadConversationDetail(conversationId, {
       silent: false,
-      preserveActiveConversation: false
+      preserveActiveConversation: Boolean(instantConversation)
     });
   }
 
@@ -1881,6 +1922,11 @@ export function CampusMessagesShell({
   }
 
   useEffect(() => {
+    const routeWasOpenedFromList =
+      Boolean(initialConversationId) &&
+      pendingConversationNavigationRef.current === initialConversationId &&
+      activeConversationRef.current?.id === initialConversationId;
+
     setActiveConversationId(initialConversationId);
     if (initialConversationId && pendingConversationNavigationRef.current === initialConversationId) {
       pendingConversationNavigationRef.current = null;
@@ -1903,9 +1949,29 @@ export function CampusMessagesShell({
     }
 
     if (initialConversation) {
-      setActiveConversation(normalizeConversationMessages(initialConversation));
+      const normalizedConversation = normalizeConversationMessages(initialConversation);
+      conversationDetailCacheRef.current.set(normalizedConversation.id, normalizedConversation);
+      activeConversationRef.current = normalizedConversation;
+      setActiveConversation(normalizedConversation);
       setConversationLoading(false);
       setConversationError(activeConversationError);
+      return;
+    }
+
+    if (routeWasOpenedFromList) {
+      setConversationError(null);
+      return;
+    }
+
+    const cachedConversation = conversationDetailCacheRef.current.get(initialConversationId);
+    if (cachedConversation) {
+      activeConversationRef.current = cachedConversation;
+      setActiveConversation(cachedConversation);
+      setConversationError(null);
+      void loadConversationDetail(initialConversationId, {
+        silent: false,
+        preserveActiveConversation: true
+      });
       return;
     }
 
@@ -2321,6 +2387,9 @@ export function CampusMessagesShell({
 
   useEffect(() => {
     activeConversationRef.current = activeConversation;
+    if (activeConversation) {
+      conversationDetailCacheRef.current.set(activeConversation.id, activeConversation);
+    }
   }, [activeConversation]);
 
   useEffect(() => {
