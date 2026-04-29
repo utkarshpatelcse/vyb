@@ -119,6 +119,24 @@ function sendError(ws, code, message) {
   });
 }
 
+function sendNotice(ws, message, tone = "info") {
+  sendSocket(ws, {
+    type: "scribble.notice",
+    payload: {
+      tone,
+      message
+    }
+  });
+}
+
+function notifyRoom(room, message, tone = "info") {
+  for (const sockets of room.socketsByMembership.values()) {
+    for (const ws of sockets) {
+      sendNotice(ws, message, tone);
+    }
+  }
+}
+
 function touchRoom(room) {
   room.lastActiveAt = Date.now();
 }
@@ -130,6 +148,35 @@ function normalizeRoomId(value) {
 
   const normalized = value.trim().toUpperCase().replace(/[^A-Z0-9]/gu, "");
   return normalized.length >= 4 && normalized.length <= 12 ? normalized : null;
+}
+
+function normalizeClientId(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim().replace(/[^a-zA-Z0-9_-]/gu, "");
+  return normalized.length >= 6 && normalized.length <= 80 ? normalized : null;
+}
+
+function getConnectionAuth(auth, clientId) {
+  const normalizedClientId = normalizeClientId(clientId);
+  if (!normalizedClientId) {
+    return {
+      ...auth,
+      baseMembershipId: auth.membershipId
+    };
+  }
+
+  return {
+    ...auth,
+    baseMembershipId: auth.membershipId,
+    membershipId: `${auth.membershipId}:${normalizedClientId}`
+  };
+}
+
+function isSystemPublicRoomCode(roomId) {
+  return roomId === SYSTEM_PUBLIC_ROOM_CODE || roomId === "PUBLIC" || roomId === "VYB";
 }
 
 function getRoomKey(tenantId, roomId) {
@@ -666,6 +713,38 @@ function resetSystemPublicRoom(room, message = null) {
   maybeStartSystemPublicRoom(room);
 }
 
+function resetRoomAfterPlayersLeft(room, message) {
+  clearRoomTimers(room);
+  room.status = "LOBBY";
+  room.currentDrawerMembershipId = null;
+  room.currentWord = null;
+  room.currentDifficulty = null;
+  room.wordChoices = [];
+  room.round = 0;
+  room.turnIndex = 0;
+  room.totalTurns = 0;
+  room.timerEndsAt = null;
+  room.drawing = [];
+  room.likeMembershipIds.clear();
+  room.dislikeMembershipIds.clear();
+  room.revealedWord = null;
+  room.roundResult = null;
+
+  for (const player of room.players.values()) {
+    player.correctThisTurn = false;
+    player.scoreAtTurnStart = player.score;
+  }
+
+  addChat(room, {
+    kind: "system",
+    membershipId: null,
+    displayName: "Scribble",
+    body: message
+  });
+  notifyRoom(room, message);
+  emitState(room);
+}
+
 function maybeStartSystemPublicRoom(room) {
   if (!room.systemPublic || room.status !== "LOBBY" || getConnectedMembershipIds(room).length < 2) {
     return false;
@@ -831,7 +910,7 @@ function startGame(room, auth) {
     return false;
   }
 
-  if (room.systemPublic && getConnectedMembershipIds(room).length < 2) {
+  if (getConnectedMembershipIds(room).length < 2) {
     return false;
   }
 
@@ -1112,7 +1191,7 @@ function handleJoinRoom(ws, auth, roomId) {
     return;
   }
 
-  const room = normalizedRoomId === SYSTEM_PUBLIC_ROOM_CODE ? ensureSystemPublicRoom(auth.tenantId) : getRoom(auth.tenantId, normalizedRoomId);
+  const room = isSystemPublicRoomCode(normalizedRoomId) ? ensureSystemPublicRoom(auth.tenantId) : getRoom(auth.tenantId, normalizedRoomId);
   if (!room || room.tenantId !== auth.tenantId) {
     sendError(ws, "ROOM_NOT_FOUND", "That Scribble room is not active.");
     return;
@@ -1193,8 +1272,18 @@ async function handleClientMessage(ws, auth, rawMessage) {
   }
 
   if (type === "scribble.game.start") {
-    if (!startGame(room, auth)) {
+    if (room.hostMembershipId !== auth.membershipId) {
       sendError(ws, "HOST_ONLY", "Only the host can start Scribble.");
+      return;
+    }
+
+    if (getConnectedMembershipIds(room).length < 2) {
+      sendError(ws, "NOT_ENOUGH_PLAYERS", "Scribble needs at least 2 players to start.");
+      return;
+    }
+
+    if (!startGame(room, auth)) {
+      sendError(ws, "START_FAILED", "Could not start Scribble right now.");
     }
     return;
   }
@@ -1228,6 +1317,12 @@ async function handleClientMessage(ws, auth, rawMessage) {
 
   if (type === "scribble.drawing.dislike") {
     handleReaction(room, auth, "dislike");
+    return;
+  }
+
+  if (type === "scribble.room.leave") {
+    handleSocketClose(ws);
+    ws.close(1000, "left room");
     return;
   }
 
@@ -1269,15 +1364,30 @@ function handleSocketClose(ws) {
   const player = room.players.get(auth.membershipId);
   if (player) {
     player.connected = false;
+    addChat(room, {
+      kind: "system",
+      membershipId: auth.membershipId,
+      displayName: player.displayName,
+      body: `${player.displayName} left the room.`
+    });
   }
 
   room.likeMembershipIds.delete(auth.membershipId);
   room.dislikeMembershipIds.delete(auth.membershipId);
 
+  const connectedMembershipIds = getConnectedMembershipIds(room);
+
   if (!room.systemPublic && room.hostMembershipId === auth.membershipId) {
-    const nextHost = getConnectedMembershipIds(room)[0];
+    const nextHost = connectedMembershipIds[0];
     if (nextHost) {
       room.hostMembershipId = nextHost;
+      const nextHostPlayer = room.players.get(nextHost);
+      addChat(room, {
+        kind: "system",
+        membershipId: nextHost,
+        displayName: nextHostPlayer?.displayName ?? "Host",
+        body: `${nextHostPlayer?.displayName ?? "A player"} is now the host.`
+      });
     }
   }
 
@@ -1285,9 +1395,39 @@ function handleSocketClose(ws) {
     compactSystemPublicRoomPlayers(room);
 
     if (getConnectedMembershipIds(room).length < 2) {
-      resetSystemPublicRoom(room, getConnectedMembershipIds(room).length === 1 ? "Waiting for one more player." : null);
+      const message = getConnectedMembershipIds(room).length === 1 ? "Everyone else left. Waiting for one more player." : null;
+      if (message) {
+        notifyRoom(room, message);
+      }
+      resetSystemPublicRoom(room, message);
       return;
     }
+  }
+
+  if (!room.systemPublic && connectedMembershipIds.length === 0) {
+    clearRoomTimers(room);
+    room.status = "LOBBY";
+    room.currentDrawerMembershipId = null;
+    room.currentWord = null;
+    room.currentDifficulty = null;
+    room.wordChoices = [];
+    room.timerEndsAt = null;
+    room.drawing = [];
+    room.likeMembershipIds.clear();
+    room.dislikeMembershipIds.clear();
+    room.revealedWord = null;
+    room.roundResult = null;
+    emitCatalog(room.tenantId);
+    return;
+  }
+
+  if (!room.systemPublic && connectedMembershipIds.length < 2 && room.status !== "LOBBY") {
+    resetRoomAfterPlayersLeft(room, "Everyone else left. Waiting for another player.");
+    return;
+  }
+
+  if (!room.systemPublic && connectedMembershipIds.length === 1 && room.status === "LOBBY") {
+    notifyRoom(room, "Everyone else left. Waiting for another player.");
   }
 
   if (room.currentDrawerMembershipId === auth.membershipId && (room.status === "PLAYING" || room.status === "CHOOSING")) {
@@ -1349,11 +1489,13 @@ export function attachScribbleWebSocketServer(server) {
       return;
     }
 
-    const auth = verifyScribbleSocketToken(url.searchParams.get("token"));
-    if (!auth) {
+    const tokenAuth = verifyScribbleSocketToken(url.searchParams.get("token"));
+    if (!tokenAuth) {
       rejectUpgrade(socket, 401, "Unauthorized");
       return;
     }
+
+    const auth = getConnectionAuth(tokenAuth, url.searchParams.get("clientId"));
 
     wsServer.handleUpgrade(request, socket, head, (ws) => {
       ws.__scribbleClosedHandled = false;
