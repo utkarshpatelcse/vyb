@@ -1,5 +1,9 @@
 import { getFirebaseDataConnect } from "../../../../../packages/config/src/index.mjs";
 import { connectorConfig as campusConnectorConfig } from "../../../../../packages/dataconnect/campus-admin-sdk/esm/index.esm.js";
+import {
+  connectorConfig as identityConnectorConfig,
+  updateUserProfile as updateUserProfileMutation
+} from "../../../../../packages/dataconnect/identity-admin-sdk/esm/index.esm.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -49,6 +53,7 @@ const PROFILE_FIELDS = `
     id
     primaryEmail
     displayName
+    avatarUrl
   }
 `;
 
@@ -154,6 +159,10 @@ const UPDATE_USERNAME_MUTATION = `
 
 function getCampusDc() {
   return getFirebaseDataConnect(campusConnectorConfig);
+}
+
+function getIdentityDc() {
+  return getFirebaseDataConnect(identityConnectorConfig);
 }
 
 function buildAvatarStoreKey(tenantId, userId) {
@@ -345,9 +354,21 @@ function attachProfileDisplayFields(profile, { avatarUrl = null, bio = null } = 
 
   return {
     ...profile,
-    avatarUrl: avatarUrl ?? null,
+    avatarUrl: avatarUrl ?? profile.avatarUrl ?? null,
     bio: bio ?? null
   };
+}
+
+async function updateUserAvatarUrl({ userId, displayName, avatarUrl }) {
+  if (!userId) {
+    return;
+  }
+
+  await updateUserProfileMutation(getIdentityDc(), {
+    id: userId,
+    displayName: toNonEmptyString(displayName),
+    avatarUrl: normalizeAvatarUrl(avatarUrl)
+  });
 }
 
 export async function storeAvatarUrl({ tenantId, userId, avatarUrl }) {
@@ -500,6 +521,7 @@ function mapMembershipProfile(item) {
     tenantId: item.tenantId,
     primaryEmail: item.user.primaryEmail,
     collegeName: item.tenant.name,
+    avatarUrl: normalizeAvatarUrl(item.user.avatarUrl),
     username: item.username,
     firstName: item.firstName,
     lastName: toNonEmptyString(item.lastName),
@@ -723,6 +745,11 @@ export async function upsertProfile(input) {
     await storeAvatarUrl({
       tenantId: input.tenantId,
       userId: input.userId,
+      avatarUrl: input.avatarUrl
+    });
+    await updateUserAvatarUrl({
+      userId: input.userId,
+      displayName: input.fullName,
       avatarUrl: input.avatarUrl
     });
   }

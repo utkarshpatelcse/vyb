@@ -2373,7 +2373,7 @@ export function CampusProfileShell({
                     onClick={closeConnectionsSheet}
                   >
                     <span className={`vyb-profile-connections-avatar${getStoryRingClassForUsername(item.username)}`}>
-                      <img src={buildAvatarUrl(item.username, item.displayName, item.username)} alt={item.displayName} />
+                      <img src={item.avatarUrl ?? buildAvatarUrl(item.username, item.displayName, item.username)} alt={item.displayName} />
                     </span>
                     <span className="vyb-profile-connections-copy">
                       <strong>{item.displayName}</strong>

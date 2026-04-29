@@ -129,6 +129,7 @@ query GetTenantMembershipProfileByUserAndTenant($tenantId: UUID!, $userId: UUID!
       id
       primaryEmail
       displayName
+      avatarUrl
     }
   }
 }
@@ -171,6 +172,7 @@ query GetTenantMembershipProfileByUsername($tenantId: UUID!, $usernameKey: Strin
       id
       primaryEmail
       displayName
+      avatarUrl
     }
   }
 }
@@ -213,6 +215,7 @@ query ListTenantMembershipProfilesByTenant($tenantId: UUID!, $limit: Int!) @auth
       id
       primaryEmail
       displayName
+      avatarUrl
     }
   }
 }

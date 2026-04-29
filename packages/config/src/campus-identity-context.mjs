@@ -68,27 +68,28 @@ export async function ensureUserRecord({
   primaryEmail,
   displayName,
   emailVerified = true,
-  avatarUrl = null
+  avatarUrl
 }) {
   let user = await fetchUserByFirebaseUid(firebaseUid);
+  const nextDisplayName = toNonEmptyString(displayName);
+  const nextAvatarUrl = toNonEmptyString(avatarUrl);
+  const shouldUpdateDisplayName = Boolean(nextDisplayName && user?.displayName !== nextDisplayName);
+  const shouldUpdateAvatar = avatarUrl !== undefined && (user?.avatarUrl ?? null) !== nextAvatarUrl;
 
   if (!user) {
     await createUser(getIdentityDc(), {
       firebaseUid,
       primaryEmail,
       emailVerified,
-      displayName: toNonEmptyString(displayName),
-      avatarUrl: toNonEmptyString(avatarUrl)
+      displayName: nextDisplayName,
+      avatarUrl: nextAvatarUrl
     });
     user = await fetchUserByFirebaseUid(firebaseUid);
-  } else if (
-    toNonEmptyString(displayName) &&
-    (user.displayName !== displayName || (avatarUrl ?? null) !== (user.avatarUrl ?? null))
-  ) {
+  } else if (shouldUpdateDisplayName || shouldUpdateAvatar) {
     await updateUserProfile(getIdentityDc(), {
       id: user.id,
-      displayName: toNonEmptyString(displayName),
-      avatarUrl: toNonEmptyString(avatarUrl)
+      displayName: nextDisplayName ?? user.displayName ?? null,
+      avatarUrl: avatarUrl === undefined ? user.avatarUrl ?? null : nextAvatarUrl
     });
     user = await fetchUserByFirebaseUid(firebaseUid);
   }
