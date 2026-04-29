@@ -1122,7 +1122,7 @@ export function CampusMessagesShell({
   const [presenceNow, setPresenceNow] = useState(() => Date.now());
   const [recoveryCodeVisible, setRecoveryCodeVisible] = useState(false);
   const [backupPanelOpen, setBackupPanelOpen] = useState(false);
-  const [sessionExpired, setSessionExpired] = useState(false);
+  const [, setSessionExpired] = useState(false);
   const [keySetupError, setKeySetupError] = useState<string | null>(null);
   const [decryptionWarning, setDecryptionWarning] = useState<string | null>(null);
   const [messagePlaintextById, setMessagePlaintextById] = useState<Record<string, string>>({});
@@ -1169,6 +1169,7 @@ export function CampusMessagesShell({
   const typingStopTimerRef = useRef<number | null>(null);
   const lastTypingSignalRef = useRef<{ conversationId: string; isTyping: boolean } | null>(null);
   const pendingOptimisticMessagesRef = useRef<Map<string, Array<{ id: string; plaintext: string }>>>(new Map());
+  const recentLocalMessageIdsRef = useRef<Map<string, Map<string, number>>>(new Map());
   const deliveredMessageIdsRef = useRef<Map<string, Set<string>>>(new Map());
   const deliveredAckedMessageIdsRef = useRef<Set<string>>(new Set());
   const chatThreadStickToBottomRef = useRef(true);
@@ -1443,12 +1444,7 @@ export function CampusMessagesShell({
       return;
     }
 
-    const confirmedExpired = await probeBrowserSession();
-    if (!isMountedRef.current || confirmedExpired === null) {
-      return;
-    }
-
-    setSessionExpired(!confirmedExpired);
+    setSessionExpired(false);
   }
 
   async function fetchChatEndpoint(input: string, init?: RequestInit) {
@@ -1881,6 +1877,68 @@ export function CampusMessagesShell({
     return normalizedConversation;
   }
 
+  function rememberRecentLocalMessage(conversationId: string, messageId: string) {
+    const expiresAt = Date.now() + 90_000;
+    const messages = recentLocalMessageIdsRef.current.get(conversationId) ?? new Map<string, number>();
+    messages.set(messageId, expiresAt);
+    recentLocalMessageIdsRef.current.set(conversationId, messages);
+  }
+
+  function isRecentLocalMessage(conversationId: string, messageId: string) {
+    const messages = recentLocalMessageIdsRef.current.get(conversationId);
+    if (!messages) {
+      return false;
+    }
+
+    const expiresAt = messages.get(messageId);
+    if (!expiresAt) {
+      return false;
+    }
+
+    if (expiresAt <= Date.now()) {
+      messages.delete(messageId);
+      if (messages.size === 0) {
+        recentLocalMessageIdsRef.current.delete(conversationId);
+      }
+      return false;
+    }
+
+    return true;
+  }
+
+  function mergeConversationWithLocalMessages(remoteConversation: ActiveConversation) {
+    const normalizedRemoteConversation = normalizeConversationMessages(remoteConversation);
+    const localConversation = activeConversationRef.current;
+    if (!localConversation || localConversation.id !== normalizedRemoteConversation.id) {
+      return normalizedRemoteConversation;
+    }
+
+    const remoteMessageIds = new Set(normalizedRemoteConversation.messages.map((message) => message.id));
+    const queuedMessageIds = new Set(
+      (pendingOptimisticMessagesRef.current.get(normalizedRemoteConversation.id) ?? []).map((message) => message.id)
+    );
+    const localOnlyMessages = localConversation.messages.filter((message) => {
+      if (remoteMessageIds.has(message.id)) {
+        return false;
+      }
+
+      return (
+        message.id.startsWith("optimistic-chat-") ||
+        queuedMessageIds.has(message.id) ||
+        isRecentLocalMessage(normalizedRemoteConversation.id, message.id)
+      );
+    });
+
+    if (localOnlyMessages.length === 0) {
+      return normalizedRemoteConversation;
+    }
+
+    return normalizeConversationMessages({
+      ...normalizedRemoteConversation,
+      messages: [...normalizedRemoteConversation.messages, ...localOnlyMessages]
+    });
+  }
+
   function queueOptimisticMessage(conversationId: string, optimisticMessageId: string, plaintext: string) {
     const queued = pendingOptimisticMessagesRef.current.get(conversationId) ?? [];
     pendingOptimisticMessagesRef.current.set(conversationId, [...queued, { id: optimisticMessageId, plaintext }]);
@@ -1979,7 +2037,7 @@ export function CampusMessagesShell({
 
       if (!response.ok) {
         if (response.status === 401) {
-          setConversationError("Your session expired on this browser. Sign in again to reopen this chat.");
+          setConversationError("We could not refresh this chat right now. Please try again.");
           return;
         }
 
@@ -1999,7 +2057,7 @@ export function CampusMessagesShell({
       const responseViewerUserId =
         typeof data?.viewer?.userId === "string" ? (data.viewer.userId as string) : null;
       if (responseViewerUserId && responseViewerUserId !== viewerUserId) {
-        setSessionExpired(true);
+        setSessionExpired(false);
         setConversationError("This browser is now signed into another account. Open each account in a separate browser or private window.");
         return;
       }
@@ -2012,13 +2070,10 @@ export function CampusMessagesShell({
         return;
       }
 
-      const conversation = normalizeConversationMessages(conversationRecord);
-      conversationDetailCacheRef.current.set(conversation.id, conversation);
-      activeConversationRef.current = conversation;
+      const conversation = mergeConversationWithLocalMessages(conversationRecord);
       setSessionExpired(false);
       setViewerIdentity((data?.viewer?.activeIdentity as ChatIdentitySummary | null | undefined) ?? null);
-      setActiveConversation(conversation);
-      setConversations((current) => upsertConversationItem(current, buildConversationPreview(conversation)));
+      commitActiveConversation(conversation);
     } catch {
       if (requestRef.current === requestId) {
         if (!preserveActiveConversation || !activeConversationRef.current || activeConversationRef.current.id !== conversationId) {
@@ -3410,7 +3465,7 @@ export function CampusMessagesShell({
           !seenOwnMessageIds.has(candidate.id)
       );
 
-    if ((sessionExpired || realtimeState === "offline") && latestOutstandingOwnMessage?.id === message.id) {
+    if (realtimeState === "offline" && latestOutstandingOwnMessage?.id === message.id) {
       return "undelivered";
     }
 
@@ -3754,6 +3809,7 @@ export function CampusMessagesShell({
 
                   messageIdsRef.current.delete(queuedOptimisticMessage.id);
                   messageIdsRef.current.add(incomingMessage.id);
+                  rememberRecentLocalMessage(conversationId, incomingMessage.id);
                   setMessagePlaintextById((current) => {
                     const next = { ...current, [incomingMessage.id]: queuedOptimisticMessage.plaintext };
                     delete next[queuedOptimisticMessage.id];
@@ -3779,11 +3835,10 @@ export function CampusMessagesShell({
                     delete next[incomingMessage.id];
                     return next;
                   });
+                } else {
+                  rememberRecentLocalMessage(conversationId, incomingMessage.id);
                 }
-                activeConversationRef.current = nextConversation;
-                messageIdsRef.current = new Set(nextConversation.messages.map((message) => message.id));
-                setActiveConversation(nextConversation);
-                setConversations((current) => upsertConversationItem(current, buildConversationPreview(nextConversation)));
+                commitActiveConversation(nextConversation);
                 if (incomingMessage.senderUserId !== viewerUserId) {
                   acknowledgeIncomingMessages(incomingMessage);
                 }
@@ -3800,10 +3855,10 @@ export function CampusMessagesShell({
                   messages: [...currentConversation.messages, incomingMessage]
                 });
 
-                activeConversationRef.current = nextConversation;
-                messageIdsRef.current = new Set(nextConversation.messages.map((message) => message.id));
-                setActiveConversation(nextConversation);
-                setConversations((current) => upsertConversationItem(current, buildConversationPreview(nextConversation)));
+                if (incomingMessage.senderUserId === viewerUserId) {
+                  rememberRecentLocalMessage(conversationId, incomingMessage.id);
+                }
+                commitActiveConversation(nextConversation);
                 return;
               }
             }
@@ -4746,7 +4801,7 @@ export function CampusMessagesShell({
 
       if (!response.ok) {
         if (response.status === 401) {
-          setStartError("Your session expired on this browser. Sign in again before opening chats.");
+          setStartError("Could not open chat right now. Please try again.");
           return;
         }
 
@@ -4952,7 +5007,7 @@ export function CampusMessagesShell({
 
     if (!response.ok) {
       if (response.status === 401) {
-        throw new Error("Your session expired on this browser. Sign in again before sending messages.");
+        throw new Error("Connection issue while sending. Please try again.");
       }
 
       throw new Error(data?.error?.message ?? "We could not send this message.");
@@ -4963,6 +5018,7 @@ export function CampusMessagesShell({
 
     if (sentMessage) {
       messageIdsRef.current.add(sentMessage.id);
+      rememberRecentLocalMessage(conversationId, sentMessage.id);
       if (optimisticMessageId) {
         messageIdsRef.current.delete(optimisticMessageId);
         removeQueuedOptimisticMessage(conversationId, optimisticMessageId);
@@ -4974,14 +5030,13 @@ export function CampusMessagesShell({
         }
         return next;
       });
-      setActiveConversation((current) =>
-        current && current.id === conversationId
-          ? {
-              ...current,
-              messages: replaceOptimisticMessageRecord(current.messages, optimisticMessageId, sentMessage)
-            }
-          : current
-      );
+      const currentConversation = activeConversationRef.current;
+      if (currentConversation?.id === conversationId) {
+        commitActiveConversation({
+          ...currentConversation,
+          messages: replaceOptimisticMessageRecord(currentConversation.messages, optimisticMessageId, sentMessage)
+        });
+      }
     }
 
     if (conversationPreview) {
@@ -5180,6 +5235,7 @@ export function CampusMessagesShell({
         };
 
         messageIdsRef.current.add(optimisticMessageId);
+        rememberRecentLocalMessage(conversationId, optimisticMessageId);
         queueOptimisticMessage(conversationId, optimisticMessageId, outgoingText);
         setMessagePlaintextById((current) => ({
           ...current,
@@ -5192,20 +5248,8 @@ export function CampusMessagesShell({
                 messages: upsertMessageRecord(activeConversation.messages, optimisticMessage)
               }
             : null;
-        setActiveConversation((current) => {
-          if (!current || current.id !== conversationId) {
-            return current;
-          }
-
-          return {
-            ...current,
-            messages: upsertMessageRecord(current.messages, optimisticMessage)
-          };
-        });
         if (optimisticConversation) {
-          setConversations((conversationItems) =>
-            upsertConversationItem(conversationItems, buildConversationPreview(optimisticConversation))
-          );
+          commitActiveConversation(optimisticConversation);
         }
         setDraftMessage("");
         setPendingShareCard(null);
@@ -5234,28 +5278,18 @@ export function CampusMessagesShell({
       setViewOnceEnabled(false);
       focusComposerSoon();
     } catch (error) {
-      if (failedOptimisticMessageId) {
-        const optimisticMessageId = failedOptimisticMessageId;
-        messageIdsRef.current.delete(optimisticMessageId);
-        removeQueuedOptimisticMessage(conversationId, optimisticMessageId);
-        setMessagePlaintextById((current) => {
-          const next = { ...current };
-          delete next[optimisticMessageId];
-          return next;
-        });
-        setActiveConversation((current) =>
-          current
-            ? {
-                ...current,
-                messages: current.messages.filter((message) => message.id !== optimisticMessageId)
-              }
-            : current
-        );
+      if (!failedOptimisticMessageId) {
+        setDraftMessage(nextMessage);
+        setPendingShareCard(pendingShareCard);
+        setReplyingToMessageId(replyingToMessageId);
       }
-      setDraftMessage(nextMessage);
-      setPendingShareCard(pendingShareCard);
-      setReplyingToMessageId(replyingToMessageId);
-      setSendError(error instanceof Error ? error.message : "Network error. Please try again in a moment.");
+      setSendError(
+        failedOptimisticMessageId
+          ? "Message is waiting for connection. It will stay in this chat while sync catches up."
+          : error instanceof Error
+            ? error.message
+            : "Network error. Please try again in a moment."
+      );
     } finally {
       setSending(false);
       setUploadingMedia(false);
@@ -5800,13 +5834,6 @@ export function CampusMessagesShell({
                 </div>
               )}
 
-              {sessionExpired && !activeConversation && (
-                <div className="spm-chat-state spm-chat-state-error" role="alert">
-                  <strong>Session expired on this browser.</strong>
-                  <span>Sign in again to reload this secure conversation and resume realtime sync.</span>
-                </div>
-              )}
-
               {!conversationLoading && conversationError && !activeConversation && (
                 <div className="spm-chat-state spm-chat-state-error" role="alert">
                   <strong>Could not open this chat.</strong>
@@ -6267,12 +6294,6 @@ export function CampusMessagesShell({
                   )}
 
                   <div className="spm-chat-composer">
-                    {sessionExpired && realtimeState !== "live" && (
-                      <p className="spm-chat-compose-error" role="alert">
-                        Your session expired on this browser. Sign in again to reload chat history and realtime updates.
-                      </p>
-                    )}
-
                     {showDecryptionWarning && activeConversationId && (
                       <div className="spm-chat-compose-note" role="alert">
                         <span>{decryptionWarning}</span>
