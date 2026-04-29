@@ -22,6 +22,96 @@ const connectedSockets = new Set();
 let roomCounter = Math.floor(Math.random() * 4096);
 let wordBankPromise = null;
 
+function scribbleLog(event, details = {}, level = "log") {
+  const logger = typeof console[level] === "function" ? console[level] : console.log;
+  logger(`[scribble] ${event}`, {
+    at: new Date().toISOString(),
+    ...details
+  });
+}
+
+function summarizeAuth(auth) {
+  if (!auth) {
+    return null;
+  }
+
+  return {
+    tenantId: auth.tenantId,
+    userId: auth.userId,
+    membershipId: auth.membershipId,
+    baseMembershipId: auth.baseMembershipId ?? auth.membershipId,
+    username: auth.username,
+    displayName: auth.displayName
+  };
+}
+
+function summarizeRoom(room) {
+  if (!room) {
+    return null;
+  }
+
+  const connectedMembershipIds = getConnectedMembershipIds(room);
+  return {
+    roomId: room.roomId,
+    tenantId: room.tenantId,
+    displayName: room.displayName,
+    status: room.status,
+    systemPublic: room.systemPublic,
+    hostMembershipId: room.hostMembershipId,
+    currentDrawerMembershipId: room.currentDrawerMembershipId,
+    connectedPlayers: connectedMembershipIds.length,
+    totalPlayers: room.players.size,
+    socketGroups: room.socketsByMembership.size,
+    order: [...room.order],
+    round: room.round,
+    turnIndex: room.turnIndex,
+    totalTurns: room.totalTurns,
+    timerEndsAt: room.timerEndsAt,
+    settings: room.settings
+  };
+}
+
+function summarizePayload(type, payload) {
+  if (type === "scribble.draw.step") {
+    return {
+      roomId: payload.roomId,
+      stepCount: Array.isArray(payload.steps) ? payload.steps.length : 0
+    };
+  }
+
+  if (type === "scribble.chat.guess") {
+    return {
+      textLength: typeof payload.text === "string" ? payload.text.length : 0
+    };
+  }
+
+  if (type === "scribble.room.create") {
+    return {
+      settings: payload.settings
+    };
+  }
+
+  if (type === "scribble.room.join") {
+    return {
+      roomId: payload.roomId
+    };
+  }
+
+  if (type === "scribble.room.updateSettings") {
+    return {
+      settings: payload.settings
+    };
+  }
+
+  if (type === "scribble.word.choose") {
+    return {
+      choiceId: payload.choiceId
+    };
+  }
+
+  return payload;
+}
+
 function getWorkspaceRoot() {
   const cwd = process.cwd();
   return path.basename(cwd) === "backend" && path.basename(path.dirname(cwd)) === "apps" ? path.resolve(cwd, "../..") : cwd;
@@ -59,6 +149,10 @@ function signPayload(encodedPayload) {
 
 function verifyScribbleSocketToken(token) {
   if (typeof token !== "string" || !token.includes(".")) {
+    scribbleLog("socket-token.invalid-format", {
+      hasToken: typeof token === "string",
+      tokenLength: typeof token === "string" ? token.length : 0
+    }, "warn");
     return null;
   }
 
@@ -72,6 +166,10 @@ function verifyScribbleSocketToken(token) {
   const expectedBuffer = Buffer.from(expectedSignature);
 
   if (providedBuffer.length !== expectedBuffer.length || !timingSafeEqual(providedBuffer, expectedBuffer)) {
+    scribbleLog("socket-token.bad-signature", {
+      payloadLength: encodedPayload.length,
+      signatureLength: providedSignature.length
+    }, "warn");
     return null;
   }
 
@@ -85,15 +183,26 @@ function verifyScribbleSocketToken(token) {
       typeof payload?.username !== "string" ||
       typeof payload?.exp !== "number"
     ) {
+      scribbleLog("socket-token.invalid-payload", {
+        payloadKeys: payload && typeof payload === "object" ? Object.keys(payload) : []
+      }, "warn");
       return null;
     }
 
     if (payload.exp < Date.now()) {
+      scribbleLog("socket-token.expired", {
+        auth: summarizeAuth(payload),
+        exp: payload.exp,
+        now: Date.now()
+      }, "warn");
       return null;
     }
 
     return payload;
-  } catch {
+  } catch (error) {
+    scribbleLog("socket-token.parse-failed", {
+      message: error instanceof Error ? error.message : String(error)
+    }, "warn");
     return null;
   }
 }
@@ -110,6 +219,12 @@ function sendSocket(ws, payload) {
 }
 
 function sendError(ws, code, message) {
+  scribbleLog("client-error", {
+    code,
+    message,
+    roomId: ws.__scribbleRoomId ?? null,
+    auth: summarizeAuth(ws.__scribbleAuth)
+  }, "warn");
   sendSocket(ws, {
     type: "scribble.error",
     payload: {
@@ -272,6 +387,10 @@ function createRoom(auth, rawSettings) {
   });
 
   setRoom(room);
+  scribbleLog("room.created", {
+    auth: summarizeAuth(auth),
+    room: summarizeRoom(room)
+  });
   return room;
 }
 
@@ -323,12 +442,20 @@ function createSystemPublicRoom(tenantId) {
   });
 
   setRoom(room);
+  scribbleLog("system-room.created", {
+    tenantId,
+    room: summarizeRoom(room)
+  });
   return room;
 }
 
 function ensureSystemPublicRoom(tenantId) {
   const existingRoom = getRoom(tenantId, SYSTEM_PUBLIC_ROOM_CODE);
   if (existingRoom) {
+    scribbleLog("system-room.reused", {
+      tenantId,
+      room: summarizeRoom(existingRoom)
+    });
     return existingRoom;
   }
 
@@ -367,6 +494,10 @@ function addOrUpdatePlayer(room, auth) {
 
   if (!player) {
     if (getConnectedMembershipIds(room).length >= room.settings.maxPlayers) {
+      scribbleLog("player.add.rejected-room-full", {
+        auth: summarizeAuth(auth),
+        room: summarizeRoom(room)
+      }, "warn");
       return null;
     }
 
@@ -379,6 +510,10 @@ function addOrUpdatePlayer(room, auth) {
       displayName: auth.displayName || auth.username,
       body: `${auth.displayName || auth.username} joined.`
     });
+    scribbleLog("player.added", {
+      auth: summarizeAuth(auth),
+      room: summarizeRoom(room)
+    });
     return player;
   }
 
@@ -386,6 +521,10 @@ function addOrUpdatePlayer(room, auth) {
   player.username = auth.username;
   player.displayName = auth.displayName || auth.username;
   player.connected = true;
+  scribbleLog("player.reconnected", {
+    auth: summarizeAuth(auth),
+    room: summarizeRoom(room)
+  });
   return player;
 }
 
@@ -395,6 +534,11 @@ function addSocketToRoom(room, ws, auth) {
   room.socketsByMembership.set(auth.membershipId, currentSockets);
   ws.__scribbleRoomId = room.roomId;
   ws.__scribbleAuth = auth;
+  scribbleLog("socket.room-attached", {
+    auth: summarizeAuth(auth),
+    room: summarizeRoom(room),
+    socketsForMembership: currentSockets.size
+  });
 }
 
 function clearRoomTimers(room) {
@@ -680,6 +824,10 @@ function compactSystemPublicRoomPlayers(room) {
 }
 
 function resetSystemPublicRoom(room, message = null) {
+  scribbleLog("system-room.reset.begin", {
+    message,
+    room: summarizeRoom(room)
+  });
   clearRoomTimers(room);
   room.status = "LOBBY";
   room.currentDrawerMembershipId = null;
@@ -710,10 +858,18 @@ function resetSystemPublicRoom(room, message = null) {
   }
 
   emitState(room);
-  maybeStartSystemPublicRoom(room);
+  const restarted = maybeStartSystemPublicRoom(room);
+  scribbleLog("system-room.reset.done", {
+    restarted,
+    room: summarizeRoom(room)
+  });
 }
 
 function resetRoomAfterPlayersLeft(room, message) {
+  scribbleLog("room.reset-after-players-left.begin", {
+    message,
+    room: summarizeRoom(room)
+  });
   clearRoomTimers(room);
   room.status = "LOBBY";
   room.currentDrawerMembershipId = null;
@@ -743,18 +899,34 @@ function resetRoomAfterPlayersLeft(room, message) {
   });
   notifyRoom(room, message);
   emitState(room);
+  scribbleLog("room.reset-after-players-left.done", {
+    room: summarizeRoom(room)
+  });
 }
 
 function maybeStartSystemPublicRoom(room) {
+  const connectedPlayers = getConnectedMembershipIds(room).length;
   if (!room.systemPublic || room.status !== "LOBBY" || getConnectedMembershipIds(room).length < 2) {
+    scribbleLog("system-room.autostart.skipped", {
+      reason: !room.systemPublic ? "not-system-room" : room.status !== "LOBBY" ? "not-lobby" : "not-enough-players",
+      connectedPlayers,
+      room: summarizeRoom(room)
+    });
     return false;
   }
 
+  scribbleLog("system-room.autostart.begin", {
+    connectedPlayers,
+    room: summarizeRoom(room)
+  });
   startGame(room, null);
   return true;
 }
 
 function finishGame(room) {
+  scribbleLog("game.finish.begin", {
+    room: summarizeRoom(room)
+  });
   clearRoomTimers(room);
   room.status = "FINISHED";
   room.currentDrawerMembershipId = null;
@@ -773,6 +945,9 @@ function finishGame(room) {
     body: "Game finished. Final scores are locked."
   });
   emitState(room);
+  scribbleLog("game.finish.done", {
+    room: summarizeRoom(room)
+  });
 
   if (room.systemPublic) {
     room.resetTimer = setTimeout(() => {
@@ -782,15 +957,25 @@ function finishGame(room) {
 }
 
 async function beginNextTurn(room) {
+  scribbleLog("turn.begin-next.requested", {
+    room: summarizeRoom(room)
+  });
   clearRoomTimers(room);
   const connectedMembershipIds = getConnectedMembershipIds(room);
 
   if (room.systemPublic && connectedMembershipIds.length < 2) {
+    scribbleLog("turn.begin-next.system-room-needs-player", {
+      connectedMembershipIds,
+      room: summarizeRoom(room)
+    });
     resetSystemPublicRoom(room, "Waiting for one more player.");
     return;
   }
 
   if (connectedMembershipIds.length === 0) {
+    scribbleLog("turn.begin-next.no-connected-players", {
+      room: summarizeRoom(room)
+    }, "warn");
     room.status = "LOBBY";
     room.currentDrawerMembershipId = null;
     room.timerEndsAt = null;
@@ -800,11 +985,20 @@ async function beginNextTurn(room) {
 
   room.totalTurns = getTotalTurns(room);
   if (room.turnIndex >= room.totalTurns) {
+    scribbleLog("turn.begin-next.total-turns-complete", {
+      connectedMembershipIds,
+      room: summarizeRoom(room)
+    });
     finishGame(room);
     return;
   }
 
   const drawerMembershipId = connectedMembershipIds[room.turnIndex % connectedMembershipIds.length];
+  scribbleLog("turn.begin-next.drawer-selected", {
+    drawerMembershipId,
+    connectedMembershipIds,
+    room: summarizeRoom(room)
+  });
   room.status = "CHOOSING";
   room.currentDrawerMembershipId = drawerMembershipId;
   room.currentWord = null;
@@ -832,23 +1026,51 @@ async function beginNextTurn(room) {
   });
 
   room.chooseTimer = setTimeout(() => {
+    scribbleLog("word.choose.timeout", {
+      drawerMembershipId,
+      room: summarizeRoom(room)
+    }, "warn");
     void chooseWord(room, room.wordChoices[0]?.id, true);
   }, CHOOSE_WORD_TIMEOUT_MS);
 
   emitState(room);
+  scribbleLog("turn.begin-next.ready-for-word", {
+    drawerMembershipId,
+    wordChoiceCount: room.wordChoices.length,
+    room: summarizeRoom(room)
+  });
 }
 
 async function chooseWord(room, choiceId, automatic = false) {
   if (room.status !== "CHOOSING") {
+    scribbleLog("word.choose.ignored", {
+      reason: "room-not-choosing",
+      choiceId,
+      automatic,
+      room: summarizeRoom(room)
+    }, "warn");
     return;
   }
 
   const choice = room.wordChoices.find((candidate) => candidate.id === choiceId) ?? room.wordChoices[0];
   if (!choice) {
+    scribbleLog("word.choose.no-choice", {
+      choiceId,
+      automatic,
+      room: summarizeRoom(room)
+    }, "warn");
     endRound(room, "No word was selected. Round skipped.");
     return;
   }
 
+  scribbleLog("word.choose.accepted", {
+    choiceId,
+    automatic,
+    word: choice.word,
+    difficulty: choice.difficulty,
+    drawerMembershipId: room.currentDrawerMembershipId,
+    room: summarizeRoom(room)
+  });
   clearRoomTimers(room);
   room.status = "PLAYING";
   room.currentWord = choice.word;
@@ -873,13 +1095,27 @@ async function chooseWord(room, choiceId, automatic = false) {
   }, room.settings.drawTime * 1000);
 
   emitState(room);
+  scribbleLog("round.started", {
+    word: room.currentWord,
+    difficulty: room.currentDifficulty?.difficulty,
+    drawTime: room.settings.drawTime,
+    room: summarizeRoom(room)
+  });
 }
 
 function endRound(room, reason) {
   if (room.status !== "PLAYING" && room.status !== "CHOOSING") {
+    scribbleLog("round.end.ignored", {
+      reason,
+      room: summarizeRoom(room)
+    }, "warn");
     return;
   }
 
+  scribbleLog("round.end.begin", {
+    reason,
+    room: summarizeRoom(room)
+  });
   clearRoomTimers(room);
   const word = room.currentWord ?? room.wordChoices[0]?.word ?? null;
   room.status = "ROUND_END";
@@ -897,23 +1133,52 @@ function endRound(room, reason) {
   });
 
   emitState(room);
+  scribbleLog("round.end.done", {
+    reason,
+    word,
+    room: summarizeRoom(room)
+  });
 
   room.nextTimer = setTimeout(() => {
     room.turnIndex += 1;
-    void beginNextTurn(room);
+    void beginNextTurn(room).catch((error) => {
+      scribbleLog("round.next-turn-failed", {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : null,
+        room: summarizeRoom(room)
+      }, "error");
+    });
   }, ROUND_WRAP_MS);
 }
 
 function startGame(room, auth) {
   const isSystemStart = room.systemPublic && auth === null;
   if (!isSystemStart && room.hostMembershipId !== auth?.membershipId) {
+    scribbleLog("game.start.rejected", {
+      reason: "host-only",
+      auth: summarizeAuth(auth),
+      room: summarizeRoom(room)
+    }, "warn");
     return false;
   }
 
-  if (getConnectedMembershipIds(room).length < 2) {
+  const connectedMembershipIds = getConnectedMembershipIds(room);
+  if (connectedMembershipIds.length < 2) {
+    scribbleLog("game.start.rejected", {
+      reason: "not-enough-players",
+      connectedMembershipIds,
+      auth: summarizeAuth(auth),
+      room: summarizeRoom(room)
+    }, "warn");
     return false;
   }
 
+  scribbleLog("game.start.accepted", {
+    isSystemStart,
+    connectedMembershipIds,
+    auth: summarizeAuth(auth),
+    room: summarizeRoom(room)
+  });
   clearRoomTimers(room);
   room.status = "CHOOSING";
   room.turnIndex = 0;
@@ -938,7 +1203,13 @@ function startGame(room, auth) {
     body: isSystemStart ? "vyb-public game started." : "Game started."
   });
 
-  void beginNextTurn(room);
+  void beginNextTurn(room).catch((error) => {
+    scribbleLog("game.start.begin-next-failed", {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : null,
+      room: summarizeRoom(room)
+    }, "error");
+  });
   return true;
 }
 
@@ -956,25 +1227,51 @@ function allGuessersDone(room) {
 
 function handleGuess(room, ws, auth, text) {
   if (room.status !== "PLAYING" || !room.currentWord) {
+    scribbleLog("guess.ignored", {
+      reason: "round-not-playing",
+      auth: summarizeAuth(auth),
+      textLength: typeof text === "string" ? text.length : 0,
+      room: summarizeRoom(room)
+    }, "warn");
     return;
   }
 
   if (auth.membershipId === room.currentDrawerMembershipId) {
+    scribbleLog("guess.rejected", {
+      reason: "drawer-cannot-guess",
+      auth: summarizeAuth(auth),
+      room: summarizeRoom(room)
+    }, "warn");
     sendError(ws, "DRAWER_CANNOT_GUESS", "Drawer cannot guess their own word.");
     return;
   }
 
   const player = room.players.get(auth.membershipId);
   if (!player || player.correctThisTurn) {
+    scribbleLog("guess.ignored", {
+      reason: !player ? "player-not-found" : "already-correct",
+      auth: summarizeAuth(auth),
+      room: summarizeRoom(room)
+    }, "warn");
     return;
   }
 
   const body = String(text ?? "").trim().slice(0, 80);
   if (!body) {
+    scribbleLog("guess.ignored", {
+      reason: "empty",
+      auth: summarizeAuth(auth),
+      room: summarizeRoom(room)
+    }, "warn");
     return;
   }
 
   if (normalizeGuess(body) !== normalizeGuess(room.currentWord)) {
+    scribbleLog("guess.incorrect", {
+      auth: summarizeAuth(auth),
+      textLength: body.length,
+      room: summarizeRoom(room)
+    });
     addChat(room, {
       kind: "guess",
       membershipId: auth.membershipId,
@@ -996,6 +1293,14 @@ function handleGuess(room, ws, auth, text) {
   if (drawer) {
     drawer.score += 25;
   }
+  scribbleLog("guess.correct", {
+    auth: summarizeAuth(auth),
+    score,
+    drawerMembershipId: room.currentDrawerMembershipId,
+    remainingSeconds,
+    word: room.currentWord,
+    room: summarizeRoom(room)
+  });
 
   addChat(room, {
     kind: "correct",
@@ -1067,12 +1372,24 @@ function broadcastDrawSteps(room, senderWs, steps) {
 
 function handleDrawStep(room, ws, auth, payload) {
   if (room.status !== "PLAYING" || auth.membershipId !== room.currentDrawerMembershipId) {
+    scribbleLog("draw.step.rejected", {
+      reason: room.status !== "PLAYING" ? "round-not-playing" : "not-current-drawer",
+      auth: summarizeAuth(auth),
+      payload: summarizePayload("scribble.draw.step", payload ?? {}),
+      room: summarizeRoom(room)
+    }, "warn");
     return;
   }
 
   const rawSteps = Array.isArray(payload?.steps) ? payload.steps.slice(0, 120) : [payload?.step ?? payload].filter(Boolean);
   const steps = rawSteps.map((step) => normalizeDrawStep(step)).filter(Boolean);
   if (steps.length === 0) {
+    scribbleLog("draw.step.ignored", {
+      reason: "no-valid-steps",
+      auth: summarizeAuth(auth),
+      rawStepCount: rawSteps.length,
+      room: summarizeRoom(room)
+    }, "warn");
     return;
   }
 
@@ -1083,10 +1400,21 @@ function handleDrawStep(room, ws, auth, payload) {
 
   touchRoom(room);
   broadcastDrawSteps(room, ws, steps);
+  scribbleLog("draw.step.accepted", {
+    auth: summarizeAuth(auth),
+    stepCount: steps.length,
+    drawingStepTotal: room.drawing.length,
+    roomId: room.roomId
+  });
 }
 
 function handleClearCanvas(room, auth) {
   if (room.status !== "PLAYING" || auth.membershipId !== room.currentDrawerMembershipId) {
+    scribbleLog("canvas.clear.rejected", {
+      reason: room.status !== "PLAYING" ? "round-not-playing" : "not-current-drawer",
+      auth: summarizeAuth(auth),
+      room: summarizeRoom(room)
+    }, "warn");
     return;
   }
 
@@ -1112,10 +1440,20 @@ function handleClearCanvas(room, auth) {
   }
 
   emitState(room);
+  scribbleLog("canvas.clear.accepted", {
+    auth: summarizeAuth(auth),
+    room: summarizeRoom(room)
+  });
 }
 
 function handleReaction(room, auth, tone) {
   if (room.status !== "PLAYING" || auth.membershipId === room.currentDrawerMembershipId) {
+    scribbleLog("reaction.rejected", {
+      reason: room.status !== "PLAYING" ? "round-not-playing" : "drawer-cannot-react",
+      tone,
+      auth: summarizeAuth(auth),
+      room: summarizeRoom(room)
+    }, "warn");
     return;
   }
 
@@ -1127,12 +1465,24 @@ function handleReaction(room, auth, tone) {
       room.dislikeMembershipIds.delete(auth.membershipId);
     }
     emitState(room);
+    scribbleLog("reaction.like.updated", {
+      auth: summarizeAuth(auth),
+      likeCount: room.likeMembershipIds.size,
+      dislikeCount: room.dislikeMembershipIds.size,
+      roomId: room.roomId
+    });
     return;
   }
 
   if (room.dislikeMembershipIds.has(auth.membershipId)) {
     room.dislikeMembershipIds.delete(auth.membershipId);
     emitState(room);
+    scribbleLog("reaction.dislike.removed", {
+      auth: summarizeAuth(auth),
+      likeCount: room.likeMembershipIds.size,
+      dislikeCount: room.dislikeMembershipIds.size,
+      roomId: room.roomId
+    });
     return;
   }
 
@@ -1140,6 +1490,12 @@ function handleReaction(room, auth, tone) {
   room.likeMembershipIds.delete(auth.membershipId);
   if (room.dislikeMembershipIds.size < 3) {
     emitState(room);
+    scribbleLog("reaction.dislike.added", {
+      auth: summarizeAuth(auth),
+      likeCount: room.likeMembershipIds.size,
+      dislikeCount: room.dislikeMembershipIds.size,
+      roomId: room.roomId
+    });
     return;
   }
 
@@ -1170,52 +1526,113 @@ function handleReaction(room, auth, tone) {
   }
 
   emitState(room);
+  scribbleLog("reaction.dislike.threshold-cleared-canvas", {
+    auth: summarizeAuth(auth),
+    drawerMembershipId: room.currentDrawerMembershipId,
+    drawerWarnings: drawer?.warnings ?? null,
+    room: summarizeRoom(room)
+  }, "warn");
 }
 
 function updateRoomSettings(room, auth, payload) {
   if (room.hostMembershipId !== auth.membershipId || room.status !== "LOBBY") {
+    scribbleLog("room.settings.update.rejected", {
+      reason: room.hostMembershipId !== auth.membershipId ? "host-only" : "not-lobby",
+      auth: summarizeAuth(auth),
+      requestedSettings: payload,
+      room: summarizeRoom(room)
+    }, "warn");
     return;
   }
 
+  scribbleLog("room.settings.update.begin", {
+    auth: summarizeAuth(auth),
+    requestedSettings: payload,
+    before: summarizeRoom(room)
+  });
   room.settings = normalizeSettings({
     ...room.settings,
     ...payload
   });
   emitState(room);
+  scribbleLog("room.settings.update.done", {
+    auth: summarizeAuth(auth),
+    room: summarizeRoom(room)
+  });
 }
 
 function handleJoinRoom(ws, auth, roomId) {
+  scribbleLog("room.join.requested", {
+    requestedRoomId: roomId,
+    auth: summarizeAuth(auth)
+  });
   const normalizedRoomId = normalizeRoomId(roomId);
   if (!normalizedRoomId) {
+    scribbleLog("room.join.rejected", {
+      reason: "invalid-room-code",
+      requestedRoomId: roomId,
+      auth: summarizeAuth(auth)
+    }, "warn");
     sendError(ws, "INVALID_ROOM", "Enter a valid Scribble room code.");
     return;
   }
 
   const room = isSystemPublicRoomCode(normalizedRoomId) ? ensureSystemPublicRoom(auth.tenantId) : getRoom(auth.tenantId, normalizedRoomId);
   if (!room || room.tenantId !== auth.tenantId) {
+    scribbleLog("room.join.rejected", {
+      reason: "room-not-found",
+      requestedRoomId: roomId,
+      normalizedRoomId,
+      auth: summarizeAuth(auth),
+      activeRoomIds: [...rooms.values()].filter((candidate) => candidate.tenantId === auth.tenantId).map((candidate) => candidate.roomId)
+    }, "warn");
     sendError(ws, "ROOM_NOT_FOUND", "That Scribble room is not active.");
     return;
   }
 
   const player = addOrUpdatePlayer(room, auth);
   if (!player) {
+    scribbleLog("room.join.rejected", {
+      reason: "room-full",
+      normalizedRoomId,
+      auth: summarizeAuth(auth),
+      room: summarizeRoom(room)
+    }, "warn");
     sendError(ws, "ROOM_FULL", "This Scribble room is full.");
     return;
   }
 
   addSocketToRoom(room, ws, auth);
   if (maybeStartSystemPublicRoom(room)) {
+    scribbleLog("room.join.accepted-autostarted", {
+      normalizedRoomId,
+      auth: summarizeAuth(auth),
+      room: summarizeRoom(room)
+    });
     return;
   }
 
   emitState(room);
+  scribbleLog("room.join.accepted", {
+    normalizedRoomId,
+    auth: summarizeAuth(auth),
+    room: summarizeRoom(room)
+  });
 }
 
 function handleCreateRoom(ws, auth, settings) {
+  scribbleLog("room.create.requested", {
+    requestedSettings: settings,
+    auth: summarizeAuth(auth)
+  });
   const room = createRoom(auth, settings);
   addOrUpdatePlayer(room, auth);
   addSocketToRoom(room, ws, auth);
   emitState(room);
+  scribbleLog("room.create.accepted", {
+    auth: summarizeAuth(auth),
+    room: summarizeRoom(room)
+  });
 }
 
 function getSocketRoom(ws) {
@@ -1229,21 +1646,41 @@ async function handleClientMessage(ws, auth, rawMessage) {
 
   try {
     message = JSON.parse(String(rawMessage));
-  } catch {
+  } catch (error) {
+    scribbleLog("message.parse-failed", {
+      auth: summarizeAuth(auth),
+      roomId: ws.__scribbleRoomId ?? null,
+      rawLength: typeof rawMessage?.length === "number" ? rawMessage.length : String(rawMessage).length,
+      message: error instanceof Error ? error.message : String(error)
+    }, "warn");
     return;
   }
 
   if (!message || typeof message !== "object") {
+    scribbleLog("message.ignored-invalid-shape", {
+      auth: summarizeAuth(auth),
+      roomId: ws.__scribbleRoomId ?? null
+    }, "warn");
     return;
   }
 
   const type = message.type;
   const payload = message.payload && typeof message.payload === "object" ? message.payload : {};
+  scribbleLog("message.received", {
+    type,
+    auth: summarizeAuth(auth),
+    roomId: ws.__scribbleRoomId ?? null,
+    payload: summarizePayload(type, payload)
+  });
 
   if (type === "scribble.catalog.subscribe") {
     sendSocket(ws, {
       type: "scribble.catalog",
       payload: buildCatalogPayload(auth.tenantId)
+    });
+    scribbleLog("catalog.sent", {
+      auth: summarizeAuth(auth),
+      roomCount: buildCatalogPayload(auth.tenantId).rooms.length
     });
     return;
   }
@@ -1260,6 +1697,11 @@ async function handleClientMessage(ws, auth, rawMessage) {
 
   const room = getSocketRoom(ws);
   if (!room) {
+    scribbleLog("message.rejected-room-required", {
+      type,
+      auth: summarizeAuth(auth),
+      roomId: ws.__scribbleRoomId ?? null
+    }, "warn");
     sendError(ws, "ROOM_REQUIRED", "Join a Scribble room first.");
     return;
   }
@@ -1272,17 +1714,37 @@ async function handleClientMessage(ws, auth, rawMessage) {
   }
 
   if (type === "scribble.game.start") {
+    scribbleLog("game.start.requested", {
+      auth: summarizeAuth(auth),
+      room: summarizeRoom(room)
+    });
     if (room.hostMembershipId !== auth.membershipId) {
+      scribbleLog("game.start.denied-before-start", {
+        reason: "host-only",
+        auth: summarizeAuth(auth),
+        room: summarizeRoom(room)
+      }, "warn");
       sendError(ws, "HOST_ONLY", "Only the host can start Scribble.");
       return;
     }
 
-    if (getConnectedMembershipIds(room).length < 2) {
+    const connectedMembershipIds = getConnectedMembershipIds(room);
+    if (connectedMembershipIds.length < 2) {
+      scribbleLog("game.start.denied-before-start", {
+        reason: "not-enough-players",
+        connectedMembershipIds,
+        auth: summarizeAuth(auth),
+        room: summarizeRoom(room)
+      }, "warn");
       sendError(ws, "NOT_ENOUGH_PLAYERS", "Scribble needs at least 2 players to start.");
       return;
     }
 
     if (!startGame(room, auth)) {
+      scribbleLog("game.start.failed", {
+        auth: summarizeAuth(auth),
+        room: summarizeRoom(room)
+      }, "warn");
       sendError(ws, "START_FAILED", "Could not start Scribble right now.");
     }
     return;
@@ -1321,18 +1783,47 @@ async function handleClientMessage(ws, auth, rawMessage) {
   }
 
   if (type === "scribble.room.leave") {
+    scribbleLog("room.leave.requested", {
+      auth: summarizeAuth(auth),
+      room: summarizeRoom(room)
+    });
     handleSocketClose(ws);
     ws.close(1000, "left room");
     return;
   }
 
   if (type === "scribble.round.skip" && (auth.membershipId === room.hostMembershipId || auth.membershipId === room.currentDrawerMembershipId)) {
+    scribbleLog("round.skip.accepted", {
+      auth: summarizeAuth(auth),
+      room: summarizeRoom(room)
+    });
     endRound(room, "Round skipped.");
+    return;
   }
+
+  if (type === "scribble.round.skip") {
+    scribbleLog("round.skip.rejected", {
+      reason: "host-or-drawer-only",
+      auth: summarizeAuth(auth),
+      room: summarizeRoom(room)
+    }, "warn");
+    return;
+  }
+
+  scribbleLog("message.ignored-unknown-type", {
+    type,
+    auth: summarizeAuth(auth),
+    room: summarizeRoom(room),
+    payload: summarizePayload(type, payload)
+  }, "warn");
 }
 
 function handleSocketClose(ws) {
   if (ws.__scribbleClosedHandled) {
+    scribbleLog("socket.close.ignored-already-handled", {
+      auth: summarizeAuth(ws.__scribbleAuth),
+      roomId: ws.__scribbleRoomId ?? null
+    });
     return;
   }
 
@@ -1343,9 +1834,20 @@ function handleSocketClose(ws) {
   const room = getSocketRoom(ws);
 
   if (!auth || !room) {
+    scribbleLog("socket.close.no-room", {
+      auth: summarizeAuth(auth),
+      roomId: ws.__scribbleRoomId ?? null,
+      connectedSockets: connectedSockets.size
+    });
     emitCatalog();
     return;
   }
+
+  scribbleLog("socket.close.begin", {
+    auth: summarizeAuth(auth),
+    room: summarizeRoom(room),
+    connectedSockets: connectedSockets.size
+  });
 
   const sockets = room.socketsByMembership.get(auth.membershipId);
   if (sockets) {
@@ -1357,6 +1859,10 @@ function handleSocketClose(ws) {
 
   const stillConnected = room.socketsByMembership.has(auth.membershipId);
   if (stillConnected) {
+    scribbleLog("socket.close.membership-still-connected", {
+      auth: summarizeAuth(auth),
+      room: summarizeRoom(room)
+    });
     emitCatalog(room.tenantId);
     return;
   }
@@ -1388,6 +1894,11 @@ function handleSocketClose(ws) {
         displayName: nextHostPlayer?.displayName ?? "Host",
         body: `${nextHostPlayer?.displayName ?? "A player"} is now the host.`
       });
+      scribbleLog("room.host.transferred", {
+        previousHostMembershipId: auth.membershipId,
+        nextHostMembershipId: nextHost,
+        room: summarizeRoom(room)
+      });
     }
   }
 
@@ -1405,6 +1916,10 @@ function handleSocketClose(ws) {
   }
 
   if (!room.systemPublic && connectedMembershipIds.length === 0) {
+    scribbleLog("room.empty.reset-to-lobby", {
+      auth: summarizeAuth(auth),
+      room: summarizeRoom(room)
+    });
     clearRoomTimers(room);
     room.status = "LOBBY";
     room.currentDrawerMembershipId = null;
@@ -1422,24 +1937,43 @@ function handleSocketClose(ws) {
   }
 
   if (!room.systemPublic && connectedMembershipIds.length < 2 && room.status !== "LOBBY") {
+    scribbleLog("room.players-left.reset-active-game", {
+      auth: summarizeAuth(auth),
+      connectedMembershipIds,
+      room: summarizeRoom(room)
+    });
     resetRoomAfterPlayersLeft(room, "Everyone else left. Waiting for another player.");
     return;
   }
 
   if (!room.systemPublic && connectedMembershipIds.length === 1 && room.status === "LOBBY") {
+    scribbleLog("room.players-left.single-lobby-player", {
+      auth: summarizeAuth(auth),
+      connectedMembershipIds,
+      room: summarizeRoom(room)
+    });
     notifyRoom(room, "Everyone else left. Waiting for another player.");
   }
 
   if (room.currentDrawerMembershipId === auth.membershipId && (room.status === "PLAYING" || room.status === "CHOOSING")) {
+    scribbleLog("room.drawer-left", {
+      auth: summarizeAuth(auth),
+      room: summarizeRoom(room)
+    }, "warn");
     endRound(room, "Drawer left. Round skipped.");
     return;
   }
 
   emitState(room);
+  scribbleLog("socket.close.done", {
+    auth: summarizeAuth(auth),
+    room: summarizeRoom(room)
+  });
 }
 
 function cleanupIdleRooms() {
   const now = Date.now();
+  let removedRooms = 0;
 
   for (const [roomId, room] of rooms.entries()) {
     if (room.systemPublic) {
@@ -1452,9 +1986,21 @@ function cleanupIdleRooms() {
 
     clearRoomTimers(room);
     rooms.delete(roomId);
+    removedRooms += 1;
+    scribbleLog("room.cleanup.removed-idle", {
+      roomKey: roomId,
+      idleMs: now - room.lastActiveAt,
+      room: summarizeRoom(room)
+    });
   }
 
-  emitCatalog();
+  if (removedRooms > 0) {
+    emitCatalog();
+    scribbleLog("room.cleanup.done", {
+      removedRooms,
+      activeRooms: rooms.size
+    });
+  }
 }
 
 setInterval(cleanupIdleRooms, 5 * 60 * 1000).unref?.();
@@ -1476,7 +2022,12 @@ export function handleScribblePublicRoomsRoute({ request, response, url }) {
     ? url.searchParams.get("tenantId").trim()
     : "tenant-demo";
 
-  sendJson(response, 200, buildCatalogPayload(tenantId));
+  const payload = buildCatalogPayload(tenantId);
+  scribbleLog("public-rooms.request", {
+    tenantId,
+    roomCount: payload.rooms.length
+  });
+  sendJson(response, 200, payload);
   return true;
 }
 
@@ -1489,13 +2040,31 @@ export function attachScribbleWebSocketServer(server) {
       return;
     }
 
+    scribbleLog("socket.upgrade.request", {
+      path: url.pathname,
+      host: request.headers.host,
+      origin: request.headers.origin ?? null,
+      userAgent: request.headers["user-agent"] ?? null,
+      hasToken: Boolean(url.searchParams.get("token")),
+      clientId: url.searchParams.get("clientId")
+    });
     const tokenAuth = verifyScribbleSocketToken(url.searchParams.get("token"));
     if (!tokenAuth) {
+      scribbleLog("socket.upgrade.rejected", {
+        reason: "unauthorized",
+        path: url.pathname,
+        host: request.headers.host,
+        clientId: url.searchParams.get("clientId")
+      }, "warn");
       rejectUpgrade(socket, 401, "Unauthorized");
       return;
     }
 
     const auth = getConnectionAuth(tokenAuth, url.searchParams.get("clientId"));
+    scribbleLog("socket.upgrade.authorized", {
+      auth: summarizeAuth(auth),
+      clientId: url.searchParams.get("clientId")
+    });
 
     wsServer.handleUpgrade(request, socket, head, (ws) => {
       ws.__scribbleClosedHandled = false;
@@ -1504,8 +2073,23 @@ export function attachScribbleWebSocketServer(server) {
       ws.on("message", (rawMessage) => {
         void handleClientMessage(ws, auth, rawMessage);
       });
-      ws.on("close", () => handleSocketClose(ws));
-      ws.on("error", () => null);
+      ws.on("close", (code, reason) => {
+        scribbleLog("socket.close.event", {
+          code,
+          reason: reason?.toString?.() ?? "",
+          auth: summarizeAuth(ws.__scribbleAuth),
+          roomId: ws.__scribbleRoomId ?? null
+        });
+        handleSocketClose(ws);
+      });
+      ws.on("error", (error) => {
+        scribbleLog("socket.error", {
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : null,
+          auth: summarizeAuth(ws.__scribbleAuth),
+          roomId: ws.__scribbleRoomId ?? null
+        }, "error");
+      });
       sendSocket(ws, {
         type: "scribble.connected",
         payload: {
@@ -1516,6 +2100,11 @@ export function attachScribbleWebSocketServer(server) {
       sendSocket(ws, {
         type: "scribble.catalog",
         payload: buildCatalogPayload(auth.tenantId)
+      });
+      scribbleLog("socket.connected", {
+        auth: summarizeAuth(auth),
+        connectedSockets: connectedSockets.size,
+        catalogRooms: buildCatalogPayload(auth.tenantId).rooms.length
       });
     });
   });
