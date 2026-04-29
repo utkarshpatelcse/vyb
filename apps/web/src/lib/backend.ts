@@ -1,7 +1,12 @@
 import "server-only";
 import type {
   ActivityListResponse,
+  ApproveChatDevicePairingRequest,
+  ApproveChatDevicePairingResponse,
+  ClaimChatDevicePairingResponse,
   ChatConversationResponse,
+  CreateChatDevicePairingRequest,
+  CreateChatDevicePairingResponse,
   ChatInboxResponse,
   ChatPresenceHeartbeatRequest,
   ChatPresenceHeartbeatResponse,
@@ -25,6 +30,9 @@ import type {
   FeedListResponse,
   GetChatKeyBackupResponse,
   GetChatKeyBackupPinAttemptResponse,
+  GetChatDevicePairingResponse,
+  GetChatPrivacySettingsResponse,
+  GetChatTrustedDevicesResponse,
   ListCoursesResponse,
   ListResourcesResponse,
   MarkChatReadResponse,
@@ -70,7 +78,12 @@ import type {
   UpsertChatKeyBackupResponse,
   UpsertChatIdentityRequest,
   UpsertChatIdentityResponse,
+  UpsertChatPrivacySettingsRequest,
+  UpsertChatPrivacySettingsResponse,
   RecordChatKeyBackupPinAttemptResponse,
+  RegisterChatTrustedDeviceRequest,
+  RegisterChatTrustedDeviceResponse,
+  RevokeChatTrustedDeviceResponse,
   ClearChatKeyBackupPinAttemptResponse,
   CommunitiesMyResponse,
   UpdateUsernameRequest,
@@ -797,11 +810,89 @@ export async function clearChatKeyBackupPinAttempts(viewer: DevSession) {
   return mutateBackendJson<ClearChatKeyBackupPinAttemptResponse>("/v1/chats/key-backup/attempts", "DELETE", {}, viewer);
 }
 
-export async function markChatRead(viewer: DevSession, conversationId: string, messageId: string) {
+export async function getChatTrustedDevices(viewer: DevSession, deviceId?: string | null) {
+  const params = new URLSearchParams();
+  if (deviceId?.trim()) {
+    params.set("deviceId", deviceId.trim());
+  }
+
+  return fetchBackendJson<GetChatTrustedDevicesResponse>(
+    `/v1/chats/devices${params.size > 0 ? `?${params.toString()}` : ""}`,
+    viewer
+  );
+}
+
+export async function registerChatTrustedDevice(viewer: DevSession, payload: RegisterChatTrustedDeviceRequest) {
+  return mutateBackendJson<RegisterChatTrustedDeviceResponse>("/v1/chats/devices", "PUT", payload, viewer);
+}
+
+export async function revokeChatTrustedDevice(viewer: DevSession, deviceId: string) {
+  return mutateBackendJson<RevokeChatTrustedDeviceResponse>(
+    `/v1/chats/devices/${encodeURIComponent(deviceId)}`,
+    "DELETE",
+    {},
+    viewer
+  );
+}
+
+export async function createChatDevicePairing(viewer: DevSession, payload: CreateChatDevicePairingRequest) {
+  return postBackendJson<CreateChatDevicePairingResponse>("/v1/chats/device-pairings", payload, viewer);
+}
+
+export async function getChatDevicePairing(viewer: DevSession, pairingId: string) {
+  return fetchBackendJson<GetChatDevicePairingResponse>(
+    `/v1/chats/device-pairings/${encodeURIComponent(pairingId)}`,
+    viewer
+  );
+}
+
+export async function getChatDevicePairingByCode(viewer: DevSession, pairingCode: string) {
+  return fetchBackendJson<GetChatDevicePairingResponse>(
+    `/v1/chats/device-pairings?code=${encodeURIComponent(pairingCode)}`,
+    viewer
+  );
+}
+
+export async function approveChatDevicePairing(
+  viewer: DevSession,
+  pairingId: string,
+  payload: ApproveChatDevicePairingRequest
+) {
+  return mutateBackendJson<ApproveChatDevicePairingResponse>(
+    `/v1/chats/device-pairings/${encodeURIComponent(pairingId)}/approve`,
+    "PUT",
+    payload,
+    viewer
+  );
+}
+
+export async function claimChatDevicePairing(viewer: DevSession, pairingId: string) {
+  return mutateBackendJson<ClaimChatDevicePairingResponse>(
+    `/v1/chats/device-pairings/${encodeURIComponent(pairingId)}/claim`,
+    "PUT",
+    {},
+    viewer
+  );
+}
+
+export async function getChatPrivacySettings(viewer: DevSession) {
+  return fetchBackendJson<GetChatPrivacySettingsResponse>("/v1/chats/privacy-settings", viewer);
+}
+
+export async function upsertChatPrivacySettings(viewer: DevSession, payload: UpsertChatPrivacySettingsRequest) {
+  return mutateBackendJson<UpsertChatPrivacySettingsResponse>("/v1/chats/privacy-settings", "PUT", payload, viewer);
+}
+
+export async function markChatRead(
+  viewer: DevSession,
+  conversationId: string,
+  messageId: string,
+  options?: { exposeReceipt?: boolean }
+) {
   return mutateBackendJson<MarkChatReadResponse>(
     `/v1/chats/${encodeURIComponent(conversationId)}/read`,
     "PUT",
-    { messageId },
+    { messageId, exposeReceipt: options?.exposeReceipt !== false },
     viewer
   );
 }
@@ -864,6 +955,10 @@ export async function uploadEncryptedChatAttachment(
     height?: number | null;
     durationMs?: number | null;
     viewOnce?: boolean;
+    cipherAlgorithm: string;
+    cipherIv: string;
+    senderPublicKey: string;
+    recipientPublicKey: string;
   }
 ) {
   return postBackendJson<UploadEncryptedChatAttachmentResponse>("/v1/chats/media/upload", payload, viewer);

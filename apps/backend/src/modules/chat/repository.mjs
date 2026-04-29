@@ -1,9 +1,14 @@
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { getStorage } from "firebase-admin/storage";
 import { getFirebaseAdminApp, getFirebaseDataConnect } from "../../../../../packages/config/src/index.mjs";
 import { getProfileByUserId, getProfileByUsername } from "../identity/profile-repository.mjs";
 import { trackActivity } from "../moderation/repository.mjs";
 import { getChatPresenceSnapshot } from "./presence-store.mjs";
+import {
+  canExposeChatPresence,
+  canExposeChatReadReceipts,
+  getChatPrivacySettings
+} from "./privacy-settings-store.mjs";
 import { emitChatRealtimeEvent } from "./realtime-hub.mjs";
 
 const CHAT_CONNECTOR_CONFIG = {
@@ -20,6 +25,8 @@ const CHAT_DELETE_FOR_EVERYONE_WINDOW_MS = 30 * 60 * 1000;
 const CHAT_HIDDEN_MESSAGE_LIMIT = 2000;
 const CHAT_KEY_BACKUP_PIN_MAX_ATTEMPTS = 5;
 const CHAT_KEY_BACKUP_PIN_LOCKOUT_MS = 60 * 60 * 1000;
+const CHAT_DEVICE_PAIRING_TTL_MS = 10 * 60 * 1000;
+const CHAT_DEVICE_PAIRING_CODE_DIGITS = 6;
 const CHAT_DEFAULT_MESSAGE_TTL_KEY = "30d";
 const CHAT_MESSAGE_TTL_OPTIONS = new Map([
   ["instant", 0],
@@ -50,6 +57,9 @@ const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "imag
 const VIDEO_MIME_TYPES = new Set(["video/mp4", "video/quicktime", "video/webm", "video/ogg"]);
 const AUDIO_MIME_TYPES = new Set(["audio/webm", "audio/mp4", "audio/ogg", "audio/mpeg", "audio/wav", "audio/aac"]);
 const SUPPORTED_CHAT_ATTACHMENT_MIME_TYPES = new Set([...IMAGE_MIME_TYPES, ...VIDEO_MIME_TYPES, ...AUDIO_MIME_TYPES]);
+const CHAT_ATTACHMENT_CIPHER_ALGORITHM = "ECDH-P256/AES-GCM/attachment-v1";
+const CHAT_DEVICE_PAIRING_TRANSFER_ALGORITHM = "ECDH-P256/AES-GCM/device-pairing-v1";
+const CHAT_TRUSTED_DEVICE_PLATFORMS = new Set(["web", "ios", "android", "desktop", "unknown"]);
 const MAX_ENCRYPTED_CHAT_IMAGE_BYTES = 12 * 1024 * 1024;
 const MAX_ENCRYPTED_CHAT_VIDEO_BYTES = 32 * 1024 * 1024;
 const MAX_ENCRYPTED_CHAT_AUDIO_BYTES = 16 * 1024 * 1024;
@@ -1064,6 +1074,14 @@ function buildChatKeyBackupStoragePath(tenantId, userId) {
   return `chat/${tenantId}/users/${userId}/e2ee-key-backup.json`;
 }
 
+function buildChatTrustedDevicesStoragePath(tenantId, userId) {
+  return `chat/${tenantId}/users/${userId}/trusted-devices.json`;
+}
+
+function buildChatDevicePairingStoragePath(tenantId, userId, pairingId) {
+  return `chat/${tenantId}/users/${userId}/device-pairings/${pairingId}.json`;
+}
+
 function buildChatHiddenMessageStoragePath(tenantId, userId) {
   return `chat/${tenantId}/users/${userId}/hidden-messages.json`;
 }
@@ -1175,6 +1193,19 @@ async function verifyAttachmentOwnership(viewer, attachment, messageKind) {
     throw new ChatSecurityError(400, "INVALID_ATTACHMENT_METADATA", "Encrypted attachment metadata is incomplete.");
   }
 
+  const cipherAlgorithm = normalizeString(customMetadata.cipherAlgorithm);
+  const cipherIv = normalizeString(customMetadata.cipherIv);
+  const senderPublicKey = normalizeString(customMetadata.senderPublicKey);
+  const recipientPublicKey = normalizeString(customMetadata.recipientPublicKey);
+  if (
+    cipherAlgorithm !== CHAT_ATTACHMENT_CIPHER_ALGORITHM ||
+    !cipherIv ||
+    !senderPublicKey ||
+    !recipientPublicKey
+  ) {
+    throw new ChatSecurityError(400, "INVALID_ATTACHMENT_ENCRYPTION", "Chat media must be encrypted before upload.");
+  }
+
   const kind = VIDEO_MIME_TYPES.has(mimeType) ? "video" : AUDIO_MIME_TYPES.has(mimeType) ? "audio" : "image";
 
   return {
@@ -1186,7 +1217,11 @@ async function verifyAttachmentOwnership(viewer, attachment, messageKind) {
     width: normalizeDimension(attachment.width),
     height: normalizeDimension(attachment.height),
     durationMs: normalizeDurationMs(customMetadata.originalDurationMs || attachment.durationMs),
-    viewOnce: customMetadata.viewOnce === "true"
+    viewOnce: customMetadata.viewOnce === "true",
+    cipherAlgorithm,
+    cipherIv,
+    senderPublicKey,
+    recipientPublicKey
   };
 }
 
@@ -1293,6 +1328,143 @@ function normalizeChatKeyBackup(payload) {
   };
 }
 
+function normalizeChatTrustedDevicePlatform(value) {
+  const platform = normalizeString(value);
+  return platform && CHAT_TRUSTED_DEVICE_PLATFORMS.has(platform) ? platform : "unknown";
+}
+
+function normalizeChatDevicePairingCode(value) {
+  const code = normalizeString(value)?.replace(/\D/gu, "");
+  return code && code.length === CHAT_DEVICE_PAIRING_CODE_DIGITS ? code : null;
+}
+
+function generateChatDevicePairingCode() {
+  return randomInt(0, 10 ** CHAT_DEVICE_PAIRING_CODE_DIGITS)
+    .toString()
+    .padStart(CHAT_DEVICE_PAIRING_CODE_DIGITS, "0");
+}
+
+function normalizeChatTrustedDeviceRecord(viewer, payload, currentDeviceId = null) {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const id = normalizeString(payload.id ?? payload.deviceId);
+  const publicKey = normalizeString(payload.publicKey);
+  if (!id || !publicKey) {
+    return null;
+  }
+
+  const label = (normalizeString(payload.label) ?? "Trusted device").slice(0, 80);
+  const addedAt = payload.addedAt ? toIsoString(payload.addedAt) : new Date().toISOString();
+  const lastSeenAt = payload.lastSeenAt ? toIsoString(payload.lastSeenAt) : addedAt;
+  const revokedAt = payload.revokedAt ? toIsoString(payload.revokedAt) : null;
+
+  return {
+    id,
+    userId: viewer.userId,
+    membershipId: viewer.membershipId,
+    label,
+    platform: normalizeChatTrustedDevicePlatform(payload.platform),
+    publicKey,
+    addedAt,
+    lastSeenAt,
+    revokedAt,
+    isCurrentDevice: currentDeviceId ? id === currentDeviceId : false
+  };
+}
+
+function normalizeChatTrustedDevices(viewer, payload, currentDeviceId = null) {
+  const items = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload) ? payload : [];
+  const byId = new Map();
+
+  for (const item of items) {
+    const normalized = normalizeChatTrustedDeviceRecord(viewer, item, currentDeviceId);
+    if (normalized) {
+      byId.set(normalized.id, normalized);
+    }
+  }
+
+  return [...byId.values()].sort((a, b) => new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime());
+}
+
+function normalizeChatDevicePairingTransferEnvelope(payload) {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const cipherText = normalizeString(payload.cipherText);
+  const iv = normalizeString(payload.iv);
+  const algorithm = normalizeString(payload.algorithm);
+  const senderPublicKey = normalizeString(payload.senderPublicKey);
+  const recipientPublicKey = normalizeString(payload.recipientPublicKey);
+  if (
+    !cipherText ||
+    !iv ||
+    algorithm !== CHAT_DEVICE_PAIRING_TRANSFER_ALGORITHM ||
+    !senderPublicKey ||
+    !recipientPublicKey
+  ) {
+    return null;
+  }
+
+  return {
+    version: Number.isInteger(payload.version) && payload.version > 0 ? payload.version : 1,
+    cipherText,
+    iv,
+    algorithm,
+    senderPublicKey,
+    recipientPublicKey
+  };
+}
+
+function normalizeChatDevicePairingSession(viewer, payload) {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const id = normalizeString(payload.id);
+  const pairingCode = normalizeChatDevicePairingCode(payload.pairingCode);
+  const requesterDeviceId = normalizeString(payload.requesterDeviceId);
+  const requesterLabel = normalizeString(payload.requesterLabel);
+  const requesterPublicKey = normalizeString(payload.requesterPublicKey);
+  const createdAt = payload.createdAt ? toIsoString(payload.createdAt) : new Date().toISOString();
+  const expiresAt = payload.expiresAt
+    ? toIsoString(payload.expiresAt)
+    : new Date(new Date(createdAt).getTime() + CHAT_DEVICE_PAIRING_TTL_MS).toISOString();
+  if (!id || !requesterDeviceId || !requesterLabel || !requesterPublicKey) {
+    return null;
+  }
+
+  const rawStatus = normalizeString(payload.status);
+  const expired = new Date(expiresAt).getTime() <= Date.now();
+  const status =
+    expired && rawStatus !== "claimed"
+      ? "expired"
+      : rawStatus === "approved" || rawStatus === "claimed" || rawStatus === "expired"
+        ? rawStatus
+        : "pending";
+
+  return {
+    id,
+    pairingCode,
+    userId: viewer.userId,
+    membershipId: viewer.membershipId,
+    requesterDeviceId,
+    requesterLabel: requesterLabel.slice(0, 80),
+    requesterPlatform: normalizeChatTrustedDevicePlatform(payload.requesterPlatform),
+    requesterPublicKey,
+    status,
+    createdAt,
+    expiresAt,
+    approvedAt: payload.approvedAt ? toIsoString(payload.approvedAt) : null,
+    claimedAt: payload.claimedAt ? toIsoString(payload.claimedAt) : null,
+    approverDeviceId: normalizeString(payload.approverDeviceId),
+    approverLabel: normalizeString(payload.approverLabel),
+    transferEnvelope: normalizeChatDevicePairingTransferEnvelope(payload.transferEnvelope)
+  };
+}
+
 function mapChatIdentity(item) {
   if (!item) {
     return null;
@@ -1365,17 +1537,24 @@ function mapChatMessage(item, reactionsByMessageId = new Map()) {
   };
 }
 
-async function readStoredAttachmentViewOnceFlag(storagePath) {
+async function readStoredAttachmentMetadata(storagePath) {
   const normalizedPath = normalizeString(storagePath);
   if (!normalizedPath) {
-    return false;
+    return {};
   }
 
   try {
     const [metadata] = await getChatBucket().file(normalizedPath).getMetadata();
-    return metadata?.metadata?.viewOnce === "true";
+    const customMetadata = metadata?.metadata ?? {};
+    return {
+      viewOnce: customMetadata.viewOnce === "true",
+      cipherAlgorithm: normalizeString(customMetadata.cipherAlgorithm) ?? null,
+      cipherIv: normalizeString(customMetadata.cipherIv) ?? null,
+      senderPublicKey: normalizeString(customMetadata.senderPublicKey) ?? null,
+      recipientPublicKey: normalizeString(customMetadata.recipientPublicKey) ?? null
+    };
   } catch {
-    return false;
+    return {};
   }
 }
 
@@ -1385,11 +1564,12 @@ async function hydrateChatMessage(item, reactionsByMessageId = new Map()) {
     return mapped;
   }
 
+  const attachmentMetadata = await readStoredAttachmentMetadata(mapped.attachment.storagePath);
   return {
     ...mapped,
     attachment: {
       ...mapped.attachment,
-      viewOnce: await readStoredAttachmentViewOnceFlag(mapped.attachment.storagePath)
+      ...attachmentMetadata
     }
   };
 }
@@ -1434,6 +1614,24 @@ function buildViewerSummary(viewer, identity) {
     membershipId: viewer.membershipId,
     activeIdentity: identity
   };
+}
+
+async function getVisiblePeerPresence(viewer, peerUserId, peerPrivacySettings = null) {
+  const settings =
+    peerPrivacySettings ??
+    (await getChatPrivacySettings({
+      tenantId: viewer.tenantId,
+      userId: peerUserId
+    }));
+
+  if (!canExposeChatPresence(settings)) {
+    return null;
+  }
+
+  return getChatPresenceSnapshot({
+    tenantId: viewer.tenantId,
+    userId: peerUserId
+  });
 }
 
 async function getChatIdentityByUser({ tenantId, userId }) {
@@ -1666,7 +1864,7 @@ function isChatMessageExpired(message, now = Date.now()) {
 }
 
 async function buildConversationPreview(viewer, conversation, viewerParticipant, peerParticipant, hiddenMessageIds = new Set()) {
-  const [peerProfile, peerIdentity, lastMessageRaw, peerPresence] = await Promise.all([
+  const [peerProfile, peerIdentity, lastMessageRaw, peerPrivacySettings] = await Promise.all([
     getProfileByUserId({
       tenantId: viewer.tenantId,
       userId: peerParticipant.userId
@@ -1676,13 +1874,12 @@ async function buildConversationPreview(viewer, conversation, viewerParticipant,
       userId: peerParticipant.userId
     }),
     getLastVisibleMessageRaw(conversation.id, hiddenMessageIds),
-    Promise.resolve(
-      getChatPresenceSnapshot({
-        tenantId: viewer.tenantId,
-        userId: peerParticipant.userId
-      })
-    )
+    getChatPrivacySettings({
+      tenantId: viewer.tenantId,
+      userId: peerParticipant.userId
+    })
   ]);
+  const peerPresence = await getVisiblePeerPresence(viewer, peerParticipant.userId, peerPrivacySettings);
 
   const lastMessage = await hydrateChatMessage(lastMessageRaw);
   const lastMessageAt = lastMessage?.createdAt ?? toIsoString(conversation.updatedAt);
@@ -1842,6 +2039,334 @@ export async function upsertChatKeyBackup(viewer, payload) {
 
   return {
     backup
+  };
+}
+
+async function getChatTrustedDeviceItems(viewer, currentDeviceId = null) {
+  const storagePath = buildChatTrustedDevicesStoragePath(viewer.tenantId, viewer.userId);
+  const file = getChatBucket().file(storagePath);
+  const [exists] = await file.exists();
+
+  if (!exists) {
+    return [];
+  }
+
+  try {
+    const [buffer] = await file.download();
+    return normalizeChatTrustedDevices(viewer, JSON.parse(buffer.toString("utf8")), currentDeviceId);
+  } catch {
+    return [];
+  }
+}
+
+async function saveChatTrustedDeviceItems(viewer, items, currentDeviceId = null) {
+  const normalizedItems = normalizeChatTrustedDevices(viewer, { items }, currentDeviceId);
+  const storagePath = buildChatTrustedDevicesStoragePath(viewer.tenantId, viewer.userId);
+  await getChatBucket().file(storagePath).save(Buffer.from(JSON.stringify({ items: normalizedItems }), "utf8"), {
+    resumable: false,
+    metadata: {
+      contentType: "application/json; charset=utf-8",
+      cacheControl: "private, max-age=0, no-cache"
+    }
+  });
+
+  return normalizedItems;
+}
+
+export async function listChatTrustedDevices(viewer, currentDeviceId = null) {
+  const items = await getChatTrustedDeviceItems(viewer, currentDeviceId);
+  return {
+    items: items.filter((item) => !item.revokedAt)
+  };
+}
+
+export async function registerChatTrustedDevice(viewer, payload) {
+  const deviceId = normalizeString(payload?.deviceId) ?? randomUUID();
+  const label = normalizeString(payload?.label);
+  const publicKey = normalizeString(payload?.publicKey);
+  if (!label || !publicKey) {
+    throw new ChatSecurityError(400, "INVALID_TRUSTED_DEVICE", "Device label and public key are required.");
+  }
+
+  const viewerIdentity = await getChatIdentityByUser({
+    tenantId: viewer.tenantId,
+    userId: viewer.userId
+  });
+  if (!viewerIdentity) {
+    throw new ChatSecurityError(409, "CHAT_KEY_REQUIRED", "Set up end-to-end encrypted chat before trusting this device.");
+  }
+
+  if (publicKey !== viewerIdentity.publicKey) {
+    throw new ChatSecurityError(409, "DEVICE_IDENTITY_MISMATCH", "Trusted device key does not match your active E2EE identity.");
+  }
+
+  const now = new Date().toISOString();
+  const existingItems = await getChatTrustedDeviceItems(viewer, deviceId);
+  const existing = existingItems.find((item) => item.id === deviceId) ?? null;
+  const item = normalizeChatTrustedDeviceRecord(
+    viewer,
+    {
+      id: deviceId,
+      label,
+      platform: payload?.platform,
+      publicKey,
+      addedAt: existing?.addedAt ?? now,
+      lastSeenAt: now,
+      revokedAt: null
+    },
+    deviceId
+  );
+
+  if (!item) {
+    throw new ChatSecurityError(400, "INVALID_TRUSTED_DEVICE", "Device data is incomplete.");
+  }
+
+  const nextItems = existingItems.filter((entry) => entry.id !== deviceId);
+  nextItems.unshift(item);
+  const items = (await saveChatTrustedDeviceItems(viewer, nextItems, deviceId)).filter((entry) => !entry.revokedAt);
+
+  return {
+    item,
+    items
+  };
+}
+
+export async function revokeChatTrustedDevice(viewer, deviceId) {
+  const normalizedDeviceId = normalizeString(deviceId);
+  if (!normalizedDeviceId) {
+    throw new ChatSecurityError(400, "INVALID_TRUSTED_DEVICE", "Choose a valid trusted device to remove.");
+  }
+
+  const existingItems = await getChatTrustedDeviceItems(viewer, normalizedDeviceId);
+  const existing = existingItems.find((item) => item.id === normalizedDeviceId && !item.revokedAt);
+  if (!existing) {
+    throw new ChatSecurityError(404, "TRUSTED_DEVICE_NOT_FOUND", "This trusted device is not active.");
+  }
+
+  const now = new Date().toISOString();
+  const nextItems = existingItems.map((item) =>
+    item.id === normalizedDeviceId
+      ? {
+          ...item,
+          revokedAt: now,
+          lastSeenAt: now,
+          isCurrentDevice: false
+        }
+      : item
+  );
+  const items = (await saveChatTrustedDeviceItems(viewer, nextItems, normalizedDeviceId)).filter((item) => !item.revokedAt);
+
+  return {
+    deviceId: normalizedDeviceId,
+    items
+  };
+}
+
+async function readChatDevicePairingSession(viewer, pairingId) {
+  const normalizedPairingId = normalizeString(pairingId);
+  if (!normalizedPairingId) {
+    throw new ChatSecurityError(400, "INVALID_DEVICE_PAIRING", "Choose a valid device pairing session.");
+  }
+
+  const storagePath = buildChatDevicePairingStoragePath(viewer.tenantId, viewer.userId, normalizedPairingId);
+  const file = getChatBucket().file(storagePath);
+  const [exists] = await file.exists();
+  if (!exists) {
+    throw new ChatSecurityError(404, "DEVICE_PAIRING_NOT_FOUND", "This device pairing session was not found.");
+  }
+
+  try {
+    const [buffer] = await file.download();
+    const pairing = normalizeChatDevicePairingSession(viewer, JSON.parse(buffer.toString("utf8")));
+    if (!pairing) {
+      throw new Error("Invalid pairing payload.");
+    }
+    return pairing;
+  } catch (error) {
+    if (error instanceof ChatSecurityError) {
+      throw error;
+    }
+    throw new ChatSecurityError(410, "DEVICE_PAIRING_INVALID", "This device pairing session is no longer usable.");
+  }
+}
+
+async function listChatDevicePairingSessions(viewer) {
+  const prefix = `chat/${viewer.tenantId}/users/${viewer.userId}/device-pairings/`;
+  const [files] = await getChatBucket().getFiles({ prefix });
+  const sessions = [];
+
+  await runInBatches(files, 20, async (file) => {
+    try {
+      const [buffer] = await file.download();
+      const pairing = normalizeChatDevicePairingSession(viewer, JSON.parse(buffer.toString("utf8")));
+      if (pairing) {
+        sessions.push(pairing);
+      }
+    } catch {
+      // Ignore stale or invalid pairing records while searching for a short code.
+    }
+  });
+
+  return sessions;
+}
+
+async function readChatDevicePairingSessionByCode(viewer, pairingCode) {
+  const normalizedCode = normalizeChatDevicePairingCode(pairingCode);
+  if (!normalizedCode) {
+    throw new ChatSecurityError(400, "INVALID_DEVICE_PAIRING_CODE", "Enter the 6-digit pairing code.");
+  }
+
+  const sessions = await listChatDevicePairingSessions(viewer);
+  const pairing = sessions
+    .filter((item) => item.pairingCode === normalizedCode && item.status === "pending")
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+
+  if (!pairing) {
+    throw new ChatSecurityError(404, "DEVICE_PAIRING_CODE_NOT_FOUND", "No pending device request matches this code.");
+  }
+
+  return pairing;
+}
+
+async function saveChatDevicePairingSession(viewer, payload) {
+  const pairing = normalizeChatDevicePairingSession(viewer, payload);
+  if (!pairing) {
+    throw new ChatSecurityError(400, "INVALID_DEVICE_PAIRING", "Device pairing session data is incomplete.");
+  }
+
+  const storagePath = buildChatDevicePairingStoragePath(viewer.tenantId, viewer.userId, pairing.id);
+  await getChatBucket().file(storagePath).save(Buffer.from(JSON.stringify(pairing), "utf8"), {
+    resumable: false,
+    metadata: {
+      contentType: "application/json; charset=utf-8",
+      cacheControl: "private, max-age=0, no-cache"
+    }
+  });
+
+  return pairing;
+}
+
+export async function createChatDevicePairingSession(viewer, payload) {
+  const requesterDeviceId = normalizeString(payload?.requesterDeviceId);
+  const requesterLabel = normalizeString(payload?.requesterLabel);
+  const requesterPublicKey = normalizeString(payload?.requesterPublicKey);
+  if (!requesterDeviceId || !requesterLabel || !requesterPublicKey) {
+    throw new ChatSecurityError(400, "INVALID_DEVICE_PAIRING", "Device pairing request is incomplete.");
+  }
+
+  const viewerIdentity = await getChatIdentityByUser({
+    tenantId: viewer.tenantId,
+    userId: viewer.userId
+  });
+  if (!viewerIdentity) {
+    throw new ChatSecurityError(409, "CHAT_KEY_REQUIRED", "Set up end-to-end encrypted chat before pairing devices.");
+  }
+
+  const now = new Date();
+  const activePairingCodes = new Set(
+    (await listChatDevicePairingSessions(viewer))
+      .filter((item) => item.status === "pending")
+      .map((item) => item.pairingCode)
+      .filter(Boolean)
+  );
+  let pairingCode = generateChatDevicePairingCode();
+  for (let attempt = 0; activePairingCodes.has(pairingCode) && attempt < 8; attempt += 1) {
+    pairingCode = generateChatDevicePairingCode();
+  }
+
+  const pairing = await saveChatDevicePairingSession(viewer, {
+    id: randomUUID(),
+    pairingCode,
+    requesterDeviceId,
+    requesterLabel,
+    requesterPlatform: payload?.requesterPlatform,
+    requesterPublicKey,
+    status: "pending",
+    createdAt: now.toISOString(),
+    expiresAt: new Date(now.getTime() + CHAT_DEVICE_PAIRING_TTL_MS).toISOString(),
+    approvedAt: null,
+    claimedAt: null,
+    approverDeviceId: null,
+    approverLabel: null,
+    transferEnvelope: null
+  });
+
+  return {
+    pairing
+  };
+}
+
+export async function getChatDevicePairingSession(viewer, pairingId) {
+  return {
+    pairing: await readChatDevicePairingSession(viewer, pairingId)
+  };
+}
+
+export async function getChatDevicePairingSessionByCode(viewer, pairingCode) {
+  return {
+    pairing: await readChatDevicePairingSessionByCode(viewer, pairingCode)
+  };
+}
+
+export async function approveChatDevicePairingSession(viewer, pairingId, payload) {
+  const pairing = await readChatDevicePairingSession(viewer, pairingId);
+  if (pairing.status !== "pending") {
+    throw new ChatSecurityError(409, "DEVICE_PAIRING_NOT_PENDING", "This device pairing session is not waiting for approval.");
+  }
+
+  const approverDeviceId = normalizeString(payload?.approverDeviceId);
+  const approverLabel = normalizeString(payload?.approverLabel);
+  const transferEnvelope = normalizeChatDevicePairingTransferEnvelope(payload?.transferEnvelope);
+  if (!approverDeviceId || !approverLabel || !transferEnvelope) {
+    throw new ChatSecurityError(400, "INVALID_DEVICE_PAIRING_APPROVAL", "Device pairing approval is incomplete.");
+  }
+
+  if (transferEnvelope.recipientPublicKey !== pairing.requesterPublicKey) {
+    throw new ChatSecurityError(409, "DEVICE_PAIRING_KEY_MISMATCH", "Pairing transfer is not sealed for the requesting device.");
+  }
+
+  const viewerIdentity = await getChatIdentityByUser({
+    tenantId: viewer.tenantId,
+    userId: viewer.userId
+  });
+  if (!viewerIdentity || transferEnvelope.senderPublicKey !== viewerIdentity.publicKey) {
+    throw new ChatSecurityError(409, "DEVICE_PAIRING_IDENTITY_MISMATCH", "Pairing transfer does not match your active E2EE identity.");
+  }
+
+  const trustedDevices = await getChatTrustedDeviceItems(viewer, approverDeviceId);
+  const approver = trustedDevices.find((item) => item.id === approverDeviceId && !item.revokedAt);
+  if (!approver) {
+    throw new ChatSecurityError(403, "TRUSTED_DEVICE_REQUIRED", "Only an already trusted device can approve a new device.");
+  }
+
+  const nextPairing = await saveChatDevicePairingSession(viewer, {
+    ...pairing,
+    status: "approved",
+    approvedAt: new Date().toISOString(),
+    approverDeviceId,
+    approverLabel,
+    transferEnvelope
+  });
+
+  return {
+    pairing: nextPairing
+  };
+}
+
+export async function claimChatDevicePairingSession(viewer, pairingId) {
+  const pairing = await readChatDevicePairingSession(viewer, pairingId);
+  if (pairing.status !== "approved" || !pairing.transferEnvelope) {
+    throw new ChatSecurityError(409, "DEVICE_PAIRING_NOT_APPROVED", "This device pairing session is not ready to claim.");
+  }
+
+  const nextPairing = await saveChatDevicePairingSession(viewer, {
+    ...pairing,
+    status: "claimed",
+    claimedAt: new Date().toISOString()
+  });
+
+  return {
+    pairing: nextPairing
   };
 }
 
@@ -2109,7 +2634,7 @@ export async function createOrGetDirectConversation(viewer, input) {
   }
 
   const access = conversation ? await waitForConversationAccess(viewer, conversation.id, created ? 8 : 8) : null;
-  const [peerIdentity, viewerIdentity] = await Promise.all([
+  const [peerIdentity, viewerIdentity, peerPrivacySettings] = await Promise.all([
     getChatIdentityByUser({
       tenantId: viewer.tenantId,
       userId: recipientProfile.userId
@@ -2117,8 +2642,14 @@ export async function createOrGetDirectConversation(viewer, input) {
     getChatIdentityByUser({
       tenantId: viewer.tenantId,
       userId: viewer.userId
+    }),
+    getChatPrivacySettings({
+      tenantId: viewer.tenantId,
+      userId: recipientProfile.userId
     })
   ]);
+  const peerPresence = await getVisiblePeerPresence(viewer, recipientProfile.userId, peerPrivacySettings);
+  const canExposePeerReadReceipts = canExposeChatReadReceipts(peerPrivacySettings);
 
   if (!conversation) {
     throw new Error("We could not open this conversation right now.");
@@ -2131,7 +2662,7 @@ export async function createOrGetDirectConversation(viewer, input) {
         id: conversation.id,
         tenantId: conversation.tenantId,
         kind: "direct",
-        peer: buildPeerSummary(recipientProfile, peerIdentity),
+        peer: buildPeerSummary(recipientProfile, peerIdentity, peerPresence),
         messages: [],
         lastReadMessageId: null,
         lastReadAt: null,
@@ -2148,12 +2679,15 @@ export async function createOrGetDirectConversation(viewer, input) {
       id: access.conversation.id,
       tenantId: access.conversation.tenantId,
       kind: "direct",
-      peer: buildPeerSummary(recipientProfile, peerIdentity),
+      peer: buildPeerSummary(recipientProfile, peerIdentity, peerPresence),
       messages: [],
       lastReadMessageId: access.viewerParticipant.lastReadMessageId ?? null,
       lastReadAt: access.viewerParticipant.lastReadAt ? toIsoString(access.viewerParticipant.lastReadAt) : null,
-      peerLastReadMessageId: access.peerParticipant.lastReadMessageId ?? null,
-      peerLastReadAt: access.peerParticipant.lastReadAt ? toIsoString(access.peerParticipant.lastReadAt) : null
+      peerLastReadMessageId: canExposePeerReadReceipts ? access.peerParticipant.lastReadMessageId ?? null : null,
+      peerLastReadAt:
+        canExposePeerReadReceipts && access.peerParticipant.lastReadAt
+          ? toIsoString(access.peerParticipant.lastReadAt)
+          : null
     },
     viewerIdentity
   };
@@ -2165,7 +2699,7 @@ export async function getChatConversation(viewer, conversationId) {
     return null;
   }
 
-  const [viewerIdentity, peerProfile, peerIdentity, rawMessages, rawReactions, hiddenState, peerPresence] = await Promise.all([
+  const [viewerIdentity, peerProfile, peerIdentity, rawMessages, rawReactions, hiddenState, peerPrivacySettings] = await Promise.all([
     getChatIdentityByUser({
       tenantId: viewer.tenantId,
       userId: viewer.userId
@@ -2181,13 +2715,13 @@ export async function getChatConversation(viewer, conversationId) {
     listChatMessagesByConversation(conversationId),
     listChatMessageReactionsByConversation(conversationId),
     getHiddenChatMessageState(viewer),
-    Promise.resolve(
-      getChatPresenceSnapshot({
-        tenantId: viewer.tenantId,
-        userId: access.peerParticipant.userId
-      })
-    )
+    getChatPrivacySettings({
+      tenantId: viewer.tenantId,
+      userId: access.peerParticipant.userId
+    })
   ]);
+  const peerPresence = await getVisiblePeerPresence(viewer, access.peerParticipant.userId, peerPrivacySettings);
+  const canExposePeerReadReceipts = canExposeChatReadReceipts(peerPrivacySettings);
 
   const reactionsByMessageId = buildReactionsMap(rawReactions);
   const hiddenMessageIds = new Set(hiddenState.hiddenMessageIds);
@@ -2206,8 +2740,11 @@ export async function getChatConversation(viewer, conversationId) {
       messages: hydratedMessages,
       lastReadMessageId: access.viewerParticipant.lastReadMessageId ?? null,
       lastReadAt: access.viewerParticipant.lastReadAt ? toIsoString(access.viewerParticipant.lastReadAt) : null,
-      peerLastReadMessageId: access.peerParticipant.lastReadMessageId ?? null,
-      peerLastReadAt: access.peerParticipant.lastReadAt ? toIsoString(access.peerParticipant.lastReadAt) : null
+      peerLastReadMessageId: canExposePeerReadReceipts ? access.peerParticipant.lastReadMessageId ?? null : null,
+      peerLastReadAt:
+        canExposePeerReadReceipts && access.peerParticipant.lastReadAt
+          ? toIsoString(access.peerParticipant.lastReadAt)
+          : null
     }
   };
 }
@@ -2227,14 +2764,17 @@ export async function sendChatMessage(viewer, conversationId, payload) {
     throw new Error("Set up secure chat before sending a message.");
   }
 
+  if (payload.messageKind === "system") {
+    throw new ChatSecurityError(403, "SYSTEM_MESSAGE_FORBIDDEN", "System chat messages can only be created by trusted server workflows.");
+  }
+
   const messageKind =
     payload.messageKind === "image" ||
     payload.messageKind === "vibe_card" ||
     payload.messageKind === "event_card" ||
     payload.messageKind === "deal_card" ||
     payload.messageKind === "profile_card" ||
-    payload.messageKind === "game_invite_card" ||
-    payload.messageKind === "system"
+    payload.messageKind === "game_invite_card"
       ? payload.messageKind
       : "text";
   const cipherText = normalizeString(payload.cipherText);
@@ -2431,6 +2971,22 @@ export async function migrateChatConversationEncryption(viewer, conversationId, 
       throw new Error("One of the encryption updates is incomplete.");
     }
 
+    if (source.senderMembershipId !== viewer.membershipId) {
+      throw new ChatSecurityError(
+        403,
+        "CHAT_MIGRATION_OWNER_REQUIRED",
+        "Only the original sender can upgrade a message encryption envelope."
+      );
+    }
+
+    if (source.messageKind === "system" || source.attachmentUrl) {
+      throw new ChatSecurityError(
+        400,
+        "CHAT_MIGRATION_UNSUPPORTED",
+        "Only sender-owned text messages can be upgraded automatically."
+      );
+    }
+
     return {
       id: messageId,
       cipherText,
@@ -2472,7 +3028,7 @@ export async function migrateChatConversationEncryption(viewer, conversationId, 
   };
 }
 
-export async function markChatConversationRead(viewer, conversationId, messageId) {
+export async function markChatConversationRead(viewer, conversationId, messageId, options = {}) {
   const access = await resolveConversationAccess(viewer, conversationId);
   if (!access) {
     throw new Error("We could not find that conversation.");
@@ -2492,23 +3048,28 @@ export async function markChatConversationRead(viewer, conversationId, messageId
   });
 
   const readAt = new Date().toISOString();
+  const viewerPrivacySettings = await getChatPrivacySettings(viewer);
+  const receiptExposed = canExposeChatReadReceipts(viewerPrivacySettings) && options.exposeReceipt !== false;
 
-  emitChatRealtimeEvent({
-    conversationId,
-    type: "chat.read",
-    payload: {
+  if (receiptExposed) {
+    emitChatRealtimeEvent({
       conversationId,
-      userId: viewer.userId,
-      membershipId: viewer.membershipId,
-      messageId,
-      readAt
-    }
-  });
+      type: "chat.read",
+      payload: {
+        conversationId,
+        userId: viewer.userId,
+        membershipId: viewer.membershipId,
+        messageId,
+        readAt
+      }
+    });
+  }
 
   return {
     conversationId,
     messageId,
-    readAt
+    readAt,
+    receiptExposed
   };
 }
 
@@ -2878,6 +3439,7 @@ export async function resetTenantChatData(tenantId) {
 
           return [
             buildChatKeyBackupStoragePath(normalizedTenantId, userId),
+            buildChatTrustedDevicesStoragePath(normalizedTenantId, userId),
             buildChatKeyBackupPinAttemptStoragePath(normalizedTenantId, userId),
             buildChatHiddenMessageStoragePath(normalizedTenantId, userId)
           ];
@@ -2953,6 +3515,10 @@ export async function uploadEncryptedChatAttachment(viewer, payload) {
   const height = Number.isFinite(Number(payload.height)) ? Math.max(1, Math.round(Number(payload.height))) : null;
   const durationMs = normalizeDurationMs(payload.durationMs);
   const viewOnce = payload?.viewOnce === true;
+  const cipherAlgorithm = normalizeString(payload.cipherAlgorithm);
+  const cipherIv = normalizeString(payload.cipherIv);
+  const senderPublicKey = normalizeString(payload.senderPublicKey);
+  const recipientPublicKey = normalizeString(payload.recipientPublicKey);
 
   if (!mimeType || !SUPPORTED_CHAT_ATTACHMENT_MIME_TYPES.has(mimeType)) {
     throw new Error("Only image and video attachments are supported right now.");
@@ -2960,6 +3526,15 @@ export async function uploadEncryptedChatAttachment(viewer, payload) {
 
   if (typeof payload.base64Data !== "string" || !payload.base64Data.trim()) {
     throw new Error("Encrypted attachment bytes are missing.");
+  }
+
+  if (
+    cipherAlgorithm !== CHAT_ATTACHMENT_CIPHER_ALGORITHM ||
+    !cipherIv ||
+    !senderPublicKey ||
+    !recipientPublicKey
+  ) {
+    throw new ChatSecurityError(400, "INVALID_ATTACHMENT_ENCRYPTION", "Encrypt chat media before uploading it.");
   }
 
   const buffer = Buffer.from(payload.base64Data, "base64");
@@ -2997,6 +3572,10 @@ export async function uploadEncryptedChatAttachment(viewer, payload) {
         assetId,
         originalMimeType: mimeType,
         originalFileName: fileName,
+        cipherAlgorithm,
+        cipherIv,
+        senderPublicKey,
+        recipientPublicKey,
         ...(viewOnce ? { viewOnce: "true" } : {}),
         ...(durationMs != null ? { originalDurationMs: String(durationMs) } : {})
       }
@@ -3013,7 +3592,11 @@ export async function uploadEncryptedChatAttachment(viewer, payload) {
       width,
       height,
       durationMs,
-      viewOnce
+      viewOnce,
+      cipherAlgorithm,
+      cipherIv,
+      senderPublicKey,
+      recipientPublicKey
     }
   };
 }

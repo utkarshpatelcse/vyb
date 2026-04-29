@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { uploadEncryptedChatAttachment } from "../../../../src/lib/backend";
+import { isBackendRequestError, uploadEncryptedChatAttachment } from "../../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../../src/lib/dev-session";
 
 function buildError(status: number, code: string, message: string) {
@@ -29,6 +29,10 @@ export async function POST(request: Request) {
   const height = formData.get("height");
   const durationMs = formData.get("durationMs");
   const viewOnce = formData.get("viewOnce");
+  const cipherAlgorithm = formData.get("cipherAlgorithm");
+  const cipherIv = formData.get("cipherIv");
+  const senderPublicKey = formData.get("senderPublicKey");
+  const recipientPublicKey = formData.get("recipientPublicKey");
 
   if (!isFileEntry(file) || file.size <= 0) {
     return buildError(400, "INVALID_FILE", "Choose encrypted media before uploading.");
@@ -42,11 +46,19 @@ export async function POST(request: Request) {
       width: typeof width === "string" ? Number(width) : null,
       height: typeof height === "string" ? Number(height) : null,
       durationMs: typeof durationMs === "string" ? Number(durationMs) : null,
-      viewOnce: viewOnce === "true"
+      viewOnce: viewOnce === "true",
+      cipherAlgorithm: typeof cipherAlgorithm === "string" ? cipherAlgorithm : "",
+      cipherIv: typeof cipherIv === "string" ? cipherIv : "",
+      senderPublicKey: typeof senderPublicKey === "string" ? senderPublicKey : "",
+      recipientPublicKey: typeof recipientPublicKey === "string" ? recipientPublicKey : ""
     });
 
     return NextResponse.json(payload, { status: 201 });
   } catch (error) {
+    if (isBackendRequestError(error)) {
+      return buildError(error.statusCode, error.code, error.message);
+    }
+
     return buildError(500, "CHAT_MEDIA_UPLOAD_FAILED", error instanceof Error ? error.message : "We could not upload that encrypted media.");
   }
 }

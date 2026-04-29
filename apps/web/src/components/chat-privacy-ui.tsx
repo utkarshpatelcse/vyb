@@ -1,9 +1,10 @@
 "use client";
 
-import type { ChatServerPinAttemptState } from "@vyb/contracts";
+import type { ChatDevicePairingSession, ChatServerPinAttemptState, ChatTrustedDeviceRecord } from "@vyb/contracts";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import QRCode from "qrcode";
+import { useEffect, useState, type ReactNode } from "react";
 
 type ChatPrivacyModal = "create-backup" | "change-pin" | "verify-recovery" | null;
 type StatusTone = "secured" | "warning" | "risk";
@@ -53,6 +54,8 @@ type ChatPrivacyUIProps = {
   onViewPhrasePinChange: (value: string) => void;
   restoreSecret: string;
   onRestoreSecretChange: (value: string) => void;
+  pairingCodeInput: string;
+  onPairingCodeInputChange: (value: string) => void;
   revealedRecoveryPhrase: string | null;
   onHideRecoveryPhrase: () => void;
   onCopyRecoveryPhrase: () => void;
@@ -65,11 +68,20 @@ type ChatPrivacyUIProps = {
   backupNeedsUpgrade: boolean;
   activeLockoutCountdown: string;
   attemptState: ChatServerPinAttemptState | null;
+  trustedDevices: ChatTrustedDeviceRecord[];
+  devicePairing: ChatDevicePairingSession | null;
+  devicePairingLink: string | null;
+  incomingPairing: ChatDevicePairingSession | null;
   onCreateIdentity: () => void;
   onCreateBackup: () => void;
   onChangePin: () => void;
   onViewRecoveryPhrase: () => void;
   onRestoreLocalKey: () => void;
+  onRefreshTrustedDevices: () => void;
+  onRevokeTrustedDevice: (deviceId: string) => void;
+  onStartDevicePairing: () => void;
+  onApproveDevicePairing: () => void;
+  onLoadDevicePairingCode: () => void;
   lastBackupUpdatedLabel: string;
 };
 
@@ -170,6 +182,85 @@ function SessionToneBadge({ tone }: { tone: ChatPrivacyUIProps["secureSessionTon
   );
 }
 
+function formatDeviceLastSeen(value: string | null | undefined) {
+  if (!value) {
+    return "recently";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "recently";
+  }
+
+  return date.toLocaleString("en-IN", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
+function PairingQrCode({ value, showLinkActions = true }: { value: string; showLinkActions?: boolean }) {
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void QRCode.toDataURL(value, {
+      errorCorrectionLevel: "M",
+      margin: 2,
+      width: 220,
+      color: {
+        dark: "#020617",
+        light: "#ffffff"
+      }
+    })
+      .then((dataUrl) => {
+        if (!cancelled) {
+          setQrDataUrl(dataUrl);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setQrDataUrl(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [value]);
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div className="vyb-chat-privacy-pairing-qr-wrap">
+      <div className="vyb-chat-privacy-pairing-qr" aria-label="Device pairing QR code">
+        {qrDataUrl ? <img src={qrDataUrl} alt="Device pairing QR code" /> : <span>QR loading</span>}
+      </div>
+      {showLinkActions && (
+        <div className="vyb-chat-privacy-pairing-actions">
+          <a className="vyb-cp-btn-ghost" href={value}>
+            Open link
+          </a>
+          <button type="button" className="vyb-cp-btn-ghost" onClick={() => void copyLink()}>
+            {copied ? "Copied" : "Copy link"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StatusIcon({ icon }: { icon: StatusCard["icon"] }) {
   if (icon === "cloud") {
     return <CloudIcon />;
@@ -247,12 +338,12 @@ function buildStatusCards(props: ChatPrivacyUIProps): StatusCard[] {
   return [
     {
       title: "Vault",
-      label: props.hasCompatibleLocalChatKey ? "This browser is ready" : props.hasViewerIdentity ? "Restore needed" : "Setup needed",
+      label: props.hasCompatibleLocalChatKey ? "This device is ready" : props.hasViewerIdentity ? "Restore needed" : "Setup needed",
       detail: props.hasCompatibleLocalChatKey
-        ? "Your private chat key is already sealed locally inside this browser."
+        ? "Your private chat key is already sealed locally on this device."
         : props.hasViewerIdentity
-          ? "Your account already has chat identity data, but this browser needs the local key restored."
-          : "Create the secure session once on this browser before backup or restore can work.",
+          ? "Your account already has chat identity data, but this device needs the local key restored."
+          : "Create the secure session once on this device before backup or restore can work.",
       tone: props.hasCompatibleLocalChatKey ? "secured" : props.hasViewerIdentity ? "warning" : "risk",
       icon: "shield"
     },
@@ -261,7 +352,7 @@ function buildStatusCards(props: ChatPrivacyUIProps): StatusCard[] {
       label: props.hasRemoteBackup ? "Cloud backup synced" : "Backup missing",
       detail: props.hasRemoteBackup
         ? `Encrypted backup last sealed ${props.lastBackupUpdatedLabel}.`
-        : "Set one 6-digit PIN to create the first encrypted backup for restore later.",
+        : "Create a backup fallback after this device is trusted.",
       tone: props.hasRemoteBackup ? "secured" : "warning",
       icon: "cloud"
     },
@@ -272,7 +363,7 @@ function buildStatusCards(props: ChatPrivacyUIProps): StatusCard[] {
         ? "Your 24-word recovery phrase appears only after the first backup is created."
         : props.backupNeedsUpgrade
           ? "This backup uses the older format. Change the PIN once to reseal the phrase envelope."
-          : "Viewing the phrase always requires PIN verification on this browser.",
+          : "Viewing the phrase always requires PIN verification on this device.",
       tone: !props.hasRemoteBackup ? "risk" : props.backupNeedsUpgrade ? "warning" : "secured",
       icon: "key"
     }
@@ -284,7 +375,7 @@ function buildGuidanceCard(props: ChatPrivacyUIProps): GuidanceCard {
     return {
       kicker: "Step 1",
       title: "Create your secure session first",
-      detail: "This browser does not have a usable chat identity yet. Create it once, then you can set a PIN or make a backup.",
+      detail: "This device does not have a usable chat identity yet. Create it once, then you can set a PIN or make a backup.",
       tone: "risk",
       primaryAction: { label: "Create secure session", kind: "create-identity" }
     };
@@ -293,8 +384,8 @@ function buildGuidanceCard(props: ChatPrivacyUIProps): GuidanceCard {
   if (!props.hasCompatibleLocalChatKey && props.hasRemoteBackup) {
     return {
       kicker: "Do this now",
-      title: "Restore this browser before opening chats",
-      detail: "Your account already has an encrypted backup. Enter your 6-digit PIN or full 24-word phrase below, then tap Restore this browser.",
+      title: "Pair this device before opening chats",
+      detail: "Use trusted-device pairing first. PIN or recovery phrase restore is available below only as a fallback.",
       tone: "warning",
       primaryAction: { label: "Go to restore", kind: "anchor-restore" },
       secondaryAction: { label: "Refresh secure session", kind: "create-identity" }
@@ -304,10 +395,10 @@ function buildGuidanceCard(props: ChatPrivacyUIProps): GuidanceCard {
   if (!props.hasRemoteBackup) {
     return {
       kicker: "Step 2",
-      title: "Set your first 6-digit PIN",
-      detail: "PIN is only for backup and restore. Create the first encrypted backup now so this account can be recovered after sign-out, browser reset, or device change.",
+      title: "Create backup fallback",
+      detail: "Trusted devices are the easy path. Add a backup PIN only for account recovery after every trusted device is lost.",
       tone: "warning",
-      primaryAction: { label: "Set first PIN", kind: "create-backup" }
+      primaryAction: { label: "Create fallback", kind: "create-backup" }
     };
   }
 
@@ -324,8 +415,8 @@ function buildGuidanceCard(props: ChatPrivacyUIProps): GuidanceCard {
   if (!props.hasCompatibleLocalChatKey) {
     return {
       kicker: "Recovery needed",
-      title: "Bring the local key back to this browser",
-      detail: "Your identity exists but this browser still cannot decrypt. Use your PIN or recovery phrase in the restore box below.",
+      title: "Bring the local key back to this device",
+      detail: "Your identity exists but this device still cannot decrypt. Start trusted-device pairing below.",
       tone: "warning",
       primaryAction: { label: "Go to restore", kind: "anchor-restore" }
     };
@@ -334,7 +425,7 @@ function buildGuidanceCard(props: ChatPrivacyUIProps): GuidanceCard {
   return {
     kicker: "All set",
     title: "Your secure chat setup is ready",
-    detail: "This browser already has a local key, a cloud backup, and a sealed recovery phrase flow. You can open chats now or manage the backup below.",
+    detail: "This device already has a local key, a cloud backup, and a sealed recovery phrase flow. You can open chats now or manage the backup below.",
     tone: "secured",
     primaryAction: { label: "Change PIN", kind: "change-pin" },
     secondaryAction: { label: "View recovery phrase", kind: "verify-recovery" }
@@ -342,6 +433,7 @@ function buildGuidanceCard(props: ChatPrivacyUIProps): GuidanceCard {
 }
 
 export function ChatPrivacyUI(props: ChatPrivacyUIProps) {
+  const [fallbackOpen, setFallbackOpen] = useState(false);
   const lockoutActive = Boolean(props.activeLockoutCountdown);
   const attemptsLabel = props.attemptState
     ? props.attemptState.isLocked
@@ -351,10 +443,16 @@ export function ChatPrivacyUI(props: ChatPrivacyUIProps) {
 
   const sessionStatus =
     props.secureSessionTone === "ready" ? "Active" :
-    props.secureSessionTone === "restore" ? "Restore" : "Setup";
+    props.secureSessionTone === "restore" ? "Pair device" : "Setup";
   const sessionPulse =
     props.secureSessionTone === "ready" ? "secured" :
     props.secureSessionTone === "restore" ? "warning" : "risk";
+  const isApprovingDevice = Boolean(props.incomingPairing);
+  const pairingActionLabel = props.hasCompatibleLocalChatKey ? "Create pairing link" : "Start pairing";
+  const activeTrustedDevices = props.trustedDevices.filter((device) => !device.revokedAt);
+  const pairingCode = props.devicePairing?.pairingCode ?? null;
+  const recoveryOnly = !props.hasCompatibleLocalChatKey && activeTrustedDevices.length === 0;
+  const showRecoveryFallback = props.hasRemoteBackup && (fallbackOpen || recoveryOnly || props.busyAction === "restore-device");
 
   return (
     <>
@@ -386,15 +484,15 @@ export function ChatPrivacyUI(props: ChatPrivacyUIProps) {
         >
           <div className="vyb-chat-privacy-snapshot-card">
             <span>Local</span>
-            <strong>{props.hasCompatibleLocalChatKey ? "Encrypted" : "Not ready"}</strong>
+            <strong>{props.hasCompatibleLocalChatKey ? "Encrypted" : recoveryOnly ? "Needs recovery" : props.hasViewerIdentity ? "Needs pairing" : "Not ready"}</strong>
           </div>
           <div className="vyb-chat-privacy-snapshot-card">
             <span>Cloud</span>
             <strong>{props.hasRemoteBackup ? "Synced" : "Missing"}</strong>
           </div>
           <div className="vyb-chat-privacy-snapshot-card">
-            <span>E2EE</span>
-            <strong>v2.1</strong>
+            <span>Devices</span>
+            <strong>{props.trustedDevices.length > 0 ? `${props.trustedDevices.length} trusted` : "Pending"}</strong>
           </div>
         </motion.div>
 
@@ -422,7 +520,7 @@ export function ChatPrivacyUI(props: ChatPrivacyUIProps) {
             <LockIcon />
             <div>
               <strong>PIN locked for {props.activeLockoutCountdown}</strong>
-              <span>Server-side rate limit — clearing browser data won&apos;t bypass this.</span>
+              <span>Server-side rate limit. Clearing app data won&apos;t bypass this.</span>
             </div>
           </div>
         )}
@@ -430,104 +528,343 @@ export function ChatPrivacyUI(props: ChatPrivacyUIProps) {
         {/* ── MAIN SECTIONS ── */}
         <main className="vyb-chat-privacy-card-grid">
 
-          {/* Security PIN */}
-          <motion.section
-            className="vyb-chat-privacy-card"
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.26, delay: 0.08 }}
-          >
-            <div className="vyb-cp-row">
-              <div className="vyb-cp-row-copy">
-                <h3>Security PIN</h3>
-                <p>Critical for device recovery. Losing this PIN will result in permanent chat loss.</p>
-              </div>
-              {!props.hasRemoteBackup ? (
-                <button
-                  type="button"
-                  className="vyb-cp-btn-white"
-                  onClick={() => props.setActiveModal("create-backup")}
-                  disabled={props.busyAction === "create-backup"}
-                >
-                  {props.busyAction === "create-backup" ? "Sealing…" : "Set PIN"}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="vyb-cp-btn-white"
-                  onClick={() => props.setActiveModal("change-pin")}
-                  disabled={props.busyAction === "change-pin"}
-                >
-                  {props.busyAction === "change-pin" ? "Saving…" : "Update"}
-                </button>
-              )}
-            </div>
-            <div className="vyb-cp-shield-bar">
-              <span>Identity Brute-force Shield:</span>
-              <span className="vyb-cp-shield-value">{attemptsLabel}</span>
-            </div>
-          </motion.section>
-
-          {/* Recovery Phrase */}
-          <motion.section
-            className="vyb-chat-privacy-card vyb-cp-inline"
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.26, delay: 0.11 }}
-          >
-            <div className="vyb-cp-row-copy">
-              <h3>Recovery Phrase</h3>
-              <p>24-word master cryptographic fallback.</p>
-            </div>
-            {props.backupNeedsUpgrade ? (
-              <button
-                type="button"
-                className="vyb-cp-btn-ghost"
-                onClick={() => props.setActiveModal("change-pin")}
+          {props.hasCompatibleLocalChatKey && (
+            <>
+              {/* Backup PIN */}
+              <motion.section
+                className="vyb-chat-privacy-card"
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.26, delay: 0.08 }}
               >
-                Upgrade
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="vyb-cp-btn-ghost"
-                onClick={() => props.setActiveModal("verify-recovery")}
-                disabled={!props.hasRemoteBackup}
-              >
-                Reveal
-              </button>
-            )}
-          </motion.section>
+                <div className="vyb-cp-row">
+                  <div className="vyb-cp-row-copy">
+                    <h3>Backup PIN</h3>
+                    <p>Fallback for account recovery after every trusted device is lost.</p>
+                  </div>
+                  {!props.hasRemoteBackup ? (
+                    <button
+                      type="button"
+                      className="vyb-cp-btn-white"
+                      onClick={() => props.setActiveModal("create-backup")}
+                      disabled={props.busyAction === "create-backup"}
+                    >
+                      {props.busyAction === "create-backup" ? "Sealing…" : "Create fallback"}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="vyb-cp-btn-white"
+                      onClick={() => props.setActiveModal("change-pin")}
+                      disabled={props.busyAction === "change-pin"}
+                    >
+                      {props.busyAction === "change-pin" ? "Saving…" : "Update"}
+                    </button>
+                  )}
+                </div>
+                <div className="vyb-cp-shield-bar">
+                  <span>Fallback brute-force shield:</span>
+                  <span className="vyb-cp-shield-value">{attemptsLabel}</span>
+                </div>
+              </motion.section>
 
-          {/* Sync / Restore */}
+              {/* Recovery Phrase */}
+              <motion.section
+                className="vyb-chat-privacy-card vyb-cp-inline"
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.26, delay: 0.11 }}
+              >
+                <div className="vyb-cp-row-copy">
+                  <h3>Recovery Phrase</h3>
+                  <p>24-word fallback for when trusted-device pairing is unavailable.</p>
+                </div>
+                {props.backupNeedsUpgrade ? (
+                  <button
+                    type="button"
+                    className="vyb-cp-btn-ghost"
+                    onClick={() => props.setActiveModal("change-pin")}
+                  >
+                    Upgrade
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="vyb-cp-btn-ghost"
+                    onClick={() => props.setActiveModal("verify-recovery")}
+                    disabled={!props.hasRemoteBackup}
+                  >
+                    Reveal
+                  </button>
+                )}
+              </motion.section>
+            </>
+          )}
+
+          {/* Device recovery */}
           <motion.section
             id="chat-privacy-restore"
-            className="vyb-chat-privacy-card"
+            className="vyb-chat-privacy-card vyb-chat-privacy-flow-card"
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.26, delay: 0.14 }}
           >
-            <div className="vyb-cp-row-copy">
-              <h3>Sync New Device</h3>
-              <p>Securely restore your session on this browser.</p>
+            {isApprovingDevice && props.incomingPairing ? (
+              <>
+                <div className="vyb-chat-privacy-flow-head">
+                  <span>Approve device</span>
+                  <h3>{props.hasCompatibleLocalChatKey ? "Approve This Device" : "Open This Link On Old Device"}</h3>
+                  <p>
+                    {props.hasCompatibleLocalChatKey
+                      ? "Tap approve here, then return to the new device."
+                      : "This device cannot approve itself. Use a device where your chats already open."}
+                  </p>
+                </div>
+                <div className="vyb-chat-privacy-request-panel">
+                  <div>
+                    <strong>{props.incomingPairing.requesterLabel}</strong>
+                    <span>
+                      {props.incomingPairing.requesterPlatform.toUpperCase()} · {props.incomingPairing.status}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="vyb-cp-btn-white"
+                    onClick={props.onApproveDevicePairing}
+                    disabled={!props.hasCompatibleLocalChatKey || props.incomingPairing.status !== "pending" || props.busyAction === "device-pairing-approve"}
+                  >
+                    {props.busyAction === "device-pairing-approve" ? "Approving…" : "Approve"}
+                  </button>
+                </div>
+                {props.hasCompatibleLocalChatKey ? (
+                  <div className="vyb-chat-privacy-help-panel">
+                    <strong>What happens next?</strong>
+                    <ol className="vyb-chat-privacy-step-list">
+                      <li>Tap Approve on this trusted device.</li>
+                      <li>Go back to the device you are pairing.</li>
+                      <li>Your chats unlock there automatically.</li>
+                    </ol>
+                  </div>
+                ) : (
+                  <div className="vyb-chat-privacy-help-panel">
+                    <strong>To unlock this device</strong>
+                    <ol className="vyb-chat-privacy-step-list">
+                      <li>Open this same link on your old trusted device.</li>
+                      <li>Tap Approve there.</li>
+                      <li>Come back here and open chats again.</li>
+                    </ol>
+                    <div className="vyb-chat-privacy-help-actions">
+                      <Link className="vyb-cp-btn-ghost" href="/profile/settings/chat-privacy?intent=restore-device">
+                        Unlock this device
+                      </Link>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="vyb-chat-privacy-flow-head">
+                  <span>{props.hasCompatibleLocalChatKey ? "Add device" : recoveryOnly ? "Recovery needed" : "New device"}</span>
+                  <h3>{props.hasCompatibleLocalChatKey ? "Add Another Device" : recoveryOnly ? "Use Recovery Fallback" : "Pair This Device"}</h3>
+                  <p>
+                    {props.hasCompatibleLocalChatKey
+                      ? "Create a one-time request for the device you want to add."
+                      : recoveryOnly
+                        ? "No trusted device is active for approval. Use the recovery you saved earlier."
+                      : activeTrustedDevices.length > 0
+                        ? "Use one of your trusted devices below to approve this device."
+                        : "No trusted device is active yet. Use recovery fallback if you saved it."}
+                  </p>
+                </div>
+
+                {!props.devicePairing ? (
+                  recoveryOnly ? (
+                    <div className="vyb-chat-privacy-help-panel vyb-chat-privacy-recovery-only">
+                      <strong>No trusted device found</strong>
+                      <ol className="vyb-chat-privacy-step-list">
+                        <li>Enter the backup PIN you created earlier.</li>
+                        <li>Or paste the 24-word recovery phrase you saved earlier.</li>
+                        <li>If you never saved either one, old encrypted chats cannot be unlocked on this device.</li>
+                      </ol>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="vyb-chat-privacy-choice-grid">
+                        <button
+                          type="button"
+                          className="vyb-chat-privacy-choice-card vyb-chat-privacy-choice-primary"
+                          onClick={props.onStartDevicePairing}
+                          disabled={!props.hasViewerIdentity || props.busyAction === "device-pairing-create"}
+                        >
+                          <strong>{props.busyAction === "device-pairing-create" ? "Preparing..." : pairingActionLabel}</strong>
+                          <span>
+                            {props.hasCompatibleLocalChatKey
+                              ? "Use this when another device shows a code."
+                              : "Shows a short code for your trusted device."}
+                          </span>
+                        </button>
+
+                        {props.hasRemoteBackup ? (
+                          <button
+                            type="button"
+                            className="vyb-chat-privacy-choice-card"
+                            onClick={() => setFallbackOpen((current) => !current)}
+                          >
+                            <strong>No trusted device?</strong>
+                            <span>Use recovery fallback only as the second option.</span>
+                          </button>
+                        ) : (
+                          <div className="vyb-chat-privacy-choice-card vyb-chat-privacy-choice-muted">
+                            <strong>No fallback yet</strong>
+                            <span>After pairing, add a recovery fallback for emergencies.</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {props.hasCompatibleLocalChatKey && (
+                        <div className="vyb-chat-privacy-code-panel">
+                          <div>
+                            <strong>Approve with code</strong>
+                            <span>Enter the 6-digit code shown on the device you want to unlock.</span>
+                          </div>
+                          <label className="vyb-chat-privacy-code-input">
+                            <input
+                              value={props.pairingCodeInput}
+                              onChange={(event) => props.onPairingCodeInputChange(event.target.value)}
+                              placeholder="000000"
+                              inputMode="numeric"
+                              maxLength={6}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            className="vyb-cp-btn-white"
+                            onClick={props.onLoadDevicePairingCode}
+                            disabled={props.pairingCodeInput.length !== 6 || props.busyAction === "device-pairing-code"}
+                          >
+                            {props.busyAction === "device-pairing-code" ? "Checking..." : "Find request"}
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )
+                ) : props.devicePairingLink && !recoveryOnly ? (
+                  <div className="vyb-chat-privacy-pairing-box">
+                    <strong>Waiting for approval</strong>
+                    <span>Open Chat Privacy on a trusted device and enter this code.</span>
+                    {pairingCode ? (
+                      <div className="vyb-chat-privacy-pairing-code" aria-label="Device pairing code">
+                        {pairingCode}
+                      </div>
+                    ) : (
+                      <span>Code is being prepared. Start pairing again if it does not appear.</span>
+                    )}
+                    <PairingQrCode value={props.devicePairingLink} showLinkActions={false} />
+                    <div className="vyb-chat-privacy-help-panel">
+                      <strong>Where do I approve?</strong>
+                      {activeTrustedDevices.length > 0 ? (
+                        <ol className="vyb-chat-privacy-step-list">
+                          <li>Open Chat Privacy on: {activeTrustedDevices.map((device) => device.label).join(", ")}.</li>
+                          <li>Type the 6-digit code there.</li>
+                          <li>Tap Approve there. This device will unlock by itself.</li>
+                        </ol>
+                      ) : (
+                        <ol className="vyb-chat-privacy-step-list">
+                          <li>No trusted device is registered for this account.</li>
+                          <li>Use recovery fallback if you saved a PIN or recovery phrase.</li>
+                          <li>If you never saved recovery, old encrypted chats cannot be unlocked.</li>
+                        </ol>
+                      )}
+                    </div>
+                    {props.hasRemoteBackup && (
+                      <button
+                        type="button"
+                        className="vyb-cp-btn-ghost"
+                        onClick={() => setFallbackOpen((current) => !current)}
+                      >
+                        Use recovery fallback
+                      </button>
+                    )}
+                  </div>
+                ) : null}
+
+                {showRecoveryFallback && (
+                  <div className="vyb-chat-privacy-pairing-box">
+                    <strong>Recovery fallback</strong>
+                    <span>Use the backup PIN or 24-word recovery phrase you saved earlier.</span>
+                    <label className="vyb-chat-privacy-field">
+                      <input
+                        value={props.restoreSecret}
+                        onChange={(e) => props.onRestoreSecretChange(e.target.value)}
+                        placeholder="PIN or 24-word phrase"
+                        autoCapitalize="none"
+                        spellCheck={false}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="vyb-cp-btn-ghost"
+                      onClick={props.onRestoreLocalKey}
+                      disabled={props.busyAction === "restore-device"}
+                    >
+                      {props.busyAction === "restore-device" ? "Restoring..." : "Restore"}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </motion.section>
+
+          {/* Trusted devices */}
+          <motion.section
+            className="vyb-chat-privacy-card vyb-chat-privacy-device-card"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.26, delay: 0.16 }}
+          >
+            <div className="vyb-cp-row">
+              <div className="vyb-cp-row-copy">
+                <h3>Trusted Devices</h3>
+                <p>
+                  {props.hasCompatibleLocalChatKey
+                    ? "Devices allowed to hold this account's chat identity."
+                    : "After this device is unlocked, it will appear here."}
+                </p>
+              </div>
+              <button type="button" className="vyb-cp-btn-ghost" onClick={props.onRefreshTrustedDevices}>
+                Refresh
+              </button>
             </div>
-            <label className="vyb-chat-privacy-field">
-              <input
-                value={props.restoreSecret}
-                onChange={(e) => props.onRestoreSecretChange(e.target.value)}
-                placeholder="PIN or 24-word phrase"
-                autoCapitalize="none"
-                spellCheck={false}
-              />
-            </label>
-            <button
-              type="button"
-              className="vyb-cp-btn-indigo"
-              onClick={props.onRestoreLocalKey}
-              disabled={!props.hasRemoteBackup || props.busyAction === "restore-device"}
-            >
-              {props.busyAction === "restore-device" ? "Restoring…" : "Request Identity Restore"}
-            </button>
+            <div className="vyb-chat-privacy-device-list">
+              {props.trustedDevices.length === 0 ? (
+                <div className="vyb-chat-privacy-device-empty">
+                  <span>No trusted device yet.</span>
+                  <small>Unlock this device first. Then it will show here.</small>
+                </div>
+              ) : (
+                props.trustedDevices.map((device) => (
+                  <div key={device.id} className="vyb-chat-privacy-device-row">
+                    <div>
+                      <strong>{device.label}</strong>
+                      <span>
+                        {device.platform.toUpperCase()} · Last active {formatDeviceLastSeen(device.lastSeenAt)}
+                      </span>
+                    </div>
+                    <div className="vyb-chat-privacy-device-actions">
+                      {device.isCurrentDevice && <span className="vyb-chat-privacy-device-current">This device</span>}
+                      <button
+                        type="button"
+                        className="vyb-cp-btn-ghost"
+                        onClick={() => props.onRevokeTrustedDevice(device.id)}
+                        disabled={device.isCurrentDevice || props.busyAction === `revoke-device:${device.id}`}
+                      >
+                        {device.isCurrentDevice ? "Active" : props.busyAction === `revoke-device:${device.id}` ? "Removing…" : "Remove"}
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </motion.section>
 
           {/* Session / identity refresh */}
@@ -579,8 +916,8 @@ export function ChatPrivacyUI(props: ChatPrivacyUIProps) {
 
         {props.activeModal === "create-backup" && (
           <ModalFrame
-            title="Set Security PIN"
-            description="PIN protects backup and restore only. VYB generates your 24-word phrase after the first backup."
+            title="Create Backup Fallback"
+            description="Use this only if every trusted device is unavailable. VYB generates your 24-word phrase after the first backup."
             onClose={() => props.setActiveModal(null)}
           >
             <div className="vyb-chat-privacy-modal-body">
@@ -604,8 +941,8 @@ export function ChatPrivacyUI(props: ChatPrivacyUIProps) {
 
         {props.activeModal === "change-pin" && (
           <ModalFrame
-            title="Change Security PIN"
-            description="Enter the current PIN once. VYB will reseal the backup with the new PIN."
+            title="Change Backup PIN"
+            description="Enter the current PIN once. VYB will reseal the fallback backup with the new PIN."
             onClose={() => props.setActiveModal(null)}
           >
             <div className="vyb-chat-privacy-modal-body">

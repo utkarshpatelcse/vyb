@@ -1,31 +1,10 @@
 "use client";
 
-import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 
 const HEARTBEAT_INTERVAL_MS = 45 * 1000;
 
-function shouldSendPresenceHeartbeat() {
-  if (typeof window === "undefined") {
-    return true;
-  }
-
-  try {
-    const rawSettings = window.localStorage.getItem("vyb-settings:last-active");
-    if (!rawSettings) {
-      return true;
-    }
-
-    const settings = JSON.parse(rawSettings) as { lastSeenOnline?: unknown };
-    return settings.lastSeenOnline !== "Nobody";
-  } catch {
-    return true;
-  }
-}
-
 export function ChatPresenceHeartbeat() {
-  const pathname = usePathname();
-
   useEffect(() => {
     let cancelled = false;
 
@@ -38,15 +17,11 @@ export function ChatPresenceHeartbeat() {
         return;
       }
 
-      if (!shouldSendPresenceHeartbeat()) {
-        return;
-      }
-
       try {
         await fetch("/api/chats/presence/heartbeat", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ path: pathname ?? "/" }),
+          body: JSON.stringify({}),
           cache: "no-store",
           credentials: "same-origin",
           keepalive: true
@@ -81,7 +56,7 @@ export function ChatPresenceHeartbeat() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("online", handleOnline);
     };
-  }, [pathname]);
+  }, []);
 
   return null;
 }

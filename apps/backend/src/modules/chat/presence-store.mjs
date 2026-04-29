@@ -16,7 +16,7 @@ function prunePresenceStore(now = Date.now()) {
   }
 }
 
-export function recordChatPresenceHeartbeat({ tenantId, userId, membershipId, activePath = null, now = new Date() }) {
+export function recordChatPresenceHeartbeat({ tenantId, userId, membershipId, now = new Date() }) {
   if (!tenantId || !userId || !membershipId) {
     return null;
   }
@@ -27,7 +27,7 @@ export function recordChatPresenceHeartbeat({ tenantId, userId, membershipId, ac
     userId,
     membershipId,
     lastActiveAt: timestamp,
-    activePath: typeof activePath === "string" && activePath.trim().length > 0 ? activePath.trim() : null
+    activePath: null
   };
 
   prunePresenceStore(Date.parse(timestamp));
@@ -35,7 +35,7 @@ export function recordChatPresenceHeartbeat({ tenantId, userId, membershipId, ac
   return {
     ok: true,
     lastActiveAt: value.lastActiveAt,
-    activePath: value.activePath
+    activePath: null
   };
 }
 
@@ -58,6 +58,6 @@ export function getChatPresenceSnapshot({ tenantId, userId, now = Date.now() }) 
   return {
     isOnline: now - lastActiveTimestamp <= ONLINE_WINDOW_MS,
     lastActiveAt: value.lastActiveAt,
-    activePath: value.activePath ?? null
+    activePath: null
   };
 }

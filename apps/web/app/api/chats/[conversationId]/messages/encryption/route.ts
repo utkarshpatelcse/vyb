@@ -1,10 +1,18 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { migrateChatMessageEncryption } from "../../../../../../src/lib/backend";
+import { isBackendRequestError, migrateChatMessageEncryption } from "../../../../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../../../../src/lib/dev-session";
 
 function buildError(status: number, code: string, message: string) {
   return NextResponse.json({ error: { code, message } }, { status });
+}
+
+function buildChatError(error: unknown, fallbackCode: string, fallbackMessage: string) {
+  if (isBackendRequestError(error)) {
+    return buildError(error.statusCode, error.code, error.message);
+  }
+
+  return buildError(500, fallbackCode, error instanceof Error ? error.message : fallbackMessage);
 }
 
 export async function PUT(request: Request, { params }: { params: Promise<{ conversationId: string }> }) {
@@ -24,10 +32,6 @@ export async function PUT(request: Request, { params }: { params: Promise<{ conv
   try {
     return NextResponse.json(await migrateChatMessageEncryption(viewer, conversationId, payload));
   } catch (error) {
-    return buildError(
-      500,
-      "CHAT_ENCRYPTION_UPGRADE_FAILED",
-      error instanceof Error ? error.message : "We could not upgrade chat encryption."
-    );
+    return buildChatError(error, "CHAT_ENCRYPTION_UPGRADE_FAILED", "We could not upgrade chat encryption.");
   }
 }

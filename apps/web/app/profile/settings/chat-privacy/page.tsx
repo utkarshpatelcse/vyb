@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SecuritySettingsShell } from "../../../../src/components/security-settings-shell";
 import { isSuperAdminEmail } from "../../../../src/lib/admin-access";
-import { getChatInbox, getChatKeyBackup, getViewerProfile } from "../../../../src/lib/backend";
+import { getChatInbox, getChatKeyBackup, getChatTrustedDevices, getViewerProfile } from "../../../../src/lib/backend";
 import { getDisplayCollegeName } from "../../../../src/lib/college-access";
 import { readDevSessionFromCookieStore } from "../../../../src/lib/dev-session";
 
@@ -16,6 +16,14 @@ function normalizeIntent(value: string | string[] | undefined) {
 
 function normalizeReturnTo(value: string | string[] | undefined) {
   if (typeof value !== "string" || !value.startsWith("/")) {
+    return null;
+  }
+
+  return value;
+}
+
+function normalizePairingId(value: string | string[] | undefined) {
+  if (typeof value !== "string" || !/^[0-9a-f-]{36}$/iu.test(value)) {
     return null;
   }
 
@@ -38,7 +46,7 @@ export default async function ChatPrivacyPage({
     redirect("/admin");
   }
 
-  const [profile, inboxResult, backupResult] = await Promise.all([
+  const [profile, inboxResult, backupResult, trustedDevicesResult] = await Promise.all([
     getViewerProfile(viewer).catch(() => null),
     getChatInbox(viewer)
       .then((value) => ({ value, error: null }))
@@ -58,6 +66,12 @@ export default async function ChatPrivacyPage({
       .catch((error) => ({
         value: { backup: null },
         error: error instanceof Error ? error.message : "We could not load your encrypted key backup."
+      })),
+    getChatTrustedDevices(viewer)
+      .then((value) => ({ value, error: null }))
+      .catch((error) => ({
+        value: { items: [] },
+        error: error instanceof Error ? error.message : "We could not load your trusted chat devices."
       }))
   ]);
 
@@ -73,9 +87,11 @@ export default async function ChatPrivacyPage({
       collegeName={getDisplayCollegeName(profile.collegeName)}
       initialViewerIdentity={inboxResult.value.viewer.activeIdentity}
       initialBackup={backupResult.value.backup}
+      initialTrustedDevices={trustedDevicesResult.value.items}
       initialIntent={normalizeIntent(resolvedSearchParams.intent)}
+      initialPairingId={normalizePairingId(resolvedSearchParams.pair)}
       returnTo={normalizeReturnTo(resolvedSearchParams.returnTo)}
-      loadError={inboxResult.error ?? backupResult.error}
+      loadError={inboxResult.error ?? backupResult.error ?? trustedDevicesResult.error}
     />
   );
 }

@@ -30,12 +30,15 @@ import { CampusAvatarContent } from "./campus-avatar";
 import {
   CHAT_IDENTITY_ALGORITHM,
   createStoredChatKeyMaterial,
+  decryptChatAttachmentBytes,
   decryptStoredChatKeyMaterialFromBackup,
   decryptChatText,
+  encryptChatAttachmentBytes,
   encryptChatText,
   encryptStoredChatKeyMaterialForBackup,
   generateRecoveryPhrase,
   hasChatCipherEnvelope,
+  isE2eeAttachmentCipher,
   isE2eeCipherAlgorithm,
   isValidRecoveryPhrase,
   isValidSecurityPin,
@@ -54,6 +57,7 @@ import {
 import { buildPrimaryCampusNav, CampusDesktopNavigation } from "./campus-navigation";
 import {
   createDefaultCampusSettings,
+  persistStoredCampusSettings,
   readStoredCampusSettings,
   subscribeToCampusSettings
 } from "./campus-settings-storage";
@@ -1107,6 +1111,7 @@ export function CampusMessagesShell({
   const [keySetupError, setKeySetupError] = useState<string | null>(null);
   const [decryptionWarning, setDecryptionWarning] = useState<string | null>(null);
   const [messagePlaintextById, setMessagePlaintextById] = useState<Record<string, string>>({});
+  const [attachmentObjectUrlByMessageId, setAttachmentObjectUrlByMessageId] = useState<Record<string, string>>({});
   const [shareMenuOpen, setShareMenuOpen] = useState(false);
   const [shareMenuTab, setShareMenuTab] = useState<ShareMenuTab>("deals");
   const [shareMenuLoading, setShareMenuLoading] = useState(false);
@@ -1135,6 +1140,7 @@ export function CampusMessagesShell({
   const mediaInputRef = useRef<HTMLInputElement | null>(null);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const pendingMediaUrlsRef = useRef<string[]>([]);
+  const attachmentObjectUrlsRef = useRef<Record<string, string>>({});
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
@@ -1197,6 +1203,8 @@ export function CampusMessagesShell({
       if (pendingDeleteTimeoutRef.current) {
         clearTimeout(pendingDeleteTimeoutRef.current);
       }
+      Object.values(attachmentObjectUrlsRef.current).forEach((url) => window.URL.revokeObjectURL(url));
+      attachmentObjectUrlsRef.current = {};
       swipeGestureRef.current = null;
     };
   }, []);
@@ -1507,6 +1515,62 @@ export function CampusMessagesShell({
   }, [settingsIdentity]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const response = await fetchChatEndpoint("/api/chats/privacy-settings", {
+          cache: "no-store",
+          credentials: "same-origin"
+        });
+        if (response.status === 401 || !response.ok || cancelled) {
+          return;
+        }
+
+        const payload = (await response.json()) as {
+          settings?: Partial<
+            Pick<
+              ReturnType<typeof createDefaultCampusSettings>,
+              "lastSeenOnline" | "readReceipts" | "typingIndicator"
+            >
+          >;
+        };
+        if (!payload.settings || cancelled) {
+          return;
+        }
+
+        setStoredCampusSettings((current) => {
+          const next = {
+            ...current,
+            lastSeenOnline:
+              payload.settings?.lastSeenOnline === "Everyone" ||
+              payload.settings?.lastSeenOnline === "My Contacts" ||
+              payload.settings?.lastSeenOnline === "Nobody"
+                ? payload.settings.lastSeenOnline
+                : current.lastSeenOnline,
+            readReceipts:
+              typeof payload.settings?.readReceipts === "boolean"
+                ? payload.settings.readReceipts
+                : current.readReceipts,
+            typingIndicator:
+              typeof payload.settings?.typingIndicator === "boolean"
+                ? payload.settings.typingIndicator
+                : current.typingIndicator
+          };
+          persistStoredCampusSettings(settingsIdentity, next);
+          return next;
+        });
+      } catch {
+        return;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [settingsIdentity]);
+
+  useEffect(() => {
     if (storedCampusSettings.typingIndicator) {
       return;
     }
@@ -1642,13 +1706,11 @@ export function CampusMessagesShell({
         return;
       }
 
-      if (remoteKeyBackup) {
-        setKeySetupError("Enter your 6-digit security PIN or 24-word recovery phrase on this device to restore your E2EE key.");
-        setLocalChatKeyLoaded(true);
-        return;
-      }
-
-      setKeySetupError("Set a 6-digit security PIN on your original device to create an encrypted key backup.");
+      setKeySetupError(
+        remoteKeyBackup
+          ? "Pair this browser from Security Settings using an existing trusted device. Your PIN or recovery phrase is only the fallback."
+          : "Pair this browser from Security Settings using the original trusted device to restore your E2EE key."
+      );
       setLocalChatKeyLoaded(true);
     })();
 
@@ -1924,8 +1986,8 @@ export function CampusMessagesShell({
       }
 
       const message = remoteKeyBackup
-        ? "Restore your E2EE key from Settings / Security with your 6-digit PIN or 24-word recovery phrase to continue on this device."
-        : "This account has E2EE chats, but no encrypted key backup exists yet. Open Settings / Security on the original device once to create the backup.";
+        ? "Pair this browser from Settings / Security using a trusted device. PIN or recovery phrase restore is still available as a fallback."
+        : "This account has E2EE chats, but this browser is not trusted yet. Pair it from Settings / Security on the original device.";
       setLocalChatKey(stored);
       setKeySetupError(message);
       setSendError(message);
@@ -2124,12 +2186,12 @@ export function CampusMessagesShell({
     const normalizedPin = normalizeSecurityPin(securityPin);
     const normalizedConfirmPin = normalizeSecurityPin(confirmSecurityPin);
     if (!isValidSecurityPin(normalizedPin)) {
-      setSendError("Choose a 6-digit security PIN before backing up this device.");
+      setSendError("Choose a 6-digit backup PIN before creating the fallback.");
       return;
     }
 
     if (normalizedPin !== normalizedConfirmPin) {
-      setSendError("Your security PIN confirmation does not match.");
+      setSendError("Your backup PIN confirmation does not match.");
       return;
     }
 
@@ -2465,6 +2527,101 @@ export function CampusMessagesShell({
   }, [activeConversation, localChatKey, messagePlaintextById]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (!activeConversation) {
+      Object.values(attachmentObjectUrlsRef.current).forEach((url) => window.URL.revokeObjectURL(url));
+      attachmentObjectUrlsRef.current = {};
+      setAttachmentObjectUrlByMessageId({});
+      return;
+    }
+
+    const activeAttachmentMessageIds = new Set(
+      activeConversation.messages
+        .filter((message) => Boolean(message.attachment?.url))
+        .map((message) => message.id)
+    );
+    for (const [messageId, objectUrl] of Object.entries(attachmentObjectUrlsRef.current)) {
+      if (!activeAttachmentMessageIds.has(messageId)) {
+        window.URL.revokeObjectURL(objectUrl);
+        delete attachmentObjectUrlsRef.current[messageId];
+      }
+    }
+    setAttachmentObjectUrlByMessageId((current) => {
+      const next = Object.fromEntries(
+        Object.entries(current).filter(([messageId]) => activeAttachmentMessageIds.has(messageId))
+      );
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+
+    if (!localChatKey || !activeConversation.peer.publicKey) {
+      return;
+    }
+
+    const encryptedAttachments = activeConversation.messages.filter(
+      (message) =>
+        message.attachment?.url &&
+        isE2eeAttachmentCipher(message.attachment) &&
+        !attachmentObjectUrlsRef.current[message.id]
+    );
+    if (encryptedAttachments.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      await Promise.allSettled(
+        encryptedAttachments.map(async (message) => {
+          const attachment = message.attachment;
+          if (!attachment?.url || !isE2eeAttachmentCipher(attachment)) {
+            return;
+          }
+
+          const response = await fetch(attachment.url, { cache: "no-store" });
+          if (!response.ok) {
+            throw new Error("Could not load encrypted attachment bytes.");
+          }
+
+          const decryptedBytes = await decryptChatAttachmentBytes(
+            await response.arrayBuffer(),
+            attachment,
+            localChatKey,
+            activeConversation.peer.publicKey!
+          );
+          const objectUrl = window.URL.createObjectURL(
+            new Blob([decryptedBytes], { type: attachment.mimeType || "application/octet-stream" })
+          );
+
+          if (cancelled) {
+            window.URL.revokeObjectURL(objectUrl);
+            return;
+          }
+
+          setAttachmentObjectUrlByMessageId((current) => {
+            if (current[message.id]) {
+              window.URL.revokeObjectURL(objectUrl);
+              return current;
+            }
+
+            attachmentObjectUrlsRef.current[message.id] = objectUrl;
+            return {
+              ...current,
+              [message.id]: objectUrl
+            };
+          });
+        })
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeConversation, localChatKey]);
+
+  useEffect(() => {
     if (!activeConversation || !localChatKey || !activeConversation.peer.publicKey) {
       return;
     }
@@ -2729,9 +2886,35 @@ export function CampusMessagesShell({
     mediaAttachment: PendingMediaAttachment,
     options?: { viewOnce?: boolean }
   ) {
+    const peerIdentity = activeConversation?.peer.publicKey ?? null;
+    const chatReady = await ensureChatIdentity();
+    if (!chatReady) {
+      throw new Error(keySetupError ?? "Secure chat is not ready on this device.");
+    }
+
+    const currentLocalKey = localChatKey ?? (await loadStoredChatKeyMaterial(viewerUserId));
+    if (!currentLocalKey) {
+      throw new Error("This device is missing your private E2EE key.");
+    }
+
+    if (!peerIdentity) {
+      throw new Error("This user has not finished setting up E2EE chat yet.");
+    }
+
+    const encryptedAttachment = await encryptChatAttachmentBytes(
+      await mediaAttachment.file.arrayBuffer(),
+      currentLocalKey,
+      peerIdentity
+    );
     const formData = new FormData();
-    formData.set("file", mediaAttachment.file);
+    formData.set("file", new File([encryptedAttachment.encryptedBytes], mediaAttachment.name, {
+      type: "application/octet-stream"
+    }));
     formData.set("mimeType", mediaAttachment.mimeType);
+    formData.set("cipherAlgorithm", encryptedAttachment.cipherAlgorithm);
+    formData.set("cipherIv", encryptedAttachment.cipherIv);
+    formData.set("senderPublicKey", encryptedAttachment.senderPublicKey);
+    formData.set("recipientPublicKey", encryptedAttachment.recipientPublicKey);
     if (typeof mediaAttachment.width === "number") {
       formData.set("width", String(mediaAttachment.width));
     }
@@ -2755,7 +2938,12 @@ export function CampusMessagesShell({
       throw new Error(uploadData?.error?.message ?? `We could not upload ${mediaAttachment.mediaKind}.`);
     }
 
-    return (uploadData?.attachment as ChatEncryptedAttachment | undefined) ?? null;
+    const attachment = (uploadData?.attachment as ChatEncryptedAttachment | undefined) ?? null;
+    if (!attachment) {
+      throw new Error(`We could not upload ${mediaAttachment.mediaKind}.`);
+    }
+
+    return attachment;
   }
 
   async function stopVoiceRecording(action: "discard" | "send") {
@@ -3337,28 +3525,6 @@ export function CampusMessagesShell({
       return;
     }
 
-    if (!storedCampusSettings.readReceipts) {
-      const readAt = new Date().toISOString();
-      setActiveConversation((current) =>
-        current && current.id === activeConversation.id
-          ? { ...current, lastReadMessageId: latestIncomingMessage.id, lastReadAt: readAt }
-          : current
-      );
-      setConversations((current) =>
-        current.map((item) =>
-          item.id === activeConversation.id
-            ? {
-                ...item,
-                unreadCount: 0,
-                lastMessage: activeConversation.messages[activeConversation.messages.length - 1] ?? item.lastMessage,
-                lastActivityAt: activeConversation.messages[activeConversation.messages.length - 1]?.createdAt ?? item.lastActivityAt
-              }
-            : item
-        )
-      );
-      return;
-    }
-
     let cancelled = false;
 
     void (async () => {
@@ -3366,7 +3532,10 @@ export function CampusMessagesShell({
         const response = await fetchChatEndpoint(`/api/chats/${encodeURIComponent(activeConversation.id)}/read`, {
           method: "PUT",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ messageId: latestIncomingMessage.id }),
+          body: JSON.stringify({
+            messageId: latestIncomingMessage.id,
+            exposeReceipt: storedCampusSettings.readReceipts
+          }),
           credentials: "same-origin"
         });
 
@@ -3379,7 +3548,8 @@ export function CampusMessagesShell({
         }
 
         setSessionExpired(false);
-        const readAt = new Date().toISOString();
+        const payload = (await response.json().catch(() => null)) as { readAt?: string } | null;
+        const readAt = payload?.readAt ?? new Date().toISOString();
 
         setActiveConversation((current) =>
           current && current.id === activeConversation.id
@@ -3784,15 +3954,16 @@ export function CampusMessagesShell({
     options: {
       isOwnMessage: boolean;
       attachmentKind: "image" | "video" | "audio";
+      renderUrl: string;
     }
   ) {
-    if (!message.attachment?.url || options.attachmentKind === "audio") {
+    if (!message.attachment?.url || !options.renderUrl || options.attachmentKind === "audio") {
       return;
     }
 
     if (!message.attachment.viewOnce || options.isOwnMessage) {
       setViewOncePreview({
-        url: message.attachment.url,
+        url: options.renderUrl,
         kind: options.attachmentKind === "video" ? "video" : "image",
         messageId: message.id
       });
@@ -3814,7 +3985,7 @@ export function CampusMessagesShell({
     }
 
     setViewOncePreview({
-      url: message.attachment.url,
+      url: options.renderUrl,
       kind: options.attachmentKind === "video" ? "video" : "image",
       messageId: message.id
     });
@@ -4381,22 +4552,6 @@ export function CampusMessagesShell({
     }
 
     setDefaultDurationKey(nextDurationKey);
-
-    const conversationId = activeConversation?.id;
-    if (!conversationId) {
-      return;
-    }
-
-    try {
-      await dispatchEncryptedMessage({
-        conversationId,
-        plaintext: `Auto-destruct timer changed to ${getTtlOptionLabel(nextDurationKey)} for new messages.`,
-        messageKind: "system",
-        durationKey: nextDurationKey
-      });
-    } catch (error) {
-      setSendError(error instanceof Error ? error.message : "We could not announce the timer change.");
-    }
   }
 
   async function handleDealInterested(payload: ChatDealCardPayload) {
@@ -4608,12 +4763,12 @@ export function CampusMessagesShell({
   const activePinLockoutCountdown = activePinLockoutRemainingMs
     ? formatLockoutCountdown(activePinLockoutRemainingMs)
     : "";
-  const showRecoveryRestoreCard = Boolean(viewerIdentity && remoteKeyBackup && !hasCompatibleLocalChatKey);
+  const showRecoveryRestoreCard = Boolean(viewerIdentity && !hasCompatibleLocalChatKey);
   const showPinSetupCard = Boolean(viewerIdentity && hasCompatibleLocalChatKey && remoteKeyBackupLoaded && !remoteKeyBackup);
   const shouldShowBackupCards = Boolean(showPinSetupCard || showRecoveryRestoreCard);
   const chatSetupIntent = !viewerIdentity
     ? "create-identity"
-    : !hasCompatibleLocalChatKey && remoteKeyBackup
+    : !hasCompatibleLocalChatKey
       ? "restore-device"
       : hasCompatibleLocalChatKey && remoteKeyBackupLoaded && !remoteKeyBackup
         ? "create-backup"
@@ -4660,12 +4815,21 @@ export function CampusMessagesShell({
     router.push("/");
   }
 
+  const securitySettingsHref = chatSetupIntent
+    ? `/profile/settings/chat-privacy?${new URLSearchParams({
+        intent: chatSetupIntent,
+        returnTo: "/messages"
+      }).toString()}`
+    : "/profile/settings/chat-privacy";
+
   const renderBackupPanel = shouldShowBackupCards ? (
     <div className="spm-chat-key-card" role="status">
-      <strong>{showRecoveryRestoreCard ? "Restore this device from settings" : "Create your secure backup from settings"}</strong>
+      <strong>{showRecoveryRestoreCard ? "Pair this browser from settings" : "Create your secure backup from settings"}</strong>
       <span>
         {showRecoveryRestoreCard
-          ? "Your account already has an encrypted cloud backup. Open Security Settings to restore this device with your PIN or 24-word phrase."
+          ? remoteKeyBackup
+            ? "Security Settings will create a trusted-device pairing link first. Use your PIN or 24-word phrase only if you cannot access another device."
+            : "Security Settings will create a trusted-device pairing link so your original browser can approve this one."
           : "PIN setup, recovery phrase access, and backup rotation now live in Security Settings so you can manage them without opening a specific chat."}
       </span>
       {activePinLockoutUntil ? (
@@ -4675,7 +4839,7 @@ export function CampusMessagesShell({
         </div>
       ) : null}
       <div className="spm-chat-key-actions">
-        <Link href="/profile/settings/chat-privacy" className="spm-chat-key-button">
+        <Link href={securitySettingsHref} className="spm-chat-key-button">
           Open Security Settings
         </Link>
       </div>
@@ -5196,14 +5360,18 @@ export function CampusMessagesShell({
                           : message.attachment?.mimeType?.startsWith("video/")
                             ? "video"
                             : "image";
+                        const attachmentRenderUrl = message.attachment
+                          ? attachmentObjectUrlByMessageId[message.id] ||
+                            (!isE2eeAttachmentCipher(message.attachment) ? message.attachment.url : "")
+                          : "";
                         const isViewOnceAttachment = Boolean(
                           message.attachment?.viewOnce &&
-                          message.attachment?.url &&
+                          attachmentRenderUrl &&
                           attachmentKind !== "audio"
                         );
                         const shouldSuppressMediaFallbackText =
                           message.messageKind === "image" &&
-                          Boolean(message.attachment?.url) &&
+                          Boolean(message.attachment?.url || attachmentRenderUrl) &&
                           !plaintext.trim() &&
                           !isDeletedMessage;
                         const isScreenshotAlert = plaintext.includes("Suspected screenshot:");
@@ -5265,7 +5433,8 @@ export function CampusMessagesShell({
                                     onClick={() => {
                                       void openViewOnceAttachment(message, {
                                         isOwnMessage,
-                                        attachmentKind
+                                        attachmentKind,
+                                        renderUrl: attachmentRenderUrl
                                       });
                                     }}
                                   >
@@ -5277,22 +5446,24 @@ export function CampusMessagesShell({
                                   </button>
                                 ) : (
                                   <div className="spm-chat-attachment">
-                                    {attachmentKind === "video" ? (
+                                    {!attachmentRenderUrl ? (
+                                      <div className="spm-chat-attachment-loading">Decrypting media...</div>
+                                    ) : attachmentKind === "video" ? (
                                       <video
-                                        src={message.attachment.url}
+                                        src={attachmentRenderUrl}
                                         controls
                                         playsInline
                                         preload="metadata"
                                       />
                                     ) : attachmentKind === "audio" ? (
                                       <audio
-                                        src={message.attachment.url}
+                                        src={attachmentRenderUrl}
                                         controls
                                         preload="metadata"
                                       />
                                     ) : (
                                       <img
-                                        src={message.attachment.url}
+                                        src={attachmentRenderUrl}
                                         alt="Shared in chat"
                                         loading="lazy"
                                       />

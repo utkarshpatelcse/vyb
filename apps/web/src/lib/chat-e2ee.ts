@@ -1,4 +1,4 @@
-import type { ChatIdentitySummary } from "@vyb/contracts";
+import type { ChatDevicePairingTransferEnvelope, ChatIdentitySummary } from "@vyb/contracts";
 
 const CHAT_KEY_STORAGE_PREFIX = "vyb-chat-private-key";
 const CHAT_RECOVERY_CODE_STORAGE_PREFIX = "vyb-chat-recovery-code";
@@ -34,6 +34,8 @@ const RECOVERY_PHRASE_WORDS = [
 
 export const CHAT_IDENTITY_ALGORITHM = "ECDH-P256";
 export const CHAT_MESSAGE_CIPHER_ALGORITHM = "ECDH-P256/AES-GCM";
+export const CHAT_ATTACHMENT_CIPHER_ALGORITHM = "ECDH-P256/AES-GCM/attachment-v1";
+export const CHAT_DEVICE_PAIRING_TRANSFER_ALGORITHM = "ECDH-P256/AES-GCM/device-pairing-v1";
 export const CHAT_KEY_BACKUP_WRAPPING_ALGORITHM = "PBKDF2-SHA-256/AES-GCM";
 const CHAT_PRIVATE_KEY_STORAGE_WRAPPING_ALGORITHM = "AES-GCM/device-local-v1";
 
@@ -985,6 +987,121 @@ async function buildPlaintextKeyMaterialForBackup(material: StoredChatKeyMateria
   } satisfies StoredChatKeyMaterial & { privateKey: string };
 }
 
+export async function createChatDevicePairingRequestKey() {
+  const keyPair = await ensureBrowserCrypto().generateKey(
+    {
+      name: "ECDH",
+      namedCurve: "P-256"
+    },
+    true,
+    ["deriveKey", "deriveBits"]
+  );
+
+  const [publicKey, privateKey] = await Promise.all([
+    ensureBrowserCrypto().exportKey("raw", keyPair.publicKey),
+    ensureBrowserCrypto().exportKey("pkcs8", keyPair.privateKey)
+  ]);
+
+  return {
+    publicKey: bufferToBase64(publicKey),
+    privateKey: bufferToBase64(privateKey),
+    algorithm: CHAT_IDENTITY_ALGORITHM
+  };
+}
+
+async function importDevicePairingPrivateKey(privateKey: string) {
+  return ensureBrowserCrypto().importKey(
+    "pkcs8",
+    base64ToBuffer(privateKey),
+    {
+      name: "ECDH",
+      namedCurve: "P-256"
+    },
+    false,
+    ["deriveKey", "deriveBits"]
+  );
+}
+
+async function deriveDevicePairingTransferKey(privateKey: CryptoKey, publicKeyString: string) {
+  const publicKey = await importPublicKeyString(publicKeyString);
+  return ensureBrowserCrypto().deriveKey(
+    {
+      name: "ECDH",
+      public: publicKey
+    },
+    privateKey,
+    {
+      name: "AES-GCM",
+      length: 256
+    },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+export async function encryptStoredChatKeyMaterialForDevicePairing(
+  material: StoredChatKeyMaterial,
+  requesterPublicKey: string
+): Promise<ChatDevicePairingTransferEnvelope> {
+  const privateKey = await importPrivateKey(material);
+  const transferKey = await deriveDevicePairingTransferKey(privateKey, requesterPublicKey);
+  const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+  const plaintext = new TextEncoder().encode(JSON.stringify(await buildPlaintextKeyMaterialForBackup(material)));
+  const cipherBuffer = await ensureBrowserCrypto().encrypt(
+    {
+      name: "AES-GCM",
+      iv
+    },
+    transferKey,
+    plaintext
+  );
+
+  return {
+    version: 1,
+    cipherText: bufferToBase64(cipherBuffer),
+    iv: bufferToBase64(iv.buffer),
+    algorithm: CHAT_DEVICE_PAIRING_TRANSFER_ALGORITHM,
+    senderPublicKey: material.publicKey,
+    recipientPublicKey: requesterPublicKey
+  };
+}
+
+export async function decryptStoredChatKeyMaterialFromDevicePairing(
+  envelope: ChatDevicePairingTransferEnvelope,
+  requesterPrivateKey: string,
+  userId: string
+) {
+  if (envelope.algorithm !== CHAT_DEVICE_PAIRING_TRANSFER_ALGORITHM) {
+    throw new Error("This device pairing transfer uses an unsupported encryption algorithm.");
+  }
+
+  const privateKey = await importDevicePairingPrivateKey(requesterPrivateKey);
+  const transferKey = await deriveDevicePairingTransferKey(privateKey, envelope.senderPublicKey);
+  const plaintextBuffer = await ensureBrowserCrypto().decrypt(
+    {
+      name: "AES-GCM",
+      iv: new Uint8Array(base64ToBuffer(envelope.iv))
+    },
+    transferKey,
+    base64ToBuffer(envelope.cipherText)
+  );
+  const parsed = JSON.parse(bufferToText(plaintextBuffer)) as StoredChatKeyMaterial & { privateKey: string };
+
+  if (parsed.userId !== userId || parsed.publicKey !== envelope.senderPublicKey || typeof parsed.privateKey !== "string") {
+    throw new Error("This device pairing transfer does not match your account identity.");
+  }
+
+  return {
+    userId: parsed.userId,
+    identityId: parsed.identityId ?? null,
+    publicKey: parsed.publicKey,
+    privateKey: parsed.privateKey,
+    algorithm: parsed.algorithm || CHAT_IDENTITY_ALGORITHM,
+    keyVersion: Number.isFinite(Number(parsed.keyVersion)) ? Math.max(1, Math.round(Number(parsed.keyVersion))) : 1,
+    updatedAt: parsed.updatedAt || new Date().toISOString()
+  } satisfies StoredChatKeyMaterial & { privateKey: string };
+}
+
 export async function encryptStoredChatKeyMaterialForBackup(
   material: StoredChatKeyMaterial,
   options: EncryptBackupOptions
@@ -1226,6 +1343,74 @@ export async function encryptChatText(
     cipherIv: encodedIv,
     cipherAlgorithm: CHAT_MESSAGE_CIPHER_ALGORITHM
   };
+}
+
+type ChatAttachmentCipherMetadata = {
+  cipherAlgorithm?: string | null;
+  cipherIv?: string | null;
+  senderPublicKey?: string | null;
+  recipientPublicKey?: string | null;
+};
+
+export function isE2eeAttachmentCipher(metadata: ChatAttachmentCipherMetadata | null | undefined) {
+  return metadata?.cipherAlgorithm === CHAT_ATTACHMENT_CIPHER_ALGORITHM && Boolean(metadata.cipherIv);
+}
+
+export async function encryptChatAttachmentBytes(
+  plaintextBytes: ArrayBuffer,
+  material: StoredChatKeyMaterial,
+  peerIdentity: ChatIdentitySummary
+) {
+  const key = await deriveConversationCipherKey(material, peerIdentity);
+  const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+  const cipherBuffer = await ensureBrowserCrypto().encrypt(
+    {
+      name: "AES-GCM",
+      iv
+    },
+    key,
+    plaintextBytes
+  );
+
+  return {
+    encryptedBytes: cipherBuffer,
+    cipherAlgorithm: CHAT_ATTACHMENT_CIPHER_ALGORITHM,
+    cipherIv: bufferToBase64(iv.buffer),
+    senderPublicKey: material.publicKey,
+    recipientPublicKey: peerIdentity.publicKey
+  };
+}
+
+export async function decryptChatAttachmentBytes(
+  cipherBytes: ArrayBuffer,
+  metadata: ChatAttachmentCipherMetadata,
+  material: StoredChatKeyMaterial,
+  peerIdentity: ChatIdentitySummary
+) {
+  if (!isE2eeAttachmentCipher(metadata) || !metadata.cipherIv) {
+    throw new Error("This chat attachment is missing its encryption envelope.");
+  }
+
+  const peerPublicKey =
+    metadata.senderPublicKey === material.publicKey
+      ? metadata.recipientPublicKey
+      : metadata.recipientPublicKey === material.publicKey
+        ? metadata.senderPublicKey
+        : peerIdentity.publicKey;
+
+  if (!peerPublicKey) {
+    throw new Error("This chat attachment cannot be opened without the peer public key.");
+  }
+
+  const key = await deriveConversationCipherKey(material, peerPublicKey);
+  return ensureBrowserCrypto().decrypt(
+    {
+      name: "AES-GCM",
+      iv: new Uint8Array(base64ToBuffer(metadata.cipherIv))
+    },
+    key,
+    cipherBytes
+  );
 }
 
 export async function decryptChatText(

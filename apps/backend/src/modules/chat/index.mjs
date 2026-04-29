@@ -2,19 +2,27 @@ import { readJson, sendError, sendJson } from "../../lib/http.mjs";
 import { getProfileByUserId } from "../identity/profile-repository.mjs";
 import { resolveLiveContext } from "../shared/viewer-context.mjs";
 import {
+  approveChatDevicePairingSession,
+  claimChatDevicePairingSession,
+  createChatDevicePairingSession,
   deleteChatMessage,
   editChatMessage,
   canAccessChatConversation,
   createOrGetDirectConversation,
   getChatConversation,
+  getChatDevicePairingSession,
+  getChatDevicePairingSessionByCode,
   getChatErrorResponse,
   getChatKeyBackup,
   getChatKeyBackupPinAttemptState,
+  listChatTrustedDevices,
   listChatInbox,
   markChatConversationRead,
   migrateChatConversationEncryption,
   reactToChatMessage,
+  registerChatTrustedDevice,
   recordFailedChatKeyBackupPinAttempt,
+  revokeChatTrustedDevice,
   sendChatMessage,
   updateChatMessageLifecycle,
   uploadEncryptedChatAttachment,
@@ -23,6 +31,11 @@ import {
   upsertChatIdentity
 } from "./repository.mjs";
 import { recordChatPresenceHeartbeat } from "./presence-store.mjs";
+import {
+  canExposeChatPresence,
+  getChatPrivacySettings,
+  upsertChatPrivacySettings
+} from "./privacy-settings-store.mjs";
 
 function requireNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
@@ -200,6 +213,103 @@ export async function handleChatRoute({ request, response, url, context }) {
     return true;
   }
 
+  if (request.method === "GET" && url.pathname === "/v1/chats/devices") {
+    try {
+      sendJson(response, 200, await listChatTrustedDevices(viewer, url.searchParams.get("deviceId")));
+    } catch (error) {
+      sendChatFailure(response, "chat_trusted_devices_fetch", resolved, error);
+    }
+    return true;
+  }
+
+  if (request.method === "PUT" && url.pathname === "/v1/chats/devices") {
+    const payload = await readJson(request);
+    if (!payload || typeof payload !== "object") {
+      sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+      return true;
+    }
+
+    try {
+      sendJson(response, 200, await registerChatTrustedDevice(viewer, payload));
+    } catch (error) {
+      sendChatFailure(response, "chat_trusted_device_register", resolved, error);
+    }
+    return true;
+  }
+
+  const trustedDeviceMatch = url.pathname.match(/^\/v1\/chats\/devices\/([^/]+)$/u);
+  if (request.method === "DELETE" && trustedDeviceMatch) {
+    try {
+      sendJson(response, 200, await revokeChatTrustedDevice(viewer, decodeURIComponent(trustedDeviceMatch[1])));
+    } catch (error) {
+      sendChatFailure(response, "chat_trusted_device_revoke", resolved, error);
+    }
+    return true;
+  }
+
+  if (request.method === "POST" && url.pathname === "/v1/chats/device-pairings") {
+    const payload = await readJson(request);
+    if (!payload || typeof payload !== "object") {
+      sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+      return true;
+    }
+
+    try {
+      sendJson(response, 201, await createChatDevicePairingSession(viewer, payload));
+    } catch (error) {
+      sendChatFailure(response, "chat_device_pairing_create", resolved, error);
+    }
+    return true;
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/chats/device-pairings") {
+    try {
+      sendJson(response, 200, await getChatDevicePairingSessionByCode(viewer, url.searchParams.get("code")));
+    } catch (error) {
+      sendChatFailure(response, "chat_device_pairing_code_fetch", resolved, error);
+    }
+    return true;
+  }
+
+  const devicePairingMatch = url.pathname.match(/^\/v1\/chats\/device-pairings\/([^/]+)(?:\/(approve|claim))?$/u);
+  if (devicePairingMatch) {
+    const pairingId = decodeURIComponent(devicePairingMatch[1]);
+    const action = devicePairingMatch[2] ?? null;
+
+    if (request.method === "GET" && !action) {
+      try {
+        sendJson(response, 200, await getChatDevicePairingSession(viewer, pairingId));
+      } catch (error) {
+        sendChatFailure(response, "chat_device_pairing_fetch", resolved, error);
+      }
+      return true;
+    }
+
+    if (request.method === "PUT" && action === "approve") {
+      const payload = await readJson(request);
+      if (!payload || typeof payload !== "object") {
+        sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+        return true;
+      }
+
+      try {
+        sendJson(response, 200, await approveChatDevicePairingSession(viewer, pairingId, payload));
+      } catch (error) {
+        sendChatFailure(response, "chat_device_pairing_approve", resolved, error);
+      }
+      return true;
+    }
+
+    if (request.method === "PUT" && action === "claim") {
+      try {
+        sendJson(response, 200, await claimChatDevicePairingSession(viewer, pairingId));
+      } catch (error) {
+        sendChatFailure(response, "chat_device_pairing_claim", resolved, error);
+      }
+      return true;
+    }
+  }
+
   if (request.method === "POST" && url.pathname === "/v1/chats/media/upload") {
     const payload = await readJson(request);
     if (!payload || typeof payload !== "object") {
@@ -221,21 +331,52 @@ export async function handleChatRoute({ request, response, url, context }) {
   }
 
   if (request.method === "POST" && url.pathname === "/v1/chats/presence/heartbeat") {
-    const payload = await readJson(request).catch(() => null);
-
     try {
+      const settings = await getChatPrivacySettings(viewer);
+      if (!canExposeChatPresence(settings)) {
+        sendJson(response, 200, {
+          ok: true,
+          lastActiveAt: new Date().toISOString(),
+          activePath: null
+        });
+        return true;
+      }
+
       sendJson(
         response,
         200,
         recordChatPresenceHeartbeat({
           tenantId: viewer.tenantId,
           userId: viewer.userId,
-          membershipId: viewer.membershipId,
-          activePath: typeof payload?.path === "string" ? payload.path : null
+          membershipId: viewer.membershipId
         })
       );
     } catch (error) {
       sendChatFailure(response, "chat_presence_heartbeat", resolved, error);
+    }
+    return true;
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/chats/privacy-settings") {
+    try {
+      sendJson(response, 200, { settings: await getChatPrivacySettings(viewer) });
+    } catch (error) {
+      sendChatFailure(response, "chat_privacy_settings_fetch", resolved, error);
+    }
+    return true;
+  }
+
+  if (request.method === "PUT" && url.pathname === "/v1/chats/privacy-settings") {
+    const payload = await readJson(request).catch(() => null);
+    if (!payload || typeof payload !== "object") {
+      sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+      return true;
+    }
+
+    try {
+      sendJson(response, 200, await upsertChatPrivacySettings(viewer, payload));
+    } catch (error) {
+      sendChatFailure(response, "chat_privacy_settings_update", resolved, error);
     }
     return true;
   }
@@ -309,7 +450,13 @@ export async function handleChatRoute({ request, response, url, context }) {
     }
 
     try {
-      sendJson(response, 200, await markChatConversationRead(viewer, readMatch[1], messageId));
+      sendJson(
+        response,
+        200,
+        await markChatConversationRead(viewer, readMatch[1], messageId, {
+          exposeReceipt: payload?.exposeReceipt !== false
+        })
+      );
     } catch (error) {
       sendChatFailure(response, "chat_read", resolved, error);
     }

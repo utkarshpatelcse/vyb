@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { WebSocketServer } from "ws";
+import { canExposeChatTyping, getChatPrivacySettings } from "./privacy-settings-store.mjs";
 
 const CHAT_SOCKET_PATH = "/ws/chat";
 const subscriptionsByConversation = new Map();
@@ -65,36 +66,7 @@ function addSubscription(ws, auth) {
   subscriptionsByConversation.set(key, current);
 
   ws.on("message", (rawMessage) => {
-    let payload = null;
-
-    try {
-      payload = JSON.parse(String(rawMessage));
-    } catch {
-      return;
-    }
-
-    if (payload?.type !== "chat.typing" || !payload.payload || typeof payload.payload !== "object") {
-      return;
-    }
-
-    const isTyping = typeof payload.payload.isTyping === "boolean" ? payload.payload.isTyping : null;
-    const conversationId =
-      typeof payload.payload.conversationId === "string" ? payload.payload.conversationId : auth.conversationId;
-    if (isTyping === null || conversationId !== auth.conversationId) {
-      return;
-    }
-
-    emitChatRealtimeEvent({
-      conversationId: auth.conversationId,
-      type: "chat.typing",
-      payload: {
-        conversationId: auth.conversationId,
-        userId: auth.userId,
-        membershipId: auth.membershipId,
-        isTyping,
-        typedAt: new Date().toISOString()
-      }
-    });
+    void handleSocketMessage(auth, rawMessage);
   });
 
   ws.on("close", () => {
@@ -106,6 +78,49 @@ function addSubscription(ws, auth) {
     listeners.delete(ws);
     if (listeners.size === 0) {
       subscriptionsByConversation.delete(key);
+    }
+  });
+}
+
+async function handleSocketMessage(auth, rawMessage) {
+  let payload = null;
+
+  try {
+    payload = JSON.parse(String(rawMessage));
+  } catch {
+    return;
+  }
+
+  if (payload?.type !== "chat.typing" || !payload.payload || typeof payload.payload !== "object") {
+    return;
+  }
+
+  const isTyping = typeof payload.payload.isTyping === "boolean" ? payload.payload.isTyping : null;
+  const conversationId =
+    typeof payload.payload.conversationId === "string" ? payload.payload.conversationId : auth.conversationId;
+  if (isTyping === null || conversationId !== auth.conversationId) {
+    return;
+  }
+
+  if (isTyping) {
+    const settings = await getChatPrivacySettings({
+      tenantId: auth.tenantId,
+      userId: auth.userId
+    });
+    if (!canExposeChatTyping(settings)) {
+      return;
+    }
+  }
+
+  emitChatRealtimeEvent({
+    conversationId: auth.conversationId,
+    type: "chat.typing",
+    payload: {
+      conversationId: auth.conversationId,
+      userId: auth.userId,
+      membershipId: auth.membershipId,
+      isTyping,
+      typedAt: new Date().toISOString()
     }
   });
 }

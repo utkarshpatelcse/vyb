@@ -642,6 +642,29 @@ export interface ChatPeerSummary {
   activePath?: string | null;
 }
 
+export type ChatPrivacyVisibility = "Everyone" | "My Contacts" | "Nobody";
+
+export interface ChatPrivacySettingsRecord {
+  lastSeenOnline: ChatPrivacyVisibility;
+  readReceipts: boolean;
+  typingIndicator: boolean;
+  updatedAt: string;
+}
+
+export interface GetChatPrivacySettingsResponse {
+  settings: ChatPrivacySettingsRecord;
+}
+
+export interface UpsertChatPrivacySettingsRequest {
+  lastSeenOnline?: ChatPrivacyVisibility;
+  readReceipts?: boolean;
+  typingIndicator?: boolean;
+}
+
+export interface UpsertChatPrivacySettingsResponse {
+  settings: ChatPrivacySettingsRecord;
+}
+
 export interface ChatEncryptedAttachment {
   kind: "image" | "video" | "audio";
   url: string;
@@ -652,6 +675,10 @@ export interface ChatEncryptedAttachment {
   height?: number | null;
   durationMs?: number | null;
   viewOnce?: boolean;
+  cipherAlgorithm?: string | null;
+  cipherIv?: string | null;
+  senderPublicKey?: string | null;
+  recipientPublicKey?: string | null;
 }
 
 export interface ChatCardPayloadBase {
@@ -847,6 +874,7 @@ export interface MarkChatReadResponse {
   conversationId: string;
   messageId: string;
   readAt: string;
+  receiptExposed: boolean;
 }
 
 export interface ReactToChatMessageResponse {
@@ -958,12 +986,113 @@ export interface ClearChatKeyBackupPinAttemptResponse {
   attemptState: ChatServerPinAttemptState;
 }
 
+export type ChatTrustedDevicePlatform = "web" | "ios" | "android" | "desktop" | "unknown";
+
+export interface ChatTrustedDeviceRecord {
+  id: string;
+  userId: string;
+  membershipId: string;
+  label: string;
+  platform: ChatTrustedDevicePlatform;
+  publicKey: string;
+  addedAt: string;
+  lastSeenAt: string;
+  revokedAt: string | null;
+  isCurrentDevice: boolean;
+}
+
+export interface GetChatTrustedDevicesResponse {
+  items: ChatTrustedDeviceRecord[];
+}
+
+export interface RegisterChatTrustedDeviceRequest {
+  deviceId?: string | null;
+  label: string;
+  platform?: ChatTrustedDevicePlatform;
+  publicKey: string;
+}
+
+export interface RegisterChatTrustedDeviceResponse {
+  item: ChatTrustedDeviceRecord;
+  items: ChatTrustedDeviceRecord[];
+}
+
+export interface RevokeChatTrustedDeviceResponse {
+  deviceId: string;
+  items: ChatTrustedDeviceRecord[];
+}
+
+export type ChatDevicePairingStatus = "pending" | "approved" | "claimed" | "expired";
+
+export interface ChatDevicePairingTransferEnvelope {
+  version: number;
+  cipherText: string;
+  iv: string;
+  algorithm: string;
+  senderPublicKey: string;
+  recipientPublicKey: string;
+}
+
+export interface ChatDevicePairingSession {
+  id: string;
+  pairingCode: string | null;
+  userId: string;
+  membershipId: string;
+  requesterDeviceId: string;
+  requesterLabel: string;
+  requesterPlatform: ChatTrustedDevicePlatform;
+  requesterPublicKey: string;
+  status: ChatDevicePairingStatus;
+  createdAt: string;
+  expiresAt: string;
+  approvedAt: string | null;
+  claimedAt: string | null;
+  approverDeviceId: string | null;
+  approverLabel: string | null;
+  transferEnvelope: ChatDevicePairingTransferEnvelope | null;
+}
+
+export interface CreateChatDevicePairingRequest {
+  requesterDeviceId: string;
+  requesterLabel: string;
+  requesterPlatform?: ChatTrustedDevicePlatform;
+  requesterPublicKey: string;
+}
+
+export interface CreateChatDevicePairingResponse {
+  pairing: ChatDevicePairingSession;
+}
+
+export interface GetChatDevicePairingResponse {
+  pairing: ChatDevicePairingSession;
+}
+
+export interface ApproveChatDevicePairingRequest {
+  approverDeviceId: string;
+  approverLabel: string;
+  transferEnvelope: ChatDevicePairingTransferEnvelope;
+}
+
+export interface ApproveChatDevicePairingResponse {
+  pairing: ChatDevicePairingSession;
+}
+
+export interface ClaimChatDevicePairingResponse {
+  pairing: ChatDevicePairingSession;
+}
+
 export interface UploadEncryptedChatAttachmentRequest {
   fileName: string;
   mimeType: string;
   base64Data: string;
   width?: number | null;
   height?: number | null;
+  durationMs?: number | null;
+  viewOnce?: boolean;
+  cipherAlgorithm: string;
+  cipherIv: string;
+  senderPublicKey: string;
+  recipientPublicKey: string;
 }
 
 export interface UploadEncryptedChatAttachmentResponse {

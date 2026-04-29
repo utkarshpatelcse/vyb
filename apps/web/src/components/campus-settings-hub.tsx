@@ -307,6 +307,8 @@ export function CampusSettingsHub({
   const [profileBusy, setProfileBusy] = useState(false);
   const [passwordBusy, setPasswordBusy] = useState(false);
   const [sessionBusy, setSessionBusy] = useState(false);
+  const chatPrivacyLoadedRef = useRef(false);
+  const lastSyncedChatPrivacyRef = useRef("");
 
   const storageStats = useMemo(() => {
     if (typeof window === "undefined") {
@@ -345,6 +347,83 @@ export function CampusSettingsHub({
   useEffect(() => {
     persistStoredCampusSettings(settingsIdentity, settings);
   }, [settings, settingsIdentity]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const response = await fetch("/api/chats/privacy-settings", {
+          cache: "no-store",
+          credentials: "same-origin"
+        });
+        if (!response.ok || cancelled) {
+          return;
+        }
+
+        const payload = (await response.json()) as {
+          settings?: Partial<Pick<StoredCampusSettings, "lastSeenOnline" | "readReceipts" | "typingIndicator">>;
+        };
+        if (!payload.settings) {
+          return;
+        }
+
+        setSettings((current) => ({
+          ...current,
+          lastSeenOnline:
+            payload.settings?.lastSeenOnline === "Everyone" ||
+            payload.settings?.lastSeenOnline === "My Contacts" ||
+            payload.settings?.lastSeenOnline === "Nobody"
+              ? payload.settings.lastSeenOnline
+              : current.lastSeenOnline,
+          readReceipts:
+            typeof payload.settings?.readReceipts === "boolean"
+              ? payload.settings.readReceipts
+              : current.readReceipts,
+          typingIndicator:
+            typeof payload.settings?.typingIndicator === "boolean"
+              ? payload.settings.typingIndicator
+              : current.typingIndicator
+        }));
+      } catch {
+        return;
+      } finally {
+        chatPrivacyLoadedRef.current = true;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!chatPrivacyLoadedRef.current) {
+      return;
+    }
+
+    const payload = {
+      lastSeenOnline: settings.lastSeenOnline,
+      readReceipts: settings.readReceipts,
+      typingIndicator: settings.typingIndicator
+    };
+    const payloadKey = JSON.stringify(payload);
+    if (payloadKey === lastSyncedChatPrivacyRef.current) {
+      return;
+    }
+
+    lastSyncedChatPrivacyRef.current = payloadKey;
+
+    void fetch("/api/chats/privacy-settings", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: payloadKey,
+      cache: "no-store",
+      credentials: "same-origin"
+    }).catch(() => {
+      lastSyncedChatPrivacyRef.current = "";
+    });
+  }, [settings.lastSeenOnline, settings.readReceipts, settings.typingIndicator]);
 
   useEffect(() => {
     setAccountDraft(buildInitialAccountDraft({ viewerName, viewerEmail, initialProfile, storedSettings: settings }));

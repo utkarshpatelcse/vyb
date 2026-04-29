@@ -23,7 +23,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ conv
   const { conversationId } = await params;
 
   try {
-    return NextResponse.json(await markChatRead(viewer, conversationId, messageId));
+    return NextResponse.json(
+      await markChatRead(viewer, conversationId, messageId, {
+        exposeReceipt: payload?.exposeReceipt !== false
+      })
+    );
   } catch (error) {
     return buildError(500, "CHAT_READ_FAILED", error instanceof Error ? error.message : "We could not update chat read state.");
   }

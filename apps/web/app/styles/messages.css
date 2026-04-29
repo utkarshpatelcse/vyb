@@ -1949,6 +1949,16 @@
   object-fit: initial;
 }
 
+.spm-chat-attachment-loading {
+  display: grid;
+  min-height: 8rem;
+  place-items: center;
+  padding: 1rem;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.84rem;
+  background: rgba(255, 255, 255, 0.06);
+}
+
 .spm-chat-view-once-card {
   width: 100%;
   display: grid;

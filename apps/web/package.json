@@ -12,6 +12,7 @@
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
+    "@types/qrcode": "^1.5.6",
     "@vyb/app-core": "workspace:*",
     "@vyb/config": "workspace:*",
     "@vyb/contracts": "workspace:*",
@@ -24,6 +25,7 @@
     "firebase-admin": "^13.8.0",
     "framer-motion": "^12.38.0",
     "next": "latest",
+    "qrcode": "^1.5.4",
     "react": "latest",
     "react-dom": "latest",
     "sharp": "^0.34.4"
