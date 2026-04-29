@@ -131,6 +131,11 @@ type PendingSocketAction =
   | { type: "create"; settings: ScribbleSettings }
   | { type: "join"; roomId: string };
 
+type ScribbleSocketMessage = {
+  type: string;
+  payload: Record<string, unknown>;
+};
+
 export type ScribbleInviteTarget = {
   userId: string;
   username: string;
@@ -167,11 +172,44 @@ const DEFAULT_SETTINGS: ScribbleSettings = {
 
 const SYSTEM_PUBLIC_ROOM_NAME = "vyb-public";
 const MAX_CLIENT_DRAWING_STEPS = 5000;
+const MAX_QUEUED_SOCKET_MESSAGES = 40;
+const SCRIBBLE_CLIENT_ID_STORAGE_KEY = "vyb-scribble-client-id";
 
 const DRAW_COLORS = ["#111827", "#ef4444", "#f97316", "#eab308", "#22c55e", "#06b6d4", "#6366f1", "#ec4899", "#f8fafc"];
 
 function normalizeRoomCode(value: string) {
   return value.trim().toUpperCase().replace(/[^A-Z0-9]/gu, "").slice(0, 12);
+}
+
+function normalizeClientId(value: string) {
+  return value.trim().replace(/[^a-zA-Z0-9_-]/gu, "").slice(0, 80);
+}
+
+function createClientId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function getScribbleClientId() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const existing = normalizeClientId(window.sessionStorage.getItem(SCRIBBLE_CLIENT_ID_STORAGE_KEY) ?? "");
+    if (existing.length >= 6) {
+      return existing;
+    }
+
+    const next = normalizeClientId(createClientId());
+    window.sessionStorage.setItem(SCRIBBLE_CLIENT_ID_STORAGE_KEY, next);
+    return next;
+  } catch {
+    return normalizeClientId(createClientId());
+  }
 }
 
 function getCanvasContext(canvas: HTMLCanvasElement) {
@@ -381,6 +419,7 @@ export function ScribbleMultiplayerGame({
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
   const shouldReconnectRef = useRef(false);
+  const queuedMessagesRef = useRef<ScribbleSocketMessage[]>([]);
   const drawBufferRef = useRef<ScribbleDrawStep[]>([]);
   const drawFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pointerStateRef = useRef<{ pointerId: number; last: { x: number; y: number } } | null>(null);
@@ -579,9 +618,24 @@ export function ScribbleMultiplayerGame({
     setRoomSettingsDraft((current) => ({ ...current, ...next }));
   }
 
-  function sendSocketMessage(message: unknown) {
+  function queueSocketMessage(message: ScribbleSocketMessage) {
+    queuedMessagesRef.current = [...queuedMessagesRef.current, message].slice(-MAX_QUEUED_SOCKET_MESSAGES);
+  }
+
+  function flushQueuedSocketMessages() {
+    const queuedMessages = queuedMessagesRef.current.splice(0, queuedMessagesRef.current.length);
+    for (const message of queuedMessages) {
+      sendSocketMessage(message);
+    }
+  }
+
+  function sendSocketMessage(message: ScribbleSocketMessage, options: { queueIfOffline?: boolean } = {}) {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
+      if (options.queueIfOffline) {
+        queueSocketMessage(message);
+        void connectSocket();
+      }
       return false;
     }
 
@@ -672,7 +726,13 @@ export function ScribbleMultiplayerGame({
           staleSocket.onerror = null;
         }
 
-        const socket = new WebSocket(payload.wsUrl);
+        const socketUrl = new URL(payload.wsUrl);
+        const clientId = getScribbleClientId();
+        if (clientId) {
+          socketUrl.searchParams.set("clientId", clientId);
+        }
+
+        const socket = new WebSocket(socketUrl.toString());
         socketRef.current = socket;
 
         socket.onopen = () => {
@@ -697,6 +757,8 @@ export function ScribbleMultiplayerGame({
               }
             });
             pendingActionRef.current = null;
+            flushQueuedSocketMessages();
+            flushDrawBuffer();
             return;
           }
 
@@ -710,6 +772,9 @@ export function ScribbleMultiplayerGame({
             });
             pendingActionRef.current = null;
           }
+
+          flushQueuedSocketMessages();
+          flushDrawBuffer();
         };
 
         socket.onmessage = (event) => {
@@ -844,17 +909,55 @@ export function ScribbleMultiplayerGame({
       return;
     }
 
-    const oscillator = audioContext.createOscillator();
-    const gain = audioContext.createGain();
-    oscillator.type = "square";
-    oscillator.frequency.value = 880;
-    gain.gain.setValueAtTime(0.0001, audioContext.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.03, audioContext.currentTime + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.12);
-    oscillator.connect(gain);
-    gain.connect(audioContext.destination);
-    oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + 0.13);
+    const startedAt = audioContext.currentTime;
+    const isTock = (lastTickSecondRef.current ?? 0) % 2 === 0;
+    const clickDuration = 0.038;
+    const sampleCount = Math.max(1, Math.floor(audioContext.sampleRate * clickDuration));
+    const clickBuffer = audioContext.createBuffer(1, sampleCount, audioContext.sampleRate);
+    const clickData = clickBuffer.getChannelData(0);
+
+    for (let index = 0; index < sampleCount; index += 1) {
+      const ratio = index / sampleCount;
+      const decay = Math.exp(-ratio * 18);
+      clickData[index] = (Math.random() * 2 - 1) * decay;
+    }
+
+    const clickSource = audioContext.createBufferSource();
+    const highPass = audioContext.createBiquadFilter();
+    const clockBody = audioContext.createBiquadFilter();
+    const clickGain = audioContext.createGain();
+
+    clickSource.buffer = clickBuffer;
+    highPass.type = "highpass";
+    highPass.frequency.setValueAtTime(isTock ? 950 : 1250, startedAt);
+    highPass.Q.setValueAtTime(0.55, startedAt);
+    clockBody.type = "bandpass";
+    clockBody.frequency.setValueAtTime(isTock ? 1850 : 2450, startedAt);
+    clockBody.Q.setValueAtTime(isTock ? 5.5 : 7, startedAt);
+    clickGain.gain.setValueAtTime(0.0001, startedAt);
+    clickGain.gain.exponentialRampToValueAtTime(isTock ? 0.075 : 0.065, startedAt + 0.004);
+    clickGain.gain.exponentialRampToValueAtTime(0.0001, startedAt + 0.055);
+
+    const knock = audioContext.createOscillator();
+    const knockGain = audioContext.createGain();
+    knock.type = "triangle";
+    knock.frequency.setValueAtTime(isTock ? 520 : 680, startedAt);
+    knock.frequency.exponentialRampToValueAtTime(isTock ? 430 : 560, startedAt + 0.035);
+    knockGain.gain.setValueAtTime(0.0001, startedAt);
+    knockGain.gain.exponentialRampToValueAtTime(isTock ? 0.03 : 0.022, startedAt + 0.006);
+    knockGain.gain.exponentialRampToValueAtTime(0.0001, startedAt + 0.075);
+
+    clickSource.connect(highPass);
+    highPass.connect(clockBody);
+    clockBody.connect(clickGain);
+    clickGain.connect(audioContext.destination);
+    knock.connect(knockGain);
+    knockGain.connect(audioContext.destination);
+
+    clickSource.start(startedAt);
+    clickSource.stop(startedAt + clickDuration);
+    knock.start(startedAt);
+    knock.stop(startedAt + 0.08);
   }
 
   async function createRoom() {
@@ -898,6 +1001,8 @@ export function ScribbleMultiplayerGame({
     sendSocketMessage({
       type: "scribble.game.start",
       payload: {}
+    }, {
+      queueIfOffline: true
     });
   }
 
@@ -906,6 +1011,8 @@ export function ScribbleMultiplayerGame({
     sendSocketMessage({
       type: "scribble.word.choose",
       payload: { choiceId }
+    }, {
+      queueIfOffline: true
     });
   }
 
@@ -915,6 +1022,8 @@ export function ScribbleMultiplayerGame({
       payload: {
         settings: roomSettingsDraft
       }
+    }, {
+      queueIfOffline: true
     });
     setNotice("Room settings updated.");
   }
@@ -930,6 +1039,8 @@ export function ScribbleMultiplayerGame({
     sendSocketMessage({
       type: "scribble.chat.guess",
       payload: { text }
+    }, {
+      queueIfOffline: true
     });
     setGuessText("");
   }
@@ -947,6 +1058,8 @@ export function ScribbleMultiplayerGame({
     sendSocketMessage({
       type: "scribble.canvas.clear",
       payload: {}
+    }, {
+      queueIfOffline: true
     });
   }
 
@@ -954,6 +1067,8 @@ export function ScribbleMultiplayerGame({
     sendSocketMessage({
       type: tone === "like" ? "scribble.drawing.like" : "scribble.drawing.dislike",
       payload: {}
+    }, {
+      queueIfOffline: true
     });
   }
 
@@ -961,6 +1076,8 @@ export function ScribbleMultiplayerGame({
     sendSocketMessage({
       type: "scribble.round.skip",
       payload: {}
+    }, {
+      queueIfOffline: true
     });
   }
 
@@ -971,10 +1088,14 @@ export function ScribbleMultiplayerGame({
       return;
     }
 
-    sendSocketMessage({
+    const sent = sendSocketMessage({
       type: "scribble.draw.step",
       payload: { steps }
     });
+    if (!sent) {
+      drawBufferRef.current.unshift(...steps);
+      void connectSocket();
+    }
   }
 
   function enqueueDrawStep(step: ScribbleDrawStep) {
@@ -1043,6 +1164,13 @@ export function ScribbleMultiplayerGame({
   }
 
   function handleExit() {
+    shouldReconnectRef.current = false;
+    sendSocketMessage({
+      type: "scribble.room.leave",
+      payload: {}
+    });
+    socketRef.current?.close(1000, "left room");
+
     if (onExit) {
       onExit();
       return;
@@ -1333,9 +1461,21 @@ export function ScribbleMultiplayerGame({
         <button type="button" className="vyb-scribble-icon-button" onClick={handleExit} aria-label="Back">
           <span aria-hidden="true">←</span>
         </button>
-        <div>
-          <span className="vyb-scribble-kicker">Room {roomDisplayName}</span>
-          <h2>Scribble</h2>
+        <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
+          {canvasWordLabel && canvasWordValue ? (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+              <span style={{ fontSize: "0.65rem", fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "0.1rem" }}>{canvasWordLabel}</span>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "0.2rem" }}>
+                <strong style={{ fontSize: "1.2rem", color: "#fff", letterSpacing: "0.05em", lineHeight: 1 }}>{canvasWordValue}</strong>
+                {canvasWordLengths ? <sup style={{ fontSize: "0.65rem", color: "#34d399", fontWeight: 900 }}>{canvasWordLengths}</sup> : null}
+              </div>
+            </div>
+          ) : (
+            <div style={{ textAlign: "center" }}>
+              <span className="vyb-scribble-kicker">Room {roomDisplayName}</span>
+              <h2>Scribble</h2>
+            </div>
+          )}
         </div>
         <button type="button" className="vyb-scribble-code-button" onClick={() => setShareMode("invite")}>
           Invite
@@ -1456,15 +1596,31 @@ export function ScribbleMultiplayerGame({
         </section>
       ) : (
         <div className="vyb-scribble-game-grid">
-          <section className="vyb-scribble-board-column">
-            {snapshot.hintLetters > 0 && !isDrawer && snapshot.status === "PLAYING" ? (
-              <div style={{ textAlign: "center", marginBottom: "0.5rem" }}>
-                <span style={{ display: "inline-block", background: "rgba(239, 68, 68, 0.15)", color: "#ef4444", padding: "0.2rem 0.75rem", borderRadius: "999px", fontSize: "0.75rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                  Hint penalty active
-                </span>
+          <aside className="vyb-scribble-side-column is-left">
+            <section className="vyb-scribble-panel vyb-scribble-side-panel vyb-scribble-score-panel">
+              <div className="vyb-scribble-panel-head">
+                <span>Scoreboard</span>
+                <strong>{connectedPlayerCount} live</strong>
               </div>
-            ) : null}
+              <div ref={scoreListRef} className="vyb-scribble-score-list">
+                {sortedPlayers.map((player) => {
+                    const isYou = player.membershipId === viewer?.membershipId;
+                    const hasGuessed = player.correctThisTurn && snapshot.status === "PLAYING";
+                    const isDrawing = player.membershipId === snapshot.currentDrawerMembershipId;
 
+                    return (
+                      <div key={player.membershipId} className={`vyb-scribble-score-row${isYou ? " is-you" : ""}${hasGuessed ? " has-guessed" : ""}${isDrawing ? " is-drawing" : ""}`}>
+                        <strong>{player.displayName}</strong>
+                        <small>{isDrawing ? "Drawing" : hasGuessed ? "Guessed" : ""}</small>
+                        <b>{player.score}</b>
+                      </div>
+                    );
+                  })}
+              </div>
+            </section>
+          </aside>
+
+          <section className="vyb-scribble-board-column">
             <div className="vyb-scribble-canvas-frame" style={{ position: "relative" }}>
               {/* Overlay timer inside canvas top-left */}
               <div style={{ position: "absolute", top: "0.6rem", left: "0.6rem", pointerEvents: "none", zIndex: 10 }}>
@@ -1474,13 +1630,7 @@ export function ScribbleMultiplayerGame({
                 </div>
               </div>
 
-              {canvasWordLabel && canvasWordValue ? (
-                <div className="vyb-scribble-canvas-word-hud">
-                  <span>{canvasWordLabel}</span>
-                  <strong>{canvasWordValue}</strong>
-                  {canvasWordLengths ? <small>{canvasWordLengths}</small> : null}
-                </div>
-              ) : null}
+
 
               <canvas
                 ref={canvasRef}
@@ -1493,6 +1643,19 @@ export function ScribbleMultiplayerGame({
               />
 
               {/* Tools 3-dot button & menu at bottom-right */}
+              {!isDrawer && snapshot.status === "PLAYING" ? (
+                <div style={{ position: "absolute", bottom: "0.6rem", right: "0.6rem", zIndex: 15, display: "flex", gap: "0.4rem" }}>
+                  <button type="button" onClick={() => reactToDrawing("like")} disabled={snapshot.status !== "PLAYING"} className={`vyb-scribble-icon-button ${snapshot.viewerLiked ? "is-active" : ""}`} style={{ width: "2.5rem", height: "2.5rem", borderRadius: "50%", background: snapshot.viewerLiked ? "#10b981" : "rgba(15, 23, 42, 0.8)", border: "1px solid rgba(255,255,255,0.1)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,0.3)", position: "relative" }}>
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg>
+                    {snapshot.likeCount > 0 && <span style={{ position: "absolute", top: "-5px", right: "-5px", background: "#ef4444", fontSize: "0.6rem", padding: "0.1rem 0.3rem", borderRadius: "999px", fontWeight: 800 }}>{snapshot.likeCount}</span>}
+                  </button>
+                  <button type="button" onClick={() => reactToDrawing("dislike")} disabled={snapshot.status !== "PLAYING"} className={`vyb-scribble-icon-button ${snapshot.viewerDisliked ? "is-active" : ""}`} style={{ width: "2.5rem", height: "2.5rem", borderRadius: "50%", background: snapshot.viewerDisliked ? "#ef4444" : "rgba(15, 23, 42, 0.8)", border: "1px solid rgba(255,255,255,0.1)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,0.3)", position: "relative" }}>
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"></path></svg>
+                    {snapshot.dislikeCount > 0 && <span style={{ position: "absolute", top: "-5px", right: "-5px", background: "#f59e0b", fontSize: "0.6rem", padding: "0.1rem 0.3rem", borderRadius: "999px", fontWeight: 800 }}>{snapshot.dislikeCount}</span>}
+                  </button>
+                </div>
+              ) : null}
+
               {isDrawer && snapshot.status === "PLAYING" ? (
                 <div style={{ position: "absolute", bottom: "0.6rem", right: "0.6rem", zIndex: 15, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.5rem" }}>
                   {showToolsMenu ? (
@@ -1590,47 +1753,10 @@ export function ScribbleMultiplayerGame({
               ) : null}
             </div>
 
-            <div className="vyb-scribble-like-bar">
-              <button
-                type="button"
-                className={`vyb-scribble-tool-button${snapshot.viewerLiked ? " is-active" : ""}`}
-                onClick={() => reactToDrawing("like")}
-                disabled={isDrawer || snapshot.status !== "PLAYING"}
-              >
-                Like {snapshot.likeCount}
-              </button>
-              <button
-                type="button"
-                className={`vyb-scribble-tool-button${snapshot.viewerDisliked ? " is-active" : ""}`}
-                onClick={() => reactToDrawing("dislike")}
-                disabled={isDrawer || snapshot.status !== "PLAYING"}
-              >
-                Dislike {snapshot.dislikeCount}/3
-              </button>
-            </div>
+
           </section>
 
-          <aside className="vyb-scribble-side-column">
-            <section className="vyb-scribble-panel vyb-scribble-side-panel vyb-scribble-score-panel">
-              <div className="vyb-scribble-panel-head">
-                <span>Scoreboard</span>
-                <strong>{winner ? winner.displayName : "Open"}</strong>
-              </div>
-              <div ref={scoreListRef} className="vyb-scribble-score-list">
-                {sortedPlayers.map((player, index) => (
-                  <div key={player.membershipId} className={`vyb-scribble-score-row${player.membershipId === viewer?.membershipId ? " is-you" : ""}`}>
-                    <span>{index + 1}</span>
-                    <span className="vyb-scribble-avatar">
-                      <CampusAvatarContent userId={player.userId} username={player.username} displayName={player.displayName} />
-                    </span>
-                    <strong>{player.displayName}</strong>
-                    <small>{player.correctThisTurn ? "Correct" : player.isDrawer ? "Drawing" : player.connected ? "Live" : "Offline"}</small>
-                    <b>{player.score}</b>
-                  </div>
-                ))}
-              </div>
-            </section>
-
+          <aside className="vyb-scribble-side-column is-right">
             <section className="vyb-scribble-panel vyb-scribble-side-panel vyb-scribble-chat-panel">
               <div className="vyb-scribble-panel-head">
                 <span>Guesses</span>
