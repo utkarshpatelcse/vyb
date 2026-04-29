@@ -24,7 +24,7 @@ import type {
   UserSearchItem
 } from "@vyb/contracts";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
 import { CampusAvatarContent } from "./campus-avatar";
 import {
@@ -1067,6 +1067,7 @@ export function CampusMessagesShell({
   initialRemoteKeyBackup?: ChatKeyBackupRecord | null;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const settingsIdentity = useMemo(
     () => ({
@@ -1191,6 +1192,7 @@ export function CampusMessagesShell({
   const setupRedirectedRef = useRef(false);
   const migratingMessageIdsRef = useRef<Set<string>>(new Set());
   const pendingConversationNavigationRef = useRef<string | null>(null);
+  const activeConversationIdRef = useRef<string | null>(initialConversationId);
   const messageIdsRef = useRef<Set<string>>(new Set(initialConversation?.messages.map((message) => message.id) ?? []));
   const activeConversationRef = useRef<ActiveConversation | null>(initialConversation);
   const conversationDetailCacheRef = useRef<Map<string, ActiveConversation>>(
@@ -1372,6 +1374,31 @@ export function CampusMessagesShell({
   useEffect(() => {
     setChatSettingsOpen(false);
   }, [activeConversationId]);
+
+  useEffect(() => {
+    activeConversationIdRef.current = activeConversationId;
+  }, [activeConversationId]);
+
+  useEffect(() => {
+    if (pathname !== "/messages") {
+      return;
+    }
+
+    if (!activeConversationIdRef.current && !activeConversationRef.current) {
+      return;
+    }
+
+    activeConversationIdRef.current = null;
+    pendingConversationNavigationRef.current = null;
+    setActiveConversationId(null);
+    setPendingConversationId(null);
+    setActiveConversation(null);
+    activeConversationRef.current = null;
+    messageIdsRef.current = new Set();
+    setConversationLoading(false);
+    setConversationError(null);
+    setRealtimeState("idle");
+  }, [pathname]);
 
   async function probeBrowserSession() {
     if (sessionProbePromiseRef.current) {
@@ -1816,7 +1843,7 @@ export function CampusMessagesShell({
 
       setLocalChatKey(stored);
       if (!remoteKeyBackupLoaded) {
-        setKeySetupError("Checking your encrypted key backup...");
+        setKeySetupError(null);
         setLocalChatKeyLoaded(true);
         return;
       }
@@ -2998,35 +3025,21 @@ export function CampusMessagesShell({
 
   const seenOwnMessageIds = useMemo(() => {
     const seenIds = new Set<string>();
-    if (!activeConversation?.peerLastReadMessageId && !activeConversation?.peerLastReadAt) {
+    if (!activeConversation?.peerLastReadMessageId) {
       return seenIds;
     }
 
-    const peerReadAtTime = activeConversation.peerLastReadAt
-      ? new Date(activeConversation.peerLastReadAt).getTime()
-      : null;
-    const hasPeerReadAtTime = typeof peerReadAtTime === "number" && Number.isFinite(peerReadAtTime);
-
+    const readCandidateIds: string[] = [];
     for (const message of activeConversation.messages) {
-      const messageCreatedAt = new Date(message.createdAt).getTime();
-      const isBeforePeerReadAt =
-        hasPeerReadAtTime && Number.isFinite(messageCreatedAt) && messageCreatedAt <= peerReadAtTime;
-
-      if (isOwnChatMessage(message, viewerUserId, viewerMembershipId) && isBeforePeerReadAt) {
-        seenIds.add(message.id);
+      if (isOwnChatMessage(message, viewerUserId, viewerMembershipId)) {
+        readCandidateIds.push(message.id);
       }
 
       if (message.id === activeConversation.peerLastReadMessageId) {
-        for (const candidate of activeConversation.messages) {
-          if (isOwnChatMessage(candidate, viewerUserId, viewerMembershipId)) {
-            seenIds.add(candidate.id);
-          }
-
-          if (candidate.id === activeConversation.peerLastReadMessageId) {
-            break;
-          }
+        if (isOwnChatMessage(message, viewerUserId, viewerMembershipId)) {
+          readCandidateIds.forEach((messageId) => seenIds.add(messageId));
         }
-        break;
+        return seenIds;
       }
     }
 
@@ -3459,6 +3472,8 @@ export function CampusMessagesShell({
     let cancelled = false;
     let socket: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+    let heartbeatTimeout: ReturnType<typeof setTimeout> | null = null;
     let connectInFlight = false;
     let reconnectAttempt = 0;
 
@@ -3469,12 +3484,66 @@ export function CampusMessagesShell({
       }
     }
 
+    function stopHeartbeat() {
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+      }
+
+      if (heartbeatTimeout) {
+        clearTimeout(heartbeatTimeout);
+        heartbeatTimeout = null;
+      }
+    }
+
+    function markSocketResponsive() {
+      if (heartbeatTimeout) {
+        clearTimeout(heartbeatTimeout);
+        heartbeatTimeout = null;
+      }
+
+      if (!cancelled) {
+        setRealtimeState("live");
+      }
+    }
+
+    function startHeartbeat() {
+      stopHeartbeat();
+      heartbeatInterval = setInterval(() => {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+          return;
+        }
+
+        try {
+          socket.send(
+            JSON.stringify({
+              type: "chat.ping",
+              payload: {
+                conversationId
+              }
+            })
+          );
+        } catch {
+          socket.close();
+          return;
+        }
+
+        if (heartbeatTimeout) {
+          clearTimeout(heartbeatTimeout);
+        }
+        heartbeatTimeout = setTimeout(() => {
+          socket?.close(4000, "heartbeat-timeout");
+        }, 8000);
+      }, 15000);
+    }
+
     function canKeepSocketAlive() {
       return !cancelled && navigator.onLine && document.visibilityState === "visible";
     }
 
     function closeSocket(reason?: string) {
       clearReconnectTimer();
+      stopHeartbeat();
       clearTypingStopTimer();
       sendTypingSignal(false);
 
@@ -3556,6 +3625,7 @@ export function CampusMessagesShell({
           reconnectAttempt = 0;
           setSessionExpired(false);
           setRealtimeState("live");
+          startHeartbeat();
           acknowledgeIncomingMessages(activeConversationRef.current?.messages ?? []);
           if (syncOnOpen) {
             syncMissedMessages();
@@ -3583,6 +3653,11 @@ export function CampusMessagesShell({
                 deliveredAt?: string;
               };
             };
+
+            if (payload.type === "chat.connected" || payload.type === "chat.pong") {
+              markSocketResponsive();
+              return;
+            }
 
             if (payload.type === "chat.read") {
               const applied = applyRealtimeReadReceipt({
@@ -3752,6 +3827,7 @@ export function CampusMessagesShell({
 
         socket.onclose = () => {
           connectInFlight = false;
+          stopHeartbeat();
           chatSocketRef.current = null;
           lastTypingSignalRef.current = null;
           socket = null;
@@ -5208,7 +5284,8 @@ export function CampusMessagesShell({
   const activePinLockoutCountdown = activePinLockoutRemainingMs
     ? formatLockoutCountdown(activePinLockoutRemainingMs)
     : "";
-  const showRecoveryRestoreCard = Boolean(viewerIdentity && !hasCompatibleLocalChatKey);
+  const chatKeyReadinessLoaded = localChatKeyLoaded && (remoteKeyBackupLoaded || hasCompatibleLocalChatKey);
+  const showRecoveryRestoreCard = Boolean(chatKeyReadinessLoaded && viewerIdentity && !hasCompatibleLocalChatKey);
   const showPinSetupCard = Boolean(viewerIdentity && hasCompatibleLocalChatKey && remoteKeyBackupLoaded && !remoteKeyBackup);
   const shouldShowBackupCards = Boolean(showPinSetupCard || showRecoveryRestoreCard);
   const chatSetupIntent = !viewerIdentity

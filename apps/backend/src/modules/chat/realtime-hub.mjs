@@ -66,7 +66,7 @@ function addSubscription(ws, auth) {
   subscriptionsByConversation.set(key, current);
 
   ws.on("message", (rawMessage) => {
-    void handleSocketMessage(auth, rawMessage);
+    void handleSocketMessage(auth, rawMessage, ws);
   });
 
   ws.on("close", () => {
@@ -82,7 +82,7 @@ function addSubscription(ws, auth) {
   });
 }
 
-async function handleSocketMessage(auth, rawMessage) {
+async function handleSocketMessage(auth, rawMessage, ws) {
   let payload = null;
 
   try {
@@ -98,6 +98,22 @@ async function handleSocketMessage(auth, rawMessage) {
   const conversationId =
     typeof payload.payload.conversationId === "string" ? payload.payload.conversationId : auth.conversationId;
   if (conversationId !== auth.conversationId) {
+    return;
+  }
+
+  if (payload.type === "chat.ping") {
+    if (ws.readyState === 1) {
+      ws.send(
+        JSON.stringify({
+          type: "chat.pong",
+          conversationId: auth.conversationId,
+          payload: {
+            conversationId: auth.conversationId,
+            pongAt: new Date().toISOString()
+          }
+        })
+      );
+    }
     return;
   }
 
