@@ -8,3 +8,13 @@ type ConnectLevelStore
   createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
   updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
 }
+
+type ScribbleWordStore
+  @table(name: "scribble_word_stores", singular: "scribbleWordStore", plural: "scribbleWordStores", key: ["id"]) {
+  id: String!
+  payloadJson: String! @col(name: "payload_json")
+  totalWords: Int! @col(name: "total_words")
+  checksum: String @col(name: "checksum")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+}

@@ -47,3 +47,48 @@ mutation UpdateConnectLevelStore(
     }
   )
 }
+
+query GetScribbleWordStore($id: String!) @auth(level: NO_ACCESS) {
+  scribbleWordStore(key: { id: $id }) {
+    id
+    payloadJson
+    totalWords
+    checksum
+    updatedAt
+  }
+}
+
+mutation CreateScribbleWordStore(
+  $id: String!
+  $payloadJson: String!
+  $totalWords: Int!
+  $checksum: String
+) @auth(level: NO_ACCESS) @transaction {
+  scribbleWordStore_insert(
+    data: {
+      id: $id
+      payloadJson: $payloadJson
+      totalWords: $totalWords
+      checksum: $checksum
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation UpdateScribbleWordStore(
+  $id: String!
+  $payloadJson: String!
+  $totalWords: Int!
+  $checksum: String
+) @auth(level: NO_ACCESS) @transaction {
+  scribbleWordStore_update(
+    key: { id: $id }
+    data: {
+      payloadJson: $payloadJson
+      totalWords: $totalWords
+      checksum: $checksum
+      updatedAt_expr: "request.time"
+    }
+  )
+}

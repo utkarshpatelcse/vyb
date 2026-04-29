@@ -2,6 +2,7 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { WebSocketServer } from "ws";
+import { getFirebaseDataConnect } from "../../../../../packages/config/src/index.mjs";
 import { sendJson } from "../../lib/http.mjs";
 
 const SCRIBBLE_SOCKET_PATH = "/ws/games/scribble";
@@ -16,6 +17,23 @@ const PUBLIC_ROOM_RESET_MS = 5500;
 const MAX_DRAWING_STEPS = 5000;
 const MAX_PUBLIC_CHAT = 70;
 const WORD_BANK_PATH = path.join(getWorkspaceRoot(), "data", "scribble-words.json");
+const scribbleWordConnectorConfig = {
+  connector: "connect",
+  serviceId: "vyb",
+  location: "asia-south1"
+};
+
+const GET_SCRIBBLE_WORD_STORE_QUERY = `
+  query GetScribbleWordStoreRuntime($id: String!) {
+    scribbleWordStore(key: { id: $id }) {
+      id
+      payloadJson
+      totalWords
+      checksum
+      updatedAt
+    }
+  }
+`;
 
 const rooms = new Map();
 const connectedSockets = new Set();
@@ -119,17 +137,85 @@ function getWorkspaceRoot() {
 
 async function loadWordBank() {
   if (!wordBankPromise) {
-    wordBankPromise = readFile(WORD_BANK_PATH, "utf8").then((raw) => {
-      const parsed = JSON.parse(raw);
-      return {
-        easy: normalizeWordList(parsed.easy),
-        medium: normalizeWordList(parsed.medium),
-        hard: normalizeWordList(parsed.hard)
-      };
-    });
+    wordBankPromise = loadWordBankFromSources();
   }
 
   return wordBankPromise;
+}
+
+function getScribbleWordStoreId() {
+  return process.env.VYB_SCRIBBLE_WORD_STORE_ID ?? "official-words-v1";
+}
+
+function getScribbleWordDc() {
+  return getFirebaseDataConnect(scribbleWordConnectorConfig);
+}
+
+function normalizeWordBankPayload(payload) {
+  return {
+    easy: normalizeWordList(payload?.easy),
+    medium: normalizeWordList(payload?.medium),
+    hard: normalizeWordList(payload?.hard)
+  };
+}
+
+async function loadWordBankFromDataConnect() {
+  if (process.env.VYB_SCRIBBLE_WORDS_SOURCE === "local") {
+    return null;
+  }
+
+  const response = await getScribbleWordDc().executeGraphqlRead(GET_SCRIBBLE_WORD_STORE_QUERY, {
+    operationName: "GetScribbleWordStoreRuntime",
+    variables: {
+      id: getScribbleWordStoreId()
+    }
+  });
+  const payloadJson = response.data?.scribbleWordStore?.payloadJson;
+
+  if (typeof payloadJson !== "string" || !payloadJson.trim()) {
+    return null;
+  }
+
+  return normalizeWordBankPayload(JSON.parse(payloadJson));
+}
+
+async function loadWordBankFromFile() {
+  return normalizeWordBankPayload(JSON.parse(await readFile(WORD_BANK_PATH, "utf8")));
+}
+
+async function loadWordBankFromSources() {
+  try {
+    const wordBank = await loadWordBankFromDataConnect();
+    if (wordBank && wordBank.easy.length > 0 && wordBank.medium.length > 0 && wordBank.hard.length > 0) {
+      scribbleLog("word-bank.loaded", {
+        source: "dataconnect",
+        storeId: getScribbleWordStoreId(),
+        counts: {
+          easy: wordBank.easy.length,
+          medium: wordBank.medium.length,
+          hard: wordBank.hard.length
+        }
+      });
+      return wordBank;
+    }
+  } catch (error) {
+    scribbleLog("word-bank.dataconnect-unavailable", {
+      storeId: getScribbleWordStoreId(),
+      message: error instanceof Error ? error.message : String(error)
+    }, "warn");
+  }
+
+  const wordBank = await loadWordBankFromFile();
+  scribbleLog("word-bank.loaded", {
+    source: "local-file",
+    path: WORD_BANK_PATH,
+    counts: {
+      easy: wordBank.easy.length,
+      medium: wordBank.medium.length,
+      hard: wordBank.hard.length
+    }
+  });
+  return wordBank;
 }
 
 function normalizeWordList(value) {
