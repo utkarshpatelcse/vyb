@@ -1461,6 +1461,7 @@ export interface ConnectHintResponse {
 export interface ConnectSubmitRequest {
   sessionId: string;
   path: ConnectCoordinate[];
+  clientElapsedSeconds?: number;
 }
 
 export interface ConnectSubmitResponse {

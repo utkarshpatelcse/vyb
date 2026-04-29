@@ -98,6 +98,7 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [ghostHint, setGhostHint] = useState<GhostHint | null>(null);
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
+  const [localCompletionElapsedSeconds, setLocalCompletionElapsedSeconds] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const autoSubmitKeyRef = useRef("");
   const skipSolvedPopupRef = useRef(false);
@@ -117,6 +118,7 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
       setPathCells([]);
       setGhostHint(null);
       setCooldownUntil(null);
+      setLocalCompletionElapsedSeconds(null);
       autoSubmitKeyRef.current = "";
 
       try {
@@ -205,7 +207,8 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
     };
   }, [dotByKey, pathCells]);
   const nextDotId = checkpointState.hasOrderViolation ? null : checkpointState.nextRequiredDotId;
-  const elapsedSeconds = result?.elapsedSeconds ?? (daily ? Math.max(0, (nowMs - new Date(daily.serverStartedAt).getTime()) / 1000) : null);
+  const liveElapsedSeconds = daily ? Math.max(0, (nowMs - new Date(daily.serverStartedAt).getTime()) / 1000) : null;
+  const elapsedSeconds = result?.elapsedSeconds ?? localCompletionElapsedSeconds ?? liveElapsedSeconds;
   const cooldownRemaining = cooldownUntil ? Math.max(0, Math.ceil((cooldownUntil - nowMs) / 1000)) : 0;
   const hasFilledBoard = Boolean(
     level &&
@@ -239,8 +242,10 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
     }
 
     autoSubmitKeyRef.current = pathKey;
+    const completedElapsedSeconds = liveElapsedSeconds === null ? null : Number(liveElapsedSeconds.toFixed(2));
+    setLocalCompletionElapsedSeconds(completedElapsedSeconds);
     setMessage("Route complete. Auto-submitting...");
-    void submitRoute();
+    void submitRoute(completedElapsedSeconds);
   }, [hasFilledBoard, pathCells, result?.solved, submitBusy]);
 
   function getPointFromClientPosition(clientX: number, clientY: number): ConnectCoordinate | null {
@@ -651,7 +656,7 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
       });
       const payload = await readJsonResponse<ConnectHintResponse>(response);
 
-      setDaily((current) => (current ? { ...current, hintsUsed: payload.hintsUsed } : current));
+      setDaily((current) => (current ? { ...current, sessionId: payload.sessionId, hintsUsed: payload.hintsUsed } : current));
 
       if (payload.cooldownSeconds > 0) {
         setCooldownUntil(Date.now() + payload.cooldownSeconds * 1000);
@@ -663,6 +668,7 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
       }
 
       const didTrimPath = payload.validPrefixLength < pathCells.length;
+      setLocalCompletionElapsedSeconds(null);
       setPathCells((currentPath) => currentPath.slice(0, payload.validPrefixLength));
       setGhostHint({
         from: payload.from,
@@ -677,7 +683,7 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
     }
   }
 
-  async function submitRoute() {
+  async function submitRoute(completedElapsedSeconds = localCompletionElapsedSeconds) {
     if (!daily || !hasFilledBoard || submitBusy || result?.solved) {
       return;
     }
@@ -691,16 +697,21 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           sessionId: daily.sessionId,
-          path: pathCells
+          path: pathCells,
+          clientElapsedSeconds: completedElapsedSeconds
         })
       });
       const payload = await readJsonResponse<ConnectSubmitResponse>(response);
 
       setResult(payload);
+      if (!payload.solved) {
+        setLocalCompletionElapsedSeconds(null);
+      }
       setDaily((current) =>
         current
           ? {
               ...current,
+              sessionId: payload.sessionId,
               hintsUsed: payload.hintsUsed,
               leaderboard: payload.leaderboard,
               viewerBest: payload.viewerBest
@@ -725,6 +736,7 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
     setGhostHint(null);
     setResult(null);
     setShowSuccessPopup(false);
+    setLocalCompletionElapsedSeconds(null);
     setMessage("Route reset. Start again from dot 1.");
   }
 
@@ -888,6 +900,11 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
           <div className="vyb-connect-board-grid">
             {gridCells}
           </div>
+          {result?.solved ? (
+            <div className="vyb-connect-solved-overlay" aria-live="polite">
+              <strong>Solved</strong>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -899,6 +916,7 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
             autoSubmitKeyRef.current = "";
             setResult((current) => (current?.solved ? current : null));
             setGhostHint(null);
+            setLocalCompletionElapsedSeconds(null);
             setPathCells((currentPath) => currentPath.slice(0, -1));
           }}
           disabled={submitBusy || result?.solved || pathCells.length <= 1}

@@ -14,16 +14,17 @@ export async function POST(request: Request) {
     return buildError(401, "UNAUTHENTICATED", "You must sign in before submitting Connect.");
   }
 
-  const payload = (await request.json().catch(() => null)) as { sessionId?: unknown; path?: unknown } | null;
+  const payload = (await request.json().catch(() => null)) as { sessionId?: unknown; path?: unknown; clientElapsedSeconds?: unknown } | null;
   const sessionId = typeof payload?.sessionId === "string" ? payload.sessionId : "";
   const submittedPath = normalizeConnectPath(payload?.path);
+  const clientElapsedSeconds = typeof payload?.clientElapsedSeconds === "number" && Number.isFinite(payload.clientElapsedSeconds) ? payload.clientElapsedSeconds : null;
 
   if (!sessionId || !submittedPath) {
     return buildError(400, "INVALID_SUBMIT_BODY", "Send a valid Connect session and path before submitting.");
   }
 
   try {
-    return NextResponse.json(await submitDailyConnectPath(viewer, sessionId, submittedPath));
+    return NextResponse.json(await submitDailyConnectPath(viewer, sessionId, submittedPath, clientElapsedSeconds));
   } catch (error) {
     return buildError(400, "CONNECT_SUBMIT_FAILED", error instanceof Error ? error.message : "We could not submit this Connect route.");
   }

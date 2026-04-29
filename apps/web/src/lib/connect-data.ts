@@ -1,6 +1,6 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -22,6 +22,7 @@ const HINT_GHOST_SECONDS = 3;
 const HINT_PENALTY_SECONDS = 3;
 const DEFAULT_LAUNCH_DATE = "2026-04-28T00:00:00+05:30";
 const CONNECT_LEVEL_STORE_ID = process.env.VYB_CONNECT_LEVEL_STORE_ID ?? "official-1000";
+const CONNECT_SESSION_TOKEN_PREFIX = "connect.v1";
 const connectConnectorConfig = {
   connector: "connect",
   serviceId: "vyb",
@@ -102,6 +103,8 @@ type DailyState = {
   nextResetAt: string;
 };
 
+type ConnectSessionTokenPayload = Omit<StoredConnectSession, "sessionId">;
+
 export type ConnectDailyHubSnapshot = {
   dailyKey: string;
   totalSolvers: number;
@@ -117,6 +120,116 @@ const emptyStore: ConnectStore = {
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function getConnectSessionSecret() {
+  return (
+    process.env.VYB_CONNECT_SESSION_SECRET ??
+    process.env.AUTH_SECRET ??
+    process.env.NEXTAUTH_SECRET ??
+    process.env.FIREBASE_PROJECT_ID ??
+    "vyb-connect-local-session-secret"
+  );
+}
+
+function signConnectSessionPayload(encodedPayload: string) {
+  return createHmac("sha256", getConnectSessionSecret()).update(encodedPayload).digest("base64url");
+}
+
+function signaturesEqual(left: string, right: string) {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function isValidIsoDate(value: unknown): value is string {
+  return typeof value === "string" && Number.isFinite(new Date(value).getTime());
+}
+
+function createConnectSessionToken(session: StoredConnectSession) {
+  const payload: ConnectSessionTokenPayload = {
+    tenantId: session.tenantId,
+    userId: session.userId,
+    username: session.username,
+    displayName: session.displayName,
+    levelId: session.levelId,
+    dailyIndex: session.dailyIndex,
+    dailyKey: session.dailyKey,
+    startedAt: session.startedAt,
+    lastHintAt: session.lastHintAt,
+    hintsUsed: session.hintsUsed,
+    completedAt: session.completedAt,
+    elapsedSeconds: session.elapsedSeconds,
+    adjustedTimeSeconds: session.adjustedTimeSeconds
+  };
+  const encodedPayload = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  return `${CONNECT_SESSION_TOKEN_PREFIX}.${encodedPayload}.${signConnectSessionPayload(encodedPayload)}`;
+}
+
+function decodeConnectSessionToken(viewer: DevSession, sessionId: string): StoredConnectSession | null {
+  const [prefix, version, encodedPayload, signature] = sessionId.split(".");
+
+  if (`${prefix}.${version}` !== CONNECT_SESSION_TOKEN_PREFIX || !encodedPayload || !signature) {
+    return null;
+  }
+
+  if (!signaturesEqual(signature, signConnectSessionPayload(encodedPayload))) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as Partial<ConnectSessionTokenPayload>;
+    const levelId = normalizeInteger(payload.levelId);
+    const dailyIndex = normalizeInteger(payload.dailyIndex);
+    const hintsUsed = normalizeInteger(payload.hintsUsed);
+    const startedAt = payload.startedAt;
+    const lastHintAt = payload.lastHintAt;
+    const completedAt = payload.completedAt;
+    const elapsedSeconds = payload.elapsedSeconds;
+    const adjustedTimeSeconds = payload.adjustedTimeSeconds;
+
+    if (
+      payload.tenantId !== viewer.tenantId ||
+      payload.userId !== viewer.userId ||
+      typeof payload.username !== "string" ||
+      typeof payload.displayName !== "string" ||
+      !Number.isFinite(levelId) ||
+      !Number.isFinite(dailyIndex) ||
+      typeof payload.dailyKey !== "string" ||
+      !isValidIsoDate(startedAt) ||
+      !(lastHintAt === null || isValidIsoDate(lastHintAt)) ||
+      !Number.isFinite(hintsUsed) ||
+      !(completedAt === null || isValidIsoDate(completedAt)) ||
+      !(elapsedSeconds === null || typeof elapsedSeconds === "number") ||
+      !(adjustedTimeSeconds === null || typeof adjustedTimeSeconds === "number")
+    ) {
+      return null;
+    }
+
+    return {
+      sessionId,
+      tenantId: payload.tenantId,
+      userId: payload.userId,
+      username: payload.username,
+      displayName: payload.displayName,
+      levelId,
+      dailyIndex,
+      dailyKey: payload.dailyKey,
+      startedAt,
+      lastHintAt,
+      hintsUsed,
+      completedAt,
+      elapsedSeconds,
+      adjustedTimeSeconds
+    };
+  } catch {
+    return null;
+  }
+}
+
+function refreshConnectSessionToken(session: StoredConnectSession) {
+  session.sessionId = createConnectSessionToken(session);
+  return session.sessionId;
 }
 
 function normalizeInteger(value: unknown) {
@@ -155,6 +268,10 @@ export function normalizeConnectPath(value: unknown): ConnectCoordinate[] | null
 
 function coordinatesEqual(left: ConnectCoordinate, right: ConnectCoordinate) {
   return left.x === right.x && left.y === right.y;
+}
+
+function cellKey(point: ConnectCoordinate) {
+  return `${point.x}:${point.y}`;
 }
 
 function getWorkspaceRoot() {
@@ -561,11 +678,12 @@ export async function startDailyConnectSession(viewer: DevSession): Promise<Conn
     if (existingSession) {
       existingSession.username = username;
       existingSession.displayName = viewer.displayName || username;
+      refreshConnectSessionToken(existingSession);
       return existingSession;
     }
 
     const nextSession: StoredConnectSession = {
-      sessionId: randomUUID(),
+      sessionId: "",
       tenantId: viewer.tenantId,
       userId: viewer.userId,
       username,
@@ -589,6 +707,7 @@ export async function startDailyConnectSession(viewer: DevSession): Promise<Conn
       nextSession.adjustedTimeSeconds = priorBest.adjustedTimeSeconds;
     }
 
+    refreshConnectSessionToken(nextSession);
     store.sessions.push(nextSession);
     return nextSession;
   });
@@ -596,10 +715,25 @@ export async function startDailyConnectSession(viewer: DevSession): Promise<Conn
   return buildDailyResponse(store, viewer, session, level, dailyState);
 }
 
-function getSessionOrThrow(store: ConnectStore, viewer: DevSession, sessionId: string) {
+function isCurrentDailySession(session: StoredConnectSession, dailyState: DailyState) {
+  return session.dailyKey === dailyState.dailyKey && session.dailyIndex === dailyState.dailyIndex && session.levelId === dailyState.levelId;
+}
+
+function getSessionOrThrow(store: ConnectStore, viewer: DevSession, sessionId: string, dailyState?: DailyState) {
   const session = store.sessions.find((candidate) => candidate.sessionId === sessionId && candidate.tenantId === viewer.tenantId && candidate.userId === viewer.userId);
 
   if (!session) {
+    const recoveredSession = decodeConnectSessionToken(viewer, sessionId);
+
+    if (recoveredSession && (!dailyState || isCurrentDailySession(recoveredSession, dailyState))) {
+      store.sessions.push(recoveredSession);
+      return recoveredSession;
+    }
+
+    throw new Error("This Connect session has expired. Open today's puzzle again.");
+  }
+
+  if (dailyState && !isCurrentDailySession(session, dailyState)) {
     throw new Error("This Connect session has expired. Open today's puzzle again.");
   }
 
@@ -628,19 +762,21 @@ function getValidPrefixLength(submittedPath: ConnectCoordinate[], solutionPath: 
 }
 
 export async function requestDailyConnectHint(viewer: DevSession, sessionId: string, submittedPath: ConnectCoordinate[]): Promise<ConnectHintResponse> {
-  const { levels } = await loadSeedFile();
+  const { seedFile, levels } = await loadSeedFile();
+  const dailyState = getDailyState(levels.length, seedFile);
   let hintResponse: ConnectHintResponse | null = null;
 
   await transactStore(viewer.tenantId, (store) => {
-    const session = getSessionOrThrow(store, viewer, sessionId);
+    const session = getSessionOrThrow(store, viewer, sessionId, dailyState);
     const level = getLevelOrThrow(levels, session.levelId);
     const now = Date.now();
     const lastHintTime = session.lastHintAt ? new Date(session.lastHintAt).getTime() : 0;
     const cooldownSeconds = lastHintTime > 0 ? Math.max(0, HINT_COOLDOWN_SECONDS - Math.floor((now - lastHintTime) / 1000)) : 0;
 
     if (cooldownSeconds > 0) {
+      refreshConnectSessionToken(session);
       hintResponse = {
-        sessionId,
+        sessionId: session.sessionId,
         nextMove: null,
         from: null,
         validPrefixLength: getValidPrefixLength(submittedPath, level.solution_path),
@@ -661,8 +797,9 @@ export async function requestDailyConnectHint(viewer: DevSession, sessionId: str
       session.lastHintAt = hintedAt;
     }
 
+    refreshConnectSessionToken(session);
     hintResponse = {
-      sessionId,
+      sessionId: session.sessionId,
       nextMove: nextMove ? clone(nextMove) : null,
       from: from ? clone(from) : null,
       validPrefixLength,
@@ -679,8 +816,52 @@ export async function requestDailyConnectHint(viewer: DevSession, sessionId: str
   return hintResponse;
 }
 
-function isExactSolution(submittedPath: ConnectCoordinate[], solutionPath: ConnectCoordinate[]) {
-  return submittedPath.length === solutionPath.length && submittedPath.every((point, index) => coordinatesEqual(point, solutionPath[index]));
+function isAdjacentCoordinate(left: ConnectCoordinate, right: ConnectCoordinate) {
+  return Math.abs(left.x - right.x) + Math.abs(left.y - right.y) === 1;
+}
+
+function isCoordinateInsideGrid(point: ConnectCoordinate, gridSize: number) {
+  return point.x >= 0 && point.y >= 0 && point.x < gridSize && point.y < gridSize;
+}
+
+function isValidConnectSolve(submittedPath: ConnectCoordinate[], level: StoredConnectLevel) {
+  if (submittedPath.length !== level.grid_size * level.grid_size) {
+    return false;
+  }
+
+  const visitedCells = new Set<string>();
+  const dotIdsByCell = new Map(level.dots.map((dot) => [cellKey(dot), dot.id]));
+  const visitedDotIds: number[] = [];
+
+  for (let index = 0; index < submittedPath.length; index += 1) {
+    const point = submittedPath[index];
+    const key = cellKey(point);
+
+    if (!isCoordinateInsideGrid(point, level.grid_size) || visitedCells.has(key)) {
+      return false;
+    }
+
+    if (index > 0 && !isAdjacentCoordinate(submittedPath[index - 1], point)) {
+      return false;
+    }
+
+    visitedCells.add(key);
+
+    const dotId = dotIdsByCell.get(key);
+    if (dotId !== undefined) {
+      visitedDotIds.push(dotId);
+    }
+  }
+
+  return level.dots.every((dot) => visitedDotIds[dot.id - 1] === dot.id) && visitedDotIds.length === level.dots.length;
+}
+
+function normalizeClientElapsedSeconds(value: number | null | undefined, serverElapsedSeconds: number) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return serverElapsedSeconds;
+  }
+
+  return Number(Math.min(value, serverElapsedSeconds).toFixed(2));
 }
 
 function secondsBetween(startIso: string, endIso: string) {
@@ -704,12 +885,13 @@ function buildSubmitResponse(store: ConnectStore, viewer: DevSession, session: S
   };
 }
 
-export async function submitDailyConnectPath(viewer: DevSession, sessionId: string, submittedPath: ConnectCoordinate[]): Promise<ConnectSubmitResponse> {
-  const { levels } = await loadSeedFile();
+export async function submitDailyConnectPath(viewer: DevSession, sessionId: string, submittedPath: ConnectCoordinate[], clientElapsedSeconds?: number | null): Promise<ConnectSubmitResponse> {
+  const { seedFile, levels } = await loadSeedFile();
+  const dailyState = getDailyState(levels.length, seedFile);
   let submitResponse: ConnectSubmitResponse | null = null;
 
   await transactStore(viewer.tenantId, (store) => {
-    const session = getSessionOrThrow(store, viewer, sessionId);
+    const session = getSessionOrThrow(store, viewer, sessionId, dailyState);
     const level = getLevelOrThrow(levels, session.levelId);
     const priorBest = getBestScoreForUser(store, viewer.tenantId, session.dailyKey, session.levelId, viewer.userId);
 
@@ -718,27 +900,31 @@ export async function submitDailyConnectPath(viewer: DevSession, sessionId: stri
       session.elapsedSeconds = priorBest.elapsedSeconds;
       session.hintsUsed = priorBest.hintsUsed;
       session.adjustedTimeSeconds = priorBest.adjustedTimeSeconds;
+      refreshConnectSessionToken(session);
       submitResponse = buildSubmitResponse(store, viewer, session, "Already solved. Your first valid solve is locked on today's leaderboard.", true);
       return;
     }
 
     if (session.completedAt) {
+      refreshConnectSessionToken(session);
       submitResponse = buildSubmitResponse(store, viewer, session, "Already solved. Your best time is on the leaderboard.", true);
       return;
     }
 
-    if (!isExactSolution(submittedPath, level.solution_path)) {
+    if (!isValidConnectSolve(submittedPath, level)) {
+      refreshConnectSessionToken(session);
       submitResponse = buildSubmitResponse(store, viewer, session, "All dots must be connected in order before the solve counts.", false);
       return;
     }
 
     const completedAt = new Date().toISOString();
-    const elapsedSeconds = secondsBetween(session.startedAt, completedAt);
+    const elapsedSeconds = normalizeClientElapsedSeconds(clientElapsedSeconds, secondsBetween(session.startedAt, completedAt));
     const adjustedTimeSeconds = Number((elapsedSeconds + session.hintsUsed * HINT_PENALTY_SECONDS).toFixed(2));
 
     session.completedAt = completedAt;
     session.elapsedSeconds = elapsedSeconds;
     session.adjustedTimeSeconds = adjustedTimeSeconds;
+    refreshConnectSessionToken(session);
 
     store.scores.push({
       scoreId: randomUUID(),
