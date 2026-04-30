@@ -1815,7 +1815,12 @@ export function CampusMessagesShell({
     setLocalChatKeyLoaded(false);
 
     void (async () => {
-      const stored = await loadStoredChatKeyMaterial(viewerUserId);
+      let stored: StoredChatKeyMaterial | null = null;
+      try {
+        stored = await loadStoredChatKeyMaterial(viewerUserId);
+      } catch {
+        stored = null;
+      }
       if (cancelled) {
         return;
       }
@@ -1958,6 +1963,39 @@ export function CampusMessagesShell({
       pendingOptimisticMessagesRef.current.delete(conversationId);
     }
     return matched;
+  }
+
+  function forgetRecentLocalMessage(conversationId: string, messageId: string) {
+    const messages = recentLocalMessageIdsRef.current.get(conversationId);
+    if (!messages) {
+      return;
+    }
+
+    messages.delete(messageId);
+    if (messages.size === 0) {
+      recentLocalMessageIdsRef.current.delete(conversationId);
+    }
+  }
+
+  function removeLocalPendingMessage(conversationId: string, messageId: string) {
+    messageIdsRef.current.delete(messageId);
+    removeQueuedOptimisticMessage(conversationId, messageId);
+    forgetRecentLocalMessage(conversationId, messageId);
+    setMessagePlaintextById((current) => {
+      const next = { ...current };
+      delete next[messageId];
+      return next;
+    });
+
+    const currentConversation = activeConversationRef.current;
+    if (currentConversation?.id !== conversationId) {
+      return;
+    }
+
+    commitActiveConversation({
+      ...currentConversation,
+      messages: currentConversation.messages.filter((message) => message.id !== messageId)
+    });
   }
 
   function consumeQueuedOptimisticMessage(conversationId: string) {
@@ -2554,7 +2592,7 @@ export function CampusMessagesShell({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          messageKind: "system",
+          messageKind: "text",
           ...encryptedPayload
         })
       });
@@ -3452,7 +3490,11 @@ export function CampusMessagesShell({
         candidate.senderMembershipId !== viewerMembershipId && new Date(candidate.createdAt).getTime() > createdAt
     );
 
-    if (deliveredOwnMessageIds.has(message.id) || hasLaterPeerMessage) {
+    if (hasLaterPeerMessage) {
+      return "read";
+    }
+
+    if (deliveredOwnMessageIds.has(message.id)) {
       return "delivered";
     }
 
@@ -5015,35 +5057,36 @@ export function CampusMessagesShell({
 
     const sentMessage = data?.item as ChatMessageRecord | undefined;
     const conversationPreview = data?.conversationPreview as ChatConversationPreview | undefined;
+    if (!sentMessage) {
+      throw new Error("Message was not confirmed by the server. Please try again.");
+    }
 
-    if (sentMessage) {
-      messageIdsRef.current.add(sentMessage.id);
-      rememberRecentLocalMessage(conversationId, sentMessage.id);
+    messageIdsRef.current.add(sentMessage.id);
+    rememberRecentLocalMessage(conversationId, sentMessage.id);
+    if (optimisticMessageId) {
+      messageIdsRef.current.delete(optimisticMessageId);
+      removeQueuedOptimisticMessage(conversationId, optimisticMessageId);
+    }
+    setMessagePlaintextById((current) => {
+      const next = { ...current, [sentMessage.id]: plaintext };
       if (optimisticMessageId) {
-        messageIdsRef.current.delete(optimisticMessageId);
-        removeQueuedOptimisticMessage(conversationId, optimisticMessageId);
+        delete next[optimisticMessageId];
       }
-      setMessagePlaintextById((current) => {
-        const next = { ...current, [sentMessage.id]: plaintext };
-        if (optimisticMessageId) {
-          delete next[optimisticMessageId];
-        }
-        return next;
+      return next;
+    });
+    const currentConversation = activeConversationRef.current;
+    if (currentConversation?.id === conversationId) {
+      commitActiveConversation({
+        ...currentConversation,
+        messages: replaceOptimisticMessageRecord(currentConversation.messages, optimisticMessageId, sentMessage)
       });
-      const currentConversation = activeConversationRef.current;
-      if (currentConversation?.id === conversationId) {
-        commitActiveConversation({
-          ...currentConversation,
-          messages: replaceOptimisticMessageRecord(currentConversation.messages, optimisticMessageId, sentMessage)
-        });
-      }
     }
 
     if (conversationPreview) {
       setConversations((current) => upsertConversationItem(current, { ...conversationPreview, unreadCount: 0 }));
     }
 
-    return sentMessage ?? null;
+    return sentMessage;
   }
 
   async function submitEditedMessage(message: ChatMessageRecord, plaintext: string) {
@@ -5278,17 +5321,14 @@ export function CampusMessagesShell({
       setViewOnceEnabled(false);
       focusComposerSoon();
     } catch (error) {
-      if (!failedOptimisticMessageId) {
-        setDraftMessage(nextMessage);
-        setPendingShareCard(pendingShareCard);
-        setReplyingToMessageId(replyingToMessageId);
+      if (failedOptimisticMessageId) {
+        removeLocalPendingMessage(conversationId, failedOptimisticMessageId);
       }
+      setDraftMessage(nextMessage);
+      setPendingShareCard(pendingShareCard);
+      setReplyingToMessageId(replyingToMessageId);
       setSendError(
-        failedOptimisticMessageId
-          ? "Message is waiting for connection. It will stay in this chat while sync catches up."
-          : error instanceof Error
-            ? error.message
-            : "Network error. Please try again in a moment."
+        error instanceof Error ? error.message : "Network error. Please try again in a moment."
       );
     } finally {
       setSending(false);
@@ -5356,11 +5396,9 @@ export function CampusMessagesShell({
       ? "Online"
       : realtimeState === "offline"
         ? "Offline"
-        : realtimeState === "reconnecting"
-          ? "Reconnecting"
-          : realtimeState === "connecting"
-            ? "Syncing"
-            : "Paused";
+        : realtimeState === "idle"
+          ? "Paused"
+          : "Online";
 
   function handleExitMessages() {
     if (typeof window !== "undefined" && window.history.length > 1) {

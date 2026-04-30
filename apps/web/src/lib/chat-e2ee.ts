@@ -88,7 +88,7 @@ type ChatCipherEnvelope = {
   iv: string;
   algorithm: string;
   senderPublicKey: string;
-  recipientPublicKey: string;
+  recipientPublicKey?: string;
 };
 
 type EncryptBackupOptions = {
@@ -873,11 +873,15 @@ async function importPublicKeyString(publicKey: string) {
   );
 }
 
+function getPeerPublicKey(peerIdentity: ChatIdentitySummary | string) {
+  return typeof peerIdentity === "string" ? peerIdentity : peerIdentity.publicKey;
+}
+
 async function deriveConversationCipherKey(
   material: StoredChatKeyMaterial,
   peerIdentity: ChatIdentitySummary | string
 ) {
-  const peerPublicKey = typeof peerIdentity === "string" ? peerIdentity : peerIdentity.publicKey;
+  const peerPublicKey = getPeerPublicKey(peerIdentity);
   const cacheKey = `${material.publicKey}:${peerPublicKey}`;
   const cached = CHAT_KEY_DERIVATION_CACHE.get(cacheKey);
   if (cached) {
@@ -922,8 +926,7 @@ function parseChatCipherEnvelope(value: string): ChatCipherEnvelope | null {
       typeof parsed?.cipherText !== "string" ||
       typeof parsed?.iv !== "string" ||
       typeof parsed?.algorithm !== "string" ||
-      typeof parsed?.senderPublicKey !== "string" ||
-      typeof parsed?.recipientPublicKey !== "string"
+      typeof parsed?.senderPublicKey !== "string"
     ) {
       return null;
     }
@@ -934,7 +937,7 @@ function parseChatCipherEnvelope(value: string): ChatCipherEnvelope | null {
       iv: parsed.iv,
       algorithm: parsed.algorithm,
       senderPublicKey: parsed.senderPublicKey,
-      recipientPublicKey: parsed.recipientPublicKey
+      recipientPublicKey: typeof parsed.recipientPublicKey === "string" ? parsed.recipientPublicKey : undefined
     };
   } catch {
     return null;
@@ -1313,9 +1316,10 @@ export async function decryptRecoveryPhraseFromBackup(
 export async function encryptChatText(
   plaintext: string,
   material: StoredChatKeyMaterial,
-  peerIdentity: ChatIdentitySummary
+  peerIdentity: ChatIdentitySummary | string
 ) {
-  const key = await deriveConversationCipherKey(material, peerIdentity);
+  const peerPublicKey = getPeerPublicKey(peerIdentity);
+  const key = await deriveConversationCipherKey(material, peerPublicKey);
   const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
   const encoded = new TextEncoder().encode(plaintext);
   const cipherBuffer = await ensureBrowserCrypto().encrypt(
@@ -1335,7 +1339,7 @@ export async function encryptChatText(
     iv: encodedIv,
     algorithm: CHAT_MESSAGE_CIPHER_ALGORITHM,
     senderPublicKey: material.publicKey,
-    recipientPublicKey: peerIdentity.publicKey
+    recipientPublicKey: peerPublicKey
   };
 
   return {
@@ -1359,9 +1363,10 @@ export function isE2eeAttachmentCipher(metadata: ChatAttachmentCipherMetadata | 
 export async function encryptChatAttachmentBytes(
   plaintextBytes: ArrayBuffer,
   material: StoredChatKeyMaterial,
-  peerIdentity: ChatIdentitySummary
+  peerIdentity: ChatIdentitySummary | string
 ) {
-  const key = await deriveConversationCipherKey(material, peerIdentity);
+  const peerPublicKey = getPeerPublicKey(peerIdentity);
+  const key = await deriveConversationCipherKey(material, peerPublicKey);
   const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
   const cipherBuffer = await ensureBrowserCrypto().encrypt(
     {
@@ -1377,7 +1382,7 @@ export async function encryptChatAttachmentBytes(
     cipherAlgorithm: CHAT_ATTACHMENT_CIPHER_ALGORITHM,
     cipherIv: bufferToBase64(iv.buffer),
     senderPublicKey: material.publicKey,
-    recipientPublicKey: peerIdentity.publicKey
+    recipientPublicKey: peerPublicKey
   };
 }
 
@@ -1385,7 +1390,7 @@ export async function decryptChatAttachmentBytes(
   cipherBytes: ArrayBuffer,
   metadata: ChatAttachmentCipherMetadata,
   material: StoredChatKeyMaterial,
-  peerIdentity: ChatIdentitySummary
+  peerIdentity: ChatIdentitySummary | string
 ) {
   if (!isE2eeAttachmentCipher(metadata) || !metadata.cipherIv) {
     throw new Error("This chat attachment is missing its encryption envelope.");
@@ -1393,10 +1398,10 @@ export async function decryptChatAttachmentBytes(
 
   const peerPublicKey =
     metadata.senderPublicKey === material.publicKey
-      ? metadata.recipientPublicKey
+      ? metadata.recipientPublicKey ?? getPeerPublicKey(peerIdentity)
       : metadata.recipientPublicKey === material.publicKey
         ? metadata.senderPublicKey
-        : peerIdentity.publicKey;
+        : getPeerPublicKey(peerIdentity);
 
   if (!peerPublicKey) {
     throw new Error("This chat attachment cannot be opened without the peer public key.");
@@ -1417,15 +1422,15 @@ export async function decryptChatText(
   cipherText: string,
   cipherIv: string,
   material: StoredChatKeyMaterial,
-  peerIdentity: ChatIdentitySummary
+  peerIdentity: ChatIdentitySummary | string
 ) {
   const envelope = parseChatCipherEnvelope(cipherText);
   const peerPublicKey =
     envelope?.senderPublicKey === material.publicKey
-      ? envelope.recipientPublicKey
+      ? envelope.recipientPublicKey ?? getPeerPublicKey(peerIdentity)
       : envelope?.recipientPublicKey === material.publicKey
         ? envelope.senderPublicKey
-        : peerIdentity.publicKey;
+        : getPeerPublicKey(peerIdentity);
   const key = await deriveConversationCipherKey(material, peerPublicKey);
   const decrypted = await ensureBrowserCrypto().decrypt(
     {
