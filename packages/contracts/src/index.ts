@@ -1549,6 +1549,7 @@ export interface ConnectPublicLevel {
 
 export interface ConnectLeaderboardEntry {
   rank: number;
+  organizationRank: number;
   userId: string;
   username: string;
   displayName: string;

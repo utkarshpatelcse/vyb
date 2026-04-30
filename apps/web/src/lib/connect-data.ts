@@ -23,12 +23,15 @@ const HINT_PENALTY_SECONDS = 3;
 const DEFAULT_LAUNCH_DATE = "2026-04-28T00:00:00+05:30";
 const CONNECT_LEVEL_STORE_ID = process.env.VYB_CONNECT_LEVEL_STORE_ID ?? "official-1000";
 const CONNECT_SESSION_TOKEN_PREFIX = "connect.v1";
+const CONNECT_ALLOW_LOCAL_LEVEL_FALLBACK = process.env.VYB_CONNECT_ALLOW_LOCAL_LEVEL_FALLBACK === "1";
 const connectConnectorConfig = {
   connector: "connect",
   serviceId: "vyb",
   location: "asia-south1"
 };
 let connectLevelStoreSkipLogged = false;
+let connectStoreSkipLogged = false;
+let connectStoreFallbackLogged = false;
 
 const GET_CONNECT_LEVEL_STORE_QUERY = `
   query GetConnectLevelStoreRuntime($id: String!) {
@@ -40,6 +43,219 @@ const GET_CONNECT_LEVEL_STORE_QUERY = `
       checksum
       updatedAt
     }
+  }
+`;
+
+const CONNECT_STORE_SCAN_LIMIT = 10_000;
+const CONNECT_STORE_SOURCE = process.env.VYB_CONNECT_STORE_SOURCE ?? "dataconnect";
+const CONNECT_ALLOW_LOCAL_STORE_FALLBACK = process.env.VYB_CONNECT_ALLOW_LOCAL_STORE_FALLBACK === "1";
+
+const LIST_CONNECT_STORE_QUERY = `
+  query ListConnectStoreRuntime($tenantId: String!, $sessionLimit: Int!, $scoreLimit: Int!) {
+    connectSessions(
+      where: { tenantId: { eq: $tenantId }, deletedAt: { isNull: true } }
+      orderBy: [{ startedAt: DESC }]
+      limit: $sessionLimit
+    ) {
+      sessionId
+      tenantId
+      userId
+      username
+      displayName
+      levelId
+      dailyIndex
+      dailyKey
+      startedAt
+      lastHintAt
+      hintsUsed
+      completedAt
+      elapsedCentiseconds
+      adjustedCentiseconds
+    }
+    connectScores(
+      where: { tenantId: { eq: $tenantId }, deletedAt: { isNull: true } }
+      orderBy: [{ completedAt: DESC }]
+      limit: $scoreLimit
+    ) {
+      id
+      sessionId
+      tenantId
+      userId
+      username
+      displayName
+      levelId
+      dailyIndex
+      dailyKey
+      startedAt
+      completedAt
+      elapsedCentiseconds
+      hintsUsed
+      adjustedCentiseconds
+    }
+  }
+`;
+
+const GET_CONNECT_SESSION_BY_KEY_QUERY = `
+  query GetConnectSessionByKeyRuntime($sessionKey: String!) {
+    connectSessions(where: { sessionKey: { eq: $sessionKey }, deletedAt: { isNull: true } }, limit: 1) {
+      id
+    }
+  }
+`;
+
+const GET_CONNECT_SCORE_BY_KEY_QUERY = `
+  query GetConnectScoreByKeyRuntime($scoreKey: String!) {
+    connectScores(where: { scoreKey: { eq: $scoreKey }, deletedAt: { isNull: true } }, limit: 1) {
+      id
+      adjustedCentiseconds
+      elapsedCentiseconds
+      hintsUsed
+      completedAt
+    }
+  }
+`;
+
+const CREATE_CONNECT_SESSION_MUTATION = `
+  mutation CreateConnectSessionRuntime(
+    $id: String!
+    $sessionKey: String!
+    $sessionId: String!
+    $tenantId: String!
+    $userId: String!
+    $username: String!
+    $displayName: String!
+    $levelId: Int!
+    $dailyIndex: Int!
+    $dailyKey: String!
+    $startedAt: Timestamp!
+    $lastHintAt: Timestamp
+    $hintsUsed: Int!
+    $completedAt: Timestamp
+    $elapsedCentiseconds: Int
+    $adjustedCentiseconds: Int
+  ) {
+    connectSession_insert(
+      data: {
+        id: $id
+        sessionKey: $sessionKey
+        sessionId: $sessionId
+        tenantId: $tenantId
+        userId: $userId
+        username: $username
+        displayName: $displayName
+        levelId: $levelId
+        dailyIndex: $dailyIndex
+        dailyKey: $dailyKey
+        startedAt: $startedAt
+        lastHintAt: $lastHintAt
+        hintsUsed: $hintsUsed
+        completedAt: $completedAt
+        elapsedCentiseconds: $elapsedCentiseconds
+        adjustedCentiseconds: $adjustedCentiseconds
+        createdAt_expr: "request.time"
+        updatedAt_expr: "request.time"
+      }
+    )
+  }
+`;
+
+const UPDATE_CONNECT_SESSION_MUTATION = `
+  mutation UpdateConnectSessionRuntime(
+    $id: String!
+    $sessionId: String!
+    $username: String!
+    $displayName: String!
+    $lastHintAt: Timestamp
+    $hintsUsed: Int!
+    $completedAt: Timestamp
+    $elapsedCentiseconds: Int
+    $adjustedCentiseconds: Int
+  ) {
+    connectSession_update(
+      key: { id: $id }
+      data: {
+        sessionId: $sessionId
+        username: $username
+        displayName: $displayName
+        lastHintAt: $lastHintAt
+        hintsUsed: $hintsUsed
+        completedAt: $completedAt
+        elapsedCentiseconds: $elapsedCentiseconds
+        adjustedCentiseconds: $adjustedCentiseconds
+        updatedAt_expr: "request.time"
+      }
+    )
+  }
+`;
+
+const CREATE_CONNECT_SCORE_MUTATION = `
+  mutation CreateConnectScoreRuntime(
+    $id: String!
+    $scoreKey: String!
+    $sessionId: String!
+    $tenantId: String!
+    $userId: String!
+    $username: String!
+    $displayName: String!
+    $levelId: Int!
+    $dailyIndex: Int!
+    $dailyKey: String!
+    $startedAt: Timestamp!
+    $completedAt: Timestamp!
+    $elapsedCentiseconds: Int!
+    $hintsUsed: Int!
+    $adjustedCentiseconds: Int!
+  ) {
+    connectScore_insert(
+      data: {
+        id: $id
+        scoreKey: $scoreKey
+        sessionId: $sessionId
+        tenantId: $tenantId
+        userId: $userId
+        username: $username
+        displayName: $displayName
+        levelId: $levelId
+        dailyIndex: $dailyIndex
+        dailyKey: $dailyKey
+        startedAt: $startedAt
+        completedAt: $completedAt
+        elapsedCentiseconds: $elapsedCentiseconds
+        hintsUsed: $hintsUsed
+        adjustedCentiseconds: $adjustedCentiseconds
+        createdAt_expr: "request.time"
+        updatedAt_expr: "request.time"
+      }
+    )
+  }
+`;
+
+const UPDATE_CONNECT_SCORE_MUTATION = `
+  mutation UpdateConnectScoreRuntime(
+    $id: String!
+    $sessionId: String!
+    $username: String!
+    $displayName: String!
+    $startedAt: Timestamp!
+    $completedAt: Timestamp!
+    $elapsedCentiseconds: Int!
+    $hintsUsed: Int!
+    $adjustedCentiseconds: Int!
+  ) {
+    connectScore_update(
+      key: { id: $id }
+      data: {
+        sessionId: $sessionId
+        username: $username
+        displayName: $displayName
+        startedAt: $startedAt
+        completedAt: $completedAt
+        elapsedCentiseconds: $elapsedCentiseconds
+        hintsUsed: $hintsUsed
+        adjustedCentiseconds: $adjustedCentiseconds
+        updatedAt_expr: "request.time"
+      }
+    )
   }
 `;
 
@@ -89,6 +305,41 @@ type StoredConnectScore = {
   elapsedSeconds: number;
   hintsUsed: number;
   adjustedTimeSeconds: number;
+};
+
+type ConnectSessionDbRecord = {
+  id?: string;
+  sessionId?: string;
+  tenantId?: string;
+  userId?: string;
+  username?: string;
+  displayName?: string;
+  levelId?: number;
+  dailyIndex?: number;
+  dailyKey?: string;
+  startedAt?: string;
+  lastHintAt?: string | null;
+  hintsUsed?: number;
+  completedAt?: string | null;
+  elapsedCentiseconds?: number | null;
+  adjustedCentiseconds?: number | null;
+};
+
+type ConnectScoreDbRecord = {
+  id?: string;
+  sessionId?: string;
+  tenantId?: string;
+  userId?: string;
+  username?: string;
+  displayName?: string;
+  levelId?: number;
+  dailyIndex?: number;
+  dailyKey?: string;
+  startedAt?: string;
+  completedAt?: string;
+  elapsedCentiseconds?: number;
+  hintsUsed?: number;
+  adjustedCentiseconds?: number;
 };
 
 type ConnectStore = {
@@ -312,6 +563,9 @@ function canUseGoogleMetadataCredentials() {
 
 function shouldLoadDataconnectLevelStore() {
   if (process.env.VYB_CONNECT_LEVELS_SOURCE === "local") {
+    if (!CONNECT_ALLOW_LOCAL_LEVEL_FALLBACK) {
+      throw new Error("Local Connect level storage is disabled. Set VYB_CONNECT_LEVELS_SOURCE=dataconnect.");
+    }
     return false;
   }
 
@@ -319,7 +573,33 @@ function shouldLoadDataconnectLevelStore() {
     return true;
   }
 
-  return hasExplicitFirebaseAdminCredentials() || canUseGoogleMetadataCredentials();
+  if (CONNECT_ALLOW_LOCAL_LEVEL_FALLBACK) {
+    return hasExplicitFirebaseAdminCredentials() || canUseGoogleMetadataCredentials();
+  }
+
+  return true;
+}
+
+function shouldUseDataconnectConnectStore() {
+  if (CONNECT_STORE_SOURCE === "local") {
+    if (!CONNECT_ALLOW_LOCAL_STORE_FALLBACK) {
+      throw new Error("Local Connect score storage is disabled. Set VYB_CONNECT_STORE_SOURCE=dataconnect.");
+    }
+    return false;
+  }
+
+  if (CONNECT_STORE_SOURCE === "dataconnect") {
+    return true;
+  }
+
+  const canUseDataconnect = hasExplicitFirebaseAdminCredentials() || canUseGoogleMetadataCredentials();
+  if (!canUseDataconnect && CONNECT_ALLOW_LOCAL_STORE_FALLBACK && !connectStoreSkipLogged) {
+    connectStoreSkipLogged = true;
+    console.warn("[connect-data] DataConnect score store unavailable; using explicit local fallback.", {
+      reason: "firebase-admin-credentials-unavailable"
+    });
+  }
+  return canUseDataconnect;
 }
 
 function getConnectStoreRoot() {
@@ -462,11 +742,18 @@ async function loadDataconnectSeedFile() {
     const store = response.data?.connectLevelStore;
 
     if (!store?.payloadJson) {
+      if (!CONNECT_ALLOW_LOCAL_LEVEL_FALLBACK) {
+        throw new Error(`Connect level store ${CONNECT_LEVEL_STORE_ID} is missing in DataConnect.`);
+      }
       return null;
     }
 
     return normalizeSeedFile(JSON.parse(store.payloadJson) as ConnectLevelSeedFile, `DataConnect store ${CONNECT_LEVEL_STORE_ID}`);
   } catch (error) {
+    if (!CONNECT_ALLOW_LOCAL_LEVEL_FALLBACK) {
+      throw error;
+    }
+
     console.warn("[connect-data] DataConnect level store unavailable; falling back to local seed file.", {
       storeId: CONNECT_LEVEL_STORE_ID,
       message: error instanceof Error ? error.message : String(error)
@@ -527,7 +814,122 @@ function normalizeStore(raw: unknown, tenantId: string): ConnectStore {
   };
 }
 
-async function loadStore(tenantId: string) {
+function toCentiseconds(value: number | null) {
+  return value === null ? null : Math.max(0, Math.round(value * 100));
+}
+
+function fromCentiseconds(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? Number((value / 100).toFixed(2)) : null;
+}
+
+function buildConnectSessionKey(session: Pick<StoredConnectSession, "tenantId" | "userId" | "dailyKey" | "levelId">) {
+  return [session.tenantId, session.userId, session.dailyKey, session.levelId].join(":");
+}
+
+function buildConnectScoreKey(score: Pick<StoredConnectScore, "tenantId" | "userId" | "dailyKey" | "levelId">) {
+  return [score.tenantId, score.userId, score.dailyKey, score.levelId].join(":");
+}
+
+function mapDbSession(record: ConnectSessionDbRecord, tenantId: string): StoredConnectSession | null {
+  const levelId = normalizeInteger(record.levelId);
+  const dailyIndex = normalizeInteger(record.dailyIndex);
+  const hintsUsed = normalizeInteger(record.hintsUsed);
+
+  if (
+    record.tenantId !== tenantId ||
+    typeof record.sessionId !== "string" ||
+    typeof record.userId !== "string" ||
+    typeof record.username !== "string" ||
+    typeof record.displayName !== "string" ||
+    !Number.isFinite(levelId) ||
+    !Number.isFinite(dailyIndex) ||
+    typeof record.dailyKey !== "string" ||
+    !isValidIsoDate(record.startedAt) ||
+    !(record.lastHintAt === null || record.lastHintAt === undefined || isValidIsoDate(record.lastHintAt)) ||
+    !Number.isFinite(hintsUsed) ||
+    !(record.completedAt === null || record.completedAt === undefined || isValidIsoDate(record.completedAt))
+  ) {
+    return null;
+  }
+
+  return {
+    sessionId: record.sessionId,
+    tenantId,
+    userId: record.userId,
+    username: record.username,
+    displayName: record.displayName,
+    levelId,
+    dailyIndex,
+    dailyKey: record.dailyKey,
+    startedAt: record.startedAt,
+    lastHintAt: record.lastHintAt ?? null,
+    hintsUsed,
+    completedAt: record.completedAt ?? null,
+    elapsedSeconds: fromCentiseconds(record.elapsedCentiseconds),
+    adjustedTimeSeconds: fromCentiseconds(record.adjustedCentiseconds)
+  };
+}
+
+function mapDbScore(record: ConnectScoreDbRecord, tenantId: string): StoredConnectScore | null {
+  const levelId = normalizeInteger(record.levelId);
+  const dailyIndex = normalizeInteger(record.dailyIndex);
+  const hintsUsed = normalizeInteger(record.hintsUsed);
+  const elapsedCentiseconds = normalizeInteger(record.elapsedCentiseconds);
+  const adjustedCentiseconds = normalizeInteger(record.adjustedCentiseconds);
+
+  if (
+    record.tenantId !== tenantId ||
+    typeof record.sessionId !== "string" ||
+    typeof record.userId !== "string" ||
+    typeof record.username !== "string" ||
+    typeof record.displayName !== "string" ||
+    !Number.isFinite(levelId) ||
+    !Number.isFinite(dailyIndex) ||
+    typeof record.dailyKey !== "string" ||
+    !isValidIsoDate(record.startedAt) ||
+    !isValidIsoDate(record.completedAt) ||
+    !Number.isFinite(hintsUsed) ||
+    !Number.isFinite(elapsedCentiseconds) ||
+    !Number.isFinite(adjustedCentiseconds)
+  ) {
+    return null;
+  }
+
+  return {
+    scoreId: record.id ?? buildConnectScoreKey({ tenantId, userId: record.userId, dailyKey: record.dailyKey, levelId }),
+    sessionId: record.sessionId,
+    tenantId,
+    userId: record.userId,
+    username: record.username,
+    displayName: record.displayName,
+    levelId,
+    dailyIndex,
+    dailyKey: record.dailyKey,
+    startedAt: record.startedAt,
+    completedAt: record.completedAt,
+    elapsedSeconds: elapsedCentiseconds / 100,
+    hintsUsed,
+    adjustedTimeSeconds: adjustedCentiseconds / 100
+  };
+}
+
+async function loadDataconnectStore(tenantId: string): Promise<ConnectStore> {
+  const response = (await getConnectDc().executeGraphqlRead(LIST_CONNECT_STORE_QUERY, {
+    operationName: "ListConnectStoreRuntime",
+    variables: {
+      tenantId,
+      sessionLimit: CONNECT_STORE_SCAN_LIMIT,
+      scoreLimit: CONNECT_STORE_SCAN_LIMIT
+    }
+  })) as { data?: { connectSessions?: ConnectSessionDbRecord[]; connectScores?: ConnectScoreDbRecord[] } };
+
+  return {
+    sessions: (response.data?.connectSessions ?? []).map((session) => mapDbSession(session, tenantId)).filter((session): session is StoredConnectSession => session !== null),
+    scores: (response.data?.connectScores ?? []).map((score) => mapDbScore(score, tenantId)).filter((score): score is StoredConnectScore => score !== null)
+  };
+}
+
+async function loadLocalStore(tenantId: string) {
   const storePath = resolveConnectStorePath(tenantId);
 
   try {
@@ -538,10 +940,161 @@ async function loadStore(tenantId: string) {
   }
 }
 
-async function writeStore(tenantId: string, store: ConnectStore) {
+async function writeLocalStore(tenantId: string, store: ConnectStore) {
   const storePath = resolveConnectStorePath(tenantId);
   await mkdir(path.dirname(storePath), { recursive: true });
   await writeFile(storePath, `${JSON.stringify(store)}\n`, "utf8");
+}
+
+async function getConnectDbRecordId(query: string, operationName: string, keyName: "sessionKey" | "scoreKey", keyValue: string) {
+  const response = (await getConnectDc().executeGraphqlRead(query, {
+    operationName,
+    variables: {
+      [keyName]: keyValue
+    }
+  })) as { data?: { connectSessions?: Array<{ id?: string }>; connectScores?: Array<{ id?: string }> } };
+
+  return response.data?.connectSessions?.[0]?.id ?? response.data?.connectScores?.[0]?.id ?? null;
+}
+
+async function upsertConnectSession(session: StoredConnectSession) {
+  const sessionKey = buildConnectSessionKey(session);
+  const existingId = await getConnectDbRecordId(GET_CONNECT_SESSION_BY_KEY_QUERY, "GetConnectSessionByKeyRuntime", "sessionKey", sessionKey);
+  const variables = {
+    sessionId: session.sessionId,
+    username: session.username,
+    displayName: session.displayName,
+    lastHintAt: session.lastHintAt,
+    hintsUsed: session.hintsUsed,
+    completedAt: session.completedAt,
+    elapsedCentiseconds: toCentiseconds(session.elapsedSeconds),
+    adjustedCentiseconds: toCentiseconds(session.adjustedTimeSeconds)
+  };
+
+  if (existingId) {
+    await getConnectDc().executeGraphql(UPDATE_CONNECT_SESSION_MUTATION, {
+      operationName: "UpdateConnectSessionRuntime",
+      variables: {
+        id: existingId,
+        ...variables
+      }
+    });
+    return;
+  }
+
+  await getConnectDc().executeGraphql(CREATE_CONNECT_SESSION_MUTATION, {
+    operationName: "CreateConnectSessionRuntime",
+    variables: {
+      id: randomUUID(),
+      sessionKey,
+      tenantId: session.tenantId,
+      userId: session.userId,
+      levelId: session.levelId,
+      dailyIndex: session.dailyIndex,
+      dailyKey: session.dailyKey,
+      startedAt: session.startedAt,
+      ...variables
+    }
+  });
+}
+
+async function upsertConnectScore(score: StoredConnectScore) {
+  const scoreKey = buildConnectScoreKey(score);
+  const existingId = await getConnectDbRecordId(GET_CONNECT_SCORE_BY_KEY_QUERY, "GetConnectScoreByKeyRuntime", "scoreKey", scoreKey);
+  const variables = {
+    sessionId: score.sessionId,
+    username: score.username,
+    displayName: score.displayName,
+    startedAt: score.startedAt,
+    completedAt: score.completedAt,
+    elapsedCentiseconds: toCentiseconds(score.elapsedSeconds) ?? 0,
+    hintsUsed: score.hintsUsed,
+    adjustedCentiseconds: toCentiseconds(score.adjustedTimeSeconds) ?? 0
+  };
+
+  if (existingId) {
+    await getConnectDc().executeGraphql(UPDATE_CONNECT_SCORE_MUTATION, {
+      operationName: "UpdateConnectScoreRuntime",
+      variables: {
+        id: existingId,
+        ...variables
+      }
+    });
+    return;
+  }
+
+  await getConnectDc().executeGraphql(CREATE_CONNECT_SCORE_MUTATION, {
+    operationName: "CreateConnectScoreRuntime",
+    variables: {
+      id: score.scoreId || randomUUID(),
+      scoreKey,
+      tenantId: score.tenantId,
+      userId: score.userId,
+      levelId: score.levelId,
+      dailyIndex: score.dailyIndex,
+      dailyKey: score.dailyKey,
+      ...variables
+    }
+  });
+}
+
+async function writeDataconnectStore(store: ConnectStore) {
+  const bestScoresByKey = new Map<string, StoredConnectScore>();
+
+  for (const score of store.scores) {
+    const key = buildConnectScoreKey(score);
+    const current = bestScoresByKey.get(key);
+    if (!current || compareStoredScores(score, current) < 0) {
+      bestScoresByKey.set(key, score);
+    }
+  }
+
+  await Promise.all([
+    ...store.sessions.map((session) => upsertConnectSession(session)),
+    ...[...bestScoresByKey.values()].map((score) => upsertConnectScore(score))
+  ]);
+}
+
+function shouldFallbackToLocalStore(error: unknown) {
+  if (!CONNECT_ALLOW_LOCAL_STORE_FALLBACK) {
+    throw new Error(
+      `Connect score store requires DataConnect. ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+
+  if (!connectStoreFallbackLogged) {
+    connectStoreFallbackLogged = true;
+    console.warn("[connect-data] DataConnect score store failed; using explicit local fallback.", {
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+
+  return true;
+}
+
+async function loadStore(tenantId: string) {
+  if (shouldUseDataconnectConnectStore()) {
+    try {
+      return await loadDataconnectStore(tenantId);
+    } catch (error) {
+      shouldFallbackToLocalStore(error);
+    }
+  }
+
+  return loadLocalStore(tenantId);
+}
+
+async function writeStore(tenantId: string, store: ConnectStore) {
+  if (shouldUseDataconnectConnectStore()) {
+    try {
+      await writeDataconnectStore(store);
+      return;
+    } catch (error) {
+      shouldFallbackToLocalStore(error);
+    }
+  }
+
+  await writeLocalStore(tenantId, store);
 }
 
 async function transactStore<T>(tenantId: string, mutate: (store: ConnectStore) => T | Promise<T>) {
@@ -620,22 +1173,48 @@ function getRankedEntries(store: ConnectStore, tenantId: string, dailyKey: strin
     }
   }
 
+  let previousAdjustedTimeSeconds: number | null = null;
+  let previousRank = 0;
+
   return [...bestScoresByUser.values()]
     .sort(compareStoredScores)
-    .map((score, index) => ({
-      rank: index + 1,
-      userId: score.userId,
-      username: score.username,
-      displayName: score.displayName,
-      elapsedSeconds: score.elapsedSeconds,
-      hintsUsed: score.hintsUsed,
-      adjustedTimeSeconds: score.adjustedTimeSeconds,
-      completedAt: score.completedAt
-    }));
+    .map((score, index) => {
+      const organizationRank = previousAdjustedTimeSeconds === score.adjustedTimeSeconds ? previousRank : index + 1;
+      previousAdjustedTimeSeconds = score.adjustedTimeSeconds;
+      previousRank = organizationRank;
+
+      return {
+        rank: organizationRank,
+        organizationRank,
+        userId: score.userId,
+        username: score.username,
+        displayName: score.displayName,
+        elapsedSeconds: score.elapsedSeconds,
+        hintsUsed: score.hintsUsed,
+        adjustedTimeSeconds: score.adjustedTimeSeconds,
+        completedAt: score.completedAt
+      };
+    });
+}
+
+function getVisibleLeaderboardEntries(entries: ConnectLeaderboardEntry[]) {
+  let previousAdjustedTimeSeconds: number | null = null;
+  let previousRank = 0;
+
+  return entries.map((entry, index) => {
+    const rank = previousAdjustedTimeSeconds === entry.adjustedTimeSeconds ? previousRank : index + 1;
+    previousAdjustedTimeSeconds = entry.adjustedTimeSeconds;
+    previousRank = rank;
+
+    return {
+      ...entry,
+      rank
+    };
+  });
 }
 
 function buildDailyResponse(store: ConnectStore, viewer: DevSession, session: StoredConnectSession, level: StoredConnectLevel, dailyState: DailyState): ConnectDailyLevelResponse {
-  const rankedEntries = getRankedEntries(store, viewer.tenantId, dailyState.dailyKey, dailyState.levelId);
+  const rankedEntries = getVisibleLeaderboardEntries(getRankedEntries(store, viewer.tenantId, dailyState.dailyKey, dailyState.levelId));
 
   return {
     game: "connect",
@@ -670,6 +1249,9 @@ function buildViewerStreak(store: ConnectStore, tenantId: string, userId: string
   }
 
   let streak = 0;
+  if (!solvedDailyKeys.has(currentDailyKey)) {
+    currentDay.setUTCDate(currentDay.getUTCDate() - 1);
+  }
 
   while (true) {
     const dailyKey = currentDay.toISOString().slice(0, 10);
@@ -688,7 +1270,7 @@ export async function getDailyConnectHubSnapshot(viewer: DevSession): Promise<Co
   const { seedFile, levels } = await loadSeedFile();
   const dailyState = getDailyState(levels.length, seedFile);
   const store = await loadStore(viewer.tenantId);
-  const rankedEntries = getRankedEntries(store, viewer.tenantId, dailyState.dailyKey, dailyState.levelId);
+  const rankedEntries = getVisibleLeaderboardEntries(getRankedEntries(store, viewer.tenantId, dailyState.dailyKey, dailyState.levelId));
 
   return {
     dailyKey: dailyState.dailyKey,
@@ -908,7 +1490,7 @@ function secondsBetween(startIso: string, endIso: string) {
 }
 
 function buildSubmitResponse(store: ConnectStore, viewer: DevSession, session: StoredConnectSession, message: string, solved: boolean): ConnectSubmitResponse {
-  const rankedEntries = getRankedEntries(store, viewer.tenantId, session.dailyKey, session.levelId);
+  const rankedEntries = getVisibleLeaderboardEntries(getRankedEntries(store, viewer.tenantId, session.dailyKey, session.levelId));
 
   return {
     solved,

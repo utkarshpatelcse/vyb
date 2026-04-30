@@ -92,3 +92,204 @@ mutation UpdateScribbleWordStore(
     }
   )
 }
+
+query ListConnectSessionsByTenant($tenantId: String!, $limit: Int!) @auth(level: NO_ACCESS) {
+  connectSessions(
+    where: { tenantId: { eq: $tenantId }, deletedAt: { isNull: true } }
+    orderBy: [{ startedAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    sessionKey
+    sessionId
+    tenantId
+    userId
+    username
+    displayName
+    levelId
+    dailyIndex
+    dailyKey
+    startedAt
+    lastHintAt
+    hintsUsed
+    completedAt
+    elapsedCentiseconds
+    adjustedCentiseconds
+  }
+}
+
+query ListConnectScoresByTenant($tenantId: String!, $limit: Int!) @auth(level: NO_ACCESS) {
+  connectScores(
+    where: { tenantId: { eq: $tenantId }, deletedAt: { isNull: true } }
+    orderBy: [{ completedAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    scoreKey
+    sessionId
+    tenantId
+    userId
+    username
+    displayName
+    levelId
+    dailyIndex
+    dailyKey
+    startedAt
+    completedAt
+    elapsedCentiseconds
+    hintsUsed
+    adjustedCentiseconds
+  }
+}
+
+query GetConnectSessionByKey($sessionKey: String!) @auth(level: NO_ACCESS) {
+  connectSessions(where: { sessionKey: { eq: $sessionKey }, deletedAt: { isNull: true } }, limit: 1) {
+    id
+  }
+}
+
+query GetConnectScoreByKey($scoreKey: String!) @auth(level: NO_ACCESS) {
+  connectScores(where: { scoreKey: { eq: $scoreKey }, deletedAt: { isNull: true } }, limit: 1) {
+    id
+    adjustedCentiseconds
+    elapsedCentiseconds
+    hintsUsed
+    completedAt
+  }
+}
+
+mutation CreateConnectSession(
+  $id: String!
+  $sessionKey: String!
+  $sessionId: String!
+  $tenantId: String!
+  $userId: String!
+  $username: String!
+  $displayName: String!
+  $levelId: Int!
+  $dailyIndex: Int!
+  $dailyKey: String!
+  $startedAt: Timestamp!
+  $lastHintAt: Timestamp
+  $hintsUsed: Int!
+  $completedAt: Timestamp
+  $elapsedCentiseconds: Int
+  $adjustedCentiseconds: Int
+) @auth(level: NO_ACCESS) @transaction {
+  connectSession_insert(
+    data: {
+      id: $id
+      sessionKey: $sessionKey
+      sessionId: $sessionId
+      tenantId: $tenantId
+      userId: $userId
+      username: $username
+      displayName: $displayName
+      levelId: $levelId
+      dailyIndex: $dailyIndex
+      dailyKey: $dailyKey
+      startedAt: $startedAt
+      lastHintAt: $lastHintAt
+      hintsUsed: $hintsUsed
+      completedAt: $completedAt
+      elapsedCentiseconds: $elapsedCentiseconds
+      adjustedCentiseconds: $adjustedCentiseconds
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation UpdateConnectSession(
+  $id: String!
+  $sessionId: String!
+  $username: String!
+  $displayName: String!
+  $lastHintAt: Timestamp
+  $hintsUsed: Int!
+  $completedAt: Timestamp
+  $elapsedCentiseconds: Int
+  $adjustedCentiseconds: Int
+) @auth(level: NO_ACCESS) @transaction {
+  connectSession_update(
+    key: { id: $id }
+    data: {
+      sessionId: $sessionId
+      username: $username
+      displayName: $displayName
+      lastHintAt: $lastHintAt
+      hintsUsed: $hintsUsed
+      completedAt: $completedAt
+      elapsedCentiseconds: $elapsedCentiseconds
+      adjustedCentiseconds: $adjustedCentiseconds
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation CreateConnectScore(
+  $id: String!
+  $scoreKey: String!
+  $sessionId: String!
+  $tenantId: String!
+  $userId: String!
+  $username: String!
+  $displayName: String!
+  $levelId: Int!
+  $dailyIndex: Int!
+  $dailyKey: String!
+  $startedAt: Timestamp!
+  $completedAt: Timestamp!
+  $elapsedCentiseconds: Int!
+  $hintsUsed: Int!
+  $adjustedCentiseconds: Int!
+) @auth(level: NO_ACCESS) @transaction {
+  connectScore_insert(
+    data: {
+      id: $id
+      scoreKey: $scoreKey
+      sessionId: $sessionId
+      tenantId: $tenantId
+      userId: $userId
+      username: $username
+      displayName: $displayName
+      levelId: $levelId
+      dailyIndex: $dailyIndex
+      dailyKey: $dailyKey
+      startedAt: $startedAt
+      completedAt: $completedAt
+      elapsedCentiseconds: $elapsedCentiseconds
+      hintsUsed: $hintsUsed
+      adjustedCentiseconds: $adjustedCentiseconds
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation UpdateConnectScore(
+  $id: String!
+  $sessionId: String!
+  $username: String!
+  $displayName: String!
+  $startedAt: Timestamp!
+  $completedAt: Timestamp!
+  $elapsedCentiseconds: Int!
+  $hintsUsed: Int!
+  $adjustedCentiseconds: Int!
+) @auth(level: NO_ACCESS) @transaction {
+  connectScore_update(
+    key: { id: $id }
+    data: {
+      sessionId: $sessionId
+      username: $username
+      displayName: $displayName
+      startedAt: $startedAt
+      completedAt: $completedAt
+      elapsedCentiseconds: $elapsedCentiseconds
+      hintsUsed: $hintsUsed
+      adjustedCentiseconds: $adjustedCentiseconds
+      updatedAt_expr: "request.time"
+    }
+  )
+}

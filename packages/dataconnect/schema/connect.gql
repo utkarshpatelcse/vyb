@@ -18,3 +18,48 @@ type ScribbleWordStore
   createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
   updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
 }
+
+type ConnectSession
+  @table(name: "connect_sessions", singular: "connectSession", plural: "connectSessions", key: ["id"]) {
+  id: String!
+  sessionKey: String! @col(name: "session_key") @unique
+  sessionId: String! @col(name: "session_id")
+  tenantId: String! @col(name: "tenant_id")
+  userId: String! @col(name: "user_id")
+  username: String!
+  displayName: String! @col(name: "display_name")
+  levelId: Int! @col(name: "level_id")
+  dailyIndex: Int! @col(name: "daily_index")
+  dailyKey: String! @col(name: "daily_key")
+  startedAt: Timestamp! @col(name: "started_at")
+  lastHintAt: Timestamp @col(name: "last_hint_at")
+  hintsUsed: Int! @col(name: "hints_used") @default(value: 0)
+  completedAt: Timestamp @col(name: "completed_at")
+  elapsedCentiseconds: Int @col(name: "elapsed_centiseconds")
+  adjustedCentiseconds: Int @col(name: "adjusted_centiseconds")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+type ConnectScore
+  @table(name: "connect_scores", singular: "connectScore", plural: "connectScores", key: ["id"]) {
+  id: String!
+  scoreKey: String! @col(name: "score_key") @unique
+  sessionId: String! @col(name: "session_id")
+  tenantId: String! @col(name: "tenant_id")
+  userId: String! @col(name: "user_id")
+  username: String!
+  displayName: String! @col(name: "display_name")
+  levelId: Int! @col(name: "level_id")
+  dailyIndex: Int! @col(name: "daily_index")
+  dailyKey: String! @col(name: "daily_key")
+  startedAt: Timestamp! @col(name: "started_at")
+  completedAt: Timestamp! @col(name: "completed_at")
+  elapsedCentiseconds: Int! @col(name: "elapsed_centiseconds")
+  hintsUsed: Int! @col(name: "hints_used")
+  adjustedCentiseconds: Int! @col(name: "adjusted_centiseconds")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}

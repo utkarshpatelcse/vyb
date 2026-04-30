@@ -749,6 +749,24 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
     router.push(backHref);
   }
 
+  async function inviteFriends() {
+    const url = `${window.location.origin}/hub/gameshub/connect`;
+    const text = "Try today's Connect puzzle on Vyb.";
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "Vyb Connect", text, url });
+        setMessage("Invite opened.");
+        return;
+      }
+
+      await navigator.clipboard?.writeText(`${text}\n${url}`);
+      setMessage("Invite link copied.");
+    } catch {
+      setMessage("Invite link is ready to share.");
+    }
+  }
+
   if (isLoading) {
     return (
       <section className="vyb-connect-shell">
@@ -773,6 +791,73 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
 
   if (!daily || !level) {
     return null;
+  }
+
+  const solvedResult = result?.solved ? result : null;
+  const visibleLeaderboard = solvedResult?.leaderboard ?? daily.leaderboard;
+  const viewerBest = daily.viewerBest ?? solvedResult?.viewerBest ?? null;
+
+  if (solvedResult) {
+    return (
+      <section className="vyb-connect-shell">
+        <div className="vyb-connect-topbar-modern">
+          <button type="button" className="vyb-connect-back-icon" onClick={handleExit} aria-label="Back">
+            <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+          </button>
+          <div className="vyb-connect-timer-pill">
+            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            <strong>{formatSeconds(solvedResult.elapsedSeconds)}</strong>
+          </div>
+          <div className="vyb-connect-difficulty-pill">
+            Difficulty <span>{level.difficulty}</span>
+          </div>
+        </div>
+
+        <div className="vyb-connect-result vyb-connect-solved-card">
+          <span>Puzzle solved</span>
+          <strong>{formatSeconds(solvedResult.adjustedTimeSeconds)}</strong>
+          <small>{formatSeconds(solvedResult.elapsedSeconds)} time taken + {solvedResult.hintsUsed * 3}s hint penalty</small>
+          {viewerBest ? (
+            <div className="vyb-connect-rank-strip">
+              <span>Social rank #{viewerBest.rank}</span>
+              <span>Org rank #{viewerBest.organizationRank}</span>
+            </div>
+          ) : null}
+        </div>
+
+        <section className="vyb-connect-leaderboard">
+          <div className="vyb-connect-section-head">
+            <span>Today's leaderboard</span>
+            <strong>{viewerBest ? `You: #${viewerBest.rank}` : "Solved"}</strong>
+          </div>
+          <p className="vyb-connect-scope-note">Showing friends, followers, and your campus community. Org rank is tracked separately.</p>
+          {visibleLeaderboard.length === 0 ? (
+            <p className="vyb-connect-empty">No visible solves yet.</p>
+          ) : (
+            <div className="vyb-connect-leaderboard-list">
+              {visibleLeaderboard.map((entry) => (
+                <div key={`${entry.userId}:${entry.completedAt}`} className="vyb-connect-leaderboard-row">
+                  <span>#{entry.rank}</span>
+                  <strong>{entry.displayName}</strong>
+                  <small>{formatSeconds(entry.adjustedTimeSeconds)} time</small>
+                  <em>Org #{entry.organizationRank}</em>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <div className="vyb-connect-completed-actions">
+          <button type="button" className="vyb-connect-invite-button" onClick={() => void inviteFriends()}>
+            Invite Friends
+          </button>
+          <button type="button" className="vyb-connect-popup-primary" onClick={handleExit}>
+            Explore Other Games
+          </button>
+        </div>
+        {message ? <p className="vyb-connect-message is-solved" style={{ margin: 0 }}>{message}</p> : null}
+      </section>
+    );
   }
 
   const gridCells = [];

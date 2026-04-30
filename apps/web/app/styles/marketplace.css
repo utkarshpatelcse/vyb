@@ -4987,10 +4987,16 @@
 }
 
 .vyb-connect-result small,
-.vyb-connect-leaderboard-row small {
+.vyb-connect-leaderboard-row small,
+.vyb-connect-leaderboard-row em {
   color: var(--connect-muted);
   font-size: 0.68rem;
   font-weight: 800;
+}
+
+.vyb-connect-leaderboard-row em {
+  font-style: normal;
+  color: rgba(103, 232, 249, 0.78);
 }
 
 .vyb-connect-leaderboard-list {
@@ -5019,6 +5025,50 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.78rem;
+}
+
+.vyb-connect-solved-card {
+  margin-bottom: 1rem;
+}
+
+.vyb-connect-rank-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.vyb-connect-rank-strip span {
+  border: 1px solid rgba(103, 232, 249, 0.22);
+  border-radius: 999px;
+  padding: 0.42rem 0.62rem;
+  background: rgba(103, 232, 249, 0.08);
+  color: #dffaff;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.vyb-connect-scope-note {
+  margin: 0;
+  color: var(--connect-muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.vyb-connect-completed-actions {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.vyb-connect-invite-button {
+  border: 1px solid rgba(103, 232, 249, 0.2);
+  border-radius: 999px;
+  padding: 0.95rem 1rem;
+  background: rgba(103, 232, 249, 0.08);
+  color: #dffaff;
+  font-size: 0.85rem;
+  font-weight: 900;
+  cursor: pointer;
 }
 
 .vyb-connect-loading {

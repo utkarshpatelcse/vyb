@@ -14,6 +14,7 @@
     "dc:migrate": "node scripts/run-firebase-cli.mjs dataconnect:sql:migrate --service vyb --location asia-south1 --force",
     "dc:deploy:social": "node scripts/run-firebase-cli.mjs deploy --only dataconnect:vyb:schema,dataconnect:vyb:social",
     "dc:release:social": "pnpm dc:compile && pnpm dc:migrate && pnpm dc:deploy:social",
+    "connect:migrate-local": "node scripts/migrate-connect-local-store-dataconnect.mjs",
     "dc:deploy:other-device": "powershell -ExecutionPolicy Bypass -File scripts/deploy-dataconnect-other-device.ps1",
     "bootstrap:tenant": "node scripts/bootstrap-dataconnect.mjs",
     "chat:janitor": "node scripts/chat-janitor.mjs",

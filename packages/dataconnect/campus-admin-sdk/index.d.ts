@@ -68,6 +68,16 @@ export interface ConnectLevelStore_Key {
   __typename?: 'ConnectLevelStore_Key';
 }
 
+export interface ConnectScore_Key {
+  id: string;
+  __typename?: 'ConnectScore_Key';
+}
+
+export interface ConnectSession_Key {
+  id: string;
+  __typename?: 'ConnectSession_Key';
+}
+
 export interface Course_Key {
   id: UUIDString;
   __typename?: 'Course_Key';
@@ -264,6 +274,7 @@ export interface GetTenantMembershipProfileByUserAndTenantData {
         id: UUIDString;
         primaryEmail: string;
         displayName?: string | null;
+        avatarUrl?: string | null;
       } & User_Key;
   } & TenantMembership_Key)[];
 }
@@ -303,6 +314,7 @@ export interface GetTenantMembershipProfileByUsernameData {
         id: UUIDString;
         primaryEmail: string;
         displayName?: string | null;
+        avatarUrl?: string | null;
       } & User_Key;
   } & TenantMembership_Key)[];
 }
@@ -377,6 +389,7 @@ export interface ListTenantMembershipProfilesByTenantData {
         id: UUIDString;
         primaryEmail: string;
         displayName?: string | null;
+        avatarUrl?: string | null;
       } & User_Key;
   } & TenantMembership_Key)[];
 }
@@ -459,6 +472,11 @@ export interface ResourceFile_Key {
 export interface Resource_Key {
   id: UUIDString;
   __typename?: 'Resource_Key';
+}
+
+export interface ScribbleWordStore_Key {
+  id: string;
+  __typename?: 'ScribbleWordStore_Key';
 }
 
 export interface StoryReaction_Key {

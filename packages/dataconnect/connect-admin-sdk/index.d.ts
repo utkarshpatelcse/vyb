@@ -70,6 +70,16 @@ export interface ConnectLevelStore_Key {
   __typename?: 'ConnectLevelStore_Key';
 }
 
+export interface ConnectScore_Key {
+  id: string;
+  __typename?: 'ConnectScore_Key';
+}
+
+export interface ConnectSession_Key {
+  id: string;
+  __typename?: 'ConnectSession_Key';
+}
+
 export interface Course_Key {
   id: UUIDString;
   __typename?: 'Course_Key';
@@ -84,6 +94,62 @@ export interface CreateConnectLevelStoreVariables {
   payloadJson: string;
   totalLevels: number;
   launchDate?: string | null;
+  checksum?: string | null;
+}
+
+export interface CreateConnectScoreData {
+  connectScore_insert: ConnectScore_Key;
+}
+
+export interface CreateConnectScoreVariables {
+  id: string;
+  scoreKey: string;
+  sessionId: string;
+  tenantId: string;
+  userId: string;
+  username: string;
+  displayName: string;
+  levelId: number;
+  dailyIndex: number;
+  dailyKey: string;
+  startedAt: TimestampString;
+  completedAt: TimestampString;
+  elapsedCentiseconds: number;
+  hintsUsed: number;
+  adjustedCentiseconds: number;
+}
+
+export interface CreateConnectSessionData {
+  connectSession_insert: ConnectSession_Key;
+}
+
+export interface CreateConnectSessionVariables {
+  id: string;
+  sessionKey: string;
+  sessionId: string;
+  tenantId: string;
+  userId: string;
+  username: string;
+  displayName: string;
+  levelId: number;
+  dailyIndex: number;
+  dailyKey: string;
+  startedAt: TimestampString;
+  lastHintAt?: TimestampString | null;
+  hintsUsed: number;
+  completedAt?: TimestampString | null;
+  elapsedCentiseconds?: number | null;
+  adjustedCentiseconds?: number | null;
+}
+
+export interface CreateScribbleWordStoreData {
+  scribbleWordStore_insert: ScribbleWordStore_Key;
+}
+
+export interface CreateScribbleWordStoreVariables {
+  id: string;
+  payloadJson: string;
+  totalWords: number;
   checksum?: string | null;
 }
 
@@ -105,6 +171,95 @@ export interface GetConnectLevelStoreData {
 
 export interface GetConnectLevelStoreVariables {
   id: string;
+}
+
+export interface GetConnectScoreByKeyData {
+  connectScores: ({
+    id: string;
+    adjustedCentiseconds: number;
+    elapsedCentiseconds: number;
+    hintsUsed: number;
+    completedAt: TimestampString;
+  } & ConnectScore_Key)[];
+}
+
+export interface GetConnectScoreByKeyVariables {
+  scoreKey: string;
+}
+
+export interface GetConnectSessionByKeyData {
+  connectSessions: ({
+    id: string;
+  } & ConnectSession_Key)[];
+}
+
+export interface GetConnectSessionByKeyVariables {
+  sessionKey: string;
+}
+
+export interface GetScribbleWordStoreData {
+  scribbleWordStore?: {
+    id: string;
+    payloadJson: string;
+    totalWords: number;
+    checksum?: string | null;
+    updatedAt: TimestampString;
+  } & ScribbleWordStore_Key;
+}
+
+export interface GetScribbleWordStoreVariables {
+  id: string;
+}
+
+export interface ListConnectScoresByTenantData {
+  connectScores: ({
+    id: string;
+    scoreKey: string;
+    sessionId: string;
+    tenantId: string;
+    userId: string;
+    username: string;
+    displayName: string;
+    levelId: number;
+    dailyIndex: number;
+    dailyKey: string;
+    startedAt: TimestampString;
+    completedAt: TimestampString;
+    elapsedCentiseconds: number;
+    hintsUsed: number;
+    adjustedCentiseconds: number;
+  } & ConnectScore_Key)[];
+}
+
+export interface ListConnectScoresByTenantVariables {
+  tenantId: string;
+  limit: number;
+}
+
+export interface ListConnectSessionsByTenantData {
+  connectSessions: ({
+    id: string;
+    sessionKey: string;
+    sessionId: string;
+    tenantId: string;
+    userId: string;
+    username: string;
+    displayName: string;
+    levelId: number;
+    dailyIndex: number;
+    dailyKey: string;
+    startedAt: TimestampString;
+    lastHintAt?: TimestampString | null;
+    hintsUsed: number;
+    completedAt?: TimestampString | null;
+    elapsedCentiseconds?: number | null;
+    adjustedCentiseconds?: number | null;
+  } & ConnectSession_Key)[];
+}
+
+export interface ListConnectSessionsByTenantVariables {
+  tenantId: string;
+  limit: number;
 }
 
 export interface MarketListingContact_Key {
@@ -182,6 +337,11 @@ export interface Resource_Key {
   __typename?: 'Resource_Key';
 }
 
+export interface ScribbleWordStore_Key {
+  id: string;
+  __typename?: 'ScribbleWordStore_Key';
+}
+
 export interface StoryReaction_Key {
   id: UUIDString;
   __typename?: 'StoryReaction_Key';
@@ -221,6 +381,49 @@ export interface UpdateConnectLevelStoreVariables {
   payloadJson: string;
   totalLevels: number;
   launchDate?: string | null;
+  checksum?: string | null;
+}
+
+export interface UpdateConnectScoreData {
+  connectScore_update?: ConnectScore_Key | null;
+}
+
+export interface UpdateConnectScoreVariables {
+  id: string;
+  sessionId: string;
+  username: string;
+  displayName: string;
+  startedAt: TimestampString;
+  completedAt: TimestampString;
+  elapsedCentiseconds: number;
+  hintsUsed: number;
+  adjustedCentiseconds: number;
+}
+
+export interface UpdateConnectSessionData {
+  connectSession_update?: ConnectSession_Key | null;
+}
+
+export interface UpdateConnectSessionVariables {
+  id: string;
+  sessionId: string;
+  username: string;
+  displayName: string;
+  lastHintAt?: TimestampString | null;
+  hintsUsed: number;
+  completedAt?: TimestampString | null;
+  elapsedCentiseconds?: number | null;
+  adjustedCentiseconds?: number | null;
+}
+
+export interface UpdateScribbleWordStoreData {
+  scribbleWordStore_update?: ScribbleWordStore_Key | null;
+}
+
+export interface UpdateScribbleWordStoreVariables {
+  id: string;
+  payloadJson: string;
+  totalWords: number;
   checksum?: string | null;
 }
 
@@ -269,3 +472,136 @@ export const updateConnectLevelStoreRef: UpdateConnectLevelStoreRef;
 
 export function updateConnectLevelStore(vars: UpdateConnectLevelStoreVariables): MutationPromise<UpdateConnectLevelStoreData, UpdateConnectLevelStoreVariables>;
 export function updateConnectLevelStore(dc: DataConnect, vars: UpdateConnectLevelStoreVariables): MutationPromise<UpdateConnectLevelStoreData, UpdateConnectLevelStoreVariables>;
+
+interface GetScribbleWordStoreRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: GetScribbleWordStoreVariables): QueryRef<GetScribbleWordStoreData, GetScribbleWordStoreVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: GetScribbleWordStoreVariables): QueryRef<GetScribbleWordStoreData, GetScribbleWordStoreVariables>;
+  operationName: string;
+}
+export const getScribbleWordStoreRef: GetScribbleWordStoreRef;
+
+export function getScribbleWordStore(vars: GetScribbleWordStoreVariables, options?: ExecuteQueryOptions): QueryPromise<GetScribbleWordStoreData, GetScribbleWordStoreVariables>;
+export function getScribbleWordStore(dc: DataConnect, vars: GetScribbleWordStoreVariables, options?: ExecuteQueryOptions): QueryPromise<GetScribbleWordStoreData, GetScribbleWordStoreVariables>;
+
+interface CreateScribbleWordStoreRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: CreateScribbleWordStoreVariables): MutationRef<CreateScribbleWordStoreData, CreateScribbleWordStoreVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: CreateScribbleWordStoreVariables): MutationRef<CreateScribbleWordStoreData, CreateScribbleWordStoreVariables>;
+  operationName: string;
+}
+export const createScribbleWordStoreRef: CreateScribbleWordStoreRef;
+
+export function createScribbleWordStore(vars: CreateScribbleWordStoreVariables): MutationPromise<CreateScribbleWordStoreData, CreateScribbleWordStoreVariables>;
+export function createScribbleWordStore(dc: DataConnect, vars: CreateScribbleWordStoreVariables): MutationPromise<CreateScribbleWordStoreData, CreateScribbleWordStoreVariables>;
+
+interface UpdateScribbleWordStoreRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: UpdateScribbleWordStoreVariables): MutationRef<UpdateScribbleWordStoreData, UpdateScribbleWordStoreVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: UpdateScribbleWordStoreVariables): MutationRef<UpdateScribbleWordStoreData, UpdateScribbleWordStoreVariables>;
+  operationName: string;
+}
+export const updateScribbleWordStoreRef: UpdateScribbleWordStoreRef;
+
+export function updateScribbleWordStore(vars: UpdateScribbleWordStoreVariables): MutationPromise<UpdateScribbleWordStoreData, UpdateScribbleWordStoreVariables>;
+export function updateScribbleWordStore(dc: DataConnect, vars: UpdateScribbleWordStoreVariables): MutationPromise<UpdateScribbleWordStoreData, UpdateScribbleWordStoreVariables>;
+
+interface ListConnectSessionsByTenantRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: ListConnectSessionsByTenantVariables): QueryRef<ListConnectSessionsByTenantData, ListConnectSessionsByTenantVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: ListConnectSessionsByTenantVariables): QueryRef<ListConnectSessionsByTenantData, ListConnectSessionsByTenantVariables>;
+  operationName: string;
+}
+export const listConnectSessionsByTenantRef: ListConnectSessionsByTenantRef;
+
+export function listConnectSessionsByTenant(vars: ListConnectSessionsByTenantVariables, options?: ExecuteQueryOptions): QueryPromise<ListConnectSessionsByTenantData, ListConnectSessionsByTenantVariables>;
+export function listConnectSessionsByTenant(dc: DataConnect, vars: ListConnectSessionsByTenantVariables, options?: ExecuteQueryOptions): QueryPromise<ListConnectSessionsByTenantData, ListConnectSessionsByTenantVariables>;
+
+interface ListConnectScoresByTenantRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: ListConnectScoresByTenantVariables): QueryRef<ListConnectScoresByTenantData, ListConnectScoresByTenantVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: ListConnectScoresByTenantVariables): QueryRef<ListConnectScoresByTenantData, ListConnectScoresByTenantVariables>;
+  operationName: string;
+}
+export const listConnectScoresByTenantRef: ListConnectScoresByTenantRef;
+
+export function listConnectScoresByTenant(vars: ListConnectScoresByTenantVariables, options?: ExecuteQueryOptions): QueryPromise<ListConnectScoresByTenantData, ListConnectScoresByTenantVariables>;
+export function listConnectScoresByTenant(dc: DataConnect, vars: ListConnectScoresByTenantVariables, options?: ExecuteQueryOptions): QueryPromise<ListConnectScoresByTenantData, ListConnectScoresByTenantVariables>;
+
+interface GetConnectSessionByKeyRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: GetConnectSessionByKeyVariables): QueryRef<GetConnectSessionByKeyData, GetConnectSessionByKeyVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: GetConnectSessionByKeyVariables): QueryRef<GetConnectSessionByKeyData, GetConnectSessionByKeyVariables>;
+  operationName: string;
+}
+export const getConnectSessionByKeyRef: GetConnectSessionByKeyRef;
+
+export function getConnectSessionByKey(vars: GetConnectSessionByKeyVariables, options?: ExecuteQueryOptions): QueryPromise<GetConnectSessionByKeyData, GetConnectSessionByKeyVariables>;
+export function getConnectSessionByKey(dc: DataConnect, vars: GetConnectSessionByKeyVariables, options?: ExecuteQueryOptions): QueryPromise<GetConnectSessionByKeyData, GetConnectSessionByKeyVariables>;
+
+interface GetConnectScoreByKeyRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: GetConnectScoreByKeyVariables): QueryRef<GetConnectScoreByKeyData, GetConnectScoreByKeyVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: GetConnectScoreByKeyVariables): QueryRef<GetConnectScoreByKeyData, GetConnectScoreByKeyVariables>;
+  operationName: string;
+}
+export const getConnectScoreByKeyRef: GetConnectScoreByKeyRef;
+
+export function getConnectScoreByKey(vars: GetConnectScoreByKeyVariables, options?: ExecuteQueryOptions): QueryPromise<GetConnectScoreByKeyData, GetConnectScoreByKeyVariables>;
+export function getConnectScoreByKey(dc: DataConnect, vars: GetConnectScoreByKeyVariables, options?: ExecuteQueryOptions): QueryPromise<GetConnectScoreByKeyData, GetConnectScoreByKeyVariables>;
+
+interface CreateConnectSessionRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: CreateConnectSessionVariables): MutationRef<CreateConnectSessionData, CreateConnectSessionVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: CreateConnectSessionVariables): MutationRef<CreateConnectSessionData, CreateConnectSessionVariables>;
+  operationName: string;
+}
+export const createConnectSessionRef: CreateConnectSessionRef;
+
+export function createConnectSession(vars: CreateConnectSessionVariables): MutationPromise<CreateConnectSessionData, CreateConnectSessionVariables>;
+export function createConnectSession(dc: DataConnect, vars: CreateConnectSessionVariables): MutationPromise<CreateConnectSessionData, CreateConnectSessionVariables>;
+
+interface UpdateConnectSessionRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: UpdateConnectSessionVariables): MutationRef<UpdateConnectSessionData, UpdateConnectSessionVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: UpdateConnectSessionVariables): MutationRef<UpdateConnectSessionData, UpdateConnectSessionVariables>;
+  operationName: string;
+}
+export const updateConnectSessionRef: UpdateConnectSessionRef;
+
+export function updateConnectSession(vars: UpdateConnectSessionVariables): MutationPromise<UpdateConnectSessionData, UpdateConnectSessionVariables>;
+export function updateConnectSession(dc: DataConnect, vars: UpdateConnectSessionVariables): MutationPromise<UpdateConnectSessionData, UpdateConnectSessionVariables>;
+
+interface CreateConnectScoreRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: CreateConnectScoreVariables): MutationRef<CreateConnectScoreData, CreateConnectScoreVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: CreateConnectScoreVariables): MutationRef<CreateConnectScoreData, CreateConnectScoreVariables>;
+  operationName: string;
+}
+export const createConnectScoreRef: CreateConnectScoreRef;
+
+export function createConnectScore(vars: CreateConnectScoreVariables): MutationPromise<CreateConnectScoreData, CreateConnectScoreVariables>;
+export function createConnectScore(dc: DataConnect, vars: CreateConnectScoreVariables): MutationPromise<CreateConnectScoreData, CreateConnectScoreVariables>;
+
+interface UpdateConnectScoreRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: UpdateConnectScoreVariables): MutationRef<UpdateConnectScoreData, UpdateConnectScoreVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: UpdateConnectScoreVariables): MutationRef<UpdateConnectScoreData, UpdateConnectScoreVariables>;
+  operationName: string;
+}
+export const updateConnectScoreRef: UpdateConnectScoreRef;
+
+export function updateConnectScore(vars: UpdateConnectScoreVariables): MutationPromise<UpdateConnectScoreData, UpdateConnectScoreVariables>;
+export function updateConnectScore(dc: DataConnect, vars: UpdateConnectScoreVariables): MutationPromise<UpdateConnectScoreData, UpdateConnectScoreVariables>;
+

@@ -68,6 +68,16 @@ export interface ConnectLevelStore_Key {
   __typename?: 'ConnectLevelStore_Key';
 }
 
+export interface ConnectScore_Key {
+  id: string;
+  __typename?: 'ConnectScore_Key';
+}
+
+export interface ConnectSession_Key {
+  id: string;
+  __typename?: 'ConnectSession_Key';
+}
+
 export interface Course_Key {
   id: UUIDString;
   __typename?: 'Course_Key';
@@ -128,6 +138,7 @@ export interface CreatePostMediaData {
 export interface CreatePostMediaVariables {
   tenantId: UUIDString;
   postId: UUIDString;
+  mediaUrl?: string | null;
   storagePath: string;
   mediaType: string;
   mimeType: string;
@@ -755,6 +766,11 @@ export interface ResourceFile_Key {
 export interface Resource_Key {
   id: UUIDString;
   __typename?: 'Resource_Key';
+}
+
+export interface ScribbleWordStore_Key {
+  id: string;
+  __typename?: 'ScribbleWordStore_Key';
 }
 
 export interface SoftDeleteCommentData {
