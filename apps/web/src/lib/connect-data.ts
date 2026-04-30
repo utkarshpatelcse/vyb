@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -13,8 +14,10 @@ import type {
   ConnectPublicLevel,
   ConnectSubmitResponse
 } from "@vyb/contracts";
-import { getFirebaseDataConnect } from "@vyb/config";
+import { getFirebaseDataConnect, loadRootEnv } from "@vyb/config";
 import type { DevSession } from "./dev-session";
+
+loadRootEnv();
 
 const DAY_MS = 24 * 60 * 60_000;
 const HINT_COOLDOWN_SECONDS = 5;
@@ -23,7 +26,9 @@ const HINT_PENALTY_SECONDS = 3;
 const DEFAULT_LAUNCH_DATE = "2026-04-28T00:00:00+05:30";
 const CONNECT_LEVEL_STORE_ID = process.env.VYB_CONNECT_LEVEL_STORE_ID ?? "official-1000";
 const CONNECT_SESSION_TOKEN_PREFIX = "connect.v1";
-const CONNECT_ALLOW_LOCAL_LEVEL_FALLBACK = process.env.VYB_CONNECT_ALLOW_LOCAL_LEVEL_FALLBACK === "1";
+const CONNECT_LEVELS_SOURCE = process.env.VYB_CONNECT_LEVELS_SOURCE ?? "auto";
+const CONNECT_ALLOW_LOCAL_LEVEL_FALLBACK =
+  process.env.VYB_CONNECT_ALLOW_LOCAL_LEVEL_FALLBACK === "1" || CONNECT_LEVELS_SOURCE === "auto";
 const connectConnectorConfig = {
   connector: "connect",
   serviceId: "vyb",
@@ -47,8 +52,9 @@ const GET_CONNECT_LEVEL_STORE_QUERY = `
 `;
 
 const CONNECT_STORE_SCAN_LIMIT = 10_000;
-const CONNECT_STORE_SOURCE = process.env.VYB_CONNECT_STORE_SOURCE ?? "dataconnect";
-const CONNECT_ALLOW_LOCAL_STORE_FALLBACK = process.env.VYB_CONNECT_ALLOW_LOCAL_STORE_FALLBACK === "1";
+const CONNECT_STORE_SOURCE = process.env.VYB_CONNECT_STORE_SOURCE ?? "auto";
+const CONNECT_ALLOW_LOCAL_STORE_FALLBACK =
+  process.env.VYB_CONNECT_ALLOW_LOCAL_STORE_FALLBACK === "1" || CONNECT_STORE_SOURCE === "auto";
 
 const LIST_CONNECT_STORE_QUERY = `
   query ListConnectStoreRuntime($tenantId: String!, $sessionLimit: Int!, $scoreLimit: Int!) {
@@ -544,13 +550,23 @@ function getConnectDc() {
   return getFirebaseDataConnect(connectConnectorConfig);
 }
 
-function hasExplicitFirebaseAdminCredentials() {
+function isGoogleApplicationCredentialsPathUsable() {
+  const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
+
+  if (!credentialsPath || credentialsPath.startsWith("{")) {
+    return false;
+  }
+
+  return existsSync(path.resolve(credentialsPath));
+}
+
+function hasUsableFirebaseAdminCredentials() {
   return Boolean(
     process.env.FIREBASE_ADMIN_CREDENTIALS_JSON ||
       process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
       process.env.FIREBASE_ADMIN_CREDENTIALS_BASE64 ||
       process.env.FIREBASE_SERVICE_ACCOUNT_BASE64 ||
-      process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+      isGoogleApplicationCredentialsPathUsable() ||
       (process.env.FIREBASE_PROJECT_ID &&
         (process.env.FIREBASE_ADMIN_CLIENT_EMAIL || process.env.FIREBASE_SERVICE_ACCOUNT_CLIENT_EMAIL || process.env.FIREBASE_CLIENT_EMAIL) &&
         (process.env.FIREBASE_ADMIN_PRIVATE_KEY || process.env.FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY || process.env.FIREBASE_PRIVATE_KEY))
@@ -562,19 +578,19 @@ function canUseGoogleMetadataCredentials() {
 }
 
 function shouldLoadDataconnectLevelStore() {
-  if (process.env.VYB_CONNECT_LEVELS_SOURCE === "local") {
+  if (CONNECT_LEVELS_SOURCE === "local") {
     if (!CONNECT_ALLOW_LOCAL_LEVEL_FALLBACK) {
       throw new Error("Local Connect level storage is disabled. Set VYB_CONNECT_LEVELS_SOURCE=dataconnect.");
     }
     return false;
   }
 
-  if (process.env.VYB_CONNECT_LEVELS_SOURCE === "dataconnect") {
+  if (CONNECT_LEVELS_SOURCE === "dataconnect") {
     return true;
   }
 
   if (CONNECT_ALLOW_LOCAL_LEVEL_FALLBACK) {
-    return hasExplicitFirebaseAdminCredentials() || canUseGoogleMetadataCredentials();
+    return hasUsableFirebaseAdminCredentials() || canUseGoogleMetadataCredentials();
   }
 
   return true;
@@ -592,7 +608,7 @@ function shouldUseDataconnectConnectStore() {
     return true;
   }
 
-  const canUseDataconnect = hasExplicitFirebaseAdminCredentials() || canUseGoogleMetadataCredentials();
+  const canUseDataconnect = hasUsableFirebaseAdminCredentials() || canUseGoogleMetadataCredentials();
   if (!canUseDataconnect && CONNECT_ALLOW_LOCAL_STORE_FALLBACK && !connectStoreSkipLogged) {
     connectStoreSkipLogged = true;
     console.warn("[connect-data] DataConnect score store unavailable; using explicit local fallback.", {
