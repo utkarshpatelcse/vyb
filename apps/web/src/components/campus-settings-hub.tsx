@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { splitDisplayName } from "../lib/college-access";
 import { clearChatVault } from "../lib/chat-e2ee";
 import { getFirebaseClientAuth, isFirebaseClientConfigured } from "../lib/firebase-client";
+import { queueAppRouteOrigin } from "../lib/app-navigation-state";
 import { persistStoredAvatarUrl } from "./campus-avatar";
 import {
   CAMPUS_SOCIAL_LINK_KEYS,
@@ -746,6 +747,7 @@ export function CampusSettingsHub({
   }
 
   function openSecuritySettings() {
+    queueAppRouteOrigin("/profile/settings/chat-privacy");
     router.push("/profile/settings/chat-privacy");
   }
 

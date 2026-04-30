@@ -746,7 +746,7 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
       return;
     }
 
-    router.push(backHref);
+    router.replace(backHref);
   }
 
   async function inviteFriends() {

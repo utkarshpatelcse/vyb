@@ -1,8 +1,9 @@
 import type { Metadata, Viewport } from "next";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import "./globals.css";
 import "./feed-enhancements.css";
 import { AppMaintenanceGate } from "../src/components/app-maintenance-gate";
+import { AppNavigationStateProvider } from "../src/components/app-navigation-state-provider";
 import { BackgroundPublishManager } from "../src/components/background-publish-manager";
 import { ChatPresenceHeartbeat } from "../src/components/chat-presence-heartbeat";
 import { ServiceWorkerRegister } from "../src/components/service-worker-register";
@@ -49,6 +50,9 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
         <ServiceWorkerRegister />
         <ChatPresenceHeartbeat />
         <BackgroundPublishManager />
+        <Suspense fallback={null}>
+          <AppNavigationStateProvider />
+        </Suspense>
         <AppMaintenanceGate />
         {children}
       </body>

@@ -62,6 +62,7 @@ import {
   subscribeToCampusSettings
 } from "./campus-settings-storage";
 import { MessageCardRenderer } from "./message-card-renderer";
+import { queueAppRouteOrigin, readAppRouteOrigin } from "../lib/app-navigation-state";
 
 type ActiveConversation = ChatConversationResponse["conversation"];
 type RealtimeState = "idle" | "offline" | "connecting" | "reconnecting" | "live";
@@ -2188,13 +2189,20 @@ export function CampusMessagesShell({
       return;
     }
 
+    const href = getConversationHref(conversationId);
     pendingConversationNavigationRef.current = conversationId;
     setPendingConversationId(conversationId);
-    warmConversationRoute(conversationId);
+    router.prefetch(href);
     openConversation(conversationId);
 
     startTransition(() => {
-      router.push(getConversationHref(conversationId));
+      if (pathname.startsWith("/messages/")) {
+        router.replace(href);
+        return;
+      }
+
+      queueAppRouteOrigin(href);
+      router.push(href);
     });
   }
 
@@ -4857,7 +4865,7 @@ export function CampusMessagesShell({
         return;
       }
 
-      router.push(`/messages/${conversationId}`);
+      navigateToConversation(conversationId);
     } catch {
       setStartError("Network error. Please check your connection.");
     } finally {
@@ -5401,12 +5409,22 @@ export function CampusMessagesShell({
           : "Online";
 
   function handleExitMessages() {
-    if (typeof window !== "undefined" && window.history.length > 1) {
+    if (activeConversationId) {
+      router.replace("/messages");
+      return;
+    }
+
+    if (readAppRouteOrigin() && typeof window !== "undefined" && window.history.length > 1) {
       router.back();
       return;
     }
 
-    router.push("/");
+    router.replace("/home");
+  }
+
+  function navigateWithOrigin(href: string) {
+    queueAppRouteOrigin(href);
+    router.push(href);
   }
 
   const securitySettingsHref = chatSetupIntent
@@ -6068,16 +6086,16 @@ export function CampusMessagesShell({
                                     isDecrypting={isCardDecrypting}
                                     onInterestedDeal={handleDealInterested}
                                     onWatchVibe={(payload) => setActiveVibePreview(payload)}
-                                    onOpenEvent={() => router.push("/hub")}
+                                    onOpenEvent={() => navigateWithOrigin("/hub")}
                                     onOpenGameInvite={(payload) => {
                                       try {
                                         const target = new URL(payload.inviteUrl, window.location.origin);
-                                        router.push(`${target.pathname}${target.search}`);
+                                        navigateWithOrigin(`${target.pathname}${target.search}`);
                                       } catch {
-                                        router.push("/hub/gameshub");
+                                        navigateWithOrigin("/hub/gameshub");
                                       }
                                     }}
-                                    onOpenProfile={(payload) => router.push(`/u/${encodeURIComponent(payload.username)}`)}
+                                    onOpenProfile={(payload) => navigateWithOrigin(`/u/${encodeURIComponent(payload.username)}`)}
                                   />
                                   {showCardCaption && (
                                     <p className="spm-chat-message-text">{messageCardPayload?.caption?.trim()}</p>
@@ -6792,7 +6810,7 @@ export function CampusMessagesShell({
                 className="spm-chat-key-button spm-chat-key-button-ghost"
                 onClick={() => {
                   setActiveVibePreview(null);
-                  router.push("/vibes");
+                  navigateWithOrigin("/vibes");
                 }}
               >
                 Open vibes feed

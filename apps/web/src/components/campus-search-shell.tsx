@@ -11,6 +11,7 @@ import {
   queueSearchNavigationOrigin,
   restoreSearchScrollPosition
 } from "../lib/search-navigation";
+import { queueAppRouteOrigin } from "../lib/app-navigation-state";
 
 type CampusSearchShellProps = {
   initialQuery: string;
@@ -566,6 +567,7 @@ export function CampusSearchShell({
 
   function handleSearchDestination(href: string, targetType: "profile" | "post" | "vibe", targetId?: string) {
     captureSearchScrollPosition(scrollContentRef.current?.scrollTop ?? 0);
+    queueAppRouteOrigin(href);
     queueSearchNavigationOrigin(href, {
       targetType,
       targetId
@@ -857,7 +859,10 @@ export function CampusSearchShell({
                             key={gridItem.id}
                             type="button"
                             className="vyb-search-discovery-card is-promo is-deal"
-                            onClick={() => router.push("/market")}
+                            onClick={() => {
+                              queueAppRouteOrigin("/market");
+                              router.push("/market");
+                            }}
                             initial={{ opacity: 0, y: 18 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: Math.min(index * 0.03, 0.24), duration: 0.22 }}

@@ -27,6 +27,13 @@ import { SignOutButton } from "./sign-out-button";
 import { useSocialPostEngagement } from "./use-social-post-engagement";
 import { VybLogoLockup } from "./vyb-logo";
 import {
+  closeAppHistoryLayer,
+  pushAppHistoryLayer,
+  queueAppRouteOrigin,
+  readAppRouteOrigin,
+  replaceUrlWithoutAppHistoryLayer
+} from "../lib/app-navigation-state";
+import {
   createDefaultCampusSettings,
   getPostDisplayControls,
   persistPostDisplayPreference,
@@ -55,6 +62,37 @@ type CampusReelsShellProps = {
   initialFocusedPostId?: string | null;
   stories?: StoryCard[];
 };
+
+const POST_OVERLAY_SCOPE = "post-overlay";
+
+type PostOverlayKind = "lightbox" | "comments";
+
+function buildPostOverlayUrl(postId: string, overlay: PostOverlayKind) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("post", postId);
+
+  if (overlay === "comments") {
+    url.searchParams.set("view", "comments");
+  } else {
+    url.searchParams.delete("view");
+  }
+
+  return url;
+}
+
+function buildRouteUrlWithoutPostOverlay() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("post");
+  url.searchParams.delete("view");
+  return url;
+}
+
+function getPostOverlayFromUrl() {
+  const url = new URL(window.location.href);
+  const postId = url.searchParams.get("post");
+  const overlay = url.searchParams.get("view") === "comments" ? "comments" : "lightbox";
+  return { postId, overlay: overlay as PostOverlayKind };
+}
 
 function IconBase({ children }: { children: ReactNode }) {
   return (
@@ -707,6 +745,30 @@ export function CampusReelsShell({
     setActionPost(syncLatestPost);
   }, [engagement.posts]);
 
+  useEffect(() => {
+    const handlePopState = () => {
+      const { postId, overlay } = getPostOverlayFromUrl();
+      if (!postId || overlay !== "comments") {
+        engagement.closeThread();
+        setLightboxPost(null);
+        return;
+      }
+
+      const targetPost = engagement.posts.find((post) => post.id === postId);
+      if (!targetPost) {
+        return;
+      }
+
+      setLightboxPost(null);
+      openPostComments(targetPost, { syncHistory: false });
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [engagement]);
+
   function removeMirroredPost(postId: string) {
     setLightboxPost((current) => (current?.id === postId ? null : current));
     setLikesPost((current) => (current?.id === postId ? null : current));
@@ -887,9 +949,58 @@ export function CampusReelsShell({
     });
   }
 
-  async function openPostLightbox(post: FeedCard) {
+  async function openPostLightbox(post: FeedCard, options: { syncHistory?: boolean } = {}) {
+    if (options.syncHistory !== false) {
+      pushAppHistoryLayer(POST_OVERLAY_SCOPE, post.id, {
+        payload: { overlay: "lightbox" },
+        url: buildPostOverlayUrl(post.id, "lightbox")
+      });
+    }
+
     setLightboxPost(post);
     void engagement.loadComments(post.id);
+  }
+
+  function navigateWithOrigin(href: string) {
+    queueAppRouteOrigin(href);
+    router.push(href);
+  }
+
+  function closePostLightbox(postId?: string | null) {
+    setLightboxPost(null);
+
+    if (!closeAppHistoryLayer(POST_OVERLAY_SCOPE, postId ?? undefined)) {
+      if (postId && readAppRouteOrigin() && new URL(window.location.href).searchParams.get("post") === postId) {
+        window.history.back();
+        return;
+      }
+
+      replaceUrlWithoutAppHistoryLayer(buildRouteUrlWithoutPostOverlay());
+    }
+  }
+
+  function openPostComments(post: FeedCard, options: { syncHistory?: boolean } = {}) {
+    if (options.syncHistory !== false) {
+      pushAppHistoryLayer(POST_OVERLAY_SCOPE, post.id, {
+        payload: { overlay: "comments" },
+        url: buildPostOverlayUrl(post.id, "comments")
+      });
+    }
+
+    void engagement.openThread(post.id);
+  }
+
+  function closePostComments(postId?: string | null) {
+    engagement.closeThread();
+
+    if (!closeAppHistoryLayer(POST_OVERLAY_SCOPE, postId ?? undefined)) {
+      if (postId && readAppRouteOrigin() && new URL(window.location.href).searchParams.get("post") === postId) {
+        window.history.back();
+        return;
+      }
+
+      replaceUrlWithoutAppHistoryLayer(buildRouteUrlWithoutPostOverlay());
+    }
   }
 
   async function openPostLikes(post: FeedCard) {
@@ -1332,7 +1443,7 @@ export function CampusReelsShell({
 
     const hasStory = storyStateByUsername.has(post.author.username.toLowerCase());
     if (hasStory) {
-      router.push(`/home?story=${encodeURIComponent(post.author.username)}`);
+      navigateWithOrigin(`/home?story=${encodeURIComponent(post.author.username)}`);
       return;
     }
 
@@ -1661,7 +1772,7 @@ export function CampusReelsShell({
                             className="vyb-vibes-action-button"
                             onClick={(event) => {
                               event.stopPropagation();
-                              void engagement.openThread(item.id);
+                              openPostComments(item);
                             }}
                           >
                             <CommentIcon />
@@ -1734,7 +1845,7 @@ export function CampusReelsShell({
         viewerName={viewerName}
         viewerUsername={viewerUsername}
         isAnonymousComment={engagement.threadIsAnonymous}
-        onClose={engagement.closeThread}
+        onClose={() => closePostComments(engagement.selectedPost?.id)}
         onDraftChange={engagement.setThreadDraft}
         onMediaUrlChange={engagement.setThreadMediaUrl}
         onMediaTypeChange={engagement.setThreadMediaType}
@@ -1771,7 +1882,7 @@ export function CampusReelsShell({
             ? getPostDisplayControls(storedCampusSettings, lightboxPost, postDisplayPreferences[lightboxPost.id]).hideCommentCount
             : false
         }
-        onClose={() => setLightboxPost(null)}
+        onClose={() => closePostLightbox(lightboxPost?.id)}
         onLike={() => {
           if (lightboxPost) {
             void handlePostLike(lightboxPost, true);
@@ -1783,7 +1894,7 @@ export function CampusReelsShell({
           }
 
           setLightboxPost(null);
-          void engagement.openThread(lightboxPost.id);
+          openPostComments(lightboxPost);
         }}
         onOpenLikes={() => {
           if (lightboxPost) {
@@ -1838,7 +1949,7 @@ export function CampusReelsShell({
         onAddToStory={() => {
           setSharePost(null);
           setShareMessage(null);
-          router.push("/create?kind=story&from=%2Fvibes");
+          navigateWithOrigin("/create?kind=story&from=%2Fvibes");
         }}
         onShare={(target) => {
           if (sharePost) {

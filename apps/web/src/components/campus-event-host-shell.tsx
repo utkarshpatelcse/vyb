@@ -463,7 +463,7 @@ export function CampusEventHostShell({
         throw new Error(payload?.error?.message || "We could not save the event.");
       }
 
-      router.push("/hub");
+      router.replace("/hub");
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "We could not save the event.");

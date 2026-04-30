@@ -511,7 +511,7 @@ export function CampusUploadShell({
 
   /* ── Helpers ─────────────────────────────────────────────────────────── */
   function handleClose() {
-    router.push(returnTo);
+    router.replace(returnTo);
   }
 
   function handleModeChange(nextMode: PublishableCreationMode) {
@@ -841,7 +841,7 @@ export function CampusUploadShell({
         });
       }
 
-      router.push(returnTo);
+      router.replace(returnTo);
     } catch (err) {
       setIsPublishing(false);
       setMessage(err instanceof Error ? err.message : "Could not queue this post right now.");

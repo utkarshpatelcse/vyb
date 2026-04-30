@@ -198,7 +198,7 @@ function CampusNavigationLink({
     warmRoute();
     setPendingHref(item.href);
     startTransition(() => {
-      router.push(item.href);
+      router.replace(item.href);
     });
   }
 
@@ -227,7 +227,9 @@ function CampusNavigationLink({
   return (
     <Link
       href={item.href}
+      replace
       prefetch
+      data-vyb-primary-nav="true"
       className={composedClassName}
       aria-current={isOptimisticActive ? "page" : undefined}
       onPointerDown={handlePointerDown}
@@ -280,7 +282,7 @@ export function CampusDesktopNavigation({
 
   return (
     <aside className="vyb-campus-sidebar vyb-campus-rail">
-      <Link href="/home" className="vyb-campus-branding">
+      <Link href="/home" replace data-vyb-primary-nav="true" className="vyb-campus-branding">
         <VybLogoLockup priority />
       </Link>
 

@@ -16,6 +16,15 @@ import { SignOutButton } from "./sign-out-button";
 import { useSocialPostEngagement } from "./use-social-post-engagement";
 import { VybLogoLockup, VybLogoMark } from "./vyb-logo";
 import { MediaCarousel } from "./media-carousel";
+import {
+  closeAppHistoryLayer,
+  hasAppRouteOriginForCurrentRoute,
+  promoteCurrentUrlToAppHistoryLayer,
+  pushAppHistoryLayer,
+  queueAppRouteOrigin,
+  readAppRouteOrigin,
+  replaceUrlWithoutAppHistoryLayer
+} from "../lib/app-navigation-state";
 import { useSearchNavigationGuard } from "../lib/search-navigation";
 import {
   CHAT_IDENTITY_ALGORITHM,
@@ -114,6 +123,36 @@ function layoutStyle() {
 
 const STORY_IMAGE_DURATION_MS = 15_000;
 const STORY_VIDEO_MAX_DURATION_MS = 60_000;
+const POST_OVERLAY_SCOPE = "post-overlay";
+
+type PostOverlayKind = "lightbox" | "comments";
+
+function buildPostOverlayUrl(postId: string, overlay: PostOverlayKind) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("post", postId);
+
+  if (overlay === "comments") {
+    url.searchParams.set("view", "comments");
+  } else {
+    url.searchParams.delete("view");
+  }
+
+  return url;
+}
+
+function buildRouteUrlWithoutPostOverlay() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("post");
+  url.searchParams.delete("view");
+  return url;
+}
+
+function getPostOverlayFromUrl() {
+  const url = new URL(window.location.href);
+  const postId = url.searchParams.get("post");
+  const overlay = url.searchParams.get("view") === "comments" ? "comments" : "lightbox";
+  return { postId, overlay: overlay as PostOverlayKind };
+}
 
 function buildSeenStoryMap(items: StoryCard[]) {
   return items.reduce<Record<string, true>>((accumulator, story) => {
@@ -874,9 +913,58 @@ export function CampusHomeShell({
     });
   }
 
-  async function openPostLightbox(post: FeedCard) {
+  async function openPostLightbox(post: FeedCard, options: { syncHistory?: boolean } = {}) {
+    if (options.syncHistory !== false) {
+      pushAppHistoryLayer(POST_OVERLAY_SCOPE, post.id, {
+        payload: { overlay: "lightbox" },
+        url: buildPostOverlayUrl(post.id, "lightbox")
+      });
+    }
+
     setLightboxPost(post);
     void engagement.loadComments(post.id);
+  }
+
+  function navigateWithOrigin(href: string) {
+    queueAppRouteOrigin(href);
+    router.push(href);
+  }
+
+  function closePostLightbox(postId?: string | null) {
+    setLightboxPost(null);
+
+    if (!closeAppHistoryLayer(POST_OVERLAY_SCOPE, postId ?? undefined)) {
+      if (postId && readAppRouteOrigin() && new URL(window.location.href).searchParams.get("post") === postId) {
+        window.history.back();
+        return;
+      }
+
+      replaceUrlWithoutAppHistoryLayer(buildRouteUrlWithoutPostOverlay());
+    }
+  }
+
+  function openPostComments(post: FeedCard, options: { syncHistory?: boolean } = {}) {
+    if (options.syncHistory !== false) {
+      pushAppHistoryLayer(POST_OVERLAY_SCOPE, post.id, {
+        payload: { overlay: "comments" },
+        url: buildPostOverlayUrl(post.id, "comments")
+      });
+    }
+
+    void engagement.openThread(post.id);
+  }
+
+  function closePostComments(postId?: string | null) {
+    engagement.closeThread();
+
+    if (!closeAppHistoryLayer(POST_OVERLAY_SCOPE, postId ?? undefined)) {
+      if (postId && readAppRouteOrigin() && new URL(window.location.href).searchParams.get("post") === postId) {
+        window.history.back();
+        return;
+      }
+
+      replaceUrlWithoutAppHistoryLayer(buildRouteUrlWithoutPostOverlay());
+    }
   }
 
   async function openPostLikes(post: FeedCard) {
@@ -929,6 +1017,36 @@ export function CampusHomeShell({
     setLikesPost(syncLatestPost);
     setActionPost(syncLatestPost);
   }, [mirroredPostLookup]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const { postId, overlay } = getPostOverlayFromUrl();
+      if (!postId) {
+        setLightboxPost(null);
+        engagement.closeThread();
+        return;
+      }
+
+      const targetPost = mirroredPostLookup.get(postId);
+      if (!targetPost) {
+        return;
+      }
+
+      if (overlay === "comments") {
+        setLightboxPost(null);
+        openPostComments(targetPost, { syncHistory: false });
+        return;
+      }
+
+      engagement.closeThread();
+      void openPostLightbox(targetPost, { syncHistory: false });
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [engagement, mirroredPostLookup]);
 
   async function handleTogglePostSave(post: FeedCard) {
     setSaveBusyPostId(post.id);
@@ -1120,13 +1238,20 @@ export function CampusHomeShell({
     }
 
     hasAppliedInitialPostRef.current = true;
+    if (!hasAppRouteOriginForCurrentRoute()) {
+      promoteCurrentUrlToAppHistoryLayer(POST_OVERLAY_SCOPE, targetPost.id, {
+        baseUrl: buildRouteUrlWithoutPostOverlay(),
+        layerUrl: buildPostOverlayUrl(targetPost.id, "lightbox"),
+        payload: { overlay: "lightbox" }
+      });
+    }
     window.requestAnimationFrame(() => {
       document.getElementById(`post-${targetPost.id}`)?.scrollIntoView({
         block: "center",
         behavior: "smooth"
       });
     });
-    void openPostLightbox(targetPost);
+    void openPostLightbox(targetPost, { syncHistory: false });
   }, [engagement.posts, initialFocusedPostId]);
 
   useEffect(() => {
@@ -1552,7 +1677,7 @@ export function CampusHomeShell({
     }
 
     closeStoryViewer();
-    router.push(selectedStory.isOwn ? "/dashboard" : `/u/${encodeURIComponent(selectedStory.username)}`);
+    navigateWithOrigin(selectedStory.isOwn ? "/dashboard" : `/u/${encodeURIComponent(selectedStory.username)}`);
   }
 
   function clearStoryHoldTimer() {
@@ -1774,7 +1899,7 @@ export function CampusHomeShell({
               className="vyb-campus-post-trigger"
               onPointerEnter={() => router.prefetch(createPostHref)}
               onPointerDown={() => router.prefetch(createPostHref)}
-              onClick={() => router.push(createPostHref)}
+              onClick={() => navigateWithOrigin(createPostHref)}
             >
               <AddPostIcon />
               <span>Create post</span>
@@ -1801,7 +1926,7 @@ export function CampusHomeShell({
             <Link href="/search" className="vyb-campus-top-icon vyb-campus-top-link" aria-label="Search campus users">
               <SearchIcon />
             </Link>
-            <button type="button" className="vyb-campus-post-trigger vyb-campus-post-trigger-mobile" onClick={() => router.push(createPostHref)}>
+            <button type="button" className="vyb-campus-post-trigger vyb-campus-post-trigger-mobile" onClick={() => navigateWithOrigin(createPostHref)}>
               <AddPostIcon />
               <span>Post</span>
             </button>
@@ -1836,13 +1961,13 @@ export function CampusHomeShell({
                   type="button"
                   className="vyb-campus-story-plus"
                   aria-label="Add a new story"
-                  onClick={() => router.push(createStoryHref)}
+                  onClick={() => navigateWithOrigin(createStoryHref)}
                 >
                   <AddPostIcon />
                 </button>
               </div>
             ) : (
-              <button type="button" className="vyb-campus-story vyb-campus-story-add" onClick={() => router.push(createStoryHref)}>
+              <button type="button" className="vyb-campus-story vyb-campus-story-add" onClick={() => navigateWithOrigin(createStoryHref)}>
                 <span className="vyb-campus-story-ring vyb-campus-story-ring-add">
                   <AddPostIcon />
                 </span>
@@ -1977,7 +2102,7 @@ export function CampusHomeShell({
                         <button
                           type="button"
                           className="fc-metrics-button"
-                          onClick={() => void engagement.openThread(post.id)}
+                          onClick={() => openPostComments(post)}
                         >
                           {formatMetric(post.comments)} comments
                         </button>
@@ -2032,7 +2157,7 @@ export function CampusHomeShell({
                       <button
                         type="button"
                         className="fc-action-btn"
-                        onClick={() => void engagement.openThread(post.id)}
+                        onClick={() => openPostComments(post)}
                       >
                         <CommentIcon />
                       </button>
@@ -2082,7 +2207,7 @@ export function CampusHomeShell({
 
                     <div className="vyb-home-vibes-teaser-list">
                       {vibeStrip.slice(0, 6).map((vibe) => (
-                        <button key={vibe.id} type="button" className="vyb-home-vibes-teaser-card" onClick={() => router.push("/vibes")}>
+                        <button key={vibe.id} type="button" className="vyb-home-vibes-teaser-card" onClick={() => navigateWithOrigin("/vibes")}>
                           <div className="vyb-home-vibes-teaser-media">
                             {vibe.mediaUrl ? (
                               vibe.kind === "video" ? (
@@ -2385,7 +2510,7 @@ export function CampusHomeShell({
         isSubmitting={engagement.threadSubmitting}
         deletingCommentId={engagement.threadDeletingCommentId}
         isAnonymousComment={engagement.threadIsAnonymous}
-        onClose={engagement.closeThread}
+        onClose={() => closePostComments(engagement.selectedPost?.id)}
         onDraftChange={engagement.setThreadDraft}
         onMediaUrlChange={engagement.setThreadMediaUrl}
         onMediaTypeChange={engagement.setThreadMediaType}
@@ -2422,7 +2547,7 @@ export function CampusHomeShell({
             ? getPostDisplayControls(storedCampusSettings, lightboxPost, postDisplayPreferences[lightboxPost.id]).hideCommentCount
             : false
         }
-        onClose={() => setLightboxPost(null)}
+        onClose={() => closePostLightbox(lightboxPost?.id)}
         onLike={() => {
           if (lightboxPost) {
             void handlePostReaction(lightboxPost, undefined, true);
@@ -2434,7 +2559,7 @@ export function CampusHomeShell({
           }
 
           setLightboxPost(null);
-          void engagement.openThread(lightboxPost.id);
+          openPostComments(lightboxPost);
         }}
         onOpenLikes={() => {
           if (lightboxPost) {
@@ -2548,7 +2673,7 @@ export function CampusHomeShell({
         onAddToStory={() => {
           setSharePost(null);
           setShareMessage(null);
-          router.push("/create?kind=story&from=%2Fhome");
+          navigateWithOrigin("/create?kind=story&from=%2Fhome");
         }}
         onShare={(target) => {
           if (sharePost) {

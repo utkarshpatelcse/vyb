@@ -4,6 +4,7 @@ import type { ChatGameInviteCardPayload, ChatIdentitySummary, ChatMessageKind } 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent } from "react";
 import { encryptChatText, isStoredChatKeyCompatible, loadStoredChatKeyMaterial } from "../lib/chat-e2ee";
+import { queueAppRouteOrigin } from "../lib/app-navigation-state";
 import { CampusAvatarContent } from "./campus-avatar";
 
 type ScribbleStatus = "LOBBY" | "CHOOSING" | "PLAYING" | "ROUND_END" | "FINISHED";
@@ -1176,7 +1177,7 @@ export function ScribbleMultiplayerGame({
       return;
     }
 
-    router.push(backHref);
+    router.replace(backHref);
   }
 
   async function sendEncryptedDirectMessage({
@@ -1339,7 +1340,9 @@ export function ScribbleMultiplayerGame({
       draft: nextDraft
     });
     setShareMode(null);
-    router.push(`/create?${params.toString()}`);
+    const href = `/create?${params.toString()}`;
+    queueAppRouteOrigin(href);
+    router.push(href);
   }
 
   if (!snapshot) {
