@@ -3005,6 +3005,73 @@ export async function isFollowing({ tenantId, followerUserId, followingUserId })
   }
 }
 
+export async function listProfileConnections({ tenantId, profileUserId, viewerUserId, scope, limit = 50 }) {
+  const normalizedLimit = Math.max(1, Math.min(Number(limit) || 50, 50));
+  let follows = [];
+
+  try {
+    const response =
+      scope === "followers"
+        ? await listFollowersByUserQuery(getSocialDc(), {
+            tenantId,
+            followingUserId: profileUserId,
+            limit: normalizedLimit
+          })
+        : await listFollowingByUserQuery(getSocialDc(), {
+            tenantId,
+            followerUserId: profileUserId,
+            limit: normalizedLimit
+          });
+
+    follows = Array.isArray(response.data.follows) ? response.data.follows : [];
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const store = await ensureFallbackStore();
+    follows = store.follows
+      .map(normalizeFallbackFollowRecord)
+      .filter((item) => item.tenantId === tenantId && !item.deletedAt)
+      .filter((item) => (scope === "followers" ? item.followingUserId === profileUserId : item.followerUserId === profileUserId))
+      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+      .slice(0, normalizedLimit);
+  }
+
+  const connectedUserIds = follows.map((item) => (scope === "followers" ? item.followerUserId : item.followingUserId));
+  if (connectedUserIds.length === 0) {
+    return [];
+  }
+
+  const profileMap = await buildProfileByUserIdMap(tenantId, connectedUserIds);
+
+  return Promise.all(
+    connectedUserIds
+      .map((userId) => profileMap.get(userId) ?? null)
+      .filter(Boolean)
+      .map(async (profile) => ({
+        userId: profile.userId,
+        username: profile.username,
+        displayName: profile.fullName,
+        avatarUrl: profile.avatarUrl ?? null,
+        collegeName: profile.collegeName,
+        course: profile.course,
+        stream: profile.stream,
+        bio: profile.bio ?? null,
+        socialLinks: profile.socialLinks ?? null,
+        isViewer: profile.userId === viewerUserId,
+        isFollowing:
+          profile.userId === viewerUserId
+            ? false
+            : await isFollowing({
+                tenantId,
+                followerUserId: viewerUserId,
+                followingUserId: profile.userId
+              })
+      }))
+  );
+}
+
 export async function getFollowStats({ tenantId, userId }) {
   try {
     const [followersResponse, followingResponse] = await Promise.all([

@@ -36,6 +36,7 @@ import {
   type PostDisplayPreference
 } from "./campus-settings-storage";
 import { useSearchNavigationGuard } from "../lib/search-navigation";
+import { queueAppRouteOrigin } from "../lib/app-navigation-state";
 
 type CampusProfileShellProps = {
   viewerName: string;
@@ -426,6 +427,16 @@ function CloseIcon() {
   );
 }
 
+function MoreIcon() {
+  return (
+    <IconBase>
+      <circle cx="5" cy="12" r="1.4" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.4" fill="currentColor" />
+      <circle cx="19" cy="12" r="1.4" fill="currentColor" />
+    </IconBase>
+  );
+}
+
 function BackIcon() {
   return (
     <IconBase>
@@ -762,6 +773,7 @@ export function CampusProfileShell({
     error: null
   });
   const [connectionBusyUsernames, setConnectionBusyUsernames] = useState<string[]>([]);
+  const [activeConnectionActions, setActiveConnectionActions] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ProfileTab>("posts");
   const [avatarActionOpen, setAvatarActionOpen] = useState(false);
   const [avatarPreviewOpen, setAvatarPreviewOpen] = useState(false);
@@ -994,6 +1006,7 @@ export function CampusProfileShell({
         setSettingsOpen(false);
         setEditProfileOpen(false);
         setConnectionsSheet((current) => ({ ...current, open: false, loading: false, error: null }));
+        setActiveConnectionActions(null);
         setAvatarActionOpen(false);
         setAvatarPreviewOpen(false);
       }
@@ -1013,6 +1026,19 @@ export function CampusProfileShell({
 
     return () => window.clearTimeout(timeoutId);
   }, [message]);
+
+  useEffect(() => {
+    if (!connectionsSheet.open) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [connectionsSheet.open]);
 
   function updateDraft<K extends keyof ProfileDraft>(key: K, value: ProfileDraft[K]) {
     setProfileDraft((current) => ({ ...current, [key]: value }));
@@ -1176,7 +1202,9 @@ export function CampusProfileShell({
     }
 
     setAvatarActionOpen(false);
-    router.push(`/home?story=${encodeURIComponent(username)}`);
+    const href = `/home?story=${encodeURIComponent(username)}`;
+    queueAppRouteOrigin(href);
+    router.push(href);
   }
 
   function handleViewProfileImage() {
@@ -1405,6 +1433,7 @@ export function CampusProfileShell({
       loading: false,
       error: null
     }));
+    setActiveConnectionActions(null);
   }
 
   function setConnectionBusyState(targetUsername: string, nextBusy: boolean) {
@@ -1431,6 +1460,7 @@ export function CampusProfileShell({
   }
 
   async function openConnectionsSheet(scope: ConnectionScope) {
+    setActiveConnectionActions(null);
     setConnectionsSheet({
       open: true,
       scope,
@@ -1486,6 +1516,7 @@ export function CampusProfileShell({
     }
 
     const nextFollowingState = !item.isFollowing;
+    setActiveConnectionActions(null);
     setConnectionBusyState(item.username, true);
     setConnectionsSheet((current) => ({ ...current, error: null }));
 
@@ -1527,6 +1558,7 @@ export function CampusProfileShell({
     }
 
     const alreadyBlocked = blockedUsernameSet.has(item.username);
+    setActiveConnectionActions(null);
     setConnectionBusyState(item.username, true);
     setConnectionsSheet((current) => ({ ...current, error: null }));
 
@@ -1566,6 +1598,20 @@ export function CampusProfileShell({
       showError(error instanceof Error ? error.message : "We could not update that account right now.");
     } finally {
       setConnectionBusyState(item.username, false);
+    }
+  }
+
+  async function handleCopyConnectionProfile(item: ProfileConnectionItem) {
+    const profilePath = item.isViewer ? "/dashboard" : `/u/${encodeURIComponent(item.username)}`;
+    const profileUrl = `${window.location.origin}${profilePath}`;
+
+    try {
+      await navigator.clipboard.writeText(profileUrl);
+      showSuccess(`@${item.username} profile link copied.`);
+    } catch {
+      showError("We could not copy that profile link right now.");
+    } finally {
+      setActiveConnectionActions(null);
     }
   }
 
@@ -2432,7 +2478,10 @@ export function CampusProfileShell({
               const isBlocked = blockedUsernameSet.has(item.username);
 
               return (
-                <article key={item.userId} className="vyb-profile-connections-item">
+                <article
+                  key={item.userId}
+                  className={`vyb-profile-connections-item${activeConnectionActions === item.username ? " has-actions-open" : ""}`}
+                >
                   <Link
                     href={item.isViewer ? "/dashboard" : `/u/${encodeURIComponent(item.username)}`}
                     className="vyb-profile-connections-user"
@@ -2463,12 +2512,53 @@ export function CampusProfileShell({
                         </button>
                         <button
                           type="button"
-                          className={`vyb-profile-connections-button is-secondary${isBlocked ? " is-danger" : ""}`}
-                          onClick={() => handleConnectionBlockToggle(item)}
+                          className="vyb-profile-connections-more"
+                          aria-label={`Open actions for ${item.displayName}`}
+                          aria-haspopup="menu"
+                          aria-expanded={activeConnectionActions === item.username}
+                          onClick={() => setActiveConnectionActions((current) => (current === item.username ? null : item.username))}
                           disabled={isConnectionBusy}
                         >
-                          {isConnectionBusy ? "Working..." : isBlocked ? "Unblock" : "Block"}
+                          <MoreIcon />
                         </button>
+                        {activeConnectionActions === item.username ? (
+                          <div className="vyb-profile-connections-menu" role="menu">
+                            <Link
+                              href={`/u/${encodeURIComponent(item.username)}`}
+                              role="menuitem"
+                              className="vyb-profile-connections-menu-item"
+                              onClick={closeConnectionsSheet}
+                            >
+                              View profile
+                            </Link>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              className="vyb-profile-connections-menu-item"
+                              onClick={() => handleConnectionFollowToggle(item)}
+                              disabled={isConnectionBusy}
+                            >
+                              {item.isFollowing ? "Unfollow" : "Follow"}
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              className="vyb-profile-connections-menu-item"
+                              onClick={() => handleCopyConnectionProfile(item)}
+                            >
+                              Copy profile link
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              className={`vyb-profile-connections-menu-item is-danger${isBlocked ? " is-muted" : ""}`}
+                              onClick={() => handleConnectionBlockToggle(item)}
+                              disabled={isConnectionBusy}
+                            >
+                              {isBlocked ? "Unblock account" : "Block account"}
+                            </button>
+                          </div>
+                        ) : null}
                       </>
                     )}
                   </div>

@@ -25,6 +25,7 @@ import {
   getFollowStats,
   isFollowing,
   listCommentsByPost,
+  listProfileConnections,
   listPostReactions,
   listPosts,
   listPostsByUser,
@@ -849,6 +850,53 @@ export async function handleSocialRoute({ request, response, url, context }) {
 
     sendJson(response, 200, {
       query: trimmedQuery,
+      items
+    });
+    return true;
+  }
+
+  const profileConnectionsMatch =
+    request.method === "GET" ? url.pathname.match(/^\/v1\/users\/([^/]+)\/(followers|following)$/) : null;
+  if (profileConnectionsMatch) {
+    const tenantId = resolveTenantScope({
+      requestedTenantId: url.searchParams.get("tenantId"),
+      resolvedTenantId,
+      routeLabel: "profile-connections"
+    });
+    const limit = parseLimit(url.searchParams.get("limit"), 50);
+    const scope = profileConnectionsMatch[2];
+
+    if (!requireNonEmptyString(tenantId)) {
+      sendError(response, 400, "INVALID_TENANT", "tenantId is required.");
+      return true;
+    }
+
+    if (limit === null) {
+      sendError(response, 400, "INVALID_LIMIT", "limit must be an integer between 1 and 50.");
+      return true;
+    }
+
+    const profile = await getProfileByUsername({
+      tenantId,
+      username: decodeURIComponent(profileConnectionsMatch[1])
+    });
+
+    if (!profile) {
+      sendError(response, 404, "USER_NOT_FOUND", "That campus profile was not found.");
+      return true;
+    }
+
+    const items = await listProfileConnections({
+      tenantId,
+      profileUserId: profile.userId,
+      viewerUserId: resolvedUserId,
+      scope,
+      limit
+    });
+
+    sendJson(response, 200, {
+      profileUsername: profile.username,
+      scope,
       items
     });
     return true;
