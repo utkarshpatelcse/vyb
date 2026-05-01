@@ -115,6 +115,11 @@ type ViewOncePreviewState = {
   kind: "image" | "video";
   messageId: string;
 };
+type PendingMessageSendState = {
+  progress: number;
+  status: "encrypting" | "uploading" | "sending" | "failed";
+  label?: string;
+};
 const DISMISSED_DECRYPTION_WARNING_STORAGE_PREFIX = "vyb-chat-dismissed-decryption-warning";
 const CHAT_DEFAULT_TTL_STORAGE_PREFIX = "vyb-chat-default-ttl";
 const CHAT_REACTION_OPTIONS = [
@@ -141,6 +146,7 @@ const ONLINE_PRESENCE_WINDOW_MS = 3 * 60 * 1000;
 const RECENT_PRESENCE_WINDOW_MS = 60 * 60 * 1000;
 const TYPING_INDICATOR_WINDOW_MS = 4_500;
 const CHAT_SEND_DEBUG_PREFIX = "[chat-send-debug]";
+const CHAT_REALTIME_DEBUG_PREFIX = "[chat-realtime-debug]";
 const CHAT_PLAINTEXT_MEMORY_CACHE_LIMIT = 1500;
 const chatPlaintextMemoryCache = new Map<string, string>();
 const CHAT_TTL_OPTIONS = [
@@ -767,6 +773,23 @@ function logChatSendDebug(
   });
 }
 
+function logChatRealtimeDebug(
+  level: "info" | "warn" | "error",
+  stage: string,
+  details: Record<string, unknown>
+) {
+  if (typeof console === "undefined") {
+    return;
+  }
+
+  const logger = console[level] ?? console.log;
+  logger(CHAT_REALTIME_DEBUG_PREFIX, {
+    stage,
+    at: new Date().toISOString(),
+    ...details
+  });
+}
+
 function getChatIdentityPublicKeyPrefix(identity: ChatIdentitySummary | string | null | undefined) {
   if (typeof identity === "string") {
     return identity.slice(0, 12);
@@ -931,6 +954,36 @@ function IconMic() {
       <path d="M12 18v4" />
       <path d="M8 22h8" />
     </svg>
+  );
+}
+
+function IconPlay() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M8 5v14l11-7z" />
+    </svg>
+  );
+}
+
+function PendingSendOverlay({
+  state,
+  compact = false
+}: {
+  state: PendingMessageSendState;
+  compact?: boolean;
+}) {
+  const progress = Math.max(0, Math.min(1, state.progress));
+  const label = state.status === "failed" ? "Failed" : state.label ?? "Sending";
+
+  return (
+    <div className={`spm-chat-send-progress${compact ? " spm-chat-send-progress-compact" : ""}${state.status === "failed" ? " is-failed" : ""}`}>
+      <span
+        className="spm-chat-send-progress-ring"
+        style={{ "--send-progress": `${Math.round(progress * 100)}%` } as CSSProperties}
+        aria-hidden="true"
+      />
+      <span className="spm-chat-send-progress-label">{label}</span>
+    </div>
   );
 }
 
@@ -1197,6 +1250,9 @@ export function CampusMessagesShell({
   const [decryptionWarning, setDecryptionWarning] = useState<string | null>(null);
   const [messagePlaintextById, setMessagePlaintextById] = useState<Record<string, string>>({});
   const [attachmentObjectUrlByMessageId, setAttachmentObjectUrlByMessageId] = useState<Record<string, string>>({});
+  const [attachmentDecryptErrorByMessageId, setAttachmentDecryptErrorByMessageId] = useState<Record<string, string>>({});
+  const [attachmentDecryptRetryNonce, setAttachmentDecryptRetryNonce] = useState(0);
+  const [pendingSendByMessageId, setPendingSendByMessageId] = useState<Record<string, PendingMessageSendState>>({});
   const [shareMenuOpen, setShareMenuOpen] = useState(false);
   const [shareMenuTab, setShareMenuTab] = useState<ShareMenuTab>("deals");
   const [shareMenuLoading, setShareMenuLoading] = useState(false);
@@ -1239,6 +1295,7 @@ export function CampusMessagesShell({
   const typingStopTimerRef = useRef<number | null>(null);
   const lastTypingSignalRef = useRef<{ conversationId: string; isTyping: boolean } | null>(null);
   const pendingOptimisticMessagesRef = useRef<Map<string, Array<{ id: string; plaintext: string }>>>(new Map());
+  const outgoingMediaPreviewUrlsRef = useRef<Set<string>>(new Set());
   const recentLocalMessageIdsRef = useRef<Map<string, Map<string, number>>>(new Map());
   const deliveredMessageIdsRef = useRef<Map<string, Set<string>>>(new Map());
   const deliveredAckedMessageIdsRef = useRef<Set<string>>(new Set());
@@ -1358,7 +1415,7 @@ export function CampusMessagesShell({
 
     if (typeof window !== "undefined") {
       previousUrls
-        .filter((url) => !nextUrls.includes(url))
+        .filter((url) => !nextUrls.includes(url) && !outgoingMediaPreviewUrlsRef.current.has(url))
         .forEach((url) => window.URL.revokeObjectURL(url));
     }
 
@@ -1369,6 +1426,7 @@ export function CampusMessagesShell({
     return () => {
       if (typeof window !== "undefined") {
         pendingMediaUrlsRef.current.forEach((url) => window.URL.revokeObjectURL(url));
+        outgoingMediaPreviewUrlsRef.current.forEach((url) => window.URL.revokeObjectURL(url));
       }
     };
   }, []);
@@ -2103,6 +2161,14 @@ export function CampusMessagesShell({
     messageIdsRef.current.delete(messageId);
     removeQueuedOptimisticMessage(conversationId, messageId);
     forgetRecentLocalMessage(conversationId, messageId);
+    setPendingSendByMessageId((current) => {
+      if (!current[messageId]) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[messageId];
+      return next;
+    });
     setMessagePlaintextById((current) => {
       const next = { ...current };
       delete next[messageId];
@@ -3126,6 +3192,7 @@ export function CampusMessagesShell({
       Object.values(attachmentObjectUrlsRef.current).forEach((url) => window.URL.revokeObjectURL(url));
       attachmentObjectUrlsRef.current = {};
       setAttachmentObjectUrlByMessageId({});
+      setAttachmentDecryptErrorByMessageId({});
       return;
     }
 
@@ -3146,6 +3213,12 @@ export function CampusMessagesShell({
       );
       return Object.keys(next).length === Object.keys(current).length ? current : next;
     });
+    setAttachmentDecryptErrorByMessageId((current) => {
+      const next = Object.fromEntries(
+        Object.entries(current).filter(([messageId]) => activeAttachmentMessageIds.has(messageId))
+      );
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
 
     if (!localChatKey || !activeConversation.peer.publicKey) {
       return;
@@ -3155,7 +3228,8 @@ export function CampusMessagesShell({
       (message) =>
         message.attachment?.url &&
         isE2eeAttachmentCipher(message.attachment) &&
-        !attachmentObjectUrlsRef.current[message.id]
+        !attachmentObjectUrlsRef.current[message.id] &&
+        !attachmentDecryptErrorByMessageId[message.id]
     );
     if (encryptedAttachments.length === 0) {
       return;
@@ -3171,38 +3245,62 @@ export function CampusMessagesShell({
             return;
           }
 
-          const response = await fetch(attachment.url, { cache: "no-store" });
-          if (!response.ok) {
-            throw new Error("Could not load encrypted attachment bytes.");
-          }
+          try {
+            const proxyResponse = await fetchChatEndpoint(`/api/chats/messages/${encodeURIComponent(message.id)}/media`, {
+              cache: "no-store"
+            });
+            const encryptedBytes = proxyResponse.ok
+              ? await proxyResponse.arrayBuffer()
+              : await fetch(attachment.url, { cache: "no-store" }).then((response) => {
+                  if (!response.ok) {
+                    throw new Error("Could not load encrypted attachment bytes.");
+                  }
+                  return response.arrayBuffer();
+                });
 
-          const decryptedBytes = await decryptChatAttachmentBytes(
-            await response.arrayBuffer(),
-            attachment,
-            localChatKey,
-            activeConversation.peer.publicKey!
-          );
-          const objectUrl = window.URL.createObjectURL(
-            new Blob([decryptedBytes], { type: attachment.mimeType || "application/octet-stream" })
-          );
+            const decryptedBytes = await decryptChatAttachmentBytes(
+              encryptedBytes,
+              attachment,
+              localChatKey,
+              activeConversation.peer.publicKey!
+            );
+            const objectUrl = window.URL.createObjectURL(
+              new Blob([decryptedBytes], { type: attachment.mimeType || "application/octet-stream" })
+            );
 
-          if (cancelled) {
-            window.URL.revokeObjectURL(objectUrl);
-            return;
-          }
-
-          setAttachmentObjectUrlByMessageId((current) => {
-            if (current[message.id]) {
+            if (cancelled) {
               window.URL.revokeObjectURL(objectUrl);
-              return current;
+              return;
             }
 
-            attachmentObjectUrlsRef.current[message.id] = objectUrl;
-            return {
-              ...current,
-              [message.id]: objectUrl
-            };
-          });
+            setAttachmentDecryptErrorByMessageId((current) => {
+              if (!current[message.id]) {
+                return current;
+              }
+              const next = { ...current };
+              delete next[message.id];
+              return next;
+            });
+            setAttachmentObjectUrlByMessageId((current) => {
+              if (current[message.id]) {
+                window.URL.revokeObjectURL(objectUrl);
+                return current;
+              }
+
+              attachmentObjectUrlsRef.current[message.id] = objectUrl;
+              return {
+                ...current,
+                [message.id]: objectUrl
+              };
+            });
+          } catch (error) {
+            if (!cancelled) {
+              setAttachmentDecryptErrorByMessageId((current) => ({
+                ...current,
+                [message.id]: error instanceof Error ? error.message : "Could not decrypt media."
+              }));
+            }
+          }
         })
       );
     })();
@@ -3210,7 +3308,7 @@ export function CampusMessagesShell({
     return () => {
       cancelled = true;
     };
-  }, [activeConversation, localChatKey]);
+  }, [activeConversation, localChatKey, attachmentDecryptRetryNonce]);
 
   useEffect(() => {
     if (!activeConversation || !localChatKey || !activeConversation.peer.publicKey) {
@@ -3488,9 +3586,13 @@ export function CampusMessagesShell({
 
   async function uploadPendingAttachment(
     mediaAttachment: PendingMediaAttachment,
-    options?: { viewOnce?: boolean }
+    options?: {
+      viewOnce?: boolean;
+      peerIdentity?: ChatIdentitySummary | string | null;
+      onProgress?: (progress: number, status: PendingMessageSendState["status"]) => void;
+    }
   ) {
-    const peerIdentity = activeConversation?.peer.publicKey ?? null;
+    const peerIdentity = options?.peerIdentity ?? activeConversation?.peer.publicKey ?? null;
     const chatReady = await ensureChatIdentity();
     if (!chatReady) {
       throw new Error(keySetupError ?? "Secure chat is not ready on this device.");
@@ -3505,11 +3607,13 @@ export function CampusMessagesShell({
       throw new Error("This user has not finished setting up E2EE chat yet.");
     }
 
+    options?.onProgress?.(0.06, "encrypting");
     const encryptedAttachment = await encryptChatAttachmentBytes(
       await mediaAttachment.file.arrayBuffer(),
       currentLocalKey,
       peerIdentity
     );
+    options?.onProgress?.(0.18, "uploading");
     const formData = new FormData();
     formData.set("file", new File([encryptedAttachment.encryptedBytes], mediaAttachment.name, {
       type: "application/octet-stream"
@@ -3532,13 +3636,11 @@ export function CampusMessagesShell({
       formData.set("viewOnce", "true");
     }
 
-    const uploadResponse = await fetchChatEndpoint("/api/chats/media", {
-      method: "POST",
-      body: formData
+    const { status, data: uploadData } = await uploadEncryptedMediaFormData(formData, (progress) => {
+      options?.onProgress?.(0.18 + progress * 0.72, "uploading");
     });
-    const uploadData = await uploadResponse.json().catch(() => null);
 
-    if (!uploadResponse.ok) {
+    if (status < 200 || status >= 300) {
       throw new Error(uploadData?.error?.message ?? `We could not upload ${mediaAttachment.mediaKind}.`);
     }
 
@@ -3548,6 +3650,40 @@ export function CampusMessagesShell({
     }
 
     return attachment;
+  }
+
+  function uploadEncryptedMediaFormData(
+    formData: FormData,
+    onProgress?: (progress: number) => void
+  ): Promise<{ status: number; data: any }> {
+    return new Promise((resolve, reject) => {
+      const request = new XMLHttpRequest();
+      request.open("POST", "/api/chats/media", true);
+      request.responseType = "json";
+      request.withCredentials = true;
+
+      request.upload.onprogress = (event) => {
+        if (event.lengthComputable && event.total > 0) {
+          onProgress?.(Math.min(1, Math.max(0, event.loaded / event.total)));
+        }
+      };
+      request.onload = () => {
+        const data =
+          request.response && typeof request.response === "object"
+            ? request.response
+            : (() => {
+                try {
+                  return JSON.parse(request.responseText || "null");
+                } catch {
+                  return null;
+                }
+              })();
+        resolve({ status: request.status, data });
+      };
+      request.onerror = () => reject(new Error("Network issue while uploading media."));
+      request.onabort = () => reject(new Error("Media upload was cancelled."));
+      request.send(formData);
+    });
   }
 
   async function stopVoiceRecording(action: "discard" | "send") {
@@ -3582,8 +3718,6 @@ export function CampusMessagesShell({
 
   async function startVoiceRecording() {
     if (
-      sending ||
-      uploadingMedia ||
       pendingShareCard ||
       pendingMediaAttachments.length > 0 ||
       !activeConversation?.id
@@ -3655,38 +3789,34 @@ export function CampusMessagesShell({
               ? "wav"
               : "webm";
         const file = new File([blob], `voice-note-${Date.now()}.${extension}`, { type: mimeType });
+        const previewUrl = typeof window !== "undefined" ? window.URL.createObjectURL(blob) : "";
         const voiceAttachment: PendingMediaAttachment = {
           id: buildPendingMediaId(file),
           file,
           name: file.name,
           mimeType,
           mediaKind: "audio",
-          previewUrl: "",
+          previewUrl,
           width: null,
           height: null,
           durationMs
         };
 
         void (async () => {
-          setSending(true);
-          setUploadingMedia(true);
           setSendError(null);
 
           try {
-            const uploadedAttachment = await uploadPendingAttachment(voiceAttachment);
-            await dispatchEncryptedMessage({
+            enqueueMediaSend({
               conversationId: activeConversationRef.current?.id ?? "",
+              mediaAttachment: voiceAttachment,
               plaintext: "",
-              messageKind: "image",
               replyToMessageId: replyingToMessageId,
-              attachment: uploadedAttachment
+              debugTraceId: createChatSendDebugTraceId()
             });
             setReplyingToMessageId(null);
           } catch (error) {
             setSendError(error instanceof Error ? error.message : "We could not send your voice note.");
           } finally {
-            setSending(false);
-            setUploadingMedia(false);
             focusComposerSoon();
           }
         })();
@@ -3949,6 +4079,9 @@ export function CampusMessagesShell({
           reconnectAttempt = 0;
           setSessionExpired(false);
           setRealtimeState("live");
+          logChatRealtimeDebug("info", "client.socket.open", {
+            conversationId
+          });
           startHeartbeat();
           acknowledgeIncomingMessages(activeConversationRef.current?.messages ?? []);
           if (syncOnOpen) {
@@ -4146,10 +4279,13 @@ export function CampusMessagesShell({
         };
 
         socket.onerror = () => {
+          logChatRealtimeDebug("warn", "client.socket.error", {
+            conversationId
+          });
           socket?.close();
         };
 
-        socket.onclose = () => {
+        socket.onclose = (event) => {
           connectInFlight = false;
           stopHeartbeat();
           chatSocketRef.current = null;
@@ -4160,6 +4296,11 @@ export function CampusMessagesShell({
             return;
           }
 
+          logChatRealtimeDebug("warn", "client.socket.close", {
+            conversationId,
+            code: event.code,
+            reason: event.reason || null
+          });
           scheduleReconnect();
         };
       } catch {
@@ -4226,8 +4367,7 @@ export function CampusMessagesShell({
       return;
     }
 
-    const intervalMs = realtimeState === "live" ? 30000 : 7000;
-    const intervalId = setInterval(() => {
+    const refreshConversation = () => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") {
         return;
       }
@@ -4240,9 +4380,15 @@ export function CampusMessagesShell({
         silent: true,
         preserveActiveConversation: true
       });
-    }, intervalMs);
+    };
+    const intervalMs = realtimeState === "live" ? 20000 : 2500;
+    const warmupTimer = realtimeState === "live" ? null : window.setTimeout(refreshConversation, 500);
+    const intervalId = setInterval(refreshConversation, intervalMs);
 
     return () => {
+      if (warmupTimer !== null) {
+        window.clearTimeout(warmupTimer);
+      }
       clearInterval(intervalId);
     };
   }, [activeConversationId, realtimeState]);
@@ -5236,7 +5382,8 @@ export function CampusMessagesShell({
     attachment,
     durationKey,
     optimisticMessageId,
-    debugTraceId
+    debugTraceId,
+    peerIdentityOverride
   }: {
     conversationId: string;
     plaintext: string;
@@ -5246,9 +5393,10 @@ export function CampusMessagesShell({
     durationKey?: ChatMessageTtlKey;
     optimisticMessageId?: string | null;
     debugTraceId?: string | null;
+    peerIdentityOverride?: ChatIdentitySummary | string | null;
   }) {
     const traceId = debugTraceId ?? createChatSendDebugTraceId();
-    const peerIdentity = activeConversation?.peer.publicKey ?? null;
+    const peerIdentity = peerIdentityOverride ?? activeConversation?.peer.publicKey ?? null;
     logChatSendDebug("info", "client.dispatch.start", {
       traceId,
       conversationId,
@@ -5490,6 +5638,180 @@ export function CampusMessagesShell({
     }
   }
 
+  function createOptimisticChatMessage({
+    id,
+    conversationId,
+    messageKind,
+    plaintext,
+    replyToMessageId,
+    attachment
+  }: {
+    id: string;
+    conversationId: string;
+    messageKind: ChatMessageKind;
+    plaintext: string;
+    replyToMessageId?: string | null;
+    attachment?: ChatEncryptedAttachment | null;
+  }) {
+    const optimisticMessage: ChatMessageRecord = {
+      id,
+      conversationId,
+      senderUserId: viewerUserId,
+      senderMembershipId: viewerMembershipId,
+      senderIdentityId: viewerIdentity?.id ?? localChatKey?.identityId ?? "pending",
+      messageKind,
+      cipherText: "",
+      cipherIv: "",
+      cipherAlgorithm: "pending",
+      replyToMessageId: replyToMessageId ?? null,
+      attachment: attachment ?? null,
+      createdAt: new Date().toISOString(),
+      expiresAt: null,
+      isStarred: false,
+      isSaved: false,
+      reactions: []
+    };
+
+    messageIdsRef.current.add(id);
+    rememberRecentLocalMessage(conversationId, id);
+    queueOptimisticMessage(conversationId, id, plaintext);
+    setMessagePlaintextById((current) => ({
+      ...current,
+      [id]: plaintext
+    }));
+
+    const currentConversation = activeConversationRef.current;
+    if (currentConversation?.id === conversationId) {
+      commitActiveConversation({
+        ...currentConversation,
+        messages: upsertMessageRecord(currentConversation.messages, optimisticMessage)
+      });
+    }
+
+    return optimisticMessage;
+  }
+
+  function updatePendingSendState(messageId: string, nextState: PendingMessageSendState | null) {
+    setPendingSendByMessageId((current) => {
+      const next = { ...current };
+      if (!nextState) {
+        delete next[messageId];
+      } else {
+        next[messageId] = nextState;
+      }
+      return next;
+    });
+  }
+
+  function enqueueMediaSend({
+    conversationId,
+    mediaAttachment,
+    plaintext,
+    replyToMessageId,
+    viewOnce,
+    debugTraceId
+  }: {
+    conversationId: string;
+    mediaAttachment: PendingMediaAttachment;
+    plaintext: string;
+    replyToMessageId?: string | null;
+    viewOnce?: boolean;
+    debugTraceId: string;
+  }) {
+    const optimisticMessageId = `optimistic-chat-${conversationId}-${debugTraceId}`;
+    const queuedPeerPublicKey =
+      activeConversationRef.current?.id === conversationId
+        ? activeConversationRef.current.peer.publicKey
+        : activeConversation?.peer.publicKey ?? null;
+    const optimisticAttachment: ChatEncryptedAttachment = {
+      kind: mediaAttachment.mediaKind,
+      url: mediaAttachment.previewUrl,
+      storagePath: null,
+      mimeType: mediaAttachment.mimeType,
+      sizeBytes: mediaAttachment.file.size,
+      width: mediaAttachment.width,
+      height: mediaAttachment.height,
+      durationMs: mediaAttachment.durationMs,
+      viewOnce: Boolean(viewOnce),
+      cipherAlgorithm: "pending",
+      cipherIv: null,
+      senderPublicKey: null,
+      recipientPublicKey: null
+    };
+
+    outgoingMediaPreviewUrlsRef.current.add(mediaAttachment.previewUrl);
+    createOptimisticChatMessage({
+      id: optimisticMessageId,
+      conversationId,
+      messageKind: "image",
+      plaintext,
+      replyToMessageId,
+      attachment: optimisticAttachment
+    });
+    updatePendingSendState(optimisticMessageId, {
+      progress: 0.03,
+      status: "encrypting",
+      label: "Preparing"
+    });
+
+    void (async () => {
+      try {
+        logChatSendDebug("info", "client.compose.media-queued", {
+          traceId: debugTraceId,
+          conversationId,
+          optimisticMessageId,
+          fileName: mediaAttachment.name,
+          mimeType: mediaAttachment.mimeType,
+          sizeBytes: mediaAttachment.file.size
+        });
+        const uploadedAttachment = await uploadPendingAttachment(mediaAttachment, {
+          viewOnce: Boolean(viewOnce) && mediaAttachment.mediaKind !== "audio",
+          peerIdentity: queuedPeerPublicKey,
+          onProgress: (progress, status) => {
+            updatePendingSendState(optimisticMessageId, {
+              progress: Math.max(0.02, Math.min(0.96, progress)),
+              status,
+              label: status === "encrypting" ? "Encrypting" : "Uploading"
+            });
+          }
+        });
+        updatePendingSendState(optimisticMessageId, {
+          progress: 0.98,
+          status: "sending",
+          label: "Sending"
+        });
+        await dispatchEncryptedMessage({
+          conversationId,
+          plaintext,
+          messageKind: "image",
+          replyToMessageId,
+          attachment: uploadedAttachment,
+          optimisticMessageId,
+          debugTraceId,
+          peerIdentityOverride: queuedPeerPublicKey
+        });
+        updatePendingSendState(optimisticMessageId, null);
+        outgoingMediaPreviewUrlsRef.current.delete(mediaAttachment.previewUrl);
+        if (typeof window !== "undefined") {
+          window.URL.revokeObjectURL(mediaAttachment.previewUrl);
+        }
+      } catch (error) {
+        logChatSendDebug("error", "client.compose.failed", {
+          traceId: debugTraceId,
+          conversationId,
+          optimisticMessageId,
+          message: error instanceof Error ? error.message : String(error)
+        });
+        updatePendingSendState(optimisticMessageId, {
+          progress: 1,
+          status: "failed",
+          label: "Failed"
+        });
+        setSendError(error instanceof Error ? error.message : "Network error. Please try again in a moment.");
+      }
+    })();
+  }
+
   async function handleSendMessage(event?: React.FormEvent<HTMLFormElement>) {
     event?.preventDefault();
 
@@ -5519,108 +5841,74 @@ export function CampusMessagesShell({
       return;
     }
 
-    if (!conversationId || (!nextMessage && !hasPendingShare && !hasPendingMedia) || sending || uploadingMedia) {
+    if (!conversationId || (!nextMessage && !hasPendingShare && !hasPendingMedia)) {
       return;
     }
 
-    setSending(true);
     setSendError(null);
     clearTypingStopTimer();
     sendTypingSignal(false);
-    let failedOptimisticMessageId: string | null = null;
-    let failedDebugTraceId: string | null = null;
 
-    try {
-      const queuedMedia = [...pendingMediaAttachments];
-      const queuedShareCard = pendingShareCard;
-      const queuedReplyToMessageId = replyingToMessageId;
-      const outgoingMessageKind: ChatMessageKind = queuedShareCard ? queuedShareCard.kind : queuedMedia.length > 0 ? "image" : "text";
+    const queuedMedia = [...pendingMediaAttachments];
+    const queuedShareCard = pendingShareCard;
+    const queuedReplyToMessageId = replyingToMessageId;
+    const queuedViewOnce = viewOnceEnabled;
 
-      if (queuedMedia.length > 0) {
-        setUploadingMedia(true);
-        for (const [index, mediaAttachment] of queuedMedia.entries()) {
-          const mediaTraceId = createChatSendDebugTraceId();
-          failedDebugTraceId = mediaTraceId;
-          logChatSendDebug("info", "client.compose.media-queued", {
-            traceId: mediaTraceId,
-            conversationId,
-            index,
-            fileName: mediaAttachment.name,
-            mimeType: mediaAttachment.mimeType,
-            sizeBytes: mediaAttachment.file.size
-          });
-          const uploadedAttachment = await uploadPendingAttachment(mediaAttachment, {
-            viewOnce: viewOnceEnabled && mediaAttachment.mediaKind !== "audio"
-          });
-          await dispatchEncryptedMessage({
-            conversationId,
-            plaintext: index === 0 ? nextMessage : "",
-            messageKind: outgoingMessageKind,
-            replyToMessageId: index === 0 ? queuedReplyToMessageId : null,
-            attachment: uploadedAttachment,
-            debugTraceId: mediaTraceId
-          });
-          failedDebugTraceId = null;
-        }
-      } else {
-        const outgoingText = queuedShareCard
-          ? serializeShareCardPayload(queuedShareCard, nextMessage || null)
-          : nextMessage;
-        const debugTraceId = createChatSendDebugTraceId();
-        failedDebugTraceId = debugTraceId;
-        const optimisticMessageId = `optimistic-chat-${conversationId}-${debugTraceId}`;
-        failedOptimisticMessageId = optimisticMessageId;
-        logChatSendDebug("info", "client.compose.optimistic-created", {
-          traceId: debugTraceId,
+    setDraftMessage("");
+    setPendingShareCard(null);
+    setPendingMediaAttachments([]);
+    setShareMenuOpen(false);
+    setReplyingToMessageId(null);
+    setViewOnceEnabled(false);
+    if (mediaInputRef.current) {
+      mediaInputRef.current.value = "";
+    }
+    focusComposerSoon();
+
+    if (queuedMedia.length > 0) {
+      queuedMedia.forEach((mediaAttachment, index) => {
+        enqueueMediaSend({
           conversationId,
-          optimisticMessageId,
-          messageKind: outgoingMessageKind,
-          textLength: outgoingText.length,
-          hasShareCard: Boolean(queuedShareCard),
-          replyToMessageId: queuedReplyToMessageId ?? null
+          mediaAttachment,
+          plaintext: index === 0 ? nextMessage : "",
+          replyToMessageId: index === 0 ? queuedReplyToMessageId : null,
+          viewOnce: queuedViewOnce,
+          debugTraceId: createChatSendDebugTraceId()
         });
-        const optimisticMessage: ChatMessageRecord = {
-          id: optimisticMessageId,
-          conversationId,
-          senderUserId: viewerUserId,
-          senderMembershipId: viewerMembershipId,
-          senderIdentityId: viewerIdentity?.id ?? localChatKey?.identityId ?? "pending",
-          messageKind: outgoingMessageKind,
-          cipherText: "",
-          cipherIv: "",
-          cipherAlgorithm: "pending",
-          replyToMessageId: queuedReplyToMessageId ?? null,
-          attachment: null,
-          createdAt: new Date().toISOString(),
-          expiresAt: null,
-          isStarred: false,
-          isSaved: false,
-          reactions: []
-        };
+      });
+      return;
+    }
 
-        messageIdsRef.current.add(optimisticMessageId);
-        rememberRecentLocalMessage(conversationId, optimisticMessageId);
-        queueOptimisticMessage(conversationId, optimisticMessageId, outgoingText);
-        setMessagePlaintextById((current) => ({
-          ...current,
-          [optimisticMessageId]: outgoingText
-        }));
-        const optimisticConversation =
-          activeConversation && activeConversation.id === conversationId
-            ? {
-                ...activeConversation,
-                messages: upsertMessageRecord(activeConversation.messages, optimisticMessage)
-              }
-            : null;
-        if (optimisticConversation) {
-          commitActiveConversation(optimisticConversation);
-        }
-        setDraftMessage("");
-        setPendingShareCard(null);
-        setShareMenuOpen(false);
-        setReplyingToMessageId(null);
-        focusComposerSoon();
+    const outgoingMessageKind: ChatMessageKind = queuedShareCard ? queuedShareCard.kind : "text";
+    const outgoingText = queuedShareCard
+      ? serializeShareCardPayload(queuedShareCard, nextMessage || null)
+      : nextMessage;
+    const queuedPeerPublicKey =
+      activeConversationRef.current?.id === conversationId
+        ? activeConversationRef.current.peer.publicKey
+        : activeConversation?.peer.publicKey ?? null;
+    const debugTraceId = createChatSendDebugTraceId();
+    const optimisticMessageId = `optimistic-chat-${conversationId}-${debugTraceId}`;
+    logChatSendDebug("info", "client.compose.optimistic-created", {
+      traceId: debugTraceId,
+      conversationId,
+      optimisticMessageId,
+      messageKind: outgoingMessageKind,
+      textLength: outgoingText.length,
+      hasShareCard: Boolean(queuedShareCard),
+      replyToMessageId: queuedReplyToMessageId ?? null
+    });
+    createOptimisticChatMessage({
+      id: optimisticMessageId,
+      conversationId,
+      messageKind: outgoingMessageKind,
+      plaintext: outgoingText,
+      replyToMessageId: queuedReplyToMessageId,
+      attachment: null
+    });
 
+    void (async () => {
+      try {
         await dispatchEncryptedMessage({
           conversationId,
           plaintext: outgoingText,
@@ -5628,41 +5916,22 @@ export function CampusMessagesShell({
           replyToMessageId: queuedReplyToMessageId,
           attachment: null,
           optimisticMessageId,
-          debugTraceId
+          debugTraceId,
+          peerIdentityOverride: queuedPeerPublicKey
         });
-        failedOptimisticMessageId = null;
-        failedDebugTraceId = null;
+      } catch (error) {
+        logChatSendDebug("error", "client.compose.failed", {
+          traceId: debugTraceId,
+          conversationId,
+          optimisticMessageId,
+          message: error instanceof Error ? error.message : String(error)
+        });
+        removeLocalPendingMessage(conversationId, optimisticMessageId);
+        setSendError(
+          error instanceof Error ? error.message : "Network error. Please try again in a moment."
+        );
       }
-
-      if (queuedMedia.length > 0) {
-        setDraftMessage("");
-        setPendingShareCard(null);
-        setShareMenuOpen(false);
-        setReplyingToMessageId(null);
-      }
-      clearPendingMediaAttachments();
-      setViewOnceEnabled(false);
-      focusComposerSoon();
-    } catch (error) {
-      logChatSendDebug("error", "client.compose.failed", {
-        traceId: failedDebugTraceId,
-        conversationId,
-        optimisticMessageId: failedOptimisticMessageId,
-        message: error instanceof Error ? error.message : String(error)
-      });
-      if (failedOptimisticMessageId) {
-        removeLocalPendingMessage(conversationId, failedOptimisticMessageId);
-      }
-      setDraftMessage(nextMessage);
-      setPendingShareCard(pendingShareCard);
-      setReplyingToMessageId(replyingToMessageId);
-      setSendError(
-        error instanceof Error ? error.message : "Network error. Please try again in a moment."
-      );
-    } finally {
-      setSending(false);
-      setUploadingMedia(false);
-    }
+    })();
   }
 
   const activePeer = activeConversation?.peer ?? null;
@@ -6274,6 +6543,8 @@ export function CampusMessagesShell({
                           ? attachmentObjectUrlByMessageId[message.id] ||
                             (!isE2eeAttachmentCipher(message.attachment) ? message.attachment.url : "")
                           : "";
+                        const attachmentDecryptError = attachmentDecryptErrorByMessageId[message.id] ?? "";
+                        const pendingSendState = pendingSendByMessageId[message.id] ?? null;
                         const isViewOnceAttachment = Boolean(
                           message.attachment?.viewOnce &&
                           attachmentRenderUrl &&
@@ -6316,7 +6587,7 @@ export function CampusMessagesShell({
                             )}
 
                             <div
-                              className={`spm-chat-bubble${isOwnMessage && !isSystemMessage ? " spm-chat-bubble-self" : ""}${isSystemMessage ? " spm-chat-bubble-system" : ""}${message.messageKind === "image" && message.attachment?.url ? " spm-chat-bubble-image" : ""}${showSwipeReplyCue ? " spm-chat-bubble-swipe-active" : ""}${isSelectedMessage ? " spm-chat-bubble-selected" : ""}${showMessageCard ? " spm-chat-bubble-card" : ""}`}
+                              className={`spm-chat-bubble${isOwnMessage && !isSystemMessage ? " spm-chat-bubble-self" : ""}${isSystemMessage ? " spm-chat-bubble-system" : ""}${message.messageKind === "image" && message.attachment?.url ? " spm-chat-bubble-image" : ""}${attachmentKind === "audio" ? " spm-chat-bubble-voice" : ""}${showSwipeReplyCue ? " spm-chat-bubble-swipe-active" : ""}${isSelectedMessage ? " spm-chat-bubble-selected" : ""}${showMessageCard ? " spm-chat-bubble-card" : ""}`}
                               style={swipeOffsetX ? { transform: `translateX(${swipeOffsetX}px)` } : undefined}
                               onPointerDown={(event) => handleMessagePointerDown(message, isOwnMessage, event)}
                               onPointerMove={(event) => handleMessagePointerMove(message, event)}
@@ -6357,26 +6628,65 @@ export function CampusMessagesShell({
                                 ) : (
                                   <div className="spm-chat-attachment">
                                     {!attachmentRenderUrl ? (
-                                      <div className="spm-chat-attachment-loading">Decrypting media...</div>
+                                      attachmentDecryptError ? (
+                                        <div className="spm-chat-attachment-loading">
+                                          <span>Could not decrypt media.</span>
+                                          <button
+                                            type="button"
+                                            className="spm-chat-compose-reply-clear"
+                                            onClick={() => {
+                                              setAttachmentDecryptErrorByMessageId((current) => {
+                                                const next = { ...current };
+                                                delete next[message.id];
+                                                return next;
+                                              });
+                                              setAttachmentDecryptRetryNonce((value) => value + 1);
+                                            }}
+                                          >
+                                            Retry
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <div className="spm-chat-attachment-loading">Decrypting media...</div>
+                                      )
                                     ) : attachmentKind === "video" ? (
-                                      <video
-                                        src={attachmentRenderUrl}
-                                        controls
-                                        playsInline
-                                        preload="metadata"
-                                      />
+                                      <>
+                                        <video
+                                          src={attachmentRenderUrl}
+                                          controls
+                                          playsInline
+                                          preload="metadata"
+                                        />
+                                        {pendingSendState ? <PendingSendOverlay state={pendingSendState} /> : null}
+                                      </>
                                     ) : attachmentKind === "audio" ? (
-                                      <audio
-                                        src={attachmentRenderUrl}
-                                        controls
-                                        preload="metadata"
-                                      />
+                                      <>
+                                        <div className="spm-chat-voice-note">
+                                          <span className="spm-chat-voice-play" aria-hidden="true">
+                                            <IconPlay />
+                                          </span>
+                                          <div className="spm-chat-voice-body">
+                                            <span className="spm-chat-voice-label">Voice note</span>
+                                            <audio
+                                              className="spm-chat-voice-audio"
+                                              src={attachmentRenderUrl}
+                                              controls
+                                              preload="metadata"
+                                              controlsList="nodownload noplaybackrate"
+                                            />
+                                          </div>
+                                        </div>
+                                        {pendingSendState ? <PendingSendOverlay state={pendingSendState} compact /> : null}
+                                      </>
                                     ) : (
-                                      <img
-                                        src={attachmentRenderUrl}
-                                        alt="Shared in chat"
-                                        loading="lazy"
-                                      />
+                                      <>
+                                        <img
+                                          src={attachmentRenderUrl}
+                                          alt="Shared in chat"
+                                          loading="lazy"
+                                        />
+                                        {pendingSendState ? <PendingSendOverlay state={pendingSendState} /> : null}
+                                      </>
                                     )}
                                   </div>
                                 )
@@ -7005,7 +7315,7 @@ export function CampusMessagesShell({
                       <button
                         type={composerHasPayload && !isRecordingVoiceNote ? "submit" : "button"}
                         className={`spm-chat-send${isRecordingVoiceNote ? " spm-chat-send-recording" : composerHasPayload ? " spm-chat-send-active" : " spm-chat-send-mic"}${isRecordingVoiceNote ? " is-recording" : ""}`}
-                        disabled={sending || uploadingMedia || creatingChatIdentity}
+                        disabled={creatingChatIdentity || Boolean(editingMessage && sending)}
                         aria-label={composerHasPayload ? "Send message" : isRecordingVoiceNote ? "Send voice recording" : "Start voice recording"}
                         onClick={
                           isRecordingVoiceNote
@@ -7017,7 +7327,7 @@ export function CampusMessagesShell({
                             : startVoiceRecording
                         }
                       >
-                        {sending || uploadingMedia || creatingChatIdentity ? (
+                        {creatingChatIdentity || Boolean(editingMessage && sending) ? (
                           <span className="spm-search-spinner" aria-hidden="true" />
                         ) : (
                           <span className="spm-chat-send-icon-stack" aria-hidden="true">

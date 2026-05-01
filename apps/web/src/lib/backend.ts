@@ -259,6 +259,10 @@ type BackendRequestOptions = {
   allowBridgeFallback?: boolean;
 };
 
+const CHAT_REALTIME_BACKEND_OPTIONS: BackendRequestOptions = {
+  allowBridgeFallback: false
+};
+
 export async function fetchBackendJson<T>(
   path: string,
   viewer?: DevSession,
@@ -774,7 +778,12 @@ export async function getChatConversation(viewer: DevSession, conversationId: st
 }
 
 export async function sendChatMessage(viewer: DevSession, conversationId: string, payload: SendChatMessageRequest) {
-  return postBackendJson<SendChatMessageResponse>(`/v1/chats/${encodeURIComponent(conversationId)}/messages`, payload, viewer);
+  return postBackendJson<SendChatMessageResponse>(
+    `/v1/chats/${encodeURIComponent(conversationId)}/messages`,
+    payload,
+    viewer,
+    CHAT_REALTIME_BACKEND_OPTIONS
+  );
 }
 
 export async function migrateChatMessageEncryption(
@@ -786,7 +795,8 @@ export async function migrateChatMessageEncryption(
     `/v1/chats/${encodeURIComponent(conversationId)}/messages/encryption`,
     "PUT",
     payload,
-    viewer
+    viewer,
+    CHAT_REALTIME_BACKEND_OPTIONS
   );
 }
 
@@ -893,12 +903,19 @@ export async function markChatRead(
     `/v1/chats/${encodeURIComponent(conversationId)}/read`,
     "PUT",
     { messageId, exposeReceipt: options?.exposeReceipt !== false },
-    viewer
+    viewer,
+    CHAT_REALTIME_BACKEND_OPTIONS
   );
 }
 
 export async function sendChatPresenceHeartbeat(viewer: DevSession, payload: ChatPresenceHeartbeatRequest) {
-  return mutateBackendJson<ChatPresenceHeartbeatResponse>("/v1/chats/presence/heartbeat", "POST", payload, viewer);
+  return mutateBackendJson<ChatPresenceHeartbeatResponse>(
+    "/v1/chats/presence/heartbeat",
+    "POST",
+    payload,
+    viewer,
+    CHAT_REALTIME_BACKEND_OPTIONS
+  );
 }
 
 export async function reactToChatMessage(viewer: DevSession, messageId: string, emoji: string) {
@@ -906,7 +923,8 @@ export async function reactToChatMessage(viewer: DevSession, messageId: string, 
     `/v1/chats/messages/${encodeURIComponent(messageId)}/reactions`,
     "PUT",
     { emoji },
-    viewer
+    viewer,
+    CHAT_REALTIME_BACKEND_OPTIONS
   );
 }
 
@@ -915,7 +933,8 @@ export async function deleteChatMessage(viewer: DevSession, messageId: string, p
     `/v1/chats/messages/${encodeURIComponent(messageId)}`,
     "DELETE",
     payload,
-    viewer
+    viewer,
+    CHAT_REALTIME_BACKEND_OPTIONS
   );
 }
 
@@ -924,7 +943,8 @@ export async function updateChatMessage(viewer: DevSession, messageId: string, p
     `/v1/chats/messages/${encodeURIComponent(messageId)}`,
     "PATCH",
     payload,
-    viewer
+    viewer,
+    CHAT_REALTIME_BACKEND_OPTIONS
   );
 }
 
@@ -937,7 +957,8 @@ export async function updateChatMessageLifecycle(
     `/v1/chats/messages/${encodeURIComponent(messageId)}/lifecycle`,
     "PUT",
     payload,
-    viewer
+    viewer,
+    CHAT_REALTIME_BACKEND_OPTIONS
   );
 }
 
@@ -962,4 +983,10 @@ export async function uploadEncryptedChatAttachment(
   }
 ) {
   return postBackendJson<UploadEncryptedChatAttachmentResponse>("/v1/chats/media/upload", payload, viewer);
+}
+
+export async function getEncryptedChatAttachmentBytes(viewer: DevSession, messageId: string) {
+  return requestBackendResponse(`/v1/chats/messages/${encodeURIComponent(messageId)}/media`, {
+    viewer
+  });
 }

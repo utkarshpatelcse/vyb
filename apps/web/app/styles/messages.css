@@ -1752,6 +1752,11 @@
   border-width: 1px;
 }
 
+.spm-chat-bubble-voice {
+  width: min(21rem, 78vw);
+  padding: 0.45rem;
+}
+
 .spm-chat-bubble-image .spm-chat-message-meta {
   right: 0.58rem;
   bottom: 0.46rem;
@@ -1936,6 +1941,7 @@
 }
 
 .spm-chat-attachment {
+  position: relative;
   overflow: hidden;
   border-radius: 0.95rem;
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -1954,6 +1960,105 @@
 .spm-chat-attachment audio {
   height: 3rem;
   object-fit: initial;
+}
+
+.spm-chat-voice-note {
+  display: grid;
+  grid-template-columns: 2.6rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 16rem;
+  padding: 0.55rem 0.65rem 0.72rem;
+  border-radius: 1rem;
+  background:
+    linear-gradient(135deg, rgba(15, 23, 42, 0.72), rgba(30, 41, 59, 0.5)),
+    rgba(255, 255, 255, 0.05);
+}
+
+.spm-chat-voice-play {
+  width: 2.55rem;
+  height: 2.55rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--spm-accent), var(--spm-market));
+  box-shadow: 0 10px 22px rgba(99, 102, 241, 0.28);
+}
+
+.spm-chat-voice-body {
+  display: grid;
+  min-width: 0;
+  gap: 0.28rem;
+}
+
+.spm-chat-voice-label {
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.spm-chat-voice-audio {
+  width: 100%;
+  min-width: 0;
+  height: 2.2rem;
+  filter: saturate(1.2);
+}
+
+.spm-chat-send-progress {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  gap: 0.45rem;
+  color: #fff;
+  background: rgba(8, 13, 26, 0.34);
+  backdrop-filter: blur(1px);
+  pointer-events: none;
+}
+
+.spm-chat-send-progress-compact {
+  inset: auto 0.55rem 0.5rem auto;
+  width: auto;
+  min-width: 6.2rem;
+  grid-template-columns: auto auto;
+  padding: 0.35rem 0.48rem;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.74);
+  backdrop-filter: blur(8px);
+}
+
+.spm-chat-send-progress-ring {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: block;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at center, rgba(15, 23, 42, 0.82) 56%, transparent 58%),
+    conic-gradient(#22d3ee var(--send-progress), rgba(255, 255, 255, 0.22) 0);
+  box-shadow: 0 8px 20px rgba(34, 211, 238, 0.25);
+}
+
+.spm-chat-send-progress-compact .spm-chat-send-progress-ring {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.spm-chat-send-progress-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
+}
+
+.spm-chat-send-progress.is-failed .spm-chat-send-progress-ring {
+  background:
+    radial-gradient(circle at center, rgba(69, 10, 10, 0.82) 56%, transparent 58%),
+    conic-gradient(#fb7185 100%, rgba(255, 255, 255, 0.22) 0);
 }
 
 .spm-chat-attachment-loading {

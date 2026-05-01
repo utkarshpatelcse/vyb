@@ -6,6 +6,7 @@ import {
   claimChatDevicePairingSession,
   createChatDevicePairingSession,
   deleteChatMessage,
+  downloadEncryptedChatAttachment,
   editChatMessage,
   canAccessChatConversation,
   createOrGetDirectConversation,
@@ -495,6 +496,24 @@ export async function handleChatRoute({ request, response, url, context }) {
       );
     } catch (error) {
       sendChatFailure(response, "chat_read", resolved, error);
+    }
+    return true;
+  }
+
+  const mediaDownloadMatch = url.pathname.match(/^\/v1\/chats\/messages\/([^/]+)\/media$/);
+  if (request.method === "GET" && mediaDownloadMatch) {
+    try {
+      const media = await downloadEncryptedChatAttachment(viewer, mediaDownloadMatch[1]);
+      response.writeHead(200, {
+        "content-type": media.mimeType,
+        "cache-control": "private, no-store",
+        "x-chat-attachment-mime-type": media.originalMimeType,
+        "x-chat-attachment-size": String(media.sizeBytes),
+        "x-content-type-options": "nosniff"
+      });
+      response.end(media.bytes);
+    } catch (error) {
+      sendChatFailure(response, "chat_media_download", resolved, error);
     }
     return true;
   }

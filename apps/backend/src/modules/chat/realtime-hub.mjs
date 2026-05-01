@@ -3,6 +3,7 @@ import { WebSocketServer } from "ws";
 import { canExposeChatTyping, getChatPrivacySettings } from "./privacy-settings-store.mjs";
 
 const CHAT_SOCKET_PATH = "/ws/chat";
+const CHAT_REALTIME_DEBUG_PREFIX = "[chat-realtime-debug]";
 const subscriptionsByConversation = new Map();
 
 function getSocketSecret() {
@@ -58,12 +59,24 @@ function rejectUpgrade(socket, statusCode, statusText) {
   socket.destroy();
 }
 
+function shouldLogRealtimeEmit(type) {
+  return type !== "chat.typing";
+}
+
 function addSubscription(ws, auth) {
   const key = auth.conversationId;
   const current = subscriptionsByConversation.get(key) ?? new Set();
   ws.__chatAuth = auth;
   current.add(ws);
   subscriptionsByConversation.set(key, current);
+  console.info(CHAT_REALTIME_DEBUG_PREFIX, {
+    stage: "server.socket.subscribed",
+    at: new Date().toISOString(),
+    conversationId: auth.conversationId,
+    userId: auth.userId,
+    membershipId: auth.membershipId,
+    listenerCount: current.size
+  });
 
   ws.on("message", (rawMessage) => {
     void handleSocketMessage(auth, rawMessage, ws);
@@ -76,6 +89,14 @@ function addSubscription(ws, auth) {
     }
 
     listeners.delete(ws);
+    console.info(CHAT_REALTIME_DEBUG_PREFIX, {
+      stage: "server.socket.closed",
+      at: new Date().toISOString(),
+      conversationId: auth.conversationId,
+      userId: auth.userId,
+      membershipId: auth.membershipId,
+      listenerCount: listeners.size
+    });
     if (listeners.size === 0) {
       subscriptionsByConversation.delete(key);
     }
@@ -187,6 +208,12 @@ export function attachChatWebSocketServer(server, { authorizeConnection }) {
 
     const auth = verifyChatSocketToken(url.searchParams.get("token"));
     if (!auth) {
+      console.warn(CHAT_REALTIME_DEBUG_PREFIX, {
+        stage: "server.upgrade.rejected",
+        at: new Date().toISOString(),
+        statusCode: 401,
+        reason: "invalid-token"
+      });
       rejectUpgrade(socket, 401, "Unauthorized");
       return;
     }
@@ -194,6 +221,15 @@ export function attachChatWebSocketServer(server, { authorizeConnection }) {
     try {
       const allowed = await authorizeConnection(auth);
       if (!allowed) {
+        console.warn(CHAT_REALTIME_DEBUG_PREFIX, {
+          stage: "server.upgrade.rejected",
+          at: new Date().toISOString(),
+          statusCode: 403,
+          reason: "conversation-not-authorized",
+          conversationId: auth.conversationId,
+          userId: auth.userId,
+          membershipId: auth.membershipId
+        });
         rejectUpgrade(socket, 403, "Forbidden");
         return;
       }
@@ -221,6 +257,15 @@ export function attachChatWebSocketServer(server, { authorizeConnection }) {
 export function emitChatRealtimeEvent({ conversationId, type, payload }) {
   const listeners = subscriptionsByConversation.get(conversationId);
   if (!listeners || listeners.size === 0) {
+    if (shouldLogRealtimeEmit(type)) {
+      console.warn(CHAT_REALTIME_DEBUG_PREFIX, {
+        stage: "server.emit.no-listeners",
+        at: new Date().toISOString(),
+        conversationId,
+        type,
+        messageId: payload?.messageId ?? payload?.item?.id ?? null
+      });
+    }
     return;
   }
 
@@ -229,10 +274,23 @@ export function emitChatRealtimeEvent({ conversationId, type, payload }) {
     conversationId,
     payload
   });
+  let deliveredCount = 0;
 
   for (const ws of listeners) {
     if (ws.readyState === 1) {
       ws.send(message);
+      deliveredCount += 1;
     }
+  }
+  if (shouldLogRealtimeEmit(type)) {
+    console.info(CHAT_REALTIME_DEBUG_PREFIX, {
+      stage: "server.emit.sent",
+      at: new Date().toISOString(),
+      conversationId,
+      type,
+      messageId: payload?.messageId ?? payload?.item?.id ?? null,
+      listenerCount: listeners.size,
+      deliveredCount
+    });
   }
 }

@@ -7,6 +7,37 @@ const API_BASE_URL =
   process.env.VYB_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 const INTERNAL_API_KEY = process.env.VYB_INTERNAL_API_KEY ?? "local-vyb-internal-key";
 
+function isLoopbackHost(hostname: string) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "0.0.0.0";
+}
+
+function getRequestOrigin(request: Request) {
+  const requestUrl = new URL(request.url);
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const host = forwardedHost || request.headers.get("host") || requestUrl.host;
+  const protocol = forwardedProto || requestUrl.protocol.replace(/:$/u, "");
+
+  try {
+    return new URL(`${protocol}://${host}`);
+  } catch {
+    return requestUrl;
+  }
+}
+
+function buildClientSocketUrl(request: Request, token: string) {
+  const socketUrl = new URL("/ws/chat", API_BASE_URL);
+  const requestOrigin = getRequestOrigin(request);
+
+  if (isLoopbackHost(socketUrl.hostname) && !isLoopbackHost(requestOrigin.hostname)) {
+    socketUrl.hostname = requestOrigin.hostname;
+  }
+
+  socketUrl.protocol = socketUrl.protocol === "https:" ? "wss:" : "ws:";
+  socketUrl.searchParams.set("token", token);
+  return socketUrl;
+}
+
 function buildError(status: number, code: string, message: string) {
   return NextResponse.json({ error: { code, message } }, { status });
 }
@@ -37,9 +68,7 @@ export async function GET(request: Request) {
 
   const encodedPayload = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
   const token = `${encodedPayload}.${signPayload(encodedPayload)}`;
-  const socketUrl = new URL("/ws/chat", API_BASE_URL);
-  socketUrl.protocol = socketUrl.protocol === "https:" ? "wss:" : "ws:";
-  socketUrl.searchParams.set("token", token);
+  const socketUrl = buildClientSocketUrl(request, token);
 
   return NextResponse.json({
     wsUrl: socketUrl.toString(),

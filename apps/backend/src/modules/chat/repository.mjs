@@ -3609,7 +3609,7 @@ export async function uploadEncryptedChatAttachment(viewer, payload) {
   const recipientPublicKey = normalizeString(payload.recipientPublicKey);
 
   if (!mimeType || !SUPPORTED_CHAT_ATTACHMENT_MIME_TYPES.has(mimeType)) {
-    throw new Error("Only image and video attachments are supported right now.");
+    throw new Error("Only image, video, and audio attachments are supported right now.");
   }
 
   if (typeof payload.base64Data !== "string" || !payload.base64Data.trim()) {
@@ -3686,5 +3686,65 @@ export async function uploadEncryptedChatAttachment(viewer, payload) {
       senderPublicKey,
       recipientPublicKey
     }
+  };
+}
+
+export async function downloadEncryptedChatAttachment(viewer, messageId) {
+  const message = await getChatMessageById(messageId);
+  if (!message || message.tenantId !== viewer.tenantId) {
+    throw new ChatSecurityError(404, "CHAT_MEDIA_NOT_FOUND", "We could not find that encrypted media.");
+  }
+
+  const access = await resolveConversationAccess(viewer, message.conversationId);
+  if (!access) {
+    throw new ChatSecurityError(403, "CHAT_MEDIA_FORBIDDEN", "You can only open media from your own conversations.");
+  }
+
+  if (
+    message.cipherAlgorithm === CHAT_DELETED_MESSAGE_ALGORITHM ||
+    !message.attachmentStoragePath ||
+    !message.attachmentMimeType
+  ) {
+    throw new ChatSecurityError(404, "CHAT_MEDIA_NOT_FOUND", "This message does not have encrypted media.");
+  }
+
+  const parsed = assertVerifiedChatAttachmentPath(message.attachmentStoragePath, {
+    tenantId: viewer.tenantId
+  });
+  const file = getChatBucket().file(parsed.storagePath);
+  const [exists] = await file.exists();
+  if (!exists) {
+    throw new ChatSecurityError(404, "CHAT_MEDIA_NOT_FOUND", "The encrypted media file is no longer available.");
+  }
+
+  const [metadata] = await file.getMetadata();
+  const customMetadata = metadata?.metadata ?? {};
+  if (customMetadata.purpose && customMetadata.purpose !== "chat_attachment_v1") {
+    throw new ChatSecurityError(403, "ATTACHMENT_PURPOSE_MISMATCH", "This storage object is not a chat attachment.");
+  }
+
+  if (customMetadata.ownerTenantId && customMetadata.ownerTenantId !== viewer.tenantId) {
+    throw new ChatSecurityError(403, "ATTACHMENT_TENANT_MISMATCH", "This media does not belong to your campus.");
+  }
+
+  if (customMetadata.ownerUserId && customMetadata.ownerUserId !== message.senderUserId) {
+    throw new ChatSecurityError(403, "ATTACHMENT_OWNER_MISMATCH", "This media does not belong to the sender.");
+  }
+
+  if (customMetadata.assetId && customMetadata.assetId !== parsed.assetId) {
+    throw new ChatSecurityError(403, "ATTACHMENT_ASSET_MISMATCH", "This media metadata does not match its storage path.");
+  }
+
+  const originalMimeType = normalizeString(customMetadata.originalMimeType) ?? message.attachmentMimeType;
+  if (!SUPPORTED_CHAT_ATTACHMENT_MIME_TYPES.has(originalMimeType)) {
+    throw new ChatSecurityError(400, "INVALID_ATTACHMENT_METADATA", "Encrypted media metadata is incomplete.");
+  }
+
+  const [bytes] = await file.download();
+  return {
+    bytes,
+    mimeType: "application/octet-stream",
+    originalMimeType,
+    sizeBytes: Number(metadata.size ?? bytes.byteLength)
   };
 }
