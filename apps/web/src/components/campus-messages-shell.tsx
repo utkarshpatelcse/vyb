@@ -44,12 +44,14 @@ import {
   isValidSecurityPin,
   isStoredChatKeyCompatible,
   loadChatPinAttemptState,
+  loadCachedChatAttachmentBytes,
   loadCachedChatMessagePlaintexts,
   loadStoredChatKeyMaterial,
   normalizeRecoveryPhrase,
   normalizeSecurityPin,
   recordFailedChatPinAttempt,
   saveCachedChatMessagePlaintexts,
+  saveCachedChatAttachmentBytes,
   clearChatPinAttemptState,
   saveStoredChatKeyMaterial,
   type ChatPinAttemptState,
@@ -148,7 +150,10 @@ const TYPING_INDICATOR_WINDOW_MS = 4_500;
 const CHAT_SEND_DEBUG_PREFIX = "[chat-send-debug]";
 const CHAT_REALTIME_DEBUG_PREFIX = "[chat-realtime-debug]";
 const CHAT_PLAINTEXT_MEMORY_CACHE_LIMIT = 1500;
+const CHAT_ATTACHMENT_MEMORY_CACHE_LIMIT = 80;
+const CHAT_ATTACHMENT_DECRYPT_CONCURRENCY = 3;
 const chatPlaintextMemoryCache = new Map<string, string>();
+const chatAttachmentMemoryCache = new Map<string, Blob>();
 const CHAT_TTL_OPTIONS = [
   { value: "instant", label: "Instant", durationMs: 0 },
   { value: "1h", label: "1h", durationMs: 60 * 60 * 1000 },
@@ -748,6 +753,60 @@ function writeChatPlaintextMemoryCache(userId: string, messageId: string, plaint
   }
 }
 
+function getChatAttachmentMemoryCacheKey(userId: string, conversationId: string, message: ChatMessageRecord) {
+  const attachment = message.attachment;
+  if (!attachment?.url || attachment.viewOnce) {
+    return null;
+  }
+
+  return [
+    userId,
+    conversationId,
+    message.id,
+    attachment.url,
+    attachment.cipherIv ?? "",
+    attachment.sizeBytes,
+    attachment.mimeType
+  ].join(":");
+}
+
+function readChatAttachmentMemoryCache(userId: string, conversationId: string, message: ChatMessageRecord) {
+  const cacheKey = getChatAttachmentMemoryCacheKey(userId, conversationId, message);
+  if (!cacheKey) {
+    return null;
+  }
+
+  const cached = chatAttachmentMemoryCache.get(cacheKey) ?? null;
+  if (cached) {
+    chatAttachmentMemoryCache.delete(cacheKey);
+    chatAttachmentMemoryCache.set(cacheKey, cached);
+  }
+  return cached;
+}
+
+  function writeChatAttachmentMemoryCache(userId: string, conversationId: string, message: ChatMessageRecord, blob: Blob) {
+  const cacheKey = getChatAttachmentMemoryCacheKey(userId, conversationId, message);
+  if (!cacheKey) {
+    return;
+  }
+
+  chatAttachmentMemoryCache.delete(cacheKey);
+  chatAttachmentMemoryCache.set(cacheKey, blob);
+
+  while (chatAttachmentMemoryCache.size > CHAT_ATTACHMENT_MEMORY_CACHE_LIMIT) {
+    const oldestKey = chatAttachmentMemoryCache.keys().next().value;
+    if (!oldestKey) {
+      break;
+    }
+    chatAttachmentMemoryCache.delete(oldestKey);
+  }
+}
+
+function getMessageCreatedAtTime(message: ChatMessageRecord) {
+  const value = new Date(message.createdAt).getTime();
+  return Number.isFinite(value) ? value : 0;
+}
+
 function createChatSendDebugTraceId() {
   const randomPart =
     typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -1252,6 +1311,7 @@ export function CampusMessagesShell({
   const [attachmentObjectUrlByMessageId, setAttachmentObjectUrlByMessageId] = useState<Record<string, string>>({});
   const [attachmentDecryptErrorByMessageId, setAttachmentDecryptErrorByMessageId] = useState<Record<string, string>>({});
   const [attachmentDecryptRetryNonce, setAttachmentDecryptRetryNonce] = useState(0);
+  const [attachmentPriorityNonce, setAttachmentPriorityNonce] = useState(0);
   const [pendingSendByMessageId, setPendingSendByMessageId] = useState<Record<string, PendingMessageSendState>>({});
   const [shareMenuOpen, setShareMenuOpen] = useState(false);
   const [shareMenuTab, setShareMenuTab] = useState<ShareMenuTab>("deals");
@@ -1284,6 +1344,8 @@ export function CampusMessagesShell({
   const pageRef = useRef<HTMLElement | null>(null);
   const pendingMediaUrlsRef = useRef<string[]>([]);
   const attachmentObjectUrlsRef = useRef<Record<string, string>>({});
+  const attachmentElementsRef = useRef<Map<string, HTMLDivElement>>(new Map());
+  const attachmentPriorityRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
@@ -1359,8 +1421,13 @@ export function CampusMessagesShell({
       if (pendingDeleteTimeoutRef.current) {
         clearTimeout(pendingDeleteTimeoutRef.current);
       }
+      if (attachmentPriorityRefreshTimeoutRef.current) {
+        clearTimeout(attachmentPriorityRefreshTimeoutRef.current);
+        attachmentPriorityRefreshTimeoutRef.current = null;
+      }
       Object.values(attachmentObjectUrlsRef.current).forEach((url) => window.URL.revokeObjectURL(url));
       attachmentObjectUrlsRef.current = {};
+      attachmentElementsRef.current.clear();
       swipeGestureRef.current = null;
     };
   }, []);
@@ -3224,13 +3291,81 @@ export function CampusMessagesShell({
       return;
     }
 
-    const encryptedAttachments = activeConversation.messages.filter(
-      (message) =>
-        message.attachment?.url &&
-        isE2eeAttachmentCipher(message.attachment) &&
-        !attachmentObjectUrlsRef.current[message.id] &&
-        !attachmentDecryptErrorByMessageId[message.id]
-    );
+    const currentConversation = activeConversation;
+    const currentLocalChatKey = localChatKey;
+    const currentPeerPublicKey = activeConversation.peer.publicKey;
+
+    const cachedAttachmentUpdates: Record<string, string> = {};
+    for (const message of currentConversation.messages) {
+      const attachment = message.attachment;
+      if (
+        !attachment?.url ||
+        !isE2eeAttachmentCipher(attachment) ||
+        attachmentObjectUrlsRef.current[message.id]
+      ) {
+        continue;
+      }
+
+      const cachedBlob = readChatAttachmentMemoryCache(primaryChatKeyStorageUserId, currentConversation.id, message);
+      if (!cachedBlob) {
+        continue;
+      }
+
+      const objectUrl = window.URL.createObjectURL(cachedBlob);
+      attachmentObjectUrlsRef.current[message.id] = objectUrl;
+      cachedAttachmentUpdates[message.id] = objectUrl;
+    }
+
+    if (Object.keys(cachedAttachmentUpdates).length > 0) {
+      setAttachmentDecryptErrorByMessageId((current) => {
+        const next = { ...current };
+        let changed = false;
+        for (const messageId of Object.keys(cachedAttachmentUpdates)) {
+          if (next[messageId]) {
+            delete next[messageId];
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+      setAttachmentObjectUrlByMessageId((current) => ({ ...current, ...cachedAttachmentUpdates }));
+    }
+
+    const threadRect = threadRef.current?.getBoundingClientRect() ?? null;
+    const visibleAttachmentPriorityByMessageId = new Map<string, number>();
+    if (threadRect) {
+      for (const [messageId, element] of attachmentElementsRef.current.entries()) {
+        const rect = element.getBoundingClientRect();
+        const isNearViewport = rect.bottom >= threadRect.top - 160 && rect.top <= threadRect.bottom + 160;
+        if (isNearViewport) {
+          visibleAttachmentPriorityByMessageId.set(messageId, Math.min(rect.bottom, threadRect.bottom));
+        }
+      }
+    }
+
+    const encryptedAttachments = currentConversation.messages
+      .filter(
+        (message) =>
+          message.attachment?.url &&
+          isE2eeAttachmentCipher(message.attachment) &&
+          !attachmentObjectUrlsRef.current[message.id] &&
+          !attachmentDecryptErrorByMessageId[message.id]
+      )
+      .sort((left, right) => {
+        const leftVisiblePriority = visibleAttachmentPriorityByMessageId.get(left.id);
+        const rightVisiblePriority = visibleAttachmentPriorityByMessageId.get(right.id);
+        if (leftVisiblePriority !== undefined || rightVisiblePriority !== undefined) {
+          if (leftVisiblePriority === undefined) {
+            return 1;
+          }
+          if (rightVisiblePriority === undefined) {
+            return -1;
+          }
+          return rightVisiblePriority - leftVisiblePriority;
+        }
+
+        return getMessageCreatedAtTime(right) - getMessageCreatedAtTime(left);
+      });
     if (encryptedAttachments.length === 0) {
       return;
     }
@@ -3238,11 +3373,72 @@ export function CampusMessagesShell({
     let cancelled = false;
 
     void (async () => {
-      await Promise.allSettled(
-        encryptedAttachments.map(async (message) => {
+      const cachedAttachmentBytes = await loadCachedChatAttachmentBytes(
+        primaryChatKeyStorageUserId,
+        encryptedAttachments
+          .filter((message) => message.attachment && !message.attachment.viewOnce)
+          .map((message) => ({
+            conversationId: currentConversation.id,
+            messageId: message.id,
+            attachment: message.attachment!
+          }))
+      );
+
+      if (cancelled) {
+        return;
+      }
+
+      const cachedObjectUrlUpdates: Record<string, string> = {};
+      for (const message of encryptedAttachments) {
+        const attachment = message.attachment;
+        const cachedBytes = cachedAttachmentBytes[message.id];
+        if (!attachment?.url || !cachedBytes || attachmentObjectUrlsRef.current[message.id]) {
+          continue;
+        }
+
+        const cachedBlob = new Blob([cachedBytes], { type: attachment.mimeType || "application/octet-stream" });
+        writeChatAttachmentMemoryCache(primaryChatKeyStorageUserId, currentConversation.id, message, cachedBlob);
+        const objectUrl = window.URL.createObjectURL(cachedBlob);
+        attachmentObjectUrlsRef.current[message.id] = objectUrl;
+        cachedObjectUrlUpdates[message.id] = objectUrl;
+      }
+
+      if (Object.keys(cachedObjectUrlUpdates).length > 0) {
+        setAttachmentDecryptErrorByMessageId((current) => {
+          const next = { ...current };
+          let changed = false;
+          for (const messageId of Object.keys(cachedObjectUrlUpdates)) {
+            if (next[messageId]) {
+              delete next[messageId];
+              changed = true;
+            }
+          }
+          return changed ? next : current;
+        });
+        setAttachmentObjectUrlByMessageId((current) => ({ ...current, ...cachedObjectUrlUpdates }));
+      }
+
+      const attachmentsToDecrypt = encryptedAttachments.filter(
+        (message) => !cachedAttachmentBytes[message.id] && !attachmentObjectUrlsRef.current[message.id]
+      );
+      if (attachmentsToDecrypt.length === 0) {
+        return;
+      }
+
+      let nextAttachmentIndex = 0;
+
+      async function decryptNextAttachment() {
+        while (!cancelled) {
+          const message = attachmentsToDecrypt[nextAttachmentIndex];
+          nextAttachmentIndex += 1;
+
+          if (!message) {
+            return;
+          }
+
           const attachment = message.attachment;
           if (!attachment?.url || !isE2eeAttachmentCipher(attachment)) {
-            return;
+            continue;
           }
 
           try {
@@ -3261,12 +3457,21 @@ export function CampusMessagesShell({
             const decryptedBytes = await decryptChatAttachmentBytes(
               encryptedBytes,
               attachment,
-              localChatKey,
-              activeConversation.peer.publicKey!
+              currentLocalChatKey,
+              currentPeerPublicKey
             );
-            const objectUrl = window.URL.createObjectURL(
-              new Blob([decryptedBytes], { type: attachment.mimeType || "application/octet-stream" })
-            );
+            const decryptedBlob = new Blob([decryptedBytes], { type: attachment.mimeType || "application/octet-stream" });
+            writeChatAttachmentMemoryCache(primaryChatKeyStorageUserId, currentConversation.id, message, decryptedBlob);
+            void saveCachedChatAttachmentBytes([
+              {
+                userId: primaryChatKeyStorageUserId,
+                conversationId: currentConversation.id,
+                messageId: message.id,
+                attachment,
+                bytes: decryptedBytes
+              }
+            ]);
+            const objectUrl = window.URL.createObjectURL(decryptedBlob);
 
             if (cancelled) {
               window.URL.revokeObjectURL(objectUrl);
@@ -3301,14 +3506,21 @@ export function CampusMessagesShell({
               }));
             }
           }
-        })
+        }
+      }
+
+      await Promise.allSettled(
+        Array.from(
+          { length: Math.min(CHAT_ATTACHMENT_DECRYPT_CONCURRENCY, attachmentsToDecrypt.length) },
+          () => decryptNextAttachment()
+        )
       );
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [activeConversation, localChatKey, attachmentDecryptRetryNonce]);
+  }, [activeConversation, localChatKey, attachmentDecryptRetryNonce, attachmentPriorityNonce, primaryChatKeyStorageUserId]);
 
   useEffect(() => {
     if (!activeConversation || !localChatKey || !activeConversation.peer.publicKey) {
@@ -4557,6 +4769,26 @@ export function CampusMessagesShell({
 
     chatThreadStickToBottomRef.current =
       thread.scrollHeight <= thread.clientHeight + 2 || isChatThreadNearBottom(thread, 180);
+    scheduleAttachmentPriorityRefresh();
+  }
+
+  function scheduleAttachmentPriorityRefresh() {
+    if (attachmentPriorityRefreshTimeoutRef.current) {
+      return;
+    }
+
+    attachmentPriorityRefreshTimeoutRef.current = setTimeout(() => {
+      attachmentPriorityRefreshTimeoutRef.current = null;
+      setAttachmentPriorityNonce((value) => value + 1);
+    }, 80);
+  }
+
+  function registerAttachmentElement(messageId: string, node: HTMLDivElement | null) {
+    if (node) {
+      attachmentElementsRef.current.set(messageId, node);
+    } else {
+      attachmentElementsRef.current.delete(messageId);
+    }
   }
 
   function shouldAutoFocusComposerOnOpen() {
@@ -5780,7 +6012,7 @@ export function CampusMessagesShell({
           status: "sending",
           label: "Sending"
         });
-        await dispatchEncryptedMessage({
+        const sentMessage = await dispatchEncryptedMessage({
           conversationId,
           plaintext,
           messageKind: "image",
@@ -5790,9 +6022,29 @@ export function CampusMessagesShell({
           debugTraceId,
           peerIdentityOverride: queuedPeerPublicKey
         });
+        if (sentMessage.attachment && !sentMessage.attachment.viewOnce && isE2eeAttachmentCipher(sentMessage.attachment)) {
+          attachmentObjectUrlsRef.current[sentMessage.id] = mediaAttachment.previewUrl;
+          setAttachmentObjectUrlByMessageId((current) => ({
+            ...current,
+            [sentMessage.id]: mediaAttachment.previewUrl
+          }));
+
+          const originalBytes = await mediaAttachment.file.arrayBuffer();
+          const originalBlob = new Blob([originalBytes], { type: mediaAttachment.mimeType || "application/octet-stream" });
+          writeChatAttachmentMemoryCache(primaryChatKeyStorageUserId, conversationId, sentMessage, originalBlob);
+          void saveCachedChatAttachmentBytes([
+            {
+              userId: primaryChatKeyStorageUserId,
+              conversationId,
+              messageId: sentMessage.id,
+              attachment: sentMessage.attachment,
+              bytes: originalBytes
+            }
+          ]);
+        }
         updatePendingSendState(optimisticMessageId, null);
         outgoingMediaPreviewUrlsRef.current.delete(mediaAttachment.previewUrl);
-        if (typeof window !== "undefined") {
+        if (typeof window !== "undefined" && attachmentObjectUrlsRef.current[sentMessage.id] !== mediaAttachment.previewUrl) {
           window.URL.revokeObjectURL(mediaAttachment.previewUrl);
         }
       } catch (error) {
@@ -6626,7 +6878,10 @@ export function CampusMessagesShell({
                                     </span>
                                   </button>
                                 ) : (
-                                  <div className="spm-chat-attachment">
+                                  <div
+                                    className="spm-chat-attachment"
+                                    ref={(node) => registerAttachmentElement(message.id, node)}
+                                  >
                                     {!attachmentRenderUrl ? (
                                       attachmentDecryptError ? (
                                         <div className="spm-chat-attachment-loading">

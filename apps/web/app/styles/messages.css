@@ -935,6 +935,160 @@
   overflow: hidden;
 }
 
+.spm-loading-shell {
+  background:
+    radial-gradient(circle at 16% 10%, rgba(45, 212, 191, 0.12), transparent 24rem),
+    radial-gradient(circle at 82% 18%, rgba(139, 92, 246, 0.14), transparent 26rem),
+    #050711;
+}
+
+.spm-loading-nav,
+.spm-loading-list,
+.spm-loading-chat {
+  pointer-events: none;
+}
+
+.spm-loading-logo,
+.spm-loading-search,
+.spm-loading-avatar,
+.spm-loading-copy span,
+.spm-loading-tabs span,
+.spm-loading-bubble,
+.spm-loading-composer,
+.spm-loading-nav-lines span {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.08));
+  background-size: 220% 100%;
+  animation: spm-loading-shimmer 1.1s ease-in-out infinite;
+}
+
+@keyframes spm-loading-shimmer {
+  0% {
+    background-position: 140% 0;
+  }
+
+  100% {
+    background-position: -80% 0;
+  }
+}
+
+.spm-loading-logo {
+  width: 3rem;
+  height: 3rem;
+  margin: 1.4rem auto 2rem;
+  border-radius: 1rem;
+}
+
+.spm-loading-nav-lines {
+  display: grid;
+  gap: 1rem;
+  padding: 0 1.3rem;
+}
+
+.spm-loading-nav-lines span {
+  display: block;
+  width: 100%;
+  height: 2.2rem;
+  border-radius: 0.8rem;
+}
+
+.spm-loading-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  padding: 1rem 1.1rem;
+}
+
+.spm-loading-tabs span {
+  height: 2.8rem;
+  border-radius: 0.9rem;
+}
+
+.spm-loading-search {
+  height: 2.7rem;
+  margin: 0.2rem 1.1rem 1.2rem;
+  border-radius: 999px;
+}
+
+.spm-loading-conversations {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0 1rem;
+}
+
+.spm-loading-conversation,
+.spm-chat-peer {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.spm-loading-conversation {
+  min-height: 4.8rem;
+  padding: 0.75rem;
+  border-radius: 1.1rem;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.spm-loading-avatar {
+  display: inline-flex;
+  width: 3.2rem;
+  height: 3.2rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+}
+
+.spm-loading-copy {
+  display: grid;
+  flex: 1;
+  gap: 0.55rem;
+}
+
+.spm-loading-copy span {
+  display: block;
+  height: 0.8rem;
+  border-radius: 999px;
+}
+
+.spm-loading-copy span:first-child {
+  width: 58%;
+}
+
+.spm-loading-copy span:last-child {
+  width: 82%;
+  opacity: 0.75;
+}
+
+.spm-loading-thread {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 1.4rem;
+}
+
+.spm-loading-bubble {
+  display: block;
+  width: min(68%, 30rem);
+  height: 4.8rem;
+  border-radius: 1.4rem;
+}
+
+.spm-loading-bubble:nth-child(3) {
+  height: 8rem;
+}
+
+.spm-loading-bubble-self {
+  align-self: flex-end;
+}
+
+.spm-loading-composer {
+  height: 4.2rem;
+  margin: 0.75rem 1.4rem 1rem;
+  border-radius: 1.35rem;
+}
+
 /* Chat idle / placeholder */
 .spm-chat-idle {
   display: flex;

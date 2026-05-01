@@ -3,7 +3,7 @@
 import type { ChatConversationPreview, ChatIdentitySummary, FeedCard, PostLikerItem, ReactionKind, StoryCard, UserSearchItem } from "@vyb/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { buildDefaultAvatarUrl, CampusAvatarContent, useResolvedAvatarUrl } from "./campus-avatar";
 import { SocialPostActionSheet } from "./social-post-action-sheet";
 import { SocialPostLightbox } from "./social-post-lightbox";
@@ -632,6 +632,7 @@ export function CampusHomeShell({
   const chatIdentityPromiseRef = useRef<Promise<StoredChatKeyMaterial> | null>(null);
   const hasAppliedInitialPostRef = useRef(false);
   const hasAppliedInitialStoryRef = useRef(false);
+  const messagesNavigationInFlightRef = useRef(false);
 
   const storyGroups = useMemo(() => buildStoryRailGroups(storyFeed, viewerUsername), [storyFeed, viewerUsername]);
   const storySequence = useMemo(() => storyGroups.flatMap((group) => group.items), [storyGroups]);
@@ -868,11 +869,39 @@ export function CampusHomeShell({
   });
   const createPostHref = "/create?kind=post&from=%2Fhome";
   const createStoryHref = "/create?kind=story&from=%2Fhome";
+  const messagesHref = "/messages";
 
   useEffect(() => {
     router.prefetch(createPostHref);
     router.prefetch(createStoryHref);
-  }, [createPostHref, createStoryHref, router]);
+    router.prefetch(messagesHref);
+  }, [createPostHref, createStoryHref, messagesHref, router]);
+
+  function warmMessagesRoute() {
+    router.prefetch(messagesHref);
+  }
+
+  function shouldUseNativeLinkNavigation(event: ReactMouseEvent<HTMLAnchorElement> | ReactPointerEvent<HTMLAnchorElement>) {
+    return event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || ("button" in event && event.button !== 0);
+  }
+
+  function openMessagesRoute(event: ReactMouseEvent<HTMLAnchorElement> | ReactPointerEvent<HTMLAnchorElement>) {
+    if (shouldUseNativeLinkNavigation(event)) {
+      return;
+    }
+
+    event.preventDefault();
+    warmMessagesRoute();
+
+    if (messagesNavigationInFlightRef.current) {
+      return;
+    }
+
+    messagesNavigationInFlightRef.current = true;
+    startTransition(() => {
+      router.push(messagesHref);
+    });
+  }
 
   function syncPostEverywhere(postId: string, updater: (post: FeedCard) => FeedCard) {
     engagement.setPosts((current) => current.map((post) => (post.id === postId ? updater(post) : post)));
@@ -1904,7 +1933,16 @@ export function CampusHomeShell({
               <AddPostIcon />
               <span>Create post</span>
             </button>
-            <Link href="/messages" className="vyb-campus-top-icon vyb-campus-top-link" aria-label="Open campus messages">
+            <Link
+              href={messagesHref}
+              className="vyb-campus-top-icon vyb-campus-top-link"
+              aria-label="Open campus messages"
+              prefetch
+              onPointerDown={openMessagesRoute}
+              onMouseEnter={warmMessagesRoute}
+              onFocus={warmMessagesRoute}
+              onClick={openMessagesRoute}
+            >
               <SendIcon />
               {unreadChatCount > 0 ? (
                 <span className="vyb-campus-top-badge">{unreadChatCount > 9 ? "9+" : unreadChatCount}</span>
@@ -1930,7 +1968,16 @@ export function CampusHomeShell({
               <AddPostIcon />
               <span>Post</span>
             </button>
-            <Link href="/messages" className="vyb-campus-top-icon vyb-campus-top-link" aria-label="Open campus messages">
+            <Link
+              href={messagesHref}
+              className="vyb-campus-top-icon vyb-campus-top-link"
+              aria-label="Open campus messages"
+              prefetch
+              onPointerDown={openMessagesRoute}
+              onMouseEnter={warmMessagesRoute}
+              onFocus={warmMessagesRoute}
+              onClick={openMessagesRoute}
+            >
               <SendIcon />
               {unreadChatCount > 0 ? (
                 <span className="vyb-campus-top-badge">{unreadChatCount > 9 ? "9+" : unreadChatCount}</span>
