@@ -50,6 +50,7 @@ apps/backend/data/*.bak
 apps/backend/data/*.tmp
 data/events-store.json
 data/connect-levels.json
+data/queens-levels.json
 scripts/generate-connect-levels.mjs
 
 # OS and editor files

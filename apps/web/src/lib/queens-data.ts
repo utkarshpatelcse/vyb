@@ -27,6 +27,9 @@ const NO_HINT_STREAK_POINTS = 25;
 const DEFAULT_LAUNCH_DATE = "2026-05-01T00:00:00+05:30";
 const QUEENS_GAME_LEVEL_STORE_ID =
   process.env.VYB_QUEENS_GAME_LEVEL_STORE_ID ?? process.env.VYB_QUEENS_LEVEL_STORE_ID ?? "queens-1000-levels";
+const QUEENS_LEVELS_SOURCE = process.env.VYB_QUEENS_LEVELS_SOURCE ?? "auto";
+const QUEENS_ALLOW_LOCAL_LEVEL_FALLBACK =
+  process.env.VYB_QUEENS_ALLOW_LOCAL_LEVEL_FALLBACK === "1" || QUEENS_LEVELS_SOURCE === "auto";
 const QUEENS_REPLAY_TESTER_EMAILS = new Set([
   "utkarsh.2226cse1210@kiet.edu",
   ...(process.env.VYB_QUEENS_REPLAY_TESTER_EMAILS ?? "")
@@ -39,6 +42,8 @@ const queensConnectorConfig = {
   serviceId: "vyb",
   location: "asia-south1"
 };
+let queensGameLevelSkipLogged = false;
+let queensGameLevelFallbackLogged = false;
 
 const GET_QUEENS_LEVEL_STORE_QUERY = `
   query GetQueensGameLevelRuntime($id: String!) {
@@ -180,6 +185,56 @@ function getWorkspaceRoot() {
   return path.basename(cwd) === "web" && path.basename(path.dirname(cwd)) === "apps" ? path.resolve(cwd, "../..") : cwd;
 }
 
+function getQueensLevelsPath() {
+  return process.env.VYB_QUEENS_LEVELS_PATH ? path.resolve(process.env.VYB_QUEENS_LEVELS_PATH) : path.join(getWorkspaceRoot(), "data", "queens-levels.json");
+}
+
+function isGoogleApplicationCredentialsPathUsable() {
+  const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
+
+  if (!credentialsPath || credentialsPath.startsWith("{")) {
+    return false;
+  }
+
+  return existsSync(path.resolve(credentialsPath));
+}
+
+function hasUsableFirebaseAdminCredentials() {
+  return Boolean(
+    process.env.FIREBASE_ADMIN_CREDENTIALS_JSON ||
+      process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
+      process.env.FIREBASE_ADMIN_CREDENTIALS_BASE64 ||
+      process.env.FIREBASE_SERVICE_ACCOUNT_BASE64 ||
+      isGoogleApplicationCredentialsPathUsable() ||
+      (process.env.FIREBASE_PROJECT_ID &&
+        (process.env.FIREBASE_ADMIN_CLIENT_EMAIL || process.env.FIREBASE_SERVICE_ACCOUNT_CLIENT_EMAIL || process.env.FIREBASE_CLIENT_EMAIL) &&
+        (process.env.FIREBASE_ADMIN_PRIVATE_KEY || process.env.FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY || process.env.FIREBASE_PRIVATE_KEY))
+  );
+}
+
+function canUseGoogleMetadataCredentials() {
+  return Boolean(process.env.K_SERVICE || process.env.K_REVISION || process.env.K_CONFIGURATION);
+}
+
+function shouldLoadDataconnectQueensLevelStore() {
+  if (QUEENS_LEVELS_SOURCE === "local") {
+    if (!QUEENS_ALLOW_LOCAL_LEVEL_FALLBACK) {
+      throw new Error("Local Queens level storage is disabled. Set VYB_QUEENS_LEVELS_SOURCE=dataconnect.");
+    }
+    return false;
+  }
+
+  if (QUEENS_LEVELS_SOURCE === "dataconnect") {
+    return true;
+  }
+
+  if (QUEENS_ALLOW_LOCAL_LEVEL_FALLBACK) {
+    return hasUsableFirebaseAdminCredentials() || canUseGoogleMetadataCredentials();
+  }
+
+  return true;
+}
+
 function getQueensStoreRoot() {
   if (process.env.VYB_QUEENS_STORE_ROOT) {
     return path.join(process.env.VYB_QUEENS_STORE_ROOT, "vyb-queens");
@@ -289,10 +344,68 @@ function normalizeLevel(rawLevel: Partial<StoredQueensLevel>): StoredQueensLevel
   };
 }
 
+function normalizeSeedFile(payload: QueensLevelSeedFile, sourceLabel: string) {
+  const levels = Array.isArray(payload.levels) ? payload.levels.map((level) => normalizeLevel(level)).filter((level): level is StoredQueensLevel => level !== null) : [];
+
+  if (levels.length === 0) {
+    throw new Error(`Queens levels are not seeded in ${sourceLabel}.`);
+  }
+
+  return {
+    seedFile: payload,
+    levels
+  };
+}
+
 let seedFileCache: { seedFile: QueensLevelSeedFile; levels: StoredQueensLevel[] } | null = null;
 
 function getQueensDc() {
   return getFirebaseDataConnect(queensConnectorConfig);
+}
+
+async function loadDataconnectSeedFile() {
+  if (!shouldLoadDataconnectQueensLevelStore()) {
+    if (!queensGameLevelSkipLogged) {
+      queensGameLevelSkipLogged = true;
+      console.info("[queens-data] DataConnect game level store skipped; using local seed file.", {
+        storeId: QUEENS_GAME_LEVEL_STORE_ID,
+        reason: "firebase-admin-credentials-unavailable"
+      });
+    }
+    return null;
+  }
+
+  try {
+    const response = (await getQueensDc().executeGraphqlRead(GET_QUEENS_LEVEL_STORE_QUERY, {
+      operationName: "GetQueensGameLevelRuntime",
+      variables: {
+        id: QUEENS_GAME_LEVEL_STORE_ID
+      }
+    })) as { data?: { gamesLevel?: { payloadJson?: string | null } | null } };
+    const payloadJson = response.data?.gamesLevel?.payloadJson;
+
+    if (!payloadJson) {
+      if (!QUEENS_ALLOW_LOCAL_LEVEL_FALLBACK) {
+        throw new Error(`Queens levels are not seeded in DataConnect game level store '${QUEENS_GAME_LEVEL_STORE_ID}'.`);
+      }
+      return null;
+    }
+
+    return normalizeSeedFile(JSON.parse(payloadJson) as QueensLevelSeedFile, `DataConnect store ${QUEENS_GAME_LEVEL_STORE_ID}`);
+  } catch (error) {
+    if (!QUEENS_ALLOW_LOCAL_LEVEL_FALLBACK) {
+      throw error;
+    }
+
+    if (!queensGameLevelFallbackLogged) {
+      queensGameLevelFallbackLogged = true;
+      console.warn("[queens-data] DataConnect game level store unavailable; falling back to local seed file.", {
+        storeId: QUEENS_GAME_LEVEL_STORE_ID,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+    return null;
+  }
 }
 
 async function loadSeedFile() {
@@ -300,27 +413,24 @@ async function loadSeedFile() {
     return seedFileCache;
   }
 
-  const response = (await getQueensDc().executeGraphqlRead(GET_QUEENS_LEVEL_STORE_QUERY, {
-      operationName: "GetQueensGameLevelRuntime",
-      variables: {
-        id: QUEENS_GAME_LEVEL_STORE_ID
-      }
-  })) as { data?: { gamesLevel?: { payloadJson?: string | null } | null } };
-  const payloadJson = response.data?.gamesLevel?.payloadJson;
-
-  if (!payloadJson) {
-    throw new Error(`Queens levels are not seeded in DataConnect game level store '${QUEENS_GAME_LEVEL_STORE_ID}'.`);
+  const dataconnectSeed = await loadDataconnectSeedFile();
+  if (dataconnectSeed) {
+    seedFileCache = dataconnectSeed;
+    return seedFileCache;
   }
 
-  const seedFile = JSON.parse(payloadJson) as QueensLevelSeedFile;
-  const levels = (seedFile.levels ?? []).map((level) => normalizeLevel(level)).filter((level): level is StoredQueensLevel => level !== null);
+  const seedPath = getQueensLevelsPath();
+  try {
+    const payload = JSON.parse(await readFile(seedPath, "utf8")) as QueensLevelSeedFile;
+    seedFileCache = normalizeSeedFile(payload, seedPath);
+    return seedFileCache;
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Queens levels are not seeded")) {
+      throw error;
+    }
 
-  if (levels.length === 0) {
-    throw new Error(`Queens levels in DataConnect game level store '${QUEENS_GAME_LEVEL_STORE_ID}' are empty or invalid.`);
+    throw new Error("Queens levels are not seeded. Import the generated payload into DataConnect or add it at `data/queens-levels.json`.");
   }
-
-  seedFileCache = { seedFile, levels };
-  return seedFileCache;
 }
 
 async function loadLocalStore(tenantId: string): Promise<QueensStore> {
