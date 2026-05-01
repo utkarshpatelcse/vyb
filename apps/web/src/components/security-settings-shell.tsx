@@ -451,6 +451,7 @@ export function SecuritySettingsShell({
     }
 
     let cancelled = false;
+    let consecutiveFailures = 0;
     const timer = window.setInterval(() => {
       void (async () => {
         try {
@@ -464,14 +465,25 @@ export function SecuritySettingsShell({
             return;
           }
 
+          consecutiveFailures = 0;
           setDevicePairing(data.pairing);
           if (data.pairing.status === "approved" && data.pairing.transferEnvelope) {
             window.clearInterval(timer);
             void handleClaimDevicePairing(data.pairing);
+          } else if (data.pairing.status === "expired") {
+            window.clearInterval(timer);
+            setPageError("This pairing code expired. Start pairing again to get a fresh 6-digit code.");
+          } else if (data.pairing.status === "claimed") {
+            window.clearInterval(timer);
+            setPageSuccess("Trusted device pairing is already complete on this browser.");
           }
         } catch {
           if (!cancelled) {
-            window.clearInterval(timer);
+            consecutiveFailures += 1;
+            if (consecutiveFailures >= 8) {
+              window.clearInterval(timer);
+              setPageError("We are having trouble checking approval status. Keep this page open and tap Start pairing again if the code expires.");
+            }
           }
         }
       })();
@@ -702,7 +714,11 @@ export function SecuritySettingsShell({
       const material = await decryptStoredChatKeyMaterialFromDevicePairing(
         pairing.transferEnvelope,
         privateKey,
-        viewerUserId
+        {
+          userId: primaryChatKeyStorageUserId,
+          allowedUserIds: chatKeyStorageUserIds,
+          expectedPublicKey: viewerIdentity?.publicKey ?? null
+        }
       );
       const synced = viewerIdentity
         ? {

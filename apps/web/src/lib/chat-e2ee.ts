@@ -1216,11 +1216,25 @@ export async function encryptStoredChatKeyMaterialForDevicePairing(
 export async function decryptStoredChatKeyMaterialFromDevicePairing(
   envelope: ChatDevicePairingTransferEnvelope,
   requesterPrivateKey: string,
-  userId: string
+  userIdOrOptions:
+    | string
+    | {
+        userId: string;
+        allowedUserIds?: string[];
+        expectedPublicKey?: string | null;
+      }
 ) {
   if (envelope.algorithm !== CHAT_DEVICE_PAIRING_TRANSFER_ALGORITHM) {
     throw new Error("This device pairing transfer uses an unsupported encryption algorithm.");
   }
+
+  const options =
+    typeof userIdOrOptions === "string"
+      ? { userId: userIdOrOptions, allowedUserIds: [userIdOrOptions], expectedPublicKey: null }
+      : userIdOrOptions;
+  const normalizedAllowedUserIds = Array.from(
+    new Set([options.userId, ...(options.allowedUserIds ?? [])].map((id) => id.trim()).filter(Boolean))
+  );
 
   const privateKey = await importDevicePairingPrivateKey(requesterPrivateKey);
   const transferKey = await deriveDevicePairingTransferKey(privateKey, envelope.senderPublicKey);
@@ -1234,12 +1248,20 @@ export async function decryptStoredChatKeyMaterialFromDevicePairing(
   );
   const parsed = JSON.parse(bufferToText(plaintextBuffer)) as StoredChatKeyMaterial & { privateKey: string };
 
-  if (parsed.userId !== userId || parsed.publicKey !== envelope.senderPublicKey || typeof parsed.privateKey !== "string") {
+  if (parsed.publicKey !== envelope.senderPublicKey || typeof parsed.privateKey !== "string") {
+    throw new Error("This device pairing transfer does not match your account identity.");
+  }
+
+  if (options.expectedPublicKey && parsed.publicKey !== options.expectedPublicKey) {
+    throw new Error("This pairing was approved from a different secure chat identity. Start a new code from this device and approve it from the current trusted device.");
+  }
+
+  if (!options.expectedPublicKey && !normalizedAllowedUserIds.includes(parsed.userId)) {
     throw new Error("This device pairing transfer does not match your account identity.");
   }
 
   return {
-    userId: parsed.userId,
+    userId: options.userId,
     identityId: parsed.identityId ?? null,
     publicKey: parsed.publicKey,
     privateKey: parsed.privateKey,
