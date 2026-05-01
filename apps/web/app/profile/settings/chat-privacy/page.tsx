@@ -79,9 +79,12 @@ export default async function ChatPrivacyPage({
     redirect("/onboarding");
   }
 
+  const chatViewer = inboxResult.value.viewer;
+
   return (
     <SecuritySettingsShell
-      viewerUserId={viewer.userId}
+      viewerUserId={chatViewer.userId || viewer.userId}
+      viewerKeyStorageUserIds={[viewer.userId]}
       viewerName={profile.profile?.fullName ?? viewer.displayName}
       viewerUsername={profile.profile?.username ?? viewer.email.split("@")[0]}
       collegeName={getDisplayCollegeName(profile.collegeName)}

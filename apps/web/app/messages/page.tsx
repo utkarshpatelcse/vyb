@@ -46,11 +46,13 @@ export default async function MessagesPage() {
   const viewerName = profile.profile?.fullName ?? viewer.displayName;
   const viewerUsername = profile.profile?.username ?? viewer.email.split("@")[0];
   const displayCollegeName = getDisplayCollegeName(profile.collegeName);
+  const chatViewer = inboxResult.value.viewer;
 
   return (
     <CampusMessagesShell
-      viewerUserId={viewer.userId}
-      viewerMembershipId={viewer.membershipId}
+      viewerUserId={chatViewer.userId || viewer.userId}
+      viewerMembershipId={chatViewer.membershipId || viewer.membershipId}
+      viewerKeyStorageUserIds={[viewer.userId]}
       viewerName={viewerName}
       viewerUsername={viewerUsername}
       collegeName={displayCollegeName}

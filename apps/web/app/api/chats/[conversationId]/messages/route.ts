@@ -35,10 +35,52 @@ export async function POST(request: Request, { params }: { params: Promise<{ con
   }
 
   const { conversationId } = await params;
+  const debugTraceId =
+    typeof (payload as { debugTraceId?: unknown }).debugTraceId === "string"
+      ? (payload as { debugTraceId: string }).debugTraceId.slice(0, 80)
+      : "missing-trace";
+  const startedAt = Date.now();
+
+  console.info("[chat-send-debug]", {
+    stage: "next-api.send.start",
+    at: new Date().toISOString(),
+    traceId: debugTraceId,
+    conversationId,
+    viewerUserId: viewer.userId,
+    viewerMembershipId: viewer.membershipId,
+    messageKind: typeof (payload as { messageKind?: unknown }).messageKind === "string" ? (payload as { messageKind: string }).messageKind : null,
+    durationKey: typeof (payload as { durationKey?: unknown }).durationKey === "string" ? (payload as { durationKey: string }).durationKey : null,
+    cipherTextLength: typeof (payload as { cipherText?: unknown }).cipherText === "string" ? (payload as { cipherText: string }).cipherText.length : null,
+    cipherIvLength: typeof (payload as { cipherIv?: unknown }).cipherIv === "string" ? (payload as { cipherIv: string }).cipherIv.length : null,
+    hasAttachment: Boolean((payload as { attachment?: unknown }).attachment)
+  });
 
   try {
-    return NextResponse.json(await sendChatMessage(viewer, conversationId, payload), { status: 201 });
+    const result = await sendChatMessage(viewer, conversationId, payload);
+    console.info("[chat-send-debug]", {
+      stage: "next-api.send.success",
+      at: new Date().toISOString(),
+      traceId: debugTraceId,
+      conversationId,
+      messageId: result.item?.id ?? null,
+      durationMs: Date.now() - startedAt
+    });
+    return NextResponse.json(result, { status: 201 });
   } catch (error) {
+    console.error("[chat-send-debug]", {
+      stage: "next-api.send.failed",
+      at: new Date().toISOString(),
+      traceId: debugTraceId,
+      conversationId,
+      durationMs: Date.now() - startedAt,
+      message: error instanceof Error ? error.message : String(error),
+      statusCode:
+        typeof error === "object" &&
+        error !== null &&
+        Number.isInteger((error as { statusCode?: unknown }).statusCode)
+          ? (error as { statusCode: number }).statusCode
+          : null
+    });
     return buildChatError(error, "CHAT_SEND_FAILED", "We could not send this message.");
   }
 }

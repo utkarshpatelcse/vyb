@@ -44,13 +44,14 @@ import {
   isValidSecurityPin,
   isStoredChatKeyCompatible,
   loadChatPinAttemptState,
+  loadCachedChatMessagePlaintexts,
   loadStoredChatKeyMaterial,
   normalizeRecoveryPhrase,
   normalizeSecurityPin,
   recordFailedChatPinAttempt,
+  saveCachedChatMessagePlaintexts,
   clearChatPinAttemptState,
   saveStoredChatKeyMaterial,
-  syncStoredChatKeyIdentity,
   type ChatPinAttemptState,
   type StoredChatKeyMaterial
 } from "../lib/chat-e2ee";
@@ -139,6 +140,9 @@ const SMART_COMPOSER_WAVEFORM_BARS = [7, 13, 18, 11, 20, 14, 9, 16, 12, 8, 19, 1
 const ONLINE_PRESENCE_WINDOW_MS = 3 * 60 * 1000;
 const RECENT_PRESENCE_WINDOW_MS = 60 * 60 * 1000;
 const TYPING_INDICATOR_WINDOW_MS = 4_500;
+const CHAT_SEND_DEBUG_PREFIX = "[chat-send-debug]";
+const CHAT_PLAINTEXT_MEMORY_CACHE_LIMIT = 1500;
+const chatPlaintextMemoryCache = new Map<string, string>();
 const CHAT_TTL_OPTIONS = [
   { value: "instant", label: "Instant", durationMs: 0 },
   { value: "1h", label: "1h", durationMs: 60 * 60 * 1000 },
@@ -181,7 +185,7 @@ function getMessageFallbackLabel(message: ChatMessageRecord) {
     case "system":
       return "System update";
     default:
-      return isE2eeCipherAlgorithm(message.cipherAlgorithm) ? "Encrypted message" : "Message";
+      return isE2eeCipherAlgorithm(message.cipherAlgorithm) ? "Locked message" : "Message";
   }
 }
 
@@ -715,6 +719,62 @@ function isOwnChatMessage(message: ChatMessageRecord, viewerUserId: string, view
   return message.senderMembershipId === viewerMembershipId || message.senderUserId === viewerUserId;
 }
 
+function getChatPlaintextMemoryCacheKey(userId: string, messageId: string) {
+  return `${userId}:${messageId}`;
+}
+
+function readChatPlaintextMemoryCache(userId: string, messageId: string) {
+  const cacheKey = getChatPlaintextMemoryCacheKey(userId, messageId);
+  return chatPlaintextMemoryCache.get(cacheKey) ?? null;
+}
+
+function writeChatPlaintextMemoryCache(userId: string, messageId: string, plaintext: string) {
+  const cacheKey = getChatPlaintextMemoryCacheKey(userId, messageId);
+  chatPlaintextMemoryCache.delete(cacheKey);
+  chatPlaintextMemoryCache.set(cacheKey, plaintext);
+
+  while (chatPlaintextMemoryCache.size > CHAT_PLAINTEXT_MEMORY_CACHE_LIMIT) {
+    const oldestKey = chatPlaintextMemoryCache.keys().next().value;
+    if (!oldestKey) {
+      break;
+    }
+    chatPlaintextMemoryCache.delete(oldestKey);
+  }
+}
+
+function createChatSendDebugTraceId() {
+  const randomPart =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID().slice(0, 8)
+      : Math.random().toString(36).slice(2, 10);
+  return `chat-${Date.now().toString(36)}-${randomPart}`;
+}
+
+function logChatSendDebug(
+  level: "info" | "warn" | "error",
+  stage: string,
+  details: Record<string, unknown>
+) {
+  if (typeof console === "undefined") {
+    return;
+  }
+
+  const logger = console[level] ?? console.log;
+  logger(CHAT_SEND_DEBUG_PREFIX, {
+    stage,
+    at: new Date().toISOString(),
+    ...details
+  });
+}
+
+function getChatIdentityPublicKeyPrefix(identity: ChatIdentitySummary | string | null | undefined) {
+  if (typeof identity === "string") {
+    return identity.slice(0, 12);
+  }
+
+  return typeof identity?.publicKey === "string" ? identity.publicKey.slice(0, 12) : null;
+}
+
 function canDeleteChatMessageForEveryone(message: ChatMessageRecord, viewerMembershipId: string, nowTimestamp: number) {
   if (message.senderMembershipId !== viewerMembershipId || isDeletedChatMessage(message)) {
     return false;
@@ -1043,6 +1103,7 @@ function useUserSearch(query: string) {
 export function CampusMessagesShell({
   viewerUserId,
   viewerMembershipId,
+  viewerKeyStorageUserIds = [],
   viewerName,
   viewerUsername,
   collegeName,
@@ -1056,6 +1117,7 @@ export function CampusMessagesShell({
 }: {
   viewerUserId: string;
   viewerMembershipId: string;
+  viewerKeyStorageUserIds?: string[];
   viewerName: string;
   viewerUsername: string;
   collegeName: string;
@@ -1078,6 +1140,13 @@ export function CampusMessagesShell({
     }),
     [viewerUserId, viewerUsername]
   );
+  const chatKeyStorageUserIds = useMemo(() => {
+    const ids = [viewerUserId, ...viewerKeyStorageUserIds]
+      .map((id) => id.trim())
+      .filter(Boolean);
+    return Array.from(new Set(ids));
+  }, [viewerKeyStorageUserIds, viewerUserId]);
+  const primaryChatKeyStorageUserId = chatKeyStorageUserIds[0] ?? viewerUserId;
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const [startingChat, setStartingChat] = useState<string | null>(null);
@@ -1191,7 +1260,6 @@ export function CampusMessagesShell({
   const chatIdentityPromiseRef = useRef<Promise<boolean> | null>(null);
   const sessionProbePromiseRef = useRef<Promise<boolean | null> | null>(null);
   const keyBackupSyncIdentityRef = useRef<string | null>(null);
-  const setupRedirectedRef = useRef(false);
   const migratingMessageIdsRef = useRef<Set<string>>(new Set());
   const pendingConversationNavigationRef = useRef<string | null>(null);
   const activeConversationIdRef = useRef<string | null>(initialConversationId);
@@ -1423,7 +1491,7 @@ export function CampusMessagesShell({
         }
 
         const data = await response.json().catch(() => null);
-        return data?.session?.userId === viewerUserId;
+        return chatKeyStorageUserIds.includes(data?.session?.userId);
       } catch {
         return null;
       } finally {
@@ -1818,7 +1886,7 @@ export function CampusMessagesShell({
     void (async () => {
       let stored: StoredChatKeyMaterial | null = null;
       try {
-        stored = await loadStoredChatKeyMaterial(viewerUserId);
+        stored = await loadStoredChatKeyMaterialForViewer();
       } catch {
         stored = null;
       }
@@ -1834,7 +1902,13 @@ export function CampusMessagesShell({
       }
 
       if (stored && isStoredChatKeyCompatible(stored, viewerIdentity)) {
-        const synced = (await syncStoredChatKeyIdentity(viewerUserId, viewerIdentity)) ?? stored;
+        const synced = await saveStoredChatKeyMaterialForViewer({
+          ...stored,
+          identityId: viewerIdentity.id,
+          algorithm: viewerIdentity.algorithm,
+          keyVersion: viewerIdentity.keyVersion,
+          updatedAt: viewerIdentity.updatedAt
+        });
         if (!cancelled) {
           setLocalChatKey(synced);
           setKeySetupError(null);
@@ -1843,7 +1917,7 @@ export function CampusMessagesShell({
         return;
       }
 
-      setLocalChatKey(stored);
+      setLocalChatKey(null);
       if (!remoteKeyBackupLoaded) {
         setKeySetupError(null);
         setLocalChatKeyLoaded(true);
@@ -1863,14 +1937,61 @@ export function CampusMessagesShell({
     };
   }, [remoteKeyBackup, remoteKeyBackupLoaded, viewerIdentity, viewerUserId]);
 
+  async function loadStoredChatKeyMaterialForViewer() {
+    for (const storageUserId of chatKeyStorageUserIds) {
+      const stored = await loadStoredChatKeyMaterial(storageUserId).catch(() => null);
+      if (stored) {
+        return stored;
+      }
+    }
+
+    return null;
+  }
+
+  async function saveStoredChatKeyMaterialForViewer(material: StoredChatKeyMaterial) {
+    const normalized =
+      material.userId === primaryChatKeyStorageUserId
+        ? material
+        : {
+            ...material,
+            userId: primaryChatKeyStorageUserId
+          };
+    await saveStoredChatKeyMaterial(normalized);
+    return (await loadStoredChatKeyMaterial(primaryChatKeyStorageUserId).catch(() => null)) ?? normalized;
+  }
+
+  function getMessagePlaintextCacheLookup(conversationId: string, message: ChatMessageRecord) {
+    return {
+      conversationId,
+      messageId: message.id,
+      cipherText: message.cipherText,
+      cipherIv: message.cipherIv
+    };
+  }
+
+  function rememberMessagePlaintext(conversationId: string, message: ChatMessageRecord, plaintext: string) {
+    writeChatPlaintextMemoryCache(primaryChatKeyStorageUserId, message.id, plaintext);
+
+    if (!isE2eeCipherAlgorithm(message.cipherAlgorithm) || !message.cipherText) {
+      return;
+    }
+
+    void saveCachedChatMessagePlaintexts([
+      {
+        userId: primaryChatKeyStorageUserId,
+        plaintext,
+        ...getMessagePlaintextCacheLookup(conversationId, message)
+      }
+    ]);
+  }
+
   function getInstantConversation(conversationId: string) {
     const cachedConversation = conversationDetailCacheRef.current.get(conversationId);
     if (cachedConversation) {
       return cachedConversation;
     }
 
-    const preview = conversations.find((item) => item.id === conversationId);
-    return preview ? buildConversationFromPreview(preview) : null;
+    return null;
   }
 
   function commitActiveConversation(nextConversation: ActiveConversation) {
@@ -2346,9 +2467,15 @@ export function CampusMessagesShell({
     }
 
     if (viewerIdentity) {
-      const stored = await loadStoredChatKeyMaterial(viewerUserId);
+      const stored = await loadStoredChatKeyMaterialForViewer();
       if (stored && isStoredChatKeyCompatible(stored, viewerIdentity)) {
-        const synced = (await syncStoredChatKeyIdentity(viewerUserId, viewerIdentity)) ?? stored;
+        const synced = await saveStoredChatKeyMaterialForViewer({
+          ...stored,
+          identityId: viewerIdentity.id,
+          algorithm: viewerIdentity.algorithm,
+          keyVersion: viewerIdentity.keyVersion,
+          updatedAt: viewerIdentity.updatedAt
+        });
         setLocalChatKey(synced);
         setKeySetupError(null);
         return true;
@@ -2357,7 +2484,7 @@ export function CampusMessagesShell({
       const message = remoteKeyBackup
         ? "Pair this browser from Settings / Security using a trusted device. PIN or recovery phrase restore is still available as a fallback."
         : "This account has E2EE chats, but this browser is not trusted yet. Pair it from Settings / Security on the original device.";
-      setLocalChatKey(stored);
+      setLocalChatKey(null);
       setKeySetupError(message);
       setSendError(message);
       return false;
@@ -2375,18 +2502,18 @@ export function CampusMessagesShell({
       try {
         const stored =
           localChatKey ??
-          (await loadStoredChatKeyMaterial(viewerUserId)) ??
-          (await createStoredChatKeyMaterial(viewerUserId));
-        await saveStoredChatKeyMaterial(stored);
-        setLocalChatKey(stored);
+          (await loadStoredChatKeyMaterialForViewer()) ??
+          (await createStoredChatKeyMaterial(primaryChatKeyStorageUserId));
+        const savedStored = await saveStoredChatKeyMaterialForViewer(stored);
+        setLocalChatKey(savedStored);
 
         const response = await fetchChatEndpoint("/api/chats/keys", {
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            publicKey: stored.publicKey,
-            algorithm: stored.algorithm || CHAT_IDENTITY_ALGORITHM,
-            keyVersion: stored.keyVersion
+            publicKey: savedStored.publicKey,
+            algorithm: savedStored.algorithm || CHAT_IDENTITY_ALGORITHM,
+            keyVersion: savedStored.keyVersion
           })
         });
         const data = await response.json().catch(() => null);
@@ -2407,14 +2534,13 @@ export function CampusMessagesShell({
           return false;
         }
 
-        const synced = (await syncStoredChatKeyIdentity(viewerUserId, nextIdentity)) ?? {
-          ...stored,
+        const synced = await saveStoredChatKeyMaterialForViewer({
+          ...savedStored,
           identityId: nextIdentity.id,
           algorithm: nextIdentity.algorithm,
           keyVersion: nextIdentity.keyVersion,
           updatedAt: nextIdentity.updatedAt
-        };
-        await saveStoredChatKeyMaterial(synced);
+        });
         setLocalChatKey(synced);
         setViewerIdentity(nextIdentity);
         return true;
@@ -2429,6 +2555,36 @@ export function CampusMessagesShell({
 
     chatIdentityPromiseRef.current = pending;
     return pending;
+  }
+
+  async function getCompatibleLocalChatKey() {
+    if (viewerIdentity && localChatKey && isStoredChatKeyCompatible(localChatKey, viewerIdentity)) {
+      return localChatKey;
+    }
+
+    const stored = await loadStoredChatKeyMaterialForViewer();
+    if (viewerIdentity) {
+      if (stored && isStoredChatKeyCompatible(stored, viewerIdentity)) {
+        const synced = await saveStoredChatKeyMaterialForViewer({
+          ...stored,
+          identityId: viewerIdentity.id,
+          algorithm: viewerIdentity.algorithm,
+          keyVersion: viewerIdentity.keyVersion,
+          updatedAt: viewerIdentity.updatedAt
+        });
+        setLocalChatKey(synced);
+        setKeySetupError(null);
+        return synced;
+      }
+
+      setLocalChatKey(null);
+      return null;
+    }
+
+    if (stored) {
+      setLocalChatKey(stored);
+    }
+    return stored;
   }
 
   async function syncEncryptedKeyBackup(
@@ -2510,18 +2666,16 @@ export function CampusMessagesShell({
         throw new Error("That secret restored a different key than the one linked to this account.");
       }
 
-      const synced = (await syncStoredChatKeyIdentity(viewerUserId, viewerIdentity)) ?? {
+      const synced = await saveStoredChatKeyMaterialForViewer({
         ...restored,
         identityId: viewerIdentity.id,
         algorithm: viewerIdentity.algorithm,
         keyVersion: viewerIdentity.keyVersion,
         updatedAt: viewerIdentity.updatedAt
-      };
-      await saveStoredChatKeyMaterial(synced);
-      const hardened = await loadStoredChatKeyMaterial(viewerUserId);
+      });
       await clearChatPinAttemptState(viewerUserId);
       setPinAttemptState(await loadChatPinAttemptState(viewerUserId));
-      setLocalChatKey(hardened ?? synced);
+      setLocalChatKey(synced);
       setRecoveryCode(null);
       setRestoreRecoveryCode("");
       setRecoveryCodeVisible(false);
@@ -2586,7 +2740,7 @@ export function CampusMessagesShell({
       return;
     }
 
-    const currentLocalKey = localChatKey ?? (await loadStoredChatKeyMaterial(viewerUserId));
+    const currentLocalKey = await getCompatibleLocalChatKey();
     if (!currentLocalKey) {
       return;
     }
@@ -2621,6 +2775,7 @@ export function CampusMessagesShell({
 
       if (item) {
         setMessagePlaintextById((current) => ({ ...current, [item.id]: body }));
+        rememberMessagePlaintext(conversationId, item, body);
         messageIdsRef.current.add(item.id);
         setActiveConversation((current) =>
           current && current.id === conversationId
@@ -2832,6 +2987,27 @@ export function CampusMessagesShell({
   }, [conversations, localChatKey, messagePlaintextById]);
 
   useEffect(() => {
+    if (!activeConversation) {
+      return;
+    }
+
+    const memoryUpdates = Object.fromEntries(
+      activeConversation.messages
+        .map((message) => [
+          message.id,
+          messagePlaintextById[message.id] ??
+            readChatPlaintextMemoryCache(primaryChatKeyStorageUserId, message.id)
+        ])
+        .filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0)
+        .filter(([messageId]) => !messagePlaintextById[messageId])
+    );
+
+    if (Object.keys(memoryUpdates).length > 0) {
+      setMessagePlaintextById((current) => ({ ...current, ...memoryUpdates }));
+    }
+  }, [activeConversation, messagePlaintextById, primaryChatKeyStorageUserId]);
+
+  useEffect(() => {
     if (!activeConversation || !localChatKey || !activeConversation.peer.publicKey) {
       setDecryptionWarning(null);
       return;
@@ -2839,7 +3015,10 @@ export function CampusMessagesShell({
 
     let cancelled = false;
     const encryptedMessages = activeConversation.messages.filter(
-      (message) => isE2eeCipherAlgorithm(message.cipherAlgorithm) && !messagePlaintextById[message.id]
+      (message) =>
+        isE2eeCipherAlgorithm(message.cipherAlgorithm) &&
+        !messagePlaintextById[message.id] &&
+        !readChatPlaintextMemoryCache(primaryChatKeyStorageUserId, message.id)
     );
 
     if (encryptedMessages.length === 0) {
@@ -2848,11 +3027,41 @@ export function CampusMessagesShell({
     }
 
     void (async () => {
+      const cachedPlaintexts = await loadCachedChatMessagePlaintexts(
+        primaryChatKeyStorageUserId,
+        encryptedMessages.map((message) => getMessagePlaintextCacheLookup(activeConversation.id, message))
+      );
+
+      if (cancelled) {
+        return;
+      }
+
+      if (Object.keys(cachedPlaintexts).length > 0) {
+        Object.entries(cachedPlaintexts).forEach(([messageId, plaintext]) => {
+          writeChatPlaintextMemoryCache(primaryChatKeyStorageUserId, messageId, plaintext);
+        });
+        setMessagePlaintextById((current) => {
+          const nextUpdates = Object.entries(cachedPlaintexts).filter(
+            ([messageId, plaintext]) => current[messageId] !== plaintext
+          );
+          if (nextUpdates.length === 0) {
+            return current;
+          }
+          return { ...current, ...Object.fromEntries(nextUpdates) };
+        });
+      }
+
+      const messagesToDecrypt = encryptedMessages.filter((message) => !cachedPlaintexts[message.id]);
+      if (messagesToDecrypt.length === 0) {
+        setDecryptionWarning(null);
+        return;
+      }
+
       const nextEntries = await Promise.all(
-        encryptedMessages.map(async (message) => {
+        messagesToDecrypt.map(async (message) => {
           try {
             const plaintext = await decryptChatText(message.cipherText, message.cipherIv, localChatKey, activeConversation.peer.publicKey!);
-            return [message.id, plaintext] as const;
+            return [message.id, plaintext, message] as const;
           } catch {
             return null;
           }
@@ -2864,11 +3073,14 @@ export function CampusMessagesShell({
       }
 
       const resolvedEntries = nextEntries.filter(
-        (entry): entry is readonly [string, string] => Array.isArray(entry)
+        (entry): entry is readonly [string, string, ChatMessageRecord] => Array.isArray(entry)
       );
       const resolvedIds = new Set(resolvedEntries.map((entry) => entry[0]));
-      const updates = Object.fromEntries(resolvedEntries);
+      const updates = Object.fromEntries(resolvedEntries.map(([messageId, plaintext]) => [messageId, plaintext]));
       if (Object.keys(updates).length > 0) {
+        resolvedEntries.forEach(([messageId, plaintext]) => {
+          writeChatPlaintextMemoryCache(primaryChatKeyStorageUserId, messageId, plaintext);
+        });
         setMessagePlaintextById((current) => {
           const nextUpdates = Object.entries(updates).filter(([messageId, plaintext]) => current[messageId] !== plaintext);
           if (nextUpdates.length === 0) {
@@ -2876,10 +3088,17 @@ export function CampusMessagesShell({
           }
           return { ...current, ...Object.fromEntries(nextUpdates) };
         });
+        void saveCachedChatMessagePlaintexts(
+          resolvedEntries.map(([messageId, plaintext, message]) => ({
+            userId: primaryChatKeyStorageUserId,
+            plaintext,
+            ...getMessagePlaintextCacheLookup(activeConversation.id, message)
+          }))
+        );
         setKeySetupError(null);
       }
 
-      const unresolvedMessages = encryptedMessages.filter((message) => !resolvedIds.has(message.id));
+      const unresolvedMessages = messagesToDecrypt.filter((message) => !resolvedIds.has(message.id));
       if (unresolvedMessages.length === 0) {
         setDecryptionWarning(null);
         return;
@@ -3277,7 +3496,7 @@ export function CampusMessagesShell({
       throw new Error(keySetupError ?? "Secure chat is not ready on this device.");
     }
 
-    const currentLocalKey = localChatKey ?? (await loadStoredChatKeyMaterial(viewerUserId));
+    const currentLocalKey = await getCompatibleLocalChatKey();
     if (!currentLocalKey) {
       throw new Error("This device is missing your private E2EE key.");
     }
@@ -5016,7 +5235,8 @@ export function CampusMessagesShell({
     replyToMessageId,
     attachment,
     durationKey,
-    optimisticMessageId
+    optimisticMessageId,
+    debugTraceId
   }: {
     conversationId: string;
     plaintext: string;
@@ -5025,27 +5245,71 @@ export function CampusMessagesShell({
     attachment?: ChatEncryptedAttachment | null;
     durationKey?: ChatMessageTtlKey;
     optimisticMessageId?: string | null;
+    debugTraceId?: string | null;
   }) {
+    const traceId = debugTraceId ?? createChatSendDebugTraceId();
     const peerIdentity = activeConversation?.peer.publicKey ?? null;
+    logChatSendDebug("info", "client.dispatch.start", {
+      traceId,
+      conversationId,
+      viewerUserId,
+      viewerMembershipId,
+      messageKind,
+      plaintextLength: plaintext.length,
+      hasAttachment: Boolean(attachment),
+      replyToMessageId: replyToMessageId ?? null,
+      durationKey: durationKey ?? defaultDurationKey,
+      optimisticMessageId: optimisticMessageId ?? null,
+      hasViewerIdentity: Boolean(viewerIdentity),
+      hasLocalChatKey: Boolean(localChatKey),
+      hasPeerIdentity: Boolean(peerIdentity),
+      realtimeState
+    });
+
     const chatReady = await ensureChatIdentity();
     if (!chatReady) {
+      logChatSendDebug("warn", "client.dispatch.chat-not-ready", {
+        traceId,
+        conversationId,
+        keySetupError: keySetupError ?? null
+      });
       throw new Error(keySetupError ?? "Secure chat is not ready on this device.");
     }
 
-    const currentLocalKey = localChatKey ?? (await loadStoredChatKeyMaterial(viewerUserId));
+    const currentLocalKey = await getCompatibleLocalChatKey();
     if (!currentLocalKey) {
+      logChatSendDebug("error", "client.dispatch.missing-local-key", {
+        traceId,
+        conversationId,
+        viewerIdentityPublicKey: viewerIdentity?.publicKey ? `${viewerIdentity.publicKey.slice(0, 12)}...` : null
+      });
       throw new Error("This device is missing your private E2EE key.");
     }
 
     if (!peerIdentity) {
+      logChatSendDebug("warn", "client.dispatch.missing-peer-key", {
+        traceId,
+        conversationId
+      });
       throw new Error("This user has not finished setting up E2EE chat yet.");
     }
 
     const encryptedPayload = await encryptChatText(plaintext, currentLocalKey, peerIdentity);
+    logChatSendDebug("info", "client.dispatch.encrypted", {
+      traceId,
+      conversationId,
+      cipherAlgorithm: encryptedPayload.cipherAlgorithm,
+      cipherTextLength: encryptedPayload.cipherText.length,
+      cipherIvLength: encryptedPayload.cipherIv.length,
+      senderPublicKeyPrefix: currentLocalKey.publicKey.slice(0, 12),
+      recipientPublicKeyPrefix: getChatIdentityPublicKeyPrefix(peerIdentity)
+    });
+
     const response = await fetchChatEndpoint(`/api/chats/${encodeURIComponent(conversationId)}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
+        debugTraceId: traceId,
         messageKind,
         replyToMessageId: replyToMessageId ?? null,
         durationKey: durationKey ?? defaultDurationKey,
@@ -5054,6 +5318,15 @@ export function CampusMessagesShell({
       })
     });
     const data = await response.json().catch(() => null);
+    logChatSendDebug(response.ok ? "info" : "error", "client.dispatch.response", {
+      traceId,
+      conversationId,
+      status: response.status,
+      ok: response.ok,
+      messageId: data?.item?.id ?? null,
+      errorCode: data?.error?.code ?? null,
+      errorMessage: data?.error?.message ?? null
+    });
 
     if (!response.ok) {
       if (response.status === 401) {
@@ -5066,6 +5339,11 @@ export function CampusMessagesShell({
     const sentMessage = data?.item as ChatMessageRecord | undefined;
     const conversationPreview = data?.conversationPreview as ChatConversationPreview | undefined;
     if (!sentMessage) {
+      logChatSendDebug("error", "client.dispatch.no-server-message", {
+        traceId,
+        conversationId,
+        responseKeys: data && typeof data === "object" ? Object.keys(data) : null
+      });
       throw new Error("Message was not confirmed by the server. Please try again.");
     }
 
@@ -5082,6 +5360,7 @@ export function CampusMessagesShell({
       }
       return next;
     });
+    rememberMessagePlaintext(conversationId, sentMessage, plaintext);
     const currentConversation = activeConversationRef.current;
     if (currentConversation?.id === conversationId) {
       commitActiveConversation({
@@ -5093,6 +5372,14 @@ export function CampusMessagesShell({
     if (conversationPreview) {
       setConversations((current) => upsertConversationItem(current, { ...conversationPreview, unreadCount: 0 }));
     }
+
+    logChatSendDebug("info", "client.dispatch.committed", {
+      traceId,
+      conversationId,
+      messageId: sentMessage.id,
+      optimisticMessageId: optimisticMessageId ?? null,
+      activeMessageCount: activeConversationRef.current?.messages.length ?? null
+    });
 
     return sentMessage;
   }
@@ -5109,7 +5396,7 @@ export function CampusMessagesShell({
       throw new Error(keySetupError ?? "Secure chat is not ready on this device.");
     }
 
-    const currentLocalKey = localChatKey ?? (await loadStoredChatKeyMaterial(viewerUserId));
+    const currentLocalKey = await getCompatibleLocalChatKey();
     if (!currentLocalKey) {
       throw new Error("This device is missing your private E2EE key.");
     }
@@ -5127,6 +5414,7 @@ export function CampusMessagesShell({
       updatedAt: new Date().toISOString()
     };
     setMessagePlaintextById((current) => ({ ...current, [message.id]: plaintext }));
+    rememberMessagePlaintext(conversationId, optimisticMessage, plaintext);
     setActiveConversation((current) =>
       current && current.id === conversationId
         ? {
@@ -5157,6 +5445,7 @@ export function CampusMessagesShell({
     }
 
     setMessagePlaintextById((current) => ({ ...current, [data.item.id]: plaintext }));
+    rememberMessagePlaintext(conversationId, data.item, plaintext);
     setActiveConversation((current) =>
       current && current.id === conversationId
         ? {
@@ -5239,6 +5528,7 @@ export function CampusMessagesShell({
     clearTypingStopTimer();
     sendTypingSignal(false);
     let failedOptimisticMessageId: string | null = null;
+    let failedDebugTraceId: string | null = null;
 
     try {
       const queuedMedia = [...pendingMediaAttachments];
@@ -5249,6 +5539,16 @@ export function CampusMessagesShell({
       if (queuedMedia.length > 0) {
         setUploadingMedia(true);
         for (const [index, mediaAttachment] of queuedMedia.entries()) {
+          const mediaTraceId = createChatSendDebugTraceId();
+          failedDebugTraceId = mediaTraceId;
+          logChatSendDebug("info", "client.compose.media-queued", {
+            traceId: mediaTraceId,
+            conversationId,
+            index,
+            fileName: mediaAttachment.name,
+            mimeType: mediaAttachment.mimeType,
+            sizeBytes: mediaAttachment.file.size
+          });
           const uploadedAttachment = await uploadPendingAttachment(mediaAttachment, {
             viewOnce: viewOnceEnabled && mediaAttachment.mediaKind !== "audio"
           });
@@ -5257,15 +5557,28 @@ export function CampusMessagesShell({
             plaintext: index === 0 ? nextMessage : "",
             messageKind: outgoingMessageKind,
             replyToMessageId: index === 0 ? queuedReplyToMessageId : null,
-            attachment: uploadedAttachment
+            attachment: uploadedAttachment,
+            debugTraceId: mediaTraceId
           });
+          failedDebugTraceId = null;
         }
       } else {
         const outgoingText = queuedShareCard
           ? serializeShareCardPayload(queuedShareCard, nextMessage || null)
           : nextMessage;
-        const optimisticMessageId = `optimistic-chat-${conversationId}-${Date.now()}`;
+        const debugTraceId = createChatSendDebugTraceId();
+        failedDebugTraceId = debugTraceId;
+        const optimisticMessageId = `optimistic-chat-${conversationId}-${debugTraceId}`;
         failedOptimisticMessageId = optimisticMessageId;
+        logChatSendDebug("info", "client.compose.optimistic-created", {
+          traceId: debugTraceId,
+          conversationId,
+          optimisticMessageId,
+          messageKind: outgoingMessageKind,
+          textLength: outgoingText.length,
+          hasShareCard: Boolean(queuedShareCard),
+          replyToMessageId: queuedReplyToMessageId ?? null
+        });
         const optimisticMessage: ChatMessageRecord = {
           id: optimisticMessageId,
           conversationId,
@@ -5314,9 +5627,11 @@ export function CampusMessagesShell({
           messageKind: outgoingMessageKind,
           replyToMessageId: queuedReplyToMessageId,
           attachment: null,
-          optimisticMessageId
+          optimisticMessageId,
+          debugTraceId
         });
         failedOptimisticMessageId = null;
+        failedDebugTraceId = null;
       }
 
       if (queuedMedia.length > 0) {
@@ -5329,6 +5644,12 @@ export function CampusMessagesShell({
       setViewOnceEnabled(false);
       focusComposerSoon();
     } catch (error) {
+      logChatSendDebug("error", "client.compose.failed", {
+        traceId: failedDebugTraceId,
+        conversationId,
+        optimisticMessageId: failedOptimisticMessageId,
+        message: error instanceof Error ? error.message : String(error)
+      });
       if (failedOptimisticMessageId) {
         removeLocalPendingMessage(conversationId, failedOptimisticMessageId);
       }
@@ -5459,32 +5780,6 @@ export function CampusMessagesShell({
   ) : null;
 
   const navItems = buildPrimaryCampusNav("messages", { unreadCount });
-
-  useEffect(() => {
-    if (!chatSetupIntent) {
-      setupRedirectedRef.current = false;
-      return;
-    }
-
-    if (!remoteKeyBackupLoaded && chatSetupIntent !== "create-identity") {
-      return;
-    }
-
-    if (!localChatKeyLoaded) {
-      return;
-    }
-
-    if (setupRedirectedRef.current) {
-      return;
-    }
-
-    setupRedirectedRef.current = true;
-    const params = new URLSearchParams({
-      intent: chatSetupIntent,
-      returnTo: "/messages"
-    });
-    router.replace(`/profile/settings/chat-privacy?${params.toString()}`);
-  }, [chatSetupIntent, localChatKeyLoaded, remoteKeyBackupLoaded, router]);
 
   return (
     <main ref={pageRef} className="spm-page">
@@ -5947,17 +6242,27 @@ export function CampusMessagesShell({
                         const swipeOffsetX = swipeReplyPreview?.messageId === message.id ? swipeReplyPreview.offsetX : 0;
                         const showSwipeReplyCue = Math.abs(swipeOffsetX) >= 10;
                         const isSelectedMessage = Boolean(selectedMessageIds[message.id]);
-                        const messageCardPayload = parseShareCardPayload(message.messageKind, messagePlaintextById[message.id]);
+                        const resolvedPlaintext =
+                          messagePlaintextById[message.id] ??
+                          readChatPlaintextMemoryCache(primaryChatKeyStorageUserId, message.id) ??
+                          "";
+                        const messageCardPayload = parseShareCardPayload(message.messageKind, resolvedPlaintext);
                         const showMessageCard = isShareCardKind(message.messageKind);
                         const showCardCaption = Boolean(messageCardPayload?.caption?.trim());
                         const isCardDecrypting =
                           showMessageCard &&
                           isE2eeCipherAlgorithm(message.cipherAlgorithm) &&
-                          !messagePlaintextById[message.id] &&
+                          !resolvedPlaintext &&
+                          !isDeletedMessage;
+                        const isTextDecrypting =
+                          !showMessageCard &&
+                          !decryptionWarning &&
+                          isE2eeCipherAlgorithm(message.cipherAlgorithm) &&
+                          !resolvedPlaintext &&
                           !isDeletedMessage;
 
                         let plaintext =
-                          messagePlaintextById[message.id] ||
+                          resolvedPlaintext ||
                           (!isE2eeCipherAlgorithm(message.cipherAlgorithm) ? message.cipherText : "") ||
                           "";
                         const attachmentKind = message.attachment?.mimeType?.startsWith("audio/")
@@ -6101,9 +6406,13 @@ export function CampusMessagesShell({
                                     <p className="spm-chat-message-text">{messageCardPayload?.caption?.trim()}</p>
                                   )}
                                 </>
+                              ) : isTextDecrypting && !shouldSuppressMediaFallbackText ? (
+                                <p className="spm-chat-message-text spm-chat-message-text-loading" aria-label="Decrypting message">
+                                  <span className="spm-chat-message-skeleton-line cs-shimmer" aria-hidden="true" />
+                                </p>
                               ) : !shouldSuppressMediaFallbackText ? (
                                 <p className={`spm-chat-message-text${isScreenshotAlert ? " spm-chat-message-text-system" : ""}`}>
-                                  {getMessageBody(message, messagePlaintextById[message.id], { isOwnMessage })}
+                                  {getMessageBody(message, resolvedPlaintext, { isOwnMessage })}
                                 </p>
                               ) : null}
 

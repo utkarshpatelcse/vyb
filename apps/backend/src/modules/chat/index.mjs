@@ -410,9 +410,45 @@ export async function handleChatRoute({ request, response, url, context }) {
       return true;
     }
 
+    const debugTraceId = requireNonEmptyString(payload.debugTraceId)
+      ? payload.debugTraceId.trim().slice(0, 80)
+      : "missing-trace";
+    const sendStartedAt = Date.now();
+    console.info("[chat-send-debug]", {
+      stage: "backend-route.send.start",
+      at: new Date().toISOString(),
+      traceId: debugTraceId,
+      conversationId: sendMatch[1],
+      viewerUserId: viewer.userId,
+      viewerMembershipId: viewer.membershipId,
+      messageKind: requireNonEmptyString(payload.messageKind) ? payload.messageKind.trim() : null,
+      durationKey: requireNonEmptyString(payload.durationKey) ? payload.durationKey.trim() : null,
+      cipherTextLength: requireNonEmptyString(payload.cipherText) ? payload.cipherText.length : null,
+      cipherIvLength: requireNonEmptyString(payload.cipherIv) ? payload.cipherIv.length : null,
+      hasAttachment: Boolean(payload.attachment)
+    });
+
     try {
-      sendJson(response, 201, await sendChatMessage(viewer, sendMatch[1], payload));
+      const result = await sendChatMessage(viewer, sendMatch[1], payload);
+      console.info("[chat-send-debug]", {
+        stage: "backend-route.send.success",
+        at: new Date().toISOString(),
+        traceId: debugTraceId,
+        conversationId: sendMatch[1],
+        messageId: result.item?.id ?? null,
+        durationMs: Date.now() - sendStartedAt
+      });
+      sendJson(response, 201, result);
     } catch (error) {
+      console.error("[chat-send-debug]", {
+        stage: "backend-route.send.failed",
+        at: new Date().toISOString(),
+        traceId: debugTraceId,
+        conversationId: sendMatch[1],
+        durationMs: Date.now() - sendStartedAt,
+        message: error instanceof Error ? error.message : String(error),
+        statusCode: Number.isInteger(error?.statusCode) ? error.statusCode : null
+      });
       sendChatFailure(response, "chat_send", resolved, error);
     }
     return true;

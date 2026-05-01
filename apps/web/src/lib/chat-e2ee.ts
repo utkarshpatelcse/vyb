@@ -8,6 +8,11 @@ const CHAT_KEY_VAULT_STORE = "private-keys";
 const CHAT_PIN_ATTEMPT_STORE = "pin-attempts";
 const CHAT_DEVICE_WRAP_KEY_STORE = "device-wrap-keys";
 const CHAT_DEVICE_WRAP_KEY_ID = "identity-private-key-wrap-v1";
+const CHAT_MESSAGE_CACHE_DB_NAME = "vyb-chat-message-cache";
+const CHAT_MESSAGE_PLAINTEXT_CACHE_STORE = "message-plaintext";
+const CHAT_MESSAGE_CACHE_KEY_STORE = "cache-keys";
+const CHAT_MESSAGE_CACHE_KEY_ID = "message-plaintext-cache-v1";
+const CHAT_MESSAGE_CACHE_ALGORITHM = "AES-GCM/message-plaintext-cache-v1";
 const CHAT_KEY_DERIVATION_CACHE = new Map<string, Promise<CryptoKey>>();
 const CHAT_KEY_BACKUP_PBKDF2_ITERATIONS = 250000;
 const CHAT_PIN_MAX_ATTEMPTS = 5;
@@ -91,6 +96,30 @@ type ChatCipherEnvelope = {
   recipientPublicKey?: string;
 };
 
+type CachedChatMessagePlaintextRecord = {
+  id: string;
+  userId: string;
+  conversationId: string;
+  messageId: string;
+  cipherFingerprint: string;
+  plaintextCipherText: string;
+  plaintextIv: string;
+  algorithm: string;
+  cachedAt: string;
+};
+
+export type ChatMessagePlaintextCacheLookup = {
+  conversationId: string;
+  messageId: string;
+  cipherText: string;
+  cipherIv?: string | null;
+};
+
+export type ChatMessagePlaintextCacheSave = ChatMessagePlaintextCacheLookup & {
+  userId: string;
+  plaintext: string;
+};
+
 type EncryptBackupOptions = {
   pin: string;
   userSalt: string;
@@ -156,12 +185,57 @@ function openChatKeyVault() {
   });
 }
 
+function openChatMessageCache() {
+  const indexedDb = ensureIndexedDb();
+  if (!indexedDb) {
+    return Promise.resolve<IDBDatabase | null>(null);
+  }
+
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDb.open(CHAT_MESSAGE_CACHE_DB_NAME, 1);
+
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(CHAT_MESSAGE_PLAINTEXT_CACHE_STORE)) {
+        const store = database.createObjectStore(CHAT_MESSAGE_PLAINTEXT_CACHE_STORE, { keyPath: "id" });
+        store.createIndex("userId", "userId", { unique: false });
+        store.createIndex("conversationId", "conversationId", { unique: false });
+      }
+      if (!database.objectStoreNames.contains(CHAT_MESSAGE_CACHE_KEY_STORE)) {
+        database.createObjectStore(CHAT_MESSAGE_CACHE_KEY_STORE, { keyPath: "id" });
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("Could not open the secure chat message cache."));
+  });
+}
+
 async function withChatKeyVaultStore<T>(
   mode: IDBTransactionMode,
   runner: (store: IDBObjectStore) => Promise<T>,
   storeName = CHAT_KEY_VAULT_STORE
 ) {
   const database = await openChatKeyVault();
+  if (!database) {
+    return null;
+  }
+
+  try {
+    const transaction = database.transaction(storeName, mode);
+    const store = transaction.objectStore(storeName);
+    return await runner(store);
+  } finally {
+    database.close();
+  }
+}
+
+async function withChatMessageCacheStore<T>(
+  mode: IDBTransactionMode,
+  runner: (store: IDBObjectStore) => Promise<T>,
+  storeName = CHAT_MESSAGE_PLAINTEXT_CACHE_STORE
+) {
+  const database = await openChatMessageCache();
   if (!database) {
     return null;
   }
@@ -188,6 +262,76 @@ function waitForTransaction(transaction: IDBTransaction) {
     transaction.onerror = () => reject(transaction.error ?? new Error("IndexedDB transaction failed."));
     transaction.onabort = () => reject(transaction.error ?? new Error("IndexedDB transaction was aborted."));
   });
+}
+
+function getChatMessagePlaintextCacheId(userId: string, messageId: string) {
+  return `${userId}:${messageId}`;
+}
+
+async function getChatMessageCipherFingerprint(cipherText: string, cipherIv?: string | null) {
+  const digest = await ensureBrowserCrypto().digest("SHA-256", bufferFromText(`${cipherIv ?? ""}:${cipherText}`));
+  return bufferToBase64(digest);
+}
+
+async function getDeviceMessagePlaintextCacheKey() {
+  const stored = await withChatMessageCacheStore(
+    "readonly",
+    async (store) => {
+      const request = store.get(CHAT_MESSAGE_CACHE_KEY_ID);
+      return (await readIdbRequest(request)) as { id: string; key: CryptoKey } | undefined;
+    },
+    CHAT_MESSAGE_CACHE_KEY_STORE
+  );
+
+  if (
+    stored?.id === CHAT_MESSAGE_CACHE_KEY_ID &&
+    isCryptoKey(stored.key) &&
+    stored.key.usages.includes("encrypt") &&
+    stored.key.usages.includes("decrypt")
+  ) {
+    return stored.key;
+  }
+
+  const key = await ensureBrowserCrypto().generateKey(
+    {
+      name: "AES-GCM",
+      length: 256
+    },
+    false,
+    ["encrypt", "decrypt"]
+  );
+
+  await withChatMessageCacheStore(
+    "readwrite",
+    async (store) => {
+      const transaction = store.transaction;
+      store.put({
+        id: CHAT_MESSAGE_CACHE_KEY_ID,
+        key,
+        algorithm: CHAT_MESSAGE_CACHE_ALGORITHM,
+        createdAt: new Date().toISOString()
+      });
+      await waitForTransaction(transaction);
+      return null;
+    },
+    CHAT_MESSAGE_CACHE_KEY_STORE
+  );
+
+  return key;
+}
+
+function isCachedChatMessagePlaintextRecord(value: unknown): value is CachedChatMessagePlaintextRecord {
+  const parsed = value as Partial<CachedChatMessagePlaintextRecord> | null | undefined;
+  return Boolean(
+    parsed &&
+      typeof parsed.id === "string" &&
+      typeof parsed.userId === "string" &&
+      typeof parsed.messageId === "string" &&
+      typeof parsed.cipherFingerprint === "string" &&
+      typeof parsed.plaintextCipherText === "string" &&
+      typeof parsed.plaintextIv === "string" &&
+      parsed.algorithm === CHAT_MESSAGE_CACHE_ALGORITHM
+  );
 }
 
 function bufferFromText(value: string) {
@@ -1442,6 +1586,119 @@ export async function decryptChatText(
   );
 
   return new TextDecoder().decode(decrypted);
+}
+
+export async function loadCachedChatMessagePlaintexts(
+  userId: string,
+  items: ChatMessagePlaintextCacheLookup[]
+) {
+  if (typeof window === "undefined" || items.length === 0) {
+    return {};
+  }
+
+  try {
+    const uniqueItems = Array.from(
+      new Map(items.map((item) => [item.messageId, item])).values()
+    );
+    const fingerprints = new Map(
+      await Promise.all(
+        uniqueItems.map(async (item) => [
+          item.messageId,
+          await getChatMessageCipherFingerprint(item.cipherText, item.cipherIv)
+        ] as const)
+      )
+    );
+    const cachedRows = await withChatMessageCacheStore("readonly", async (store) => {
+      const requests = uniqueItems.map((item) => store.get(getChatMessagePlaintextCacheId(userId, item.messageId)));
+      return (await Promise.all(requests.map((request) => readIdbRequest(request)))) as unknown[];
+    });
+
+    if (!cachedRows?.length) {
+      return {};
+    }
+
+    const cacheKey = await getDeviceMessagePlaintextCacheKey();
+    const entries = await Promise.all(
+      cachedRows.map(async (row) => {
+        if (!isCachedChatMessagePlaintextRecord(row)) {
+          return null;
+        }
+
+        const item = uniqueItems.find((candidate) => candidate.messageId === row.messageId);
+        if (
+          !item ||
+          row.userId !== userId ||
+          row.conversationId !== item.conversationId ||
+          row.cipherFingerprint !== fingerprints.get(item.messageId)
+        ) {
+          return null;
+        }
+
+        const decrypted = await ensureBrowserCrypto().decrypt(
+          {
+            name: "AES-GCM",
+            iv: new Uint8Array(base64ToBuffer(row.plaintextIv))
+          },
+          cacheKey,
+          base64ToBuffer(row.plaintextCipherText)
+        );
+        return [row.messageId, bufferToText(decrypted)] as const;
+      })
+    );
+
+    return Object.fromEntries(
+      entries.filter((entry): entry is readonly [string, string] => Array.isArray(entry))
+    );
+  } catch {
+    return {};
+  }
+}
+
+export async function saveCachedChatMessagePlaintexts(items: ChatMessagePlaintextCacheSave[]) {
+  if (typeof window === "undefined" || items.length === 0) {
+    return;
+  }
+
+  try {
+    const cacheKey = await getDeviceMessagePlaintextCacheKey();
+    const uniqueItems = Array.from(
+      new Map(items.map((item) => [`${item.userId}:${item.messageId}`, item])).values()
+    );
+    const records = await Promise.all(
+      uniqueItems.map(async (item) => {
+        const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+        const plaintextCipherText = await ensureBrowserCrypto().encrypt(
+          {
+            name: "AES-GCM",
+            iv
+          },
+          cacheKey,
+          bufferFromText(item.plaintext)
+        );
+
+        return {
+          id: getChatMessagePlaintextCacheId(item.userId, item.messageId),
+          userId: item.userId,
+          conversationId: item.conversationId,
+          messageId: item.messageId,
+          cipherFingerprint: await getChatMessageCipherFingerprint(item.cipherText, item.cipherIv),
+          plaintextCipherText: bufferToBase64(plaintextCipherText),
+          plaintextIv: bufferToBase64(iv.buffer),
+          algorithm: CHAT_MESSAGE_CACHE_ALGORITHM,
+          cachedAt: new Date().toISOString()
+        } satisfies CachedChatMessagePlaintextRecord;
+      })
+    );
+
+    await withChatMessageCacheStore("readwrite", async (store) => {
+      const transaction = store.transaction;
+      records.forEach((record) => store.put(record));
+      await waitForTransaction(transaction);
+      return null;
+    });
+  } catch {
+    // Plaintext cache is an optional local speed-up. E2EE still works without it.
+  }
 }
 
 

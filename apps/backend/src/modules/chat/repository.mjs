@@ -204,7 +204,7 @@ const LIST_CHAT_MESSAGES_BY_CONVERSATION_QUERY = `
         conversationId: { eq: $conversationId }
         deletedAt: { isNull: true }
       }
-      orderBy: [{ createdAt: ASC }]
+      orderBy: [{ createdAt: DESC }]
       limit: $limit
     ) {
       id
@@ -2750,8 +2750,32 @@ export async function getChatConversation(viewer, conversationId) {
 }
 
 export async function sendChatMessage(viewer, conversationId, payload) {
+  const debugTraceId = normalizeString(payload?.debugTraceId)?.slice(0, 80) ?? "missing-trace";
+  const sendStartedAt = Date.now();
+  console.info("[chat-send-debug]", {
+    stage: "repository.send.start",
+    at: new Date().toISOString(),
+    traceId: debugTraceId,
+    conversationId,
+    viewerUserId: viewer.userId,
+    viewerMembershipId: viewer.membershipId,
+    messageKind: normalizeString(payload?.messageKind) ?? "text",
+    durationKey: normalizeString(payload?.durationKey) ?? CHAT_DEFAULT_MESSAGE_TTL_KEY,
+    hasCipherText: Boolean(normalizeString(payload?.cipherText)),
+    hasCipherIv: Boolean(normalizeString(payload?.cipherIv)),
+    hasAttachment: Boolean(payload?.attachment)
+  });
+
   const access = await resolveConversationAccess(viewer, conversationId);
   if (!access) {
+    console.warn("[chat-send-debug]", {
+      stage: "repository.send.no-access",
+      at: new Date().toISOString(),
+      traceId: debugTraceId,
+      conversationId,
+      viewerUserId: viewer.userId,
+      viewerMembershipId: viewer.membershipId
+    });
     throw new Error("We could not find that conversation.");
   }
 
@@ -2761,6 +2785,13 @@ export async function sendChatMessage(viewer, conversationId, payload) {
   });
 
   if (!viewerIdentity) {
+    console.warn("[chat-send-debug]", {
+      stage: "repository.send.no-viewer-identity",
+      at: new Date().toISOString(),
+      traceId: debugTraceId,
+      conversationId,
+      viewerUserId: viewer.userId
+    });
     throw new Error("Set up secure chat before sending a message.");
   }
 
@@ -2783,6 +2814,14 @@ export async function sendChatMessage(viewer, conversationId, payload) {
   const replyToMessageId = normalizeString(payload.replyToMessageId) ?? null;
 
   if (!cipherText || !cipherIv) {
+    console.warn("[chat-send-debug]", {
+      stage: "repository.send.incomplete-payload",
+      at: new Date().toISOString(),
+      traceId: debugTraceId,
+      conversationId,
+      hasCipherText: Boolean(cipherText),
+      hasCipherIv: Boolean(cipherIv)
+    });
     throw new Error("Message payload is incomplete.");
   }
 
@@ -2799,6 +2838,21 @@ export async function sendChatMessage(viewer, conversationId, payload) {
     payload.attachment && typeof payload.attachment === "object" ? payload.attachment : null,
     messageKind
   );
+  console.info("[chat-send-debug]", {
+    stage: "repository.send.before-create-mutation",
+    at: new Date().toISOString(),
+    traceId: debugTraceId,
+    conversationId,
+    messageId,
+    senderUserId: viewer.userId,
+    senderMembershipId: viewer.membershipId,
+    senderIdentityId: viewerIdentity.id,
+    messageKind,
+    replyToMessageId,
+    durationKey: normalizeString(payload?.durationKey) ?? CHAT_DEFAULT_MESSAGE_TTL_KEY,
+    hasAttachment: Boolean(attachment),
+    durationMs: Date.now() - sendStartedAt
+  });
 
   await getChatDc().executeGraphql(CREATE_CHAT_MESSAGE_MUTATION, {
     operationName: "CreateChatMessage",
@@ -2823,6 +2877,14 @@ export async function sendChatMessage(viewer, conversationId, payload) {
       attachmentDurationMs: attachment?.durationMs ?? null
     }
   });
+  console.info("[chat-send-debug]", {
+    stage: "repository.send.after-create-mutation",
+    at: new Date().toISOString(),
+    traceId: debugTraceId,
+    conversationId,
+    messageId,
+    durationMs: Date.now() - sendStartedAt
+  });
 
   await getChatDc().executeGraphql(UPDATE_CHAT_CONVERSATION_LAST_MESSAGE_MUTATION, {
     operationName: "UpdateChatConversationLastMessage",
@@ -2831,8 +2893,26 @@ export async function sendChatMessage(viewer, conversationId, payload) {
       lastMessageId: messageId
     }
   });
+  console.info("[chat-send-debug]", {
+    stage: "repository.send.after-last-message-update",
+    at: new Date().toISOString(),
+    traceId: debugTraceId,
+    conversationId,
+    messageId,
+    durationMs: Date.now() - sendStartedAt
+  });
 
   const storedMessageRaw = await getChatMessageById(messageId);
+  if (!storedMessageRaw) {
+    console.error("[chat-send-debug]", {
+      stage: "repository.send.created-message-not-found",
+      at: new Date().toISOString(),
+      traceId: debugTraceId,
+      conversationId,
+      messageId,
+      durationMs: Date.now() - sendStartedAt
+    });
+  }
   const storedMessage = await hydrateChatMessage(storedMessageRaw);
   const preview = await buildConversationPreview(viewer, await getChatConversationById(conversationId), access.viewerParticipant, access.peerParticipant);
 
@@ -2860,6 +2940,14 @@ export async function sendChatMessage(viewer, conversationId, payload) {
       createdAt: storedMessage.createdAt,
       item: storedMessage
     }
+  });
+  console.info("[chat-send-debug]", {
+    stage: "repository.send.realtime-emitted",
+    at: new Date().toISOString(),
+    traceId: debugTraceId,
+    conversationId,
+    messageId,
+    durationMs: Date.now() - sendStartedAt
   });
 
   return {

@@ -8,7 +8,7 @@ import type {
   ChatTrustedDevicePlatform,
   ChatTrustedDeviceRecord
 } from "@vyb/contracts";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { buildPrimaryCampusNav, CampusDesktopNavigation } from "./campus-navigation";
 import { ChatPrivacyUI } from "./chat-privacy-ui";
@@ -28,12 +28,12 @@ import {
   normalizeRecoveryPhrase,
   normalizeSecurityPin,
   saveStoredChatKeyMaterial,
-  syncStoredChatKeyIdentity,
   type StoredChatKeyMaterial
 } from "../lib/chat-e2ee";
 
 type SecuritySettingsShellProps = {
   viewerUserId: string;
+  viewerKeyStorageUserIds?: string[];
   viewerName: string;
   viewerUsername: string;
   collegeName: string;
@@ -159,6 +159,7 @@ async function fetchSecurityJson<T>(path: string, init?: RequestInit) {
 
 export function SecuritySettingsShell({
   viewerUserId,
+  viewerKeyStorageUserIds = [],
   viewerName,
   viewerUsername,
   collegeName,
@@ -194,30 +195,66 @@ export function SecuritySettingsShell({
   const localKeyRef = useRef<StoredChatKeyMaterial | null>(null);
   const intentHandledRef = useRef<string | null>(null);
   const trustedDeviceSyncRef = useRef<string | null>(null);
+  const chatKeyStorageUserIds = useMemo(() => {
+    const ids = [viewerUserId, ...viewerKeyStorageUserIds]
+      .map((id) => id.trim())
+      .filter(Boolean);
+    return Array.from(new Set(ids));
+  }, [viewerKeyStorageUserIds, viewerUserId]);
+  const primaryChatKeyStorageUserId = chatKeyStorageUserIds[0] ?? viewerUserId;
 
   useEffect(() => {
     localKeyRef.current = localChatKey;
   }, [localChatKey]);
+
+  async function loadStoredChatKeyMaterialForViewer() {
+    for (const storageUserId of chatKeyStorageUserIds) {
+      const stored = await loadStoredChatKeyMaterial(storageUserId).catch(() => null);
+      if (stored) {
+        return stored;
+      }
+    }
+
+    return null;
+  }
+
+  async function saveStoredChatKeyMaterialForViewer(material: StoredChatKeyMaterial) {
+    const normalized =
+      material.userId === primaryChatKeyStorageUserId
+        ? material
+        : {
+            ...material,
+            userId: primaryChatKeyStorageUserId
+          };
+    await saveStoredChatKeyMaterial(normalized);
+    return (await loadStoredChatKeyMaterial(primaryChatKeyStorageUserId).catch(() => null)) ?? normalized;
+  }
 
   useEffect(() => {
     let cancelled = false;
 
     void (async () => {
       try {
-        const stored = await loadStoredChatKeyMaterial(viewerUserId);
+        const stored = await loadStoredChatKeyMaterialForViewer();
         if (cancelled) {
           return;
         }
 
         if (stored && viewerIdentity && isStoredChatKeyCompatible(stored, viewerIdentity)) {
-          const synced = (await syncStoredChatKeyIdentity(viewerUserId, viewerIdentity)) ?? stored;
+          const synced = await saveStoredChatKeyMaterialForViewer({
+            ...stored,
+            identityId: viewerIdentity.id,
+            algorithm: viewerIdentity.algorithm,
+            keyVersion: viewerIdentity.keyVersion,
+            updatedAt: viewerIdentity.updatedAt
+          });
           if (!cancelled) {
             setLocalChatKey(synced);
           }
           return;
         }
 
-        setLocalChatKey(stored);
+        setLocalChatKey(viewerIdentity ? null : stored);
       } catch (error) {
         if (!cancelled) {
           setPageError(error instanceof Error ? error.message : "We could not load your secure session on this device.");
@@ -228,7 +265,7 @@ export function SecuritySettingsShell({
     return () => {
       cancelled = true;
     };
-  }, [viewerIdentity, viewerUserId]);
+  }, [chatKeyStorageUserIds, primaryChatKeyStorageUserId, viewerIdentity]);
 
   useEffect(() => {
     let cancelled = false;
@@ -676,9 +713,8 @@ export function SecuritySettingsShell({
             updatedAt: viewerIdentity.updatedAt
           }
         : material;
-      await saveStoredChatKeyMaterial(synced);
-      const hardened = await loadStoredChatKeyMaterial(viewerUserId);
-      setLocalChatKey(hardened ?? synced);
+      const saved = await saveStoredChatKeyMaterialForViewer(synced);
+      setLocalChatKey(saved);
       window.sessionStorage.removeItem(getChatPairingPrivateKeyStorageKey(pairing.id));
       const claimed = await fetchSecurityJson<{ pairing: ChatDevicePairingSession }>(
         `/api/chats/device-pairings/${encodeURIComponent(pairing.id)}/claim`,
@@ -707,10 +743,15 @@ export function SecuritySettingsShell({
       return localKeyRef.current;
     }
 
-    const stored = localKeyRef.current ?? (await loadStoredChatKeyMaterial(viewerUserId));
+    const stored = localKeyRef.current ?? (await loadStoredChatKeyMaterialForViewer());
     if (viewerIdentity && stored && isStoredChatKeyCompatible(stored, viewerIdentity)) {
-      const synced = (await syncStoredChatKeyIdentity(viewerUserId, viewerIdentity)) ?? stored;
-      await saveStoredChatKeyMaterial(synced);
+      const synced = await saveStoredChatKeyMaterialForViewer({
+        ...stored,
+        identityId: viewerIdentity.id,
+        algorithm: viewerIdentity.algorithm,
+        keyVersion: viewerIdentity.keyVersion,
+        updatedAt: viewerIdentity.updatedAt
+      });
       setLocalChatKey(synced);
       return synced;
     }
@@ -727,27 +768,26 @@ export function SecuritySettingsShell({
       );
     }
 
-    const material = stored ?? (await createStoredChatKeyMaterial(viewerUserId));
-    await saveStoredChatKeyMaterial(material);
-    setLocalChatKey(material);
+    const material = stored ?? (await createStoredChatKeyMaterial(primaryChatKeyStorageUserId));
+    const savedMaterial = await saveStoredChatKeyMaterialForViewer(material);
+    setLocalChatKey(savedMaterial);
 
     const data = await fetchSecurityJson<{ identity: ChatIdentitySummary }>("/api/chats/keys", {
       method: "PUT",
       body: JSON.stringify({
-        publicKey: material.publicKey,
-        algorithm: material.algorithm || CHAT_IDENTITY_ALGORITHM,
-        keyVersion: material.keyVersion
+        publicKey: savedMaterial.publicKey,
+        algorithm: savedMaterial.algorithm || CHAT_IDENTITY_ALGORITHM,
+        keyVersion: savedMaterial.keyVersion
       })
     });
 
-    const synced = (await syncStoredChatKeyIdentity(viewerUserId, data.identity)) ?? {
-      ...material,
+    const synced = await saveStoredChatKeyMaterialForViewer({
+      ...savedMaterial,
       identityId: data.identity.id,
       algorithm: data.identity.algorithm,
       keyVersion: data.identity.keyVersion,
       updatedAt: data.identity.updatedAt
-    };
-    await saveStoredChatKeyMaterial(synced);
+    });
     setViewerIdentity(data.identity);
     setLocalChatKey(synced);
     return synced;
@@ -936,18 +976,18 @@ export function SecuritySettingsShell({
         ? await verifyPinProtectedBackup(secret)
         : await decryptStoredChatKeyMaterialFromBackup(remoteKeyBackup, normalizeRecoveryPhrase(secret));
       const nextIdentity = viewerIdentity ?? initialViewerIdentity;
-      const synced = nextIdentity
-        ? (await syncStoredChatKeyIdentity(viewerUserId, nextIdentity)) ?? {
+      const synced = await saveStoredChatKeyMaterialForViewer(
+        nextIdentity
+          ? {
             ...material,
             identityId: nextIdentity.id,
             algorithm: nextIdentity.algorithm,
             keyVersion: nextIdentity.keyVersion,
             updatedAt: nextIdentity.updatedAt
           }
-        : material;
-      await saveStoredChatKeyMaterial(synced);
-      const hardened = await loadStoredChatKeyMaterial(viewerUserId);
-      setLocalChatKey(hardened ?? synced);
+          : material
+      );
+      setLocalChatKey(synced);
       setRestoreSecret("");
       setPageSuccess("Secure session restored on this device.");
       if (returnTo) {

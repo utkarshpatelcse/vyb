@@ -2014,6 +2014,22 @@
   display: inline-block;
 }
 
+.spm-chat-message-text-loading {
+  min-width: 8rem;
+  width: min(14rem, 48vw);
+}
+
+.spm-chat-message-text-loading::after {
+  display: none;
+}
+
+.spm-chat-message-skeleton-line {
+  display: block;
+  width: 100%;
+  height: 1rem;
+  border-radius: 999px;
+}
+
 .spm-chat-message-text-system {
   font-size: 0.82rem;
   line-height: 1.45;
