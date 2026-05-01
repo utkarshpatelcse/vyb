@@ -1,5 +1,55 @@
-query GetConnectLevelStore($id: String!) @auth(level: NO_ACCESS) {
-  connectLevelStore(key: { id: $id }) {
+query GetGameLevel($id: String!) @auth(level: NO_ACCESS) {
+  gamesLevel(key: { id: $id }) {
+    id
+    payloadJson
+    totalLevels
+    launchDate
+    checksum
+    updatedAt
+  }
+}
+
+mutation CreateGameLevel(
+  $id: String!
+  $payloadJson: String!
+  $totalLevels: Int!
+  $launchDate: String
+  $checksum: String
+) @auth(level: NO_ACCESS) @transaction {
+  gamesLevel_insert(
+    data: {
+      id: $id
+      payloadJson: $payloadJson
+      totalLevels: $totalLevels
+      launchDate: $launchDate
+      checksum: $checksum
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation UpdateGameLevel(
+  $id: String!
+  $payloadJson: String!
+  $totalLevels: Int!
+  $launchDate: String
+  $checksum: String
+) @auth(level: NO_ACCESS) @transaction {
+  gamesLevel_update(
+    key: { id: $id }
+    data: {
+      payloadJson: $payloadJson
+      totalLevels: $totalLevels
+      launchDate: $launchDate
+      checksum: $checksum
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+query GetConnectLevelStore($id: String!) @auth(level: NO_ACCESS) @retired(reason: "Use GetGameLevel with gamesLevel.") {
+  connectLevelStore: gamesLevel(key: { id: $id }) {
     id
     payloadJson
     totalLevels
@@ -15,8 +65,8 @@ mutation CreateConnectLevelStore(
   $totalLevels: Int!
   $launchDate: String
   $checksum: String
-) @auth(level: NO_ACCESS) @transaction {
-  connectLevelStore_insert(
+) @auth(level: NO_ACCESS) @transaction @retired(reason: "Use CreateGameLevel with gamesLevel_insert.") {
+  connectLevelStore_insert: gamesLevel_insert(
     data: {
       id: $id
       payloadJson: $payloadJson
@@ -35,8 +85,8 @@ mutation UpdateConnectLevelStore(
   $totalLevels: Int!
   $launchDate: String
   $checksum: String
-) @auth(level: NO_ACCESS) @transaction {
-  connectLevelStore_update(
+) @auth(level: NO_ACCESS) @transaction @retired(reason: "Use UpdateGameLevel with gamesLevel_update.") {
+  connectLevelStore_update: gamesLevel_update(
     key: { id: $id }
     data: {
       payloadJson: $payloadJson
@@ -48,11 +98,11 @@ mutation UpdateConnectLevelStore(
   )
 }
 
-query GetScribbleWordStore($id: String!) @auth(level: NO_ACCESS) {
-  scribbleWordStore(key: { id: $id }) {
+query GetScribbleWordStore($id: String!) @auth(level: NO_ACCESS) @retired(reason: "Use GetGameLevel with gamesLevel.") {
+  scribbleWordStore: gamesLevel(key: { id: $id }) {
     id
     payloadJson
-    totalWords
+    totalWords: totalLevels
     checksum
     updatedAt
   }
@@ -63,12 +113,12 @@ mutation CreateScribbleWordStore(
   $payloadJson: String!
   $totalWords: Int!
   $checksum: String
-) @auth(level: NO_ACCESS) @transaction {
-  scribbleWordStore_insert(
+) @auth(level: NO_ACCESS) @transaction @retired(reason: "Use CreateGameLevel with gamesLevel_insert.") {
+  scribbleWordStore_insert: gamesLevel_insert(
     data: {
       id: $id
       payloadJson: $payloadJson
-      totalWords: $totalWords
+      totalLevels: $totalWords
       checksum: $checksum
       createdAt_expr: "request.time"
       updatedAt_expr: "request.time"
@@ -81,12 +131,12 @@ mutation UpdateScribbleWordStore(
   $payloadJson: String!
   $totalWords: Int!
   $checksum: String
-) @auth(level: NO_ACCESS) @transaction {
-  scribbleWordStore_update(
+) @auth(level: NO_ACCESS) @transaction @retired(reason: "Use UpdateGameLevel with gamesLevel_update.") {
+  scribbleWordStore_update: gamesLevel_update(
     key: { id: $id }
     data: {
       payloadJson: $payloadJson
-      totalWords: $totalWords
+      totalLevels: $totalWords
       checksum: $checksum
       updatedAt_expr: "request.time"
     }

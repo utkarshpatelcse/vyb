@@ -7,7 +7,7 @@ import { getFirebaseDataConnect, loadRootEnv } from "../packages/config/src/inde
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const defaultSeedPath = path.join(workspaceRoot, "data", "connect-levels.json");
 const seedPath = path.resolve(process.argv[2] ?? process.env.VYB_CONNECT_LEVELS_PATH ?? defaultSeedPath);
-const storeId = process.env.VYB_CONNECT_LEVEL_STORE_ID ?? "official-1000";
+const storeId = process.env.VYB_CONNECT_GAME_LEVEL_STORE_ID ?? process.env.VYB_CONNECT_LEVEL_STORE_ID ?? "connect-1000-levels";
 
 const connectorConfig = {
   connector: "connect",
@@ -15,9 +15,9 @@ const connectorConfig = {
   location: "asia-south1"
 };
 
-const GET_CONNECT_LEVEL_STORE_QUERY = `
-  query GetConnectLevelStoreSeed($id: String!) {
-    connectLevelStore(key: { id: $id }) {
+const GET_GAME_LEVEL_QUERY = `
+  query GetGameLevelSeed($id: String!) {
+    gamesLevel(key: { id: $id }) {
       id
       checksum
       totalLevels
@@ -26,15 +26,15 @@ const GET_CONNECT_LEVEL_STORE_QUERY = `
   }
 `;
 
-const CREATE_CONNECT_LEVEL_STORE_MUTATION = `
-  mutation CreateConnectLevelStoreSeed(
+const CREATE_GAME_LEVEL_MUTATION = `
+  mutation CreateGameLevelSeed(
     $id: String!
     $payloadJson: String!
     $totalLevels: Int!
     $launchDate: String
     $checksum: String
   ) {
-    connectLevelStore_insert(
+    gamesLevel_insert(
       data: {
         id: $id
         payloadJson: $payloadJson
@@ -50,15 +50,15 @@ const CREATE_CONNECT_LEVEL_STORE_MUTATION = `
   }
 `;
 
-const UPDATE_CONNECT_LEVEL_STORE_MUTATION = `
-  mutation UpdateConnectLevelStoreSeed(
+const UPDATE_GAME_LEVEL_MUTATION = `
+  mutation UpdateGameLevelSeed(
     $id: String!
     $payloadJson: String!
     $totalLevels: Int!
     $launchDate: String
     $checksum: String
   ) {
-    connectLevelStore_update(
+    gamesLevel_update(
       key: { id: $id }
       data: {
         payloadJson: $payloadJson
@@ -172,23 +172,23 @@ const variables = {
 };
 
 const dc = getFirebaseDataConnect(connectorConfig);
-const existing = await dc.executeGraphqlRead(GET_CONNECT_LEVEL_STORE_QUERY, {
-  operationName: "GetConnectLevelStoreSeed",
+const existing = await dc.executeGraphqlRead(GET_GAME_LEVEL_QUERY, {
+  operationName: "GetGameLevelSeed",
   variables: {
     id: storeId
   }
 });
 
-if (existing.data?.connectLevelStore) {
-  await dc.executeGraphql(UPDATE_CONNECT_LEVEL_STORE_MUTATION, {
-    operationName: "UpdateConnectLevelStoreSeed",
+if (existing.data?.gamesLevel) {
+  await dc.executeGraphql(UPDATE_GAME_LEVEL_MUTATION, {
+    operationName: "UpdateGameLevelSeed",
     variables
   });
-  console.log(`Updated Connect level store '${storeId}' with ${levels.length} levels (${checksum}).`);
+  console.log(`Updated game level store '${storeId}' with ${levels.length} Connect levels (${checksum}).`);
 } else {
-  await dc.executeGraphql(CREATE_CONNECT_LEVEL_STORE_MUTATION, {
-    operationName: "CreateConnectLevelStoreSeed",
+  await dc.executeGraphql(CREATE_GAME_LEVEL_MUTATION, {
+    operationName: "CreateGameLevelSeed",
     variables
   });
-  console.log(`Created Connect level store '${storeId}' with ${levels.length} levels (${checksum}).`);
+  console.log(`Created game level store '${storeId}' with ${levels.length} Connect levels (${checksum}).`);
 }

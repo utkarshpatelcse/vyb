@@ -8,17 +8,14 @@ This README will guide you through the process of using the generated JavaScript
 - [**Accessing the connector**](#accessing-the-connector)
   - [*Connecting to the local Emulator*](#connecting-to-the-local-emulator)
 - [**Queries**](#queries)
-  - [*GetConnectLevelStore*](#getconnectlevelstore)
-  - [*GetScribbleWordStore*](#getscribblewordstore)
+  - [*GetGameLevel*](#getgamelevel)
   - [*ListConnectSessionsByTenant*](#listconnectsessionsbytenant)
   - [*ListConnectScoresByTenant*](#listconnectscoresbytenant)
   - [*GetConnectSessionByKey*](#getconnectsessionbykey)
   - [*GetConnectScoreByKey*](#getconnectscorebykey)
 - [**Mutations**](#mutations)
-  - [*CreateConnectLevelStore*](#createconnectlevelstore)
-  - [*UpdateConnectLevelStore*](#updateconnectlevelstore)
-  - [*CreateScribbleWordStore*](#createscribblewordstore)
-  - [*UpdateScribbleWordStore*](#updatescribblewordstore)
+  - [*CreateGameLevel*](#creategamelevel)
+  - [*UpdateGameLevel*](#updategamelevel)
   - [*CreateConnectSession*](#createconnectsession)
   - [*UpdateConnectSession*](#updateconnectsession)
   - [*CreateConnectScore*](#createconnectscore)
@@ -69,234 +66,119 @@ The following is true for both the action shortcut function and the `QueryRef` f
 
 Below are examples of how to use the `connect` connector's generated functions to execute each query. You can also follow the examples from the [Data Connect documentation](https://firebase.google.com/docs/data-connect/web-sdk#using-queries).
 
-## GetConnectLevelStore
-You can execute the `GetConnectLevelStore` query using the following action shortcut function, or by calling `executeQuery()` after calling the following `QueryRef` function, both of which are defined in [connect-admin-sdk/index.d.ts](./index.d.ts):
+## GetGameLevel
+You can execute the `GetGameLevel` query using the following action shortcut function, or by calling `executeQuery()` after calling the following `QueryRef` function, both of which are defined in [connect-admin-sdk/index.d.ts](./index.d.ts):
 ```typescript
-getConnectLevelStore(vars: GetConnectLevelStoreVariables, options?: ExecuteQueryOptions): QueryPromise<GetConnectLevelStoreData, GetConnectLevelStoreVariables>;
+getGameLevel(vars: GetGameLevelVariables, options?: ExecuteQueryOptions): QueryPromise<GetGameLevelData, GetGameLevelVariables>;
 
-interface GetConnectLevelStoreRef {
+interface GetGameLevelRef {
   ...
   /* Allow users to create refs without passing in DataConnect */
-  (vars: GetConnectLevelStoreVariables): QueryRef<GetConnectLevelStoreData, GetConnectLevelStoreVariables>;
+  (vars: GetGameLevelVariables): QueryRef<GetGameLevelData, GetGameLevelVariables>;
 }
-export const getConnectLevelStoreRef: GetConnectLevelStoreRef;
+export const getGameLevelRef: GetGameLevelRef;
 ```
 You can also pass in a `DataConnect` instance to the action shortcut function or `QueryRef` function.
 ```typescript
-getConnectLevelStore(dc: DataConnect, vars: GetConnectLevelStoreVariables, options?: ExecuteQueryOptions): QueryPromise<GetConnectLevelStoreData, GetConnectLevelStoreVariables>;
+getGameLevel(dc: DataConnect, vars: GetGameLevelVariables, options?: ExecuteQueryOptions): QueryPromise<GetGameLevelData, GetGameLevelVariables>;
 
-interface GetConnectLevelStoreRef {
+interface GetGameLevelRef {
   ...
-  (dc: DataConnect, vars: GetConnectLevelStoreVariables): QueryRef<GetConnectLevelStoreData, GetConnectLevelStoreVariables>;
+  (dc: DataConnect, vars: GetGameLevelVariables): QueryRef<GetGameLevelData, GetGameLevelVariables>;
 }
-export const getConnectLevelStoreRef: GetConnectLevelStoreRef;
+export const getGameLevelRef: GetGameLevelRef;
 ```
 
-If you need the name of the operation without creating a ref, you can retrieve the operation name by calling the `operationName` property on the getConnectLevelStoreRef:
+If you need the name of the operation without creating a ref, you can retrieve the operation name by calling the `operationName` property on the getGameLevelRef:
 ```typescript
-const name = getConnectLevelStoreRef.operationName;
+const name = getGameLevelRef.operationName;
 console.log(name);
 ```
 
 ### Variables
-The `GetConnectLevelStore` query requires an argument of type `GetConnectLevelStoreVariables`, which is defined in [connect-admin-sdk/index.d.ts](./index.d.ts). It has the following fields:
+The `GetGameLevel` query requires an argument of type `GetGameLevelVariables`, which is defined in [connect-admin-sdk/index.d.ts](./index.d.ts). It has the following fields:
 
 ```typescript
-export interface GetConnectLevelStoreVariables {
+export interface GetGameLevelVariables {
   id: string;
 }
 ```
 ### Return Type
-Recall that executing the `GetConnectLevelStore` query returns a `QueryPromise` that resolves to an object with a `data` property.
+Recall that executing the `GetGameLevel` query returns a `QueryPromise` that resolves to an object with a `data` property.
 
-The `data` property is an object of type `GetConnectLevelStoreData`, which is defined in [connect-admin-sdk/index.d.ts](./index.d.ts). It has the following fields:
+The `data` property is an object of type `GetGameLevelData`, which is defined in [connect-admin-sdk/index.d.ts](./index.d.ts). It has the following fields:
 ```typescript
-export interface GetConnectLevelStoreData {
-  connectLevelStore?: {
+export interface GetGameLevelData {
+  gamesLevel?: {
     id: string;
     payloadJson: string;
     totalLevels: number;
     launchDate?: string | null;
     checksum?: string | null;
     updatedAt: TimestampString;
-  } & ConnectLevelStore_Key;
+  } & GameLevel_Key;
 }
 ```
-### Using `GetConnectLevelStore`'s action shortcut function
+### Using `GetGameLevel`'s action shortcut function
 
 ```typescript
 import { getDataConnect } from 'firebase/data-connect';
-import { connectorConfig, getConnectLevelStore, GetConnectLevelStoreVariables } from '@vyb/dataconnect-connect-admin';
+import { connectorConfig, getGameLevel, GetGameLevelVariables } from '@vyb/dataconnect-connect-admin';
 
-// The `GetConnectLevelStore` query requires an argument of type `GetConnectLevelStoreVariables`:
-const getConnectLevelStoreVars: GetConnectLevelStoreVariables = {
+// The `GetGameLevel` query requires an argument of type `GetGameLevelVariables`:
+const getGameLevelVars: GetGameLevelVariables = {
   id: ..., 
 };
 
-// Call the `getConnectLevelStore()` function to execute the query.
+// Call the `getGameLevel()` function to execute the query.
 // You can use the `await` keyword to wait for the promise to resolve.
-const { data } = await getConnectLevelStore(getConnectLevelStoreVars);
+const { data } = await getGameLevel(getGameLevelVars);
 // Variables can be defined inline as well.
-const { data } = await getConnectLevelStore({ id: ..., });
+const { data } = await getGameLevel({ id: ..., });
 
 // You can also pass in a `DataConnect` instance to the action shortcut function.
 const dataConnect = getDataConnect(connectorConfig);
-const { data } = await getConnectLevelStore(dataConnect, getConnectLevelStoreVars);
+const { data } = await getGameLevel(dataConnect, getGameLevelVars);
 
-console.log(data.connectLevelStore);
+console.log(data.gamesLevel);
 
 // Or, you can use the `Promise` API.
-getConnectLevelStore(getConnectLevelStoreVars).then((response) => {
+getGameLevel(getGameLevelVars).then((response) => {
   const data = response.data;
-  console.log(data.connectLevelStore);
+  console.log(data.gamesLevel);
 });
 ```
 
-### Using `GetConnectLevelStore`'s `QueryRef` function
+### Using `GetGameLevel`'s `QueryRef` function
 
 ```typescript
 import { getDataConnect, executeQuery } from 'firebase/data-connect';
-import { connectorConfig, getConnectLevelStoreRef, GetConnectLevelStoreVariables } from '@vyb/dataconnect-connect-admin';
+import { connectorConfig, getGameLevelRef, GetGameLevelVariables } from '@vyb/dataconnect-connect-admin';
 
-// The `GetConnectLevelStore` query requires an argument of type `GetConnectLevelStoreVariables`:
-const getConnectLevelStoreVars: GetConnectLevelStoreVariables = {
+// The `GetGameLevel` query requires an argument of type `GetGameLevelVariables`:
+const getGameLevelVars: GetGameLevelVariables = {
   id: ..., 
 };
 
-// Call the `getConnectLevelStoreRef()` function to get a reference to the query.
-const ref = getConnectLevelStoreRef(getConnectLevelStoreVars);
+// Call the `getGameLevelRef()` function to get a reference to the query.
+const ref = getGameLevelRef(getGameLevelVars);
 // Variables can be defined inline as well.
-const ref = getConnectLevelStoreRef({ id: ..., });
+const ref = getGameLevelRef({ id: ..., });
 
 // You can also pass in a `DataConnect` instance to the `QueryRef` function.
 const dataConnect = getDataConnect(connectorConfig);
-const ref = getConnectLevelStoreRef(dataConnect, getConnectLevelStoreVars);
+const ref = getGameLevelRef(dataConnect, getGameLevelVars);
 
 // Call `executeQuery()` on the reference to execute the query.
 // You can use the `await` keyword to wait for the promise to resolve.
 const { data } = await executeQuery(ref);
 
-console.log(data.connectLevelStore);
+console.log(data.gamesLevel);
 
 // Or, you can use the `Promise` API.
 executeQuery(ref).then((response) => {
   const data = response.data;
-  console.log(data.connectLevelStore);
-});
-```
-
-## GetScribbleWordStore
-You can execute the `GetScribbleWordStore` query using the following action shortcut function, or by calling `executeQuery()` after calling the following `QueryRef` function, both of which are defined in [connect-admin-sdk/index.d.ts](./index.d.ts):
-```typescript
-getScribbleWordStore(vars: GetScribbleWordStoreVariables, options?: ExecuteQueryOptions): QueryPromise<GetScribbleWordStoreData, GetScribbleWordStoreVariables>;
-
-interface GetScribbleWordStoreRef {
-  ...
-  /* Allow users to create refs without passing in DataConnect */
-  (vars: GetScribbleWordStoreVariables): QueryRef<GetScribbleWordStoreData, GetScribbleWordStoreVariables>;
-}
-export const getScribbleWordStoreRef: GetScribbleWordStoreRef;
-```
-You can also pass in a `DataConnect` instance to the action shortcut function or `QueryRef` function.
-```typescript
-getScribbleWordStore(dc: DataConnect, vars: GetScribbleWordStoreVariables, options?: ExecuteQueryOptions): QueryPromise<GetScribbleWordStoreData, GetScribbleWordStoreVariables>;
-
-interface GetScribbleWordStoreRef {
-  ...
-  (dc: DataConnect, vars: GetScribbleWordStoreVariables): QueryRef<GetScribbleWordStoreData, GetScribbleWordStoreVariables>;
-}
-export const getScribbleWordStoreRef: GetScribbleWordStoreRef;
-```
-
-If you need the name of the operation without creating a ref, you can retrieve the operation name by calling the `operationName` property on the getScribbleWordStoreRef:
-```typescript
-const name = getScribbleWordStoreRef.operationName;
-console.log(name);
-```
-
-### Variables
-The `GetScribbleWordStore` query requires an argument of type `GetScribbleWordStoreVariables`, which is defined in [connect-admin-sdk/index.d.ts](./index.d.ts). It has the following fields:
-
-```typescript
-export interface GetScribbleWordStoreVariables {
-  id: string;
-}
-```
-### Return Type
-Recall that executing the `GetScribbleWordStore` query returns a `QueryPromise` that resolves to an object with a `data` property.
-
-The `data` property is an object of type `GetScribbleWordStoreData`, which is defined in [connect-admin-sdk/index.d.ts](./index.d.ts). It has the following fields:
-```typescript
-export interface GetScribbleWordStoreData {
-  scribbleWordStore?: {
-    id: string;
-    payloadJson: string;
-    totalWords: number;
-    checksum?: string | null;
-    updatedAt: TimestampString;
-  } & ScribbleWordStore_Key;
-}
-```
-### Using `GetScribbleWordStore`'s action shortcut function
-
-```typescript
-import { getDataConnect } from 'firebase/data-connect';
-import { connectorConfig, getScribbleWordStore, GetScribbleWordStoreVariables } from '@vyb/dataconnect-connect-admin';
-
-// The `GetScribbleWordStore` query requires an argument of type `GetScribbleWordStoreVariables`:
-const getScribbleWordStoreVars: GetScribbleWordStoreVariables = {
-  id: ..., 
-};
-
-// Call the `getScribbleWordStore()` function to execute the query.
-// You can use the `await` keyword to wait for the promise to resolve.
-const { data } = await getScribbleWordStore(getScribbleWordStoreVars);
-// Variables can be defined inline as well.
-const { data } = await getScribbleWordStore({ id: ..., });
-
-// You can also pass in a `DataConnect` instance to the action shortcut function.
-const dataConnect = getDataConnect(connectorConfig);
-const { data } = await getScribbleWordStore(dataConnect, getScribbleWordStoreVars);
-
-console.log(data.scribbleWordStore);
-
-// Or, you can use the `Promise` API.
-getScribbleWordStore(getScribbleWordStoreVars).then((response) => {
-  const data = response.data;
-  console.log(data.scribbleWordStore);
-});
-```
-
-### Using `GetScribbleWordStore`'s `QueryRef` function
-
-```typescript
-import { getDataConnect, executeQuery } from 'firebase/data-connect';
-import { connectorConfig, getScribbleWordStoreRef, GetScribbleWordStoreVariables } from '@vyb/dataconnect-connect-admin';
-
-// The `GetScribbleWordStore` query requires an argument of type `GetScribbleWordStoreVariables`:
-const getScribbleWordStoreVars: GetScribbleWordStoreVariables = {
-  id: ..., 
-};
-
-// Call the `getScribbleWordStoreRef()` function to get a reference to the query.
-const ref = getScribbleWordStoreRef(getScribbleWordStoreVars);
-// Variables can be defined inline as well.
-const ref = getScribbleWordStoreRef({ id: ..., });
-
-// You can also pass in a `DataConnect` instance to the `QueryRef` function.
-const dataConnect = getDataConnect(connectorConfig);
-const ref = getScribbleWordStoreRef(dataConnect, getScribbleWordStoreVars);
-
-// Call `executeQuery()` on the reference to execute the query.
-// You can use the `await` keyword to wait for the promise to resolve.
-const { data } = await executeQuery(ref);
-
-console.log(data.scribbleWordStore);
-
-// Or, you can use the `Promise` API.
-executeQuery(ref).then((response) => {
-  const data = response.data;
-  console.log(data.scribbleWordStore);
+  console.log(data.gamesLevel);
 });
 ```
 
@@ -798,40 +680,40 @@ The following is true for both the action shortcut function and the `MutationRef
 
 Below are examples of how to use the `connect` connector's generated functions to execute each mutation. You can also follow the examples from the [Data Connect documentation](https://firebase.google.com/docs/data-connect/web-sdk#using-mutations).
 
-## CreateConnectLevelStore
-You can execute the `CreateConnectLevelStore` mutation using the following action shortcut function, or by calling `executeMutation()` after calling the following `MutationRef` function, both of which are defined in [connect-admin-sdk/index.d.ts](./index.d.ts):
+## CreateGameLevel
+You can execute the `CreateGameLevel` mutation using the following action shortcut function, or by calling `executeMutation()` after calling the following `MutationRef` function, both of which are defined in [connect-admin-sdk/index.d.ts](./index.d.ts):
 ```typescript
-createConnectLevelStore(vars: CreateConnectLevelStoreVariables): MutationPromise<CreateConnectLevelStoreData, CreateConnectLevelStoreVariables>;
+createGameLevel(vars: CreateGameLevelVariables): MutationPromise<CreateGameLevelData, CreateGameLevelVariables>;
 
-interface CreateConnectLevelStoreRef {
+interface CreateGameLevelRef {
   ...
   /* Allow users to create refs without passing in DataConnect */
-  (vars: CreateConnectLevelStoreVariables): MutationRef<CreateConnectLevelStoreData, CreateConnectLevelStoreVariables>;
+  (vars: CreateGameLevelVariables): MutationRef<CreateGameLevelData, CreateGameLevelVariables>;
 }
-export const createConnectLevelStoreRef: CreateConnectLevelStoreRef;
+export const createGameLevelRef: CreateGameLevelRef;
 ```
 You can also pass in a `DataConnect` instance to the action shortcut function or `MutationRef` function.
 ```typescript
-createConnectLevelStore(dc: DataConnect, vars: CreateConnectLevelStoreVariables): MutationPromise<CreateConnectLevelStoreData, CreateConnectLevelStoreVariables>;
+createGameLevel(dc: DataConnect, vars: CreateGameLevelVariables): MutationPromise<CreateGameLevelData, CreateGameLevelVariables>;
 
-interface CreateConnectLevelStoreRef {
+interface CreateGameLevelRef {
   ...
-  (dc: DataConnect, vars: CreateConnectLevelStoreVariables): MutationRef<CreateConnectLevelStoreData, CreateConnectLevelStoreVariables>;
+  (dc: DataConnect, vars: CreateGameLevelVariables): MutationRef<CreateGameLevelData, CreateGameLevelVariables>;
 }
-export const createConnectLevelStoreRef: CreateConnectLevelStoreRef;
+export const createGameLevelRef: CreateGameLevelRef;
 ```
 
-If you need the name of the operation without creating a ref, you can retrieve the operation name by calling the `operationName` property on the createConnectLevelStoreRef:
+If you need the name of the operation without creating a ref, you can retrieve the operation name by calling the `operationName` property on the createGameLevelRef:
 ```typescript
-const name = createConnectLevelStoreRef.operationName;
+const name = createGameLevelRef.operationName;
 console.log(name);
 ```
 
 ### Variables
-The `CreateConnectLevelStore` mutation requires an argument of type `CreateConnectLevelStoreVariables`, which is defined in [connect-admin-sdk/index.d.ts](./index.d.ts). It has the following fields:
+The `CreateGameLevel` mutation requires an argument of type `CreateGameLevelVariables`, which is defined in [connect-admin-sdk/index.d.ts](./index.d.ts). It has the following fields:
 
 ```typescript
-export interface CreateConnectLevelStoreVariables {
+export interface CreateGameLevelVariables {
   id: string;
   payloadJson: string;
   totalLevels: number;
@@ -840,22 +722,22 @@ export interface CreateConnectLevelStoreVariables {
 }
 ```
 ### Return Type
-Recall that executing the `CreateConnectLevelStore` mutation returns a `MutationPromise` that resolves to an object with a `data` property.
+Recall that executing the `CreateGameLevel` mutation returns a `MutationPromise` that resolves to an object with a `data` property.
 
-The `data` property is an object of type `CreateConnectLevelStoreData`, which is defined in [connect-admin-sdk/index.d.ts](./index.d.ts). It has the following fields:
+The `data` property is an object of type `CreateGameLevelData`, which is defined in [connect-admin-sdk/index.d.ts](./index.d.ts). It has the following fields:
 ```typescript
-export interface CreateConnectLevelStoreData {
-  connectLevelStore_insert: ConnectLevelStore_Key;
+export interface CreateGameLevelData {
+  gamesLevel_insert: GameLevel_Key;
 }
 ```
-### Using `CreateConnectLevelStore`'s action shortcut function
+### Using `CreateGameLevel`'s action shortcut function
 
 ```typescript
 import { getDataConnect } from 'firebase/data-connect';
-import { connectorConfig, createConnectLevelStore, CreateConnectLevelStoreVariables } from '@vyb/dataconnect-connect-admin';
+import { connectorConfig, createGameLevel, CreateGameLevelVariables } from '@vyb/dataconnect-connect-admin';
 
-// The `CreateConnectLevelStore` mutation requires an argument of type `CreateConnectLevelStoreVariables`:
-const createConnectLevelStoreVars: CreateConnectLevelStoreVariables = {
+// The `CreateGameLevel` mutation requires an argument of type `CreateGameLevelVariables`:
+const createGameLevelVars: CreateGameLevelVariables = {
   id: ..., 
   payloadJson: ..., 
   totalLevels: ..., 
@@ -863,33 +745,33 @@ const createConnectLevelStoreVars: CreateConnectLevelStoreVariables = {
   checksum: ..., // optional
 };
 
-// Call the `createConnectLevelStore()` function to execute the mutation.
+// Call the `createGameLevel()` function to execute the mutation.
 // You can use the `await` keyword to wait for the promise to resolve.
-const { data } = await createConnectLevelStore(createConnectLevelStoreVars);
+const { data } = await createGameLevel(createGameLevelVars);
 // Variables can be defined inline as well.
-const { data } = await createConnectLevelStore({ id: ..., payloadJson: ..., totalLevels: ..., launchDate: ..., checksum: ..., });
+const { data } = await createGameLevel({ id: ..., payloadJson: ..., totalLevels: ..., launchDate: ..., checksum: ..., });
 
 // You can also pass in a `DataConnect` instance to the action shortcut function.
 const dataConnect = getDataConnect(connectorConfig);
-const { data } = await createConnectLevelStore(dataConnect, createConnectLevelStoreVars);
+const { data } = await createGameLevel(dataConnect, createGameLevelVars);
 
-console.log(data.connectLevelStore_insert);
+console.log(data.gamesLevel_insert);
 
 // Or, you can use the `Promise` API.
-createConnectLevelStore(createConnectLevelStoreVars).then((response) => {
+createGameLevel(createGameLevelVars).then((response) => {
   const data = response.data;
-  console.log(data.connectLevelStore_insert);
+  console.log(data.gamesLevel_insert);
 });
 ```
 
-### Using `CreateConnectLevelStore`'s `MutationRef` function
+### Using `CreateGameLevel`'s `MutationRef` function
 
 ```typescript
 import { getDataConnect, executeMutation } from 'firebase/data-connect';
-import { connectorConfig, createConnectLevelStoreRef, CreateConnectLevelStoreVariables } from '@vyb/dataconnect-connect-admin';
+import { connectorConfig, createGameLevelRef, CreateGameLevelVariables } from '@vyb/dataconnect-connect-admin';
 
-// The `CreateConnectLevelStore` mutation requires an argument of type `CreateConnectLevelStoreVariables`:
-const createConnectLevelStoreVars: CreateConnectLevelStoreVariables = {
+// The `CreateGameLevel` mutation requires an argument of type `CreateGameLevelVariables`:
+const createGameLevelVars: CreateGameLevelVariables = {
   id: ..., 
   payloadJson: ..., 
   totalLevels: ..., 
@@ -897,62 +779,62 @@ const createConnectLevelStoreVars: CreateConnectLevelStoreVariables = {
   checksum: ..., // optional
 };
 
-// Call the `createConnectLevelStoreRef()` function to get a reference to the mutation.
-const ref = createConnectLevelStoreRef(createConnectLevelStoreVars);
+// Call the `createGameLevelRef()` function to get a reference to the mutation.
+const ref = createGameLevelRef(createGameLevelVars);
 // Variables can be defined inline as well.
-const ref = createConnectLevelStoreRef({ id: ..., payloadJson: ..., totalLevels: ..., launchDate: ..., checksum: ..., });
+const ref = createGameLevelRef({ id: ..., payloadJson: ..., totalLevels: ..., launchDate: ..., checksum: ..., });
 
 // You can also pass in a `DataConnect` instance to the `MutationRef` function.
 const dataConnect = getDataConnect(connectorConfig);
-const ref = createConnectLevelStoreRef(dataConnect, createConnectLevelStoreVars);
+const ref = createGameLevelRef(dataConnect, createGameLevelVars);
 
 // Call `executeMutation()` on the reference to execute the mutation.
 // You can use the `await` keyword to wait for the promise to resolve.
 const { data } = await executeMutation(ref);
 
-console.log(data.connectLevelStore_insert);
+console.log(data.gamesLevel_insert);
 
 // Or, you can use the `Promise` API.
 executeMutation(ref).then((response) => {
   const data = response.data;
-  console.log(data.connectLevelStore_insert);
+  console.log(data.gamesLevel_insert);
 });
 ```
 
-## UpdateConnectLevelStore
-You can execute the `UpdateConnectLevelStore` mutation using the following action shortcut function, or by calling `executeMutation()` after calling the following `MutationRef` function, both of which are defined in [connect-admin-sdk/index.d.ts](./index.d.ts):
+## UpdateGameLevel
+You can execute the `UpdateGameLevel` mutation using the following action shortcut function, or by calling `executeMutation()` after calling the following `MutationRef` function, both of which are defined in [connect-admin-sdk/index.d.ts](./index.d.ts):
 ```typescript
-updateConnectLevelStore(vars: UpdateConnectLevelStoreVariables): MutationPromise<UpdateConnectLevelStoreData, UpdateConnectLevelStoreVariables>;
+updateGameLevel(vars: UpdateGameLevelVariables): MutationPromise<UpdateGameLevelData, UpdateGameLevelVariables>;
 
-interface UpdateConnectLevelStoreRef {
+interface UpdateGameLevelRef {
   ...
   /* Allow users to create refs without passing in DataConnect */
-  (vars: UpdateConnectLevelStoreVariables): MutationRef<UpdateConnectLevelStoreData, UpdateConnectLevelStoreVariables>;
+  (vars: UpdateGameLevelVariables): MutationRef<UpdateGameLevelData, UpdateGameLevelVariables>;
 }
-export const updateConnectLevelStoreRef: UpdateConnectLevelStoreRef;
+export const updateGameLevelRef: UpdateGameLevelRef;
 ```
 You can also pass in a `DataConnect` instance to the action shortcut function or `MutationRef` function.
 ```typescript
-updateConnectLevelStore(dc: DataConnect, vars: UpdateConnectLevelStoreVariables): MutationPromise<UpdateConnectLevelStoreData, UpdateConnectLevelStoreVariables>;
+updateGameLevel(dc: DataConnect, vars: UpdateGameLevelVariables): MutationPromise<UpdateGameLevelData, UpdateGameLevelVariables>;
 
-interface UpdateConnectLevelStoreRef {
+interface UpdateGameLevelRef {
   ...
-  (dc: DataConnect, vars: UpdateConnectLevelStoreVariables): MutationRef<UpdateConnectLevelStoreData, UpdateConnectLevelStoreVariables>;
+  (dc: DataConnect, vars: UpdateGameLevelVariables): MutationRef<UpdateGameLevelData, UpdateGameLevelVariables>;
 }
-export const updateConnectLevelStoreRef: UpdateConnectLevelStoreRef;
+export const updateGameLevelRef: UpdateGameLevelRef;
 ```
 
-If you need the name of the operation without creating a ref, you can retrieve the operation name by calling the `operationName` property on the updateConnectLevelStoreRef:
+If you need the name of the operation without creating a ref, you can retrieve the operation name by calling the `operationName` property on the updateGameLevelRef:
 ```typescript
-const name = updateConnectLevelStoreRef.operationName;
+const name = updateGameLevelRef.operationName;
 console.log(name);
 ```
 
 ### Variables
-The `UpdateConnectLevelStore` mutation requires an argument of type `UpdateConnectLevelStoreVariables`, which is defined in [connect-admin-sdk/index.d.ts](./index.d.ts). It has the following fields:
+The `UpdateGameLevel` mutation requires an argument of type `UpdateGameLevelVariables`, which is defined in [connect-admin-sdk/index.d.ts](./index.d.ts). It has the following fields:
 
 ```typescript
-export interface UpdateConnectLevelStoreVariables {
+export interface UpdateGameLevelVariables {
   id: string;
   payloadJson: string;
   totalLevels: number;
@@ -961,22 +843,22 @@ export interface UpdateConnectLevelStoreVariables {
 }
 ```
 ### Return Type
-Recall that executing the `UpdateConnectLevelStore` mutation returns a `MutationPromise` that resolves to an object with a `data` property.
+Recall that executing the `UpdateGameLevel` mutation returns a `MutationPromise` that resolves to an object with a `data` property.
 
-The `data` property is an object of type `UpdateConnectLevelStoreData`, which is defined in [connect-admin-sdk/index.d.ts](./index.d.ts). It has the following fields:
+The `data` property is an object of type `UpdateGameLevelData`, which is defined in [connect-admin-sdk/index.d.ts](./index.d.ts). It has the following fields:
 ```typescript
-export interface UpdateConnectLevelStoreData {
-  connectLevelStore_update?: ConnectLevelStore_Key | null;
+export interface UpdateGameLevelData {
+  gamesLevel_update?: GameLevel_Key | null;
 }
 ```
-### Using `UpdateConnectLevelStore`'s action shortcut function
+### Using `UpdateGameLevel`'s action shortcut function
 
 ```typescript
 import { getDataConnect } from 'firebase/data-connect';
-import { connectorConfig, updateConnectLevelStore, UpdateConnectLevelStoreVariables } from '@vyb/dataconnect-connect-admin';
+import { connectorConfig, updateGameLevel, UpdateGameLevelVariables } from '@vyb/dataconnect-connect-admin';
 
-// The `UpdateConnectLevelStore` mutation requires an argument of type `UpdateConnectLevelStoreVariables`:
-const updateConnectLevelStoreVars: UpdateConnectLevelStoreVariables = {
+// The `UpdateGameLevel` mutation requires an argument of type `UpdateGameLevelVariables`:
+const updateGameLevelVars: UpdateGameLevelVariables = {
   id: ..., 
   payloadJson: ..., 
   totalLevels: ..., 
@@ -984,33 +866,33 @@ const updateConnectLevelStoreVars: UpdateConnectLevelStoreVariables = {
   checksum: ..., // optional
 };
 
-// Call the `updateConnectLevelStore()` function to execute the mutation.
+// Call the `updateGameLevel()` function to execute the mutation.
 // You can use the `await` keyword to wait for the promise to resolve.
-const { data } = await updateConnectLevelStore(updateConnectLevelStoreVars);
+const { data } = await updateGameLevel(updateGameLevelVars);
 // Variables can be defined inline as well.
-const { data } = await updateConnectLevelStore({ id: ..., payloadJson: ..., totalLevels: ..., launchDate: ..., checksum: ..., });
+const { data } = await updateGameLevel({ id: ..., payloadJson: ..., totalLevels: ..., launchDate: ..., checksum: ..., });
 
 // You can also pass in a `DataConnect` instance to the action shortcut function.
 const dataConnect = getDataConnect(connectorConfig);
-const { data } = await updateConnectLevelStore(dataConnect, updateConnectLevelStoreVars);
+const { data } = await updateGameLevel(dataConnect, updateGameLevelVars);
 
-console.log(data.connectLevelStore_update);
+console.log(data.gamesLevel_update);
 
 // Or, you can use the `Promise` API.
-updateConnectLevelStore(updateConnectLevelStoreVars).then((response) => {
+updateGameLevel(updateGameLevelVars).then((response) => {
   const data = response.data;
-  console.log(data.connectLevelStore_update);
+  console.log(data.gamesLevel_update);
 });
 ```
 
-### Using `UpdateConnectLevelStore`'s `MutationRef` function
+### Using `UpdateGameLevel`'s `MutationRef` function
 
 ```typescript
 import { getDataConnect, executeMutation } from 'firebase/data-connect';
-import { connectorConfig, updateConnectLevelStoreRef, UpdateConnectLevelStoreVariables } from '@vyb/dataconnect-connect-admin';
+import { connectorConfig, updateGameLevelRef, UpdateGameLevelVariables } from '@vyb/dataconnect-connect-admin';
 
-// The `UpdateConnectLevelStore` mutation requires an argument of type `UpdateConnectLevelStoreVariables`:
-const updateConnectLevelStoreVars: UpdateConnectLevelStoreVariables = {
+// The `UpdateGameLevel` mutation requires an argument of type `UpdateGameLevelVariables`:
+const updateGameLevelVars: UpdateGameLevelVariables = {
   id: ..., 
   payloadJson: ..., 
   totalLevels: ..., 
@@ -1018,261 +900,25 @@ const updateConnectLevelStoreVars: UpdateConnectLevelStoreVariables = {
   checksum: ..., // optional
 };
 
-// Call the `updateConnectLevelStoreRef()` function to get a reference to the mutation.
-const ref = updateConnectLevelStoreRef(updateConnectLevelStoreVars);
+// Call the `updateGameLevelRef()` function to get a reference to the mutation.
+const ref = updateGameLevelRef(updateGameLevelVars);
 // Variables can be defined inline as well.
-const ref = updateConnectLevelStoreRef({ id: ..., payloadJson: ..., totalLevels: ..., launchDate: ..., checksum: ..., });
+const ref = updateGameLevelRef({ id: ..., payloadJson: ..., totalLevels: ..., launchDate: ..., checksum: ..., });
 
 // You can also pass in a `DataConnect` instance to the `MutationRef` function.
 const dataConnect = getDataConnect(connectorConfig);
-const ref = updateConnectLevelStoreRef(dataConnect, updateConnectLevelStoreVars);
+const ref = updateGameLevelRef(dataConnect, updateGameLevelVars);
 
 // Call `executeMutation()` on the reference to execute the mutation.
 // You can use the `await` keyword to wait for the promise to resolve.
 const { data } = await executeMutation(ref);
 
-console.log(data.connectLevelStore_update);
+console.log(data.gamesLevel_update);
 
 // Or, you can use the `Promise` API.
 executeMutation(ref).then((response) => {
   const data = response.data;
-  console.log(data.connectLevelStore_update);
-});
-```
-
-## CreateScribbleWordStore
-You can execute the `CreateScribbleWordStore` mutation using the following action shortcut function, or by calling `executeMutation()` after calling the following `MutationRef` function, both of which are defined in [connect-admin-sdk/index.d.ts](./index.d.ts):
-```typescript
-createScribbleWordStore(vars: CreateScribbleWordStoreVariables): MutationPromise<CreateScribbleWordStoreData, CreateScribbleWordStoreVariables>;
-
-interface CreateScribbleWordStoreRef {
-  ...
-  /* Allow users to create refs without passing in DataConnect */
-  (vars: CreateScribbleWordStoreVariables): MutationRef<CreateScribbleWordStoreData, CreateScribbleWordStoreVariables>;
-}
-export const createScribbleWordStoreRef: CreateScribbleWordStoreRef;
-```
-You can also pass in a `DataConnect` instance to the action shortcut function or `MutationRef` function.
-```typescript
-createScribbleWordStore(dc: DataConnect, vars: CreateScribbleWordStoreVariables): MutationPromise<CreateScribbleWordStoreData, CreateScribbleWordStoreVariables>;
-
-interface CreateScribbleWordStoreRef {
-  ...
-  (dc: DataConnect, vars: CreateScribbleWordStoreVariables): MutationRef<CreateScribbleWordStoreData, CreateScribbleWordStoreVariables>;
-}
-export const createScribbleWordStoreRef: CreateScribbleWordStoreRef;
-```
-
-If you need the name of the operation without creating a ref, you can retrieve the operation name by calling the `operationName` property on the createScribbleWordStoreRef:
-```typescript
-const name = createScribbleWordStoreRef.operationName;
-console.log(name);
-```
-
-### Variables
-The `CreateScribbleWordStore` mutation requires an argument of type `CreateScribbleWordStoreVariables`, which is defined in [connect-admin-sdk/index.d.ts](./index.d.ts). It has the following fields:
-
-```typescript
-export interface CreateScribbleWordStoreVariables {
-  id: string;
-  payloadJson: string;
-  totalWords: number;
-  checksum?: string | null;
-}
-```
-### Return Type
-Recall that executing the `CreateScribbleWordStore` mutation returns a `MutationPromise` that resolves to an object with a `data` property.
-
-The `data` property is an object of type `CreateScribbleWordStoreData`, which is defined in [connect-admin-sdk/index.d.ts](./index.d.ts). It has the following fields:
-```typescript
-export interface CreateScribbleWordStoreData {
-  scribbleWordStore_insert: ScribbleWordStore_Key;
-}
-```
-### Using `CreateScribbleWordStore`'s action shortcut function
-
-```typescript
-import { getDataConnect } from 'firebase/data-connect';
-import { connectorConfig, createScribbleWordStore, CreateScribbleWordStoreVariables } from '@vyb/dataconnect-connect-admin';
-
-// The `CreateScribbleWordStore` mutation requires an argument of type `CreateScribbleWordStoreVariables`:
-const createScribbleWordStoreVars: CreateScribbleWordStoreVariables = {
-  id: ..., 
-  payloadJson: ..., 
-  totalWords: ..., 
-  checksum: ..., // optional
-};
-
-// Call the `createScribbleWordStore()` function to execute the mutation.
-// You can use the `await` keyword to wait for the promise to resolve.
-const { data } = await createScribbleWordStore(createScribbleWordStoreVars);
-// Variables can be defined inline as well.
-const { data } = await createScribbleWordStore({ id: ..., payloadJson: ..., totalWords: ..., checksum: ..., });
-
-// You can also pass in a `DataConnect` instance to the action shortcut function.
-const dataConnect = getDataConnect(connectorConfig);
-const { data } = await createScribbleWordStore(dataConnect, createScribbleWordStoreVars);
-
-console.log(data.scribbleWordStore_insert);
-
-// Or, you can use the `Promise` API.
-createScribbleWordStore(createScribbleWordStoreVars).then((response) => {
-  const data = response.data;
-  console.log(data.scribbleWordStore_insert);
-});
-```
-
-### Using `CreateScribbleWordStore`'s `MutationRef` function
-
-```typescript
-import { getDataConnect, executeMutation } from 'firebase/data-connect';
-import { connectorConfig, createScribbleWordStoreRef, CreateScribbleWordStoreVariables } from '@vyb/dataconnect-connect-admin';
-
-// The `CreateScribbleWordStore` mutation requires an argument of type `CreateScribbleWordStoreVariables`:
-const createScribbleWordStoreVars: CreateScribbleWordStoreVariables = {
-  id: ..., 
-  payloadJson: ..., 
-  totalWords: ..., 
-  checksum: ..., // optional
-};
-
-// Call the `createScribbleWordStoreRef()` function to get a reference to the mutation.
-const ref = createScribbleWordStoreRef(createScribbleWordStoreVars);
-// Variables can be defined inline as well.
-const ref = createScribbleWordStoreRef({ id: ..., payloadJson: ..., totalWords: ..., checksum: ..., });
-
-// You can also pass in a `DataConnect` instance to the `MutationRef` function.
-const dataConnect = getDataConnect(connectorConfig);
-const ref = createScribbleWordStoreRef(dataConnect, createScribbleWordStoreVars);
-
-// Call `executeMutation()` on the reference to execute the mutation.
-// You can use the `await` keyword to wait for the promise to resolve.
-const { data } = await executeMutation(ref);
-
-console.log(data.scribbleWordStore_insert);
-
-// Or, you can use the `Promise` API.
-executeMutation(ref).then((response) => {
-  const data = response.data;
-  console.log(data.scribbleWordStore_insert);
-});
-```
-
-## UpdateScribbleWordStore
-You can execute the `UpdateScribbleWordStore` mutation using the following action shortcut function, or by calling `executeMutation()` after calling the following `MutationRef` function, both of which are defined in [connect-admin-sdk/index.d.ts](./index.d.ts):
-```typescript
-updateScribbleWordStore(vars: UpdateScribbleWordStoreVariables): MutationPromise<UpdateScribbleWordStoreData, UpdateScribbleWordStoreVariables>;
-
-interface UpdateScribbleWordStoreRef {
-  ...
-  /* Allow users to create refs without passing in DataConnect */
-  (vars: UpdateScribbleWordStoreVariables): MutationRef<UpdateScribbleWordStoreData, UpdateScribbleWordStoreVariables>;
-}
-export const updateScribbleWordStoreRef: UpdateScribbleWordStoreRef;
-```
-You can also pass in a `DataConnect` instance to the action shortcut function or `MutationRef` function.
-```typescript
-updateScribbleWordStore(dc: DataConnect, vars: UpdateScribbleWordStoreVariables): MutationPromise<UpdateScribbleWordStoreData, UpdateScribbleWordStoreVariables>;
-
-interface UpdateScribbleWordStoreRef {
-  ...
-  (dc: DataConnect, vars: UpdateScribbleWordStoreVariables): MutationRef<UpdateScribbleWordStoreData, UpdateScribbleWordStoreVariables>;
-}
-export const updateScribbleWordStoreRef: UpdateScribbleWordStoreRef;
-```
-
-If you need the name of the operation without creating a ref, you can retrieve the operation name by calling the `operationName` property on the updateScribbleWordStoreRef:
-```typescript
-const name = updateScribbleWordStoreRef.operationName;
-console.log(name);
-```
-
-### Variables
-The `UpdateScribbleWordStore` mutation requires an argument of type `UpdateScribbleWordStoreVariables`, which is defined in [connect-admin-sdk/index.d.ts](./index.d.ts). It has the following fields:
-
-```typescript
-export interface UpdateScribbleWordStoreVariables {
-  id: string;
-  payloadJson: string;
-  totalWords: number;
-  checksum?: string | null;
-}
-```
-### Return Type
-Recall that executing the `UpdateScribbleWordStore` mutation returns a `MutationPromise` that resolves to an object with a `data` property.
-
-The `data` property is an object of type `UpdateScribbleWordStoreData`, which is defined in [connect-admin-sdk/index.d.ts](./index.d.ts). It has the following fields:
-```typescript
-export interface UpdateScribbleWordStoreData {
-  scribbleWordStore_update?: ScribbleWordStore_Key | null;
-}
-```
-### Using `UpdateScribbleWordStore`'s action shortcut function
-
-```typescript
-import { getDataConnect } from 'firebase/data-connect';
-import { connectorConfig, updateScribbleWordStore, UpdateScribbleWordStoreVariables } from '@vyb/dataconnect-connect-admin';
-
-// The `UpdateScribbleWordStore` mutation requires an argument of type `UpdateScribbleWordStoreVariables`:
-const updateScribbleWordStoreVars: UpdateScribbleWordStoreVariables = {
-  id: ..., 
-  payloadJson: ..., 
-  totalWords: ..., 
-  checksum: ..., // optional
-};
-
-// Call the `updateScribbleWordStore()` function to execute the mutation.
-// You can use the `await` keyword to wait for the promise to resolve.
-const { data } = await updateScribbleWordStore(updateScribbleWordStoreVars);
-// Variables can be defined inline as well.
-const { data } = await updateScribbleWordStore({ id: ..., payloadJson: ..., totalWords: ..., checksum: ..., });
-
-// You can also pass in a `DataConnect` instance to the action shortcut function.
-const dataConnect = getDataConnect(connectorConfig);
-const { data } = await updateScribbleWordStore(dataConnect, updateScribbleWordStoreVars);
-
-console.log(data.scribbleWordStore_update);
-
-// Or, you can use the `Promise` API.
-updateScribbleWordStore(updateScribbleWordStoreVars).then((response) => {
-  const data = response.data;
-  console.log(data.scribbleWordStore_update);
-});
-```
-
-### Using `UpdateScribbleWordStore`'s `MutationRef` function
-
-```typescript
-import { getDataConnect, executeMutation } from 'firebase/data-connect';
-import { connectorConfig, updateScribbleWordStoreRef, UpdateScribbleWordStoreVariables } from '@vyb/dataconnect-connect-admin';
-
-// The `UpdateScribbleWordStore` mutation requires an argument of type `UpdateScribbleWordStoreVariables`:
-const updateScribbleWordStoreVars: UpdateScribbleWordStoreVariables = {
-  id: ..., 
-  payloadJson: ..., 
-  totalWords: ..., 
-  checksum: ..., // optional
-};
-
-// Call the `updateScribbleWordStoreRef()` function to get a reference to the mutation.
-const ref = updateScribbleWordStoreRef(updateScribbleWordStoreVars);
-// Variables can be defined inline as well.
-const ref = updateScribbleWordStoreRef({ id: ..., payloadJson: ..., totalWords: ..., checksum: ..., });
-
-// You can also pass in a `DataConnect` instance to the `MutationRef` function.
-const dataConnect = getDataConnect(connectorConfig);
-const ref = updateScribbleWordStoreRef(dataConnect, updateScribbleWordStoreVars);
-
-// Call `executeMutation()` on the reference to execute the mutation.
-// You can use the `await` keyword to wait for the promise to resolve.
-const { data } = await executeMutation(ref);
-
-console.log(data.scribbleWordStore_update);
-
-// Or, you can use the `Promise` API.
-executeMutation(ref).then((response) => {
-  const data = response.data;
-  console.log(data.scribbleWordStore_update);
+  console.log(data.gamesLevel_update);
 });
 ```
 

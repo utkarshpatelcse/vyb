@@ -31,6 +31,29 @@ type ActiveDrag = {
   pointerId: number | null;
 };
 
+const CONNECT_LEADERBOARD_SETTING_KEY = "vyb-connect-leaderboard-opt-in";
+
+function readBooleanSetting(key: string, fallback: boolean) {
+  if (typeof window === "undefined") {
+    return fallback;
+  }
+
+  const stored = window.localStorage.getItem(key);
+  if (stored === "off" || stored === "false" || stored === "0") {
+    return false;
+  }
+
+  if (stored === "on" || stored === "true" || stored === "1") {
+    return true;
+  }
+
+  return fallback;
+}
+
+function writeBooleanSetting(key: string, value: boolean) {
+  window.localStorage.setItem(key, value ? "on" : "off");
+}
+
 function cellKey(point: ConnectCoordinate) {
   return `${point.x}:${point.y}`;
 }
@@ -40,17 +63,19 @@ function isAdjacent(left: ConnectCoordinate, right: ConnectCoordinate) {
 }
 
 function buildSolvedResultFromDaily(daily: ConnectDailyLevelResponse): ConnectSubmitResponse | null {
-  if (!daily.viewerBest) {
+  if (!daily.viewerBest && !daily.sessionCompletedAt) {
     return null;
   }
 
   return {
     solved: true,
-    message: "Already solved. Your first valid solve is locked on today's leaderboard.",
+    message: daily.leaderboardOptIn
+      ? "Already solved. Your first valid solve is locked on today's leaderboard."
+      : "Already solved. This run stayed off the leaderboard.",
     sessionId: daily.sessionId,
-    elapsedSeconds: daily.viewerBest.elapsedSeconds,
-    hintsUsed: daily.viewerBest.hintsUsed,
-    adjustedTimeSeconds: daily.viewerBest.adjustedTimeSeconds,
+    elapsedSeconds: daily.viewerBest?.elapsedSeconds ?? daily.elapsedSeconds,
+    hintsUsed: daily.viewerBest?.hintsUsed ?? daily.hintsUsed,
+    adjustedTimeSeconds: daily.viewerBest?.adjustedTimeSeconds ?? daily.adjustedTimeSeconds,
     leaderboard: daily.leaderboard,
     viewerBest: daily.viewerBest
   };
@@ -100,6 +125,8 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [localCompletionElapsedSeconds, setLocalCompletionElapsedSeconds] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [leaderboardPreference, setLeaderboardPreference] = useState(true);
   const autoSubmitKeyRef = useRef("");
   const skipSolvedPopupRef = useRef(false);
   const boardRef = useRef<HTMLDivElement | null>(null);
@@ -122,7 +149,10 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
       autoSubmitKeyRef.current = "";
 
       try {
-        const response = await fetch("/api/games/connect/daily", { method: "GET" });
+        const nextLeaderboardPreference = readBooleanSetting(CONNECT_LEADERBOARD_SETTING_KEY, true);
+        setLeaderboardPreference(nextLeaderboardPreference);
+        const dailyUrl = `/api/games/connect/daily${nextLeaderboardPreference ? "" : "?leaderboard=off"}`;
+        const response = await fetch(dailyUrl, { method: "GET" });
         const payload = await readJsonResponse<ConnectDailyLevelResponse>(response);
 
         if (!cancelled) {
@@ -655,6 +685,7 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
         })
       });
       const payload = await readJsonResponse<ConnectHintResponse>(response);
+      const hintMessage = payload.reason ? `${payload.message} Reason: ${payload.reason}` : payload.message;
 
       setDaily((current) => (current ? { ...current, sessionId: payload.sessionId, hintsUsed: payload.hintsUsed } : current));
 
@@ -663,11 +694,10 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
       }
 
       if (!payload.nextMove) {
-        setMessage(payload.cooldownSeconds > 0 ? `Hint cooling down: ${payload.cooldownSeconds}s.` : "No hint needed. The route is complete.");
+        setMessage(hintMessage);
         return;
       }
 
-      const didTrimPath = payload.validPrefixLength < pathCells.length;
       setLocalCompletionElapsedSeconds(null);
       setPathCells((currentPath) => currentPath.slice(0, payload.validPrefixLength));
       setGhostHint({
@@ -675,7 +705,7 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
         next: payload.nextMove,
         expiresAt: payload.ghostExpiresAt ?? new Date(Date.now() + 3000).toISOString()
       });
-      setMessage(didTrimPath ? "Board reset to the last correct move. Follow the arrow." : "Hint revealed the next correct step.");
+      setMessage(hintMessage);
     } catch (hintError) {
       setError(hintError instanceof Error ? hintError.message : "We could not fetch a hint.");
     } finally {
@@ -749,6 +779,55 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
     router.replace(backHref);
   }
 
+  function toggleLeaderboardPreference() {
+    const nextPreference = !leaderboardPreference;
+    setLeaderboardPreference(nextPreference);
+    writeBooleanSetting(CONNECT_LEADERBOARD_SETTING_KEY, nextPreference);
+    setMessage(daily ? "Leaderboard setting saved. It applies from the next game." : "Leaderboard setting saved.");
+  }
+
+  function renderSettingsMenu() {
+    const isPending = daily ? leaderboardPreference !== daily.leaderboardOptIn : false;
+
+    return (
+      <div className="vyb-game-settings">
+        <button
+          type="button"
+          className="vyb-game-settings-button"
+          onClick={() => setSettingsOpen((current) => !current)}
+          aria-label="Game settings"
+          aria-expanded={settingsOpen}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="5" r="1.8" />
+            <circle cx="12" cy="12" r="1.8" />
+            <circle cx="12" cy="19" r="1.8" />
+          </svg>
+        </button>
+        {settingsOpen ? (
+          <div className="vyb-game-settings-menu">
+            <div className="vyb-game-settings-title">Game settings</div>
+            <div className="vyb-game-settings-row">
+              <div>
+                <strong>Leaderboard</strong>
+                <span>{isPending ? "Next game" : daily?.leaderboardOptIn === false ? "Off this game" : "On this game"}</span>
+              </div>
+              <button
+                type="button"
+                className={`vyb-game-switch${leaderboardPreference ? " is-on" : ""}`}
+                role="switch"
+                aria-checked={leaderboardPreference}
+                onClick={toggleLeaderboardPreference}
+              >
+                <span />
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   async function inviteFriends() {
     const url = `${window.location.origin}/hub/gameshub/connect`;
     const text = "Try today's Connect puzzle on Vyb.";
@@ -811,6 +890,7 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
           <div className="vyb-connect-difficulty-pill">
             Difficulty <span>{level.difficulty}</span>
           </div>
+          {renderSettingsMenu()}
         </div>
 
         <div className="vyb-connect-result vyb-connect-solved-card">
@@ -926,6 +1006,7 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
         <button type="button" className="vyb-connect-reset-pill" onClick={resetRoute} disabled={submitBusy || result?.solved}>
           Reset
         </button>
+        {renderSettingsMenu()}
       </div>
 
 

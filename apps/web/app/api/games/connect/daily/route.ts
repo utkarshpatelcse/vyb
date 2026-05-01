@@ -22,7 +22,12 @@ function getConnectErrorMessage(error: unknown) {
   return message || "We could not load today's Connect puzzle.";
 }
 
-export async function GET() {
+function parseLeaderboardOptIn(request: Request) {
+  const value = new URL(request.url).searchParams.get("leaderboard")?.trim().toLowerCase();
+  return value !== "off" && value !== "false" && value !== "0";
+}
+
+export async function GET(request: Request) {
   const viewer = readDevSessionFromCookieStore(await cookies());
 
   if (!viewer) {
@@ -30,7 +35,7 @@ export async function GET() {
   }
 
   try {
-    return NextResponse.json(await startDailyConnectSession(viewer));
+    return NextResponse.json(await startDailyConnectSession(viewer, parseLeaderboardOptIn(request)));
   } catch (error) {
     return buildError(500, "CONNECT_DAILY_FAILED", getConnectErrorMessage(error));
   }

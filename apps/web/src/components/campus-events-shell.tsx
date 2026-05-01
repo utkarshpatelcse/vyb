@@ -13,6 +13,7 @@ import type {
   ConnectLeaderboardEntry,
   CampusEventViewerRegistrationResponse,
   ManageCampusEventRegistrationResponse,
+  QueensLeaderboardEntry,
   UpsertCampusEventRegistrationResponse
 } from "@vyb/contracts";
 import Link from "next/link";
@@ -37,6 +38,13 @@ type CampusEventsShellProps = {
     viewerBest: ConnectLeaderboardEntry | null;
     viewerStreak: number;
     leaderboard: ConnectLeaderboardEntry[];
+  } | null;
+  queensSummary?: {
+    dailyKey: string;
+    totalSolvers: number;
+    viewerBest: QueensLeaderboardEntry | null;
+    viewerStreak: number;
+    leaderboard: QueensLeaderboardEntry[];
   } | null;
   initialTab?: "games" | "events";
 };
@@ -427,6 +435,7 @@ export function CampusEventsShell({
   role,
   initialDashboard,
   connectSummary,
+  queensSummary,
   initialTab = "events"
 }: CampusEventsShellProps) {
   const [dashboard, setDashboard] = useState(initialDashboard ?? buildEmptyDashboard(viewerUsername));
@@ -956,6 +965,11 @@ export function CampusEventsShell({
   const connectCountBadge =
     connectSummary && connectSummary.totalSolvers > connectPlayerPreview.length ? `+${connectSummary.totalSolvers - connectPlayerPreview.length}` : null;
   const streakLabel = connectSummary ? `${connectSummary.viewerStreak} day${connectSummary.viewerStreak === 1 ? "" : "s"}` : "--";
+  const queensPlayerSummary = queensSummary
+    ? queensSummary.totalSolvers > 0
+      ? `${queensSummary.totalSolvers} solver${queensSummary.totalSolvers === 1 ? "" : "s"} today`
+      : "Daily logic board"
+    : "Daily puzzle";
 
   const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
   const layoutStyle = {
@@ -1099,11 +1113,36 @@ export function CampusEventsShell({
                   <h4 className="vyb-games-card-title">1% IQ</h4>
                   <p className="vyb-games-card-subtitle">Fast Reaction</p>
                 </div>
-                <div className="vyb-games-glass-card">
-                  <div className="vyb-games-icon">👑</div>
-                  <h4 className="vyb-games-card-title">N-Queens</h4>
-                  <p className="vyb-games-card-subtitle">Logic Chess</p>
-                </div>
+                <Link
+                  href="/hub/gameshub/queens"
+                  className="vyb-games-glass-card"
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.6rem",
+                    background: "linear-gradient(135deg, rgba(20,184,166,0.16) 0%, rgba(234,179,8,0.16) 100%)",
+                    border: "1px solid rgba(45,212,191,0.26)",
+                    position: "relative",
+                    overflow: "hidden",
+                    textDecoration: "none"
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div className="vyb-games-icon" style={{ background: "rgba(20,184,166,0.15)" }}>Q</div>
+                    <span style={{ background: "rgba(234,179,8,0.12)", border: "1px solid rgba(234,179,8,0.3)", borderRadius: "999px", padding: "0.22rem 0.65rem", fontSize: "0.7rem", fontWeight: 800, color: "#fde68a", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      Daily
+                    </span>
+                  </div>
+                  <div>
+                    <h4 className="vyb-games-card-title" style={{ color: "#fff", fontSize: "1rem" }}>N-Queens</h4>
+                    <p className="vyb-games-card-subtitle">{queensPlayerSummary}</p>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "0.25rem" }}>
+                    <span style={{ background: "linear-gradient(135deg, #14b8a6, #eab308)", color: "#0f172a", borderRadius: "999px", padding: "0.45rem 1.2rem", fontSize: "0.82rem", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      Play
+                    </span>
+                  </div>
+                </Link>
                 <div className="vyb-games-glass-card">
                   <div className="vyb-games-icon">🌈</div>
                   <h4 className="vyb-games-card-title">Color Sort</h4>

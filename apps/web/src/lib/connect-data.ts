@@ -24,7 +24,8 @@ const HINT_COOLDOWN_SECONDS = 5;
 const HINT_GHOST_SECONDS = 3;
 const HINT_PENALTY_SECONDS = 3;
 const DEFAULT_LAUNCH_DATE = "2026-04-28T00:00:00+05:30";
-const CONNECT_LEVEL_STORE_ID = process.env.VYB_CONNECT_LEVEL_STORE_ID ?? "official-1000";
+const CONNECT_GAME_LEVEL_STORE_ID =
+  process.env.VYB_CONNECT_GAME_LEVEL_STORE_ID ?? process.env.VYB_CONNECT_LEVEL_STORE_ID ?? "connect-1000-levels";
 const CONNECT_SESSION_TOKEN_PREFIX = "connect.v1";
 const CONNECT_LEVELS_SOURCE = process.env.VYB_CONNECT_LEVELS_SOURCE ?? "auto";
 const CONNECT_ALLOW_LOCAL_LEVEL_FALLBACK =
@@ -34,13 +35,13 @@ const connectConnectorConfig = {
   serviceId: "vyb",
   location: "asia-south1"
 };
-let connectLevelStoreSkipLogged = false;
+let connectGameLevelSkipLogged = false;
 let connectStoreSkipLogged = false;
 let connectStoreFallbackLogged = false;
 
-const GET_CONNECT_LEVEL_STORE_QUERY = `
-  query GetConnectLevelStoreRuntime($id: String!) {
-    connectLevelStore(key: { id: $id }) {
+const GET_CONNECT_GAME_LEVEL_QUERY = `
+  query GetConnectGameLevelRuntime($id: String!) {
+    gamesLevel(key: { id: $id }) {
       id
       payloadJson
       totalLevels
@@ -55,6 +56,7 @@ const CONNECT_STORE_SCAN_LIMIT = 10_000;
 const CONNECT_STORE_SOURCE = process.env.VYB_CONNECT_STORE_SOURCE ?? "auto";
 const CONNECT_ALLOW_LOCAL_STORE_FALLBACK =
   process.env.VYB_CONNECT_ALLOW_LOCAL_STORE_FALLBACK === "1" || CONNECT_STORE_SOURCE === "auto";
+let connectSeedFileCache: { seedFile: ConnectLevelSeedFile; levels: StoredConnectLevel[] } | null = null;
 
 const LIST_CONNECT_STORE_QUERY = `
   query ListConnectStoreRuntime($tenantId: String!, $sessionLimit: Int!, $scoreLimit: Int!) {
@@ -291,6 +293,7 @@ type StoredConnectSession = {
   startedAt: string;
   lastHintAt: string | null;
   hintsUsed: number;
+  leaderboardOptIn: boolean;
   completedAt: string | null;
   elapsedSeconds: number | null;
   adjustedTimeSeconds: number | null;
@@ -416,6 +419,7 @@ function createConnectSessionToken(session: StoredConnectSession) {
     startedAt: session.startedAt,
     lastHintAt: session.lastHintAt,
     hintsUsed: session.hintsUsed,
+    leaderboardOptIn: session.leaderboardOptIn,
     completedAt: session.completedAt,
     elapsedSeconds: session.elapsedSeconds,
     adjustedTimeSeconds: session.adjustedTimeSeconds
@@ -445,6 +449,7 @@ function decodeConnectSessionToken(viewer: DevSession, sessionId: string): Store
     const completedAt = payload.completedAt;
     const elapsedSeconds = payload.elapsedSeconds;
     const adjustedTimeSeconds = payload.adjustedTimeSeconds;
+    const leaderboardOptIn = payload.leaderboardOptIn !== false;
 
     if (
       payload.tenantId !== viewer.tenantId ||
@@ -476,6 +481,7 @@ function decodeConnectSessionToken(viewer: DevSession, sessionId: string): Store
       startedAt,
       lastHintAt,
       hintsUsed,
+      leaderboardOptIn,
       completedAt,
       elapsedSeconds,
       adjustedTimeSeconds
@@ -577,7 +583,7 @@ function canUseGoogleMetadataCredentials() {
   return Boolean(process.env.K_SERVICE || process.env.K_REVISION || process.env.K_CONFIGURATION);
 }
 
-function shouldLoadDataconnectLevelStore() {
+function shouldLoadDataconnectGameLevelStore() {
   if (CONNECT_LEVELS_SOURCE === "local") {
     if (!CONNECT_ALLOW_LOCAL_LEVEL_FALLBACK) {
       throw new Error("Local Connect level storage is disabled. Set VYB_CONNECT_LEVELS_SOURCE=dataconnect.");
@@ -737,11 +743,11 @@ function normalizeSeedFile(payload: ConnectLevelSeedFile, sourceLabel: string) {
 }
 
 async function loadDataconnectSeedFile() {
-  if (!shouldLoadDataconnectLevelStore()) {
-    if (!connectLevelStoreSkipLogged) {
-      connectLevelStoreSkipLogged = true;
-      console.info("[connect-data] DataConnect level store skipped; using local seed file.", {
-        storeId: CONNECT_LEVEL_STORE_ID,
+  if (!shouldLoadDataconnectGameLevelStore()) {
+    if (!connectGameLevelSkipLogged) {
+      connectGameLevelSkipLogged = true;
+      console.info("[connect-data] DataConnect game level store skipped; using local seed file.", {
+        storeId: CONNECT_GAME_LEVEL_STORE_ID,
         reason: "firebase-admin-credentials-unavailable"
       });
     }
@@ -749,29 +755,29 @@ async function loadDataconnectSeedFile() {
   }
 
   try {
-    const response = (await getConnectDc().executeGraphqlRead(GET_CONNECT_LEVEL_STORE_QUERY, {
-      operationName: "GetConnectLevelStoreRuntime",
+    const response = (await getConnectDc().executeGraphqlRead(GET_CONNECT_GAME_LEVEL_QUERY, {
+      operationName: "GetConnectGameLevelRuntime",
       variables: {
-        id: CONNECT_LEVEL_STORE_ID
+        id: CONNECT_GAME_LEVEL_STORE_ID
       }
-    })) as { data?: { connectLevelStore?: { payloadJson?: string | null } | null } };
-    const store = response.data?.connectLevelStore;
+    })) as { data?: { gamesLevel?: { payloadJson?: string | null } | null } };
+    const store = response.data?.gamesLevel;
 
     if (!store?.payloadJson) {
       if (!CONNECT_ALLOW_LOCAL_LEVEL_FALLBACK) {
-        throw new Error(`Connect level store ${CONNECT_LEVEL_STORE_ID} is missing in DataConnect.`);
+        throw new Error(`Connect game level store ${CONNECT_GAME_LEVEL_STORE_ID} is missing in DataConnect.`);
       }
       return null;
     }
 
-    return normalizeSeedFile(JSON.parse(store.payloadJson) as ConnectLevelSeedFile, `DataConnect store ${CONNECT_LEVEL_STORE_ID}`);
+    return normalizeSeedFile(JSON.parse(store.payloadJson) as ConnectLevelSeedFile, `DataConnect store ${CONNECT_GAME_LEVEL_STORE_ID}`);
   } catch (error) {
     if (!CONNECT_ALLOW_LOCAL_LEVEL_FALLBACK) {
       throw error;
     }
 
-    console.warn("[connect-data] DataConnect level store unavailable; falling back to local seed file.", {
-      storeId: CONNECT_LEVEL_STORE_ID,
+    console.warn("[connect-data] DataConnect game level store unavailable; falling back to local seed file.", {
+      storeId: CONNECT_GAME_LEVEL_STORE_ID,
       message: error instanceof Error ? error.message : String(error)
     });
     return null;
@@ -779,15 +785,21 @@ async function loadDataconnectSeedFile() {
 }
 
 async function loadSeedFile() {
+  if (connectSeedFileCache) {
+    return connectSeedFileCache;
+  }
+
   const dataconnectSeed = await loadDataconnectSeedFile();
   if (dataconnectSeed) {
-    return dataconnectSeed;
+    connectSeedFileCache = dataconnectSeed;
+    return connectSeedFileCache;
   }
 
   const seedPath = getConnectLevelsPath();
   try {
     const payload = JSON.parse(await readFile(seedPath, "utf8")) as ConnectLevelSeedFile;
-    return normalizeSeedFile(payload, seedPath);
+    connectSeedFileCache = normalizeSeedFile(payload, seedPath);
+    return connectSeedFileCache;
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("Connect levels are not seeded")) {
       throw error;
@@ -822,7 +834,9 @@ function normalizeStore(raw: unknown, tenantId: string): ConnectStore {
   const parsed = raw && typeof raw === "object" ? (raw as Partial<ConnectStore>) : null;
   return {
     sessions: Array.isArray(parsed?.sessions)
-      ? parsed.sessions.filter((session): session is StoredConnectSession => Boolean(session && session.tenantId === tenantId && session.sessionId))
+      ? parsed.sessions
+          .filter((session): session is StoredConnectSession => Boolean(session && session.tenantId === tenantId && session.sessionId))
+          .map((session) => ({ ...session, leaderboardOptIn: session.leaderboardOptIn !== false }))
       : [],
     scores: Array.isArray(parsed?.scores)
       ? parsed.scores.filter((score): score is StoredConnectScore => Boolean(score && score.tenantId === tenantId && score.scoreId))
@@ -880,6 +894,7 @@ function mapDbSession(record: ConnectSessionDbRecord, tenantId: string): StoredC
     startedAt: record.startedAt,
     lastHintAt: record.lastHintAt ?? null,
     hintsUsed,
+    leaderboardOptIn: true,
     completedAt: record.completedAt ?? null,
     elapsedSeconds: fromCentiseconds(record.elapsedCentiseconds),
     adjustedTimeSeconds: fromCentiseconds(record.adjustedCentiseconds)
@@ -1241,6 +1256,10 @@ function buildDailyResponse(store: ConnectStore, viewer: DevSession, session: St
     nextResetAt: dailyState.nextResetAt,
     serverStartedAt: session.startedAt,
     hintsUsed: session.hintsUsed,
+    leaderboardOptIn: session.leaderboardOptIn,
+    sessionCompletedAt: session.completedAt,
+    elapsedSeconds: session.elapsedSeconds,
+    adjustedTimeSeconds: session.adjustedTimeSeconds,
     level: toPublicLevel(level),
     leaderboard: rankedEntries.slice(0, 10),
     viewerBest: rankedEntries.find((entry) => entry.userId === viewer.userId) ?? null
@@ -1297,7 +1316,7 @@ export async function getDailyConnectHubSnapshot(viewer: DevSession): Promise<Co
   };
 }
 
-export async function startDailyConnectSession(viewer: DevSession): Promise<ConnectDailyLevelResponse> {
+export async function startDailyConnectSession(viewer: DevSession, requestedLeaderboardOptIn = true): Promise<ConnectDailyLevelResponse> {
   const { seedFile, levels } = await loadSeedFile();
   const dailyState = getDailyState(levels.length, seedFile);
   const level = levels.find((candidate) => candidate.level_id === dailyState.levelId);
@@ -1313,6 +1332,7 @@ export async function startDailyConnectSession(viewer: DevSession): Promise<Conn
     if (existingSession) {
       existingSession.username = username;
       existingSession.displayName = viewer.displayName || username;
+      existingSession.leaderboardOptIn = existingSession.leaderboardOptIn !== false;
       refreshConnectSessionToken(existingSession);
       return existingSession;
     }
@@ -1329,6 +1349,7 @@ export async function startDailyConnectSession(viewer: DevSession): Promise<Conn
       startedAt: new Date().toISOString(),
       lastHintAt: null,
       hintsUsed: 0,
+      leaderboardOptIn: requestedLeaderboardOptIn,
       completedAt: null,
       elapsedSeconds: null,
       adjustedTimeSeconds: null
@@ -1368,6 +1389,13 @@ function getSessionOrThrow(store: ConnectStore, viewer: DevSession, sessionId: s
     throw new Error("This Connect session has expired. Open today's puzzle again.");
   }
 
+  const tokenSession = decodeConnectSessionToken(viewer, sessionId);
+  if (tokenSession && (!dailyState || isCurrentDailySession(tokenSession, dailyState))) {
+    session.leaderboardOptIn = tokenSession.leaderboardOptIn;
+  } else {
+    session.leaderboardOptIn = session.leaderboardOptIn !== false;
+  }
+
   if (dailyState && !isCurrentDailySession(session, dailyState)) {
     throw new Error("This Connect session has expired. Open today's puzzle again.");
   }
@@ -1399,49 +1427,83 @@ function getValidPrefixLength(submittedPath: ConnectCoordinate[], solutionPath: 
 export async function requestDailyConnectHint(viewer: DevSession, sessionId: string, submittedPath: ConnectCoordinate[]): Promise<ConnectHintResponse> {
   const { seedFile, levels } = await loadSeedFile();
   const dailyState = getDailyState(levels.length, seedFile);
-  let hintResponse: ConnectHintResponse | null = null;
+  const tokenSession = decodeConnectSessionToken(viewer, sessionId);
 
-  await transactStore(viewer.tenantId, (store) => {
-    const session = getSessionOrThrow(store, viewer, sessionId, dailyState);
+  async function buildHintForSession(session: StoredConnectSession, persist: boolean) {
     const level = getLevelOrThrow(levels, session.levelId);
     const now = Date.now();
     const lastHintTime = session.lastHintAt ? new Date(session.lastHintAt).getTime() : 0;
     const cooldownSeconds = lastHintTime > 0 ? Math.max(0, HINT_COOLDOWN_SECONDS - Math.floor((now - lastHintTime) / 1000)) : 0;
+    const validPrefixLength = getValidPrefixLength(submittedPath, level.solution_path);
 
     if (cooldownSeconds > 0) {
-      refreshConnectSessionToken(session);
-      hintResponse = {
+      return {
         sessionId: session.sessionId,
+        message: `Hint cooling down: ${cooldownSeconds}s.`,
+        reason: `Cooldown protects the leaderboard: each hint can be used once every ${HINT_COOLDOWN_SECONDS} seconds.`,
         nextMove: null,
         from: null,
-        validPrefixLength: getValidPrefixLength(submittedPath, level.solution_path),
+        validPrefixLength,
         hintsUsed: session.hintsUsed,
         cooldownSeconds,
         ghostExpiresAt: null
-      };
-      return;
+      } satisfies ConnectHintResponse;
     }
 
-    const validPrefixLength = getValidPrefixLength(submittedPath, level.solution_path);
     const nextMove = level.solution_path[validPrefixLength] ?? null;
     const from = validPrefixLength > 0 ? level.solution_path[validPrefixLength - 1] : null;
-    const hintedAt = new Date(now).toISOString();
 
     if (nextMove) {
       session.hintsUsed += 1;
-      session.lastHintAt = hintedAt;
+      session.lastHintAt = new Date(now).toISOString();
+      refreshConnectSessionToken(session);
+
+      if (persist) {
+        await upsertConnectSession(session);
+      }
     }
 
-    refreshConnectSessionToken(session);
-    hintResponse = {
+    const didTrimPath = validPrefixLength < submittedPath.length;
+    const message = nextMove
+      ? didTrimPath
+        ? "Board reset to the last correct move. Follow the arrow."
+        : "Hint revealed the next correct step."
+      : "No hint needed. The route is complete.";
+    const reason = nextMove
+      ? didTrimPath
+        ? `Your route first differs from the solution at move ${validPrefixLength + 1}, so the hint starts from the last correct cell.`
+        : "The next solution cell must be adjacent to your current route and keeps the path aligned with the numbered dots."
+      : "Every cell in the solution route is already filled in the correct order.";
+
+    return {
       sessionId: session.sessionId,
+      message,
+      reason,
       nextMove: nextMove ? clone(nextMove) : null,
       from: from ? clone(from) : null,
       validPrefixLength,
       hintsUsed: session.hintsUsed,
       cooldownSeconds: nextMove ? HINT_COOLDOWN_SECONDS : 0,
       ghostExpiresAt: nextMove ? new Date(now + HINT_GHOST_SECONDS * 1000).toISOString() : null
-    };
+    } satisfies ConnectHintResponse;
+  }
+
+  if (tokenSession && isCurrentDailySession(tokenSession, dailyState) && shouldUseDataconnectConnectStore()) {
+    try {
+      return await buildHintForSession(tokenSession, true);
+    } catch (error) {
+      if (!CONNECT_ALLOW_LOCAL_STORE_FALLBACK) {
+        throw error;
+      }
+      shouldFallbackToLocalStore(error);
+    }
+  }
+
+  let hintResponse: ConnectHintResponse | null = null;
+
+  await transactStore(viewer.tenantId, async (store) => {
+    const session = getSessionOrThrow(store, viewer, sessionId, dailyState);
+    hintResponse = await buildHintForSession(session, false);
   });
 
   if (!hintResponse) {
@@ -1561,24 +1623,32 @@ export async function submitDailyConnectPath(viewer: DevSession, sessionId: stri
     session.adjustedTimeSeconds = adjustedTimeSeconds;
     refreshConnectSessionToken(session);
 
-    store.scores.push({
-      scoreId: randomUUID(),
-      sessionId: session.sessionId,
-      tenantId: session.tenantId,
-      userId: session.userId,
-      username: session.username,
-      displayName: session.displayName,
-      levelId: session.levelId,
-      dailyIndex: session.dailyIndex,
-      dailyKey: session.dailyKey,
-      startedAt: session.startedAt,
-      completedAt,
-      elapsedSeconds,
-      hintsUsed: session.hintsUsed,
-      adjustedTimeSeconds
-    });
+    if (session.leaderboardOptIn) {
+      store.scores.push({
+        scoreId: randomUUID(),
+        sessionId: session.sessionId,
+        tenantId: session.tenantId,
+        userId: session.userId,
+        username: session.username,
+        displayName: session.displayName,
+        levelId: session.levelId,
+        dailyIndex: session.dailyIndex,
+        dailyKey: session.dailyKey,
+        startedAt: session.startedAt,
+        completedAt,
+        elapsedSeconds,
+        hintsUsed: session.hintsUsed,
+        adjustedTimeSeconds
+      });
+    }
 
-    submitResponse = buildSubmitResponse(store, viewer, session, "Solved. Your adjusted time is live on today's board.", true);
+    submitResponse = buildSubmitResponse(
+      store,
+      viewer,
+      session,
+      session.leaderboardOptIn ? "Solved. Your adjusted time is live on today's board." : "Solved. This run stayed off the leaderboard.",
+      true
+    );
   });
 
   if (!submitResponse) {

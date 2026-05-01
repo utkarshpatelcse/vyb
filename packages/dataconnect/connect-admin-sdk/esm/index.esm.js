@@ -5,78 +5,41 @@ export const connectorConfig = {
   service: 'vyb',
   location: 'asia-south1'
 };
-export const getConnectLevelStoreRef = (dcOrVars, vars) => {
+export const getGameLevelRef = (dcOrVars, vars) => {
   const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
   dcInstance._useGeneratedSdk();
-  return queryRef(dcInstance, 'GetConnectLevelStore', inputVars);
+  return queryRef(dcInstance, 'GetGameLevel', inputVars);
 }
-getConnectLevelStoreRef.operationName = 'GetConnectLevelStore';
+getGameLevelRef.operationName = 'GetGameLevel';
 
-export function getConnectLevelStore(dcOrVars, varsOrOptions, options) {
+export function getGameLevel(dcOrVars, varsOrOptions, options) {
   
   const { dc: dcInstance, vars: inputVars, options: inputOpts } = validateArgsWithOptions(connectorConfig, dcOrVars, varsOrOptions, options, true, true);
-  return executeQuery(getConnectLevelStoreRef(dcInstance, inputVars), inputOpts && inputOpts.fetchPolicy);
+  return executeQuery(getGameLevelRef(dcInstance, inputVars), inputOpts && inputOpts.fetchPolicy);
 }
 
-export const createConnectLevelStoreRef = (dcOrVars, vars) => {
+export const createGameLevelRef = (dcOrVars, vars) => {
   const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
   dcInstance._useGeneratedSdk();
-  return mutationRef(dcInstance, 'CreateConnectLevelStore', inputVars);
+  return mutationRef(dcInstance, 'CreateGameLevel', inputVars);
 }
-createConnectLevelStoreRef.operationName = 'CreateConnectLevelStore';
+createGameLevelRef.operationName = 'CreateGameLevel';
 
-export function createConnectLevelStore(dcOrVars, vars) {
+export function createGameLevel(dcOrVars, vars) {
   const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
-  return executeMutation(createConnectLevelStoreRef(dcInstance, inputVars));
+  return executeMutation(createGameLevelRef(dcInstance, inputVars));
 }
 
-export const updateConnectLevelStoreRef = (dcOrVars, vars) => {
+export const updateGameLevelRef = (dcOrVars, vars) => {
   const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
   dcInstance._useGeneratedSdk();
-  return mutationRef(dcInstance, 'UpdateConnectLevelStore', inputVars);
+  return mutationRef(dcInstance, 'UpdateGameLevel', inputVars);
 }
-updateConnectLevelStoreRef.operationName = 'UpdateConnectLevelStore';
+updateGameLevelRef.operationName = 'UpdateGameLevel';
 
-export function updateConnectLevelStore(dcOrVars, vars) {
+export function updateGameLevel(dcOrVars, vars) {
   const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
-  return executeMutation(updateConnectLevelStoreRef(dcInstance, inputVars));
-}
-
-export const getScribbleWordStoreRef = (dcOrVars, vars) => {
-  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
-  dcInstance._useGeneratedSdk();
-  return queryRef(dcInstance, 'GetScribbleWordStore', inputVars);
-}
-getScribbleWordStoreRef.operationName = 'GetScribbleWordStore';
-
-export function getScribbleWordStore(dcOrVars, varsOrOptions, options) {
-  
-  const { dc: dcInstance, vars: inputVars, options: inputOpts } = validateArgsWithOptions(connectorConfig, dcOrVars, varsOrOptions, options, true, true);
-  return executeQuery(getScribbleWordStoreRef(dcInstance, inputVars), inputOpts && inputOpts.fetchPolicy);
-}
-
-export const createScribbleWordStoreRef = (dcOrVars, vars) => {
-  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
-  dcInstance._useGeneratedSdk();
-  return mutationRef(dcInstance, 'CreateScribbleWordStore', inputVars);
-}
-createScribbleWordStoreRef.operationName = 'CreateScribbleWordStore';
-
-export function createScribbleWordStore(dcOrVars, vars) {
-  const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
-  return executeMutation(createScribbleWordStoreRef(dcInstance, inputVars));
-}
-
-export const updateScribbleWordStoreRef = (dcOrVars, vars) => {
-  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
-  dcInstance._useGeneratedSdk();
-  return mutationRef(dcInstance, 'UpdateScribbleWordStore', inputVars);
-}
-updateScribbleWordStoreRef.operationName = 'UpdateScribbleWordStore';
-
-export function updateScribbleWordStore(dcOrVars, vars) {
-  const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
-  return executeMutation(updateScribbleWordStoreRef(dcInstance, inputVars));
+  return executeMutation(updateGameLevelRef(dcInstance, inputVars));
 }
 
 export const listConnectSessionsByTenantRef = (dcOrVars, vars) => {

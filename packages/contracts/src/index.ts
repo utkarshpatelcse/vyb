@@ -1568,6 +1568,10 @@ export interface ConnectDailyLevelResponse {
   nextResetAt: string;
   serverStartedAt: string;
   hintsUsed: number;
+  leaderboardOptIn: boolean;
+  sessionCompletedAt: string | null;
+  elapsedSeconds: number | null;
+  adjustedTimeSeconds: number | null;
   level: ConnectPublicLevel;
   leaderboard: ConnectLeaderboardEntry[];
   viewerBest: ConnectLeaderboardEntry | null;
@@ -1580,6 +1584,8 @@ export interface ConnectHintRequest {
 
 export interface ConnectHintResponse {
   sessionId: string;
+  message: string;
+  reason: string;
   nextMove: ConnectCoordinate | null;
   from: ConnectCoordinate | null;
   validPrefixLength: number;
@@ -1603,4 +1609,98 @@ export interface ConnectSubmitResponse {
   adjustedTimeSeconds: number | null;
   leaderboard: ConnectLeaderboardEntry[];
   viewerBest: ConnectLeaderboardEntry | null;
+}
+
+export type QueensDifficulty = "Intro" | "Intermediate" | "Advanced" | "Pro";
+export type QueensHintStage = "conflict" | "auto-x" | "reveal" | "complete";
+
+export interface QueensCoordinate {
+  x: number;
+  y: number;
+}
+
+export interface QueensPublicLevel {
+  levelId: number;
+  gridSize: number;
+  regionCount: number;
+  regions: number[][];
+  difficulty: QueensDifficulty;
+}
+
+export interface QueensLeaderboardEntry {
+  rank: number;
+  organizationRank: number;
+  userId: string;
+  username: string;
+  displayName: string;
+  elapsedSeconds: number;
+  hintsUsed: number;
+  errorsMade: number;
+  adjustedTimeSeconds: number;
+  streakBonusPoints: number;
+  completedAt: string;
+}
+
+export interface QueensDailyLevelResponse {
+  game: "queens";
+  sessionId: string;
+  dailyIndex: number;
+  dailyKey: string;
+  launchDate: string;
+  nextResetAt: string;
+  serverStartedAt: string;
+  hintsUsed: number;
+  errorsMade: number;
+  leaderboardOptIn: boolean;
+  sessionCompletedAt: string | null;
+  elapsedSeconds: number | null;
+  adjustedTimeSeconds: number | null;
+  streakBonusPoints: number;
+  level: QueensPublicLevel;
+  leaderboard: QueensLeaderboardEntry[];
+  viewerBest: QueensLeaderboardEntry | null;
+  viewerStreak: number;
+  canReplay?: boolean;
+}
+
+export interface QueensHintRequest {
+  sessionId: string;
+  queens: QueensCoordinate[];
+  marks?: QueensCoordinate[];
+}
+
+export interface QueensHintResponse {
+  sessionId: string;
+  stage: QueensHintStage;
+  message: string;
+  reason: string;
+  errorCells: QueensCoordinate[];
+  autoMarkCells: QueensCoordinate[];
+  nextQueen: QueensCoordinate | null;
+  regionId: number | null;
+  hintsUsed: number;
+  errorsMade: number;
+  cooldownSeconds: number;
+  hintExpiresAt: string | null;
+}
+
+export interface QueensSubmitRequest {
+  sessionId: string;
+  queens: QueensCoordinate[];
+  clientElapsedSeconds?: number;
+}
+
+export interface QueensSubmitResponse {
+  solved: boolean;
+  message: string;
+  sessionId: string;
+  errorCells: QueensCoordinate[];
+  errorReason: string | null;
+  elapsedSeconds: number | null;
+  hintsUsed: number;
+  errorsMade: number;
+  adjustedTimeSeconds: number | null;
+  streakBonusPoints: number;
+  leaderboard: QueensLeaderboardEntry[];
+  viewerBest: QueensLeaderboardEntry | null;
 }

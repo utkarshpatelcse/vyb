@@ -24,11 +24,11 @@ const scribbleWordConnectorConfig = {
 };
 
 const GET_SCRIBBLE_WORD_STORE_QUERY = `
-  query GetScribbleWordStoreRuntime($id: String!) {
-    scribbleWordStore(key: { id: $id }) {
+  query GetScribbleGameLevelRuntime($id: String!) {
+    gamesLevel(key: { id: $id }) {
       id
       payloadJson
-      totalWords
+      totalLevels
       checksum
       updatedAt
     }
@@ -144,7 +144,7 @@ async function loadWordBank() {
 }
 
 function getScribbleWordStoreId() {
-  return process.env.VYB_SCRIBBLE_WORD_STORE_ID ?? "official-words-v1";
+  return process.env.VYB_SCRIBBLE_GAME_LEVEL_STORE_ID ?? process.env.VYB_SCRIBBLE_WORD_STORE_ID ?? "scribble-words-v1";
 }
 
 function getScribbleWordDc() {
@@ -165,12 +165,12 @@ async function loadWordBankFromDataConnect() {
   }
 
   const response = await getScribbleWordDc().executeGraphqlRead(GET_SCRIBBLE_WORD_STORE_QUERY, {
-    operationName: "GetScribbleWordStoreRuntime",
+    operationName: "GetScribbleGameLevelRuntime",
     variables: {
       id: getScribbleWordStoreId()
     }
   });
-  const payloadJson = response.data?.scribbleWordStore?.payloadJson;
+  const payloadJson = response.data?.gamesLevel?.payloadJson;
 
   if (typeof payloadJson !== "string" || !payloadJson.trim()) {
     return null;

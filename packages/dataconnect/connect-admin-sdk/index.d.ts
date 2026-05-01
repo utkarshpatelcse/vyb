@@ -65,11 +65,6 @@ export interface Community_Key {
   __typename?: 'Community_Key';
 }
 
-export interface ConnectLevelStore_Key {
-  id: string;
-  __typename?: 'ConnectLevelStore_Key';
-}
-
 export interface ConnectScore_Key {
   id: string;
   __typename?: 'ConnectScore_Key';
@@ -83,18 +78,6 @@ export interface ConnectSession_Key {
 export interface Course_Key {
   id: UUIDString;
   __typename?: 'Course_Key';
-}
-
-export interface CreateConnectLevelStoreData {
-  connectLevelStore_insert: ConnectLevelStore_Key;
-}
-
-export interface CreateConnectLevelStoreVariables {
-  id: string;
-  payloadJson: string;
-  totalLevels: number;
-  launchDate?: string | null;
-  checksum?: string | null;
 }
 
 export interface CreateConnectScoreData {
@@ -142,14 +125,15 @@ export interface CreateConnectSessionVariables {
   adjustedCentiseconds?: number | null;
 }
 
-export interface CreateScribbleWordStoreData {
-  scribbleWordStore_insert: ScribbleWordStore_Key;
+export interface CreateGameLevelData {
+  gamesLevel_insert: GameLevel_Key;
 }
 
-export interface CreateScribbleWordStoreVariables {
+export interface CreateGameLevelVariables {
   id: string;
   payloadJson: string;
-  totalWords: number;
+  totalLevels: number;
+  launchDate?: string | null;
   checksum?: string | null;
 }
 
@@ -158,19 +142,9 @@ export interface Follow_Key {
   __typename?: 'Follow_Key';
 }
 
-export interface GetConnectLevelStoreData {
-  connectLevelStore?: {
-    id: string;
-    payloadJson: string;
-    totalLevels: number;
-    launchDate?: string | null;
-    checksum?: string | null;
-    updatedAt: TimestampString;
-  } & ConnectLevelStore_Key;
-}
-
-export interface GetConnectLevelStoreVariables {
+export interface GameLevel_Key {
   id: string;
+  __typename?: 'GameLevel_Key';
 }
 
 export interface GetConnectScoreByKeyData {
@@ -197,17 +171,18 @@ export interface GetConnectSessionByKeyVariables {
   sessionKey: string;
 }
 
-export interface GetScribbleWordStoreData {
-  scribbleWordStore?: {
+export interface GetGameLevelData {
+  gamesLevel?: {
     id: string;
     payloadJson: string;
-    totalWords: number;
+    totalLevels: number;
+    launchDate?: string | null;
     checksum?: string | null;
     updatedAt: TimestampString;
-  } & ScribbleWordStore_Key;
+  } & GameLevel_Key;
 }
 
-export interface GetScribbleWordStoreVariables {
+export interface GetGameLevelVariables {
   id: string;
 }
 
@@ -337,11 +312,6 @@ export interface Resource_Key {
   __typename?: 'Resource_Key';
 }
 
-export interface ScribbleWordStore_Key {
-  id: string;
-  __typename?: 'ScribbleWordStore_Key';
-}
-
 export interface StoryReaction_Key {
   id: UUIDString;
   __typename?: 'StoryReaction_Key';
@@ -370,18 +340,6 @@ export interface TenantMembership_Key {
 export interface Tenant_Key {
   id: UUIDString;
   __typename?: 'Tenant_Key';
-}
-
-export interface UpdateConnectLevelStoreData {
-  connectLevelStore_update?: ConnectLevelStore_Key | null;
-}
-
-export interface UpdateConnectLevelStoreVariables {
-  id: string;
-  payloadJson: string;
-  totalLevels: number;
-  launchDate?: string | null;
-  checksum?: string | null;
 }
 
 export interface UpdateConnectScoreData {
@@ -416,14 +374,15 @@ export interface UpdateConnectSessionVariables {
   adjustedCentiseconds?: number | null;
 }
 
-export interface UpdateScribbleWordStoreData {
-  scribbleWordStore_update?: ScribbleWordStore_Key | null;
+export interface UpdateGameLevelData {
+  gamesLevel_update?: GameLevel_Key | null;
 }
 
-export interface UpdateScribbleWordStoreVariables {
+export interface UpdateGameLevelVariables {
   id: string;
   payloadJson: string;
-  totalWords: number;
+  totalLevels: number;
+  launchDate?: string | null;
   checksum?: string | null;
 }
 
@@ -437,77 +396,41 @@ export interface User_Key {
   __typename?: 'User_Key';
 }
 
-interface GetConnectLevelStoreRef {
+interface GetGameLevelRef {
   /* Allow users to create refs without passing in DataConnect */
-  (vars: GetConnectLevelStoreVariables): QueryRef<GetConnectLevelStoreData, GetConnectLevelStoreVariables>;
+  (vars: GetGameLevelVariables): QueryRef<GetGameLevelData, GetGameLevelVariables>;
   /* Allow users to pass in custom DataConnect instances */
-  (dc: DataConnect, vars: GetConnectLevelStoreVariables): QueryRef<GetConnectLevelStoreData, GetConnectLevelStoreVariables>;
+  (dc: DataConnect, vars: GetGameLevelVariables): QueryRef<GetGameLevelData, GetGameLevelVariables>;
   operationName: string;
 }
-export const getConnectLevelStoreRef: GetConnectLevelStoreRef;
+export const getGameLevelRef: GetGameLevelRef;
 
-export function getConnectLevelStore(vars: GetConnectLevelStoreVariables, options?: ExecuteQueryOptions): QueryPromise<GetConnectLevelStoreData, GetConnectLevelStoreVariables>;
-export function getConnectLevelStore(dc: DataConnect, vars: GetConnectLevelStoreVariables, options?: ExecuteQueryOptions): QueryPromise<GetConnectLevelStoreData, GetConnectLevelStoreVariables>;
+export function getGameLevel(vars: GetGameLevelVariables, options?: ExecuteQueryOptions): QueryPromise<GetGameLevelData, GetGameLevelVariables>;
+export function getGameLevel(dc: DataConnect, vars: GetGameLevelVariables, options?: ExecuteQueryOptions): QueryPromise<GetGameLevelData, GetGameLevelVariables>;
 
-interface CreateConnectLevelStoreRef {
+interface CreateGameLevelRef {
   /* Allow users to create refs without passing in DataConnect */
-  (vars: CreateConnectLevelStoreVariables): MutationRef<CreateConnectLevelStoreData, CreateConnectLevelStoreVariables>;
+  (vars: CreateGameLevelVariables): MutationRef<CreateGameLevelData, CreateGameLevelVariables>;
   /* Allow users to pass in custom DataConnect instances */
-  (dc: DataConnect, vars: CreateConnectLevelStoreVariables): MutationRef<CreateConnectLevelStoreData, CreateConnectLevelStoreVariables>;
+  (dc: DataConnect, vars: CreateGameLevelVariables): MutationRef<CreateGameLevelData, CreateGameLevelVariables>;
   operationName: string;
 }
-export const createConnectLevelStoreRef: CreateConnectLevelStoreRef;
+export const createGameLevelRef: CreateGameLevelRef;
 
-export function createConnectLevelStore(vars: CreateConnectLevelStoreVariables): MutationPromise<CreateConnectLevelStoreData, CreateConnectLevelStoreVariables>;
-export function createConnectLevelStore(dc: DataConnect, vars: CreateConnectLevelStoreVariables): MutationPromise<CreateConnectLevelStoreData, CreateConnectLevelStoreVariables>;
+export function createGameLevel(vars: CreateGameLevelVariables): MutationPromise<CreateGameLevelData, CreateGameLevelVariables>;
+export function createGameLevel(dc: DataConnect, vars: CreateGameLevelVariables): MutationPromise<CreateGameLevelData, CreateGameLevelVariables>;
 
-interface UpdateConnectLevelStoreRef {
+interface UpdateGameLevelRef {
   /* Allow users to create refs without passing in DataConnect */
-  (vars: UpdateConnectLevelStoreVariables): MutationRef<UpdateConnectLevelStoreData, UpdateConnectLevelStoreVariables>;
+  (vars: UpdateGameLevelVariables): MutationRef<UpdateGameLevelData, UpdateGameLevelVariables>;
   /* Allow users to pass in custom DataConnect instances */
-  (dc: DataConnect, vars: UpdateConnectLevelStoreVariables): MutationRef<UpdateConnectLevelStoreData, UpdateConnectLevelStoreVariables>;
+  (dc: DataConnect, vars: UpdateGameLevelVariables): MutationRef<UpdateGameLevelData, UpdateGameLevelVariables>;
   operationName: string;
 }
-export const updateConnectLevelStoreRef: UpdateConnectLevelStoreRef;
+export const updateGameLevelRef: UpdateGameLevelRef;
 
-export function updateConnectLevelStore(vars: UpdateConnectLevelStoreVariables): MutationPromise<UpdateConnectLevelStoreData, UpdateConnectLevelStoreVariables>;
-export function updateConnectLevelStore(dc: DataConnect, vars: UpdateConnectLevelStoreVariables): MutationPromise<UpdateConnectLevelStoreData, UpdateConnectLevelStoreVariables>;
-
-interface GetScribbleWordStoreRef {
-  /* Allow users to create refs without passing in DataConnect */
-  (vars: GetScribbleWordStoreVariables): QueryRef<GetScribbleWordStoreData, GetScribbleWordStoreVariables>;
-  /* Allow users to pass in custom DataConnect instances */
-  (dc: DataConnect, vars: GetScribbleWordStoreVariables): QueryRef<GetScribbleWordStoreData, GetScribbleWordStoreVariables>;
-  operationName: string;
-}
-export const getScribbleWordStoreRef: GetScribbleWordStoreRef;
-
-export function getScribbleWordStore(vars: GetScribbleWordStoreVariables, options?: ExecuteQueryOptions): QueryPromise<GetScribbleWordStoreData, GetScribbleWordStoreVariables>;
-export function getScribbleWordStore(dc: DataConnect, vars: GetScribbleWordStoreVariables, options?: ExecuteQueryOptions): QueryPromise<GetScribbleWordStoreData, GetScribbleWordStoreVariables>;
-
-interface CreateScribbleWordStoreRef {
-  /* Allow users to create refs without passing in DataConnect */
-  (vars: CreateScribbleWordStoreVariables): MutationRef<CreateScribbleWordStoreData, CreateScribbleWordStoreVariables>;
-  /* Allow users to pass in custom DataConnect instances */
-  (dc: DataConnect, vars: CreateScribbleWordStoreVariables): MutationRef<CreateScribbleWordStoreData, CreateScribbleWordStoreVariables>;
-  operationName: string;
-}
-export const createScribbleWordStoreRef: CreateScribbleWordStoreRef;
-
-export function createScribbleWordStore(vars: CreateScribbleWordStoreVariables): MutationPromise<CreateScribbleWordStoreData, CreateScribbleWordStoreVariables>;
-export function createScribbleWordStore(dc: DataConnect, vars: CreateScribbleWordStoreVariables): MutationPromise<CreateScribbleWordStoreData, CreateScribbleWordStoreVariables>;
-
-interface UpdateScribbleWordStoreRef {
-  /* Allow users to create refs without passing in DataConnect */
-  (vars: UpdateScribbleWordStoreVariables): MutationRef<UpdateScribbleWordStoreData, UpdateScribbleWordStoreVariables>;
-  /* Allow users to pass in custom DataConnect instances */
-  (dc: DataConnect, vars: UpdateScribbleWordStoreVariables): MutationRef<UpdateScribbleWordStoreData, UpdateScribbleWordStoreVariables>;
-  operationName: string;
-}
-export const updateScribbleWordStoreRef: UpdateScribbleWordStoreRef;
-
-export function updateScribbleWordStore(vars: UpdateScribbleWordStoreVariables): MutationPromise<UpdateScribbleWordStoreData, UpdateScribbleWordStoreVariables>;
-export function updateScribbleWordStore(dc: DataConnect, vars: UpdateScribbleWordStoreVariables): MutationPromise<UpdateScribbleWordStoreData, UpdateScribbleWordStoreVariables>;
+export function updateGameLevel(vars: UpdateGameLevelVariables): MutationPromise<UpdateGameLevelData, UpdateGameLevelVariables>;
+export function updateGameLevel(dc: DataConnect, vars: UpdateGameLevelVariables): MutationPromise<UpdateGameLevelData, UpdateGameLevelVariables>;
 
 interface ListConnectSessionsByTenantRef {
   /* Allow users to create refs without passing in DataConnect */

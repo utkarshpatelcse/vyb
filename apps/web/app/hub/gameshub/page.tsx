@@ -4,6 +4,7 @@ import { getViewerMe, getViewerProfile } from "../../../src/lib/backend";
 import { CampusEventsShell } from "../../../src/components/campus-events-shell";
 import { getDisplayCollegeName } from "../../../src/lib/college-access";
 import { getDailyConnectHubSnapshot } from "../../../src/lib/connect-data";
+import { getDailyQueensHubSnapshot } from "../../../src/lib/queens-data";
 import { readDevSessionFromCookieStore } from "../../../src/lib/dev-session";
 import { getEventsDashboard } from "../../../src/lib/events-data";
 
@@ -37,11 +38,16 @@ export default async function GamesHubPage({ searchParams }: GamesHubPageProps) 
     redirect("/hub/gameshub/connect");
   }
 
-  const [profile, me, dashboard, connectSummary] = await Promise.all([
+  if (initialGame === "queens" || initialGame === "n-queens") {
+    redirect("/hub/gameshub/queens");
+  }
+
+  const [profile, me, dashboard, connectSummary, queensSummary] = await Promise.all([
     getViewerProfile(viewer).catch(() => null),
     getViewerMe(viewer).catch(() => null),
     getEventsDashboard(viewer).catch(() => null),
-    getDailyConnectHubSnapshot(viewer).catch(() => null)
+    getDailyConnectHubSnapshot(viewer).catch(() => null),
+    getDailyQueensHubSnapshot(viewer).catch(() => null)
   ]);
 
   if (!profile?.profileCompleted) {
@@ -62,6 +68,7 @@ export default async function GamesHubPage({ searchParams }: GamesHubPageProps) 
       role={me?.membershipSummary.role ?? viewer.role}
       initialDashboard={dashboard}
       connectSummary={connectSummary}
+      queensSummary={queensSummary}
       initialTab="games"
     />
   );

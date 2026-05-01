@@ -6,9 +6,9 @@ schema:
   datasource:
     postgresql:
       database: vyb
+      schemaValidation: "COMPATIBLE"
       cloudSql:
         instanceId: vyb-net
-        schemaValidation: COMPATIBLE
 connectorDirs:
   - ./identity
   - ./campus

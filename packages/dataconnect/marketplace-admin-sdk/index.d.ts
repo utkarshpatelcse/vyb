@@ -63,11 +63,6 @@ export interface Community_Key {
   __typename?: 'Community_Key';
 }
 
-export interface ConnectLevelStore_Key {
-  id: string;
-  __typename?: 'ConnectLevelStore_Key';
-}
-
 export interface ConnectScore_Key {
   id: string;
   __typename?: 'ConnectScore_Key';
@@ -204,6 +199,11 @@ export interface CreateMarketRequestVariables {
 export interface Follow_Key {
   id: UUIDString;
   __typename?: 'Follow_Key';
+}
+
+export interface GameLevel_Key {
+  id: string;
+  __typename?: 'GameLevel_Key';
 }
 
 export interface GetMarketListingByIdData {
@@ -496,11 +496,6 @@ export interface ResourceFile_Key {
 export interface Resource_Key {
   id: UUIDString;
   __typename?: 'Resource_Key';
-}
-
-export interface ScribbleWordStore_Key {
-  id: string;
-  __typename?: 'ScribbleWordStore_Key';
 }
 
 export interface SoftDeleteMarketListingData {

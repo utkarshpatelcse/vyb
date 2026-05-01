@@ -14,26 +14,17 @@ If a user is not using a supported framework, they can use the generated SDK dir
 Here's an example of how to use it with the first 5 operations:
 
 ```js
-import { getConnectLevelStore, createConnectLevelStore, updateConnectLevelStore, getScribbleWordStore, createScribbleWordStore, updateScribbleWordStore, listConnectSessionsByTenant, listConnectScoresByTenant, getConnectSessionByKey, getConnectScoreByKey } from '@vyb/dataconnect-connect-admin';
+import { getGameLevel, createGameLevel, updateGameLevel, listConnectSessionsByTenant, listConnectScoresByTenant, getConnectSessionByKey, getConnectScoreByKey, createConnectSession, updateConnectSession, createConnectScore } from '@vyb/dataconnect-connect-admin';
 
 
-// Operation GetConnectLevelStore:  For variables, look at type GetConnectLevelStoreVars in ../index.d.ts
-const { data } = await GetConnectLevelStore(dataConnect, getConnectLevelStoreVars);
+// Operation GetGameLevel:  For variables, look at type GetGameLevelVars in ../index.d.ts
+const { data } = await GetGameLevel(dataConnect, getGameLevelVars);
 
-// Operation CreateConnectLevelStore:  For variables, look at type CreateConnectLevelStoreVars in ../index.d.ts
-const { data } = await CreateConnectLevelStore(dataConnect, createConnectLevelStoreVars);
+// Operation CreateGameLevel:  For variables, look at type CreateGameLevelVars in ../index.d.ts
+const { data } = await CreateGameLevel(dataConnect, createGameLevelVars);
 
-// Operation UpdateConnectLevelStore:  For variables, look at type UpdateConnectLevelStoreVars in ../index.d.ts
-const { data } = await UpdateConnectLevelStore(dataConnect, updateConnectLevelStoreVars);
-
-// Operation GetScribbleWordStore:  For variables, look at type GetScribbleWordStoreVars in ../index.d.ts
-const { data } = await GetScribbleWordStore(dataConnect, getScribbleWordStoreVars);
-
-// Operation CreateScribbleWordStore:  For variables, look at type CreateScribbleWordStoreVars in ../index.d.ts
-const { data } = await CreateScribbleWordStore(dataConnect, createScribbleWordStoreVars);
-
-// Operation UpdateScribbleWordStore:  For variables, look at type UpdateScribbleWordStoreVars in ../index.d.ts
-const { data } = await UpdateScribbleWordStore(dataConnect, updateScribbleWordStoreVars);
+// Operation UpdateGameLevel:  For variables, look at type UpdateGameLevelVars in ../index.d.ts
+const { data } = await UpdateGameLevel(dataConnect, updateGameLevelVars);
 
 // Operation ListConnectSessionsByTenant:  For variables, look at type ListConnectSessionsByTenantVars in ../index.d.ts
 const { data } = await ListConnectSessionsByTenant(dataConnect, listConnectSessionsByTenantVars);
@@ -46,6 +37,15 @@ const { data } = await GetConnectSessionByKey(dataConnect, getConnectSessionByKe
 
 // Operation GetConnectScoreByKey:  For variables, look at type GetConnectScoreByKeyVars in ../index.d.ts
 const { data } = await GetConnectScoreByKey(dataConnect, getConnectScoreByKeyVars);
+
+// Operation CreateConnectSession:  For variables, look at type CreateConnectSessionVars in ../index.d.ts
+const { data } = await CreateConnectSession(dataConnect, createConnectSessionVars);
+
+// Operation UpdateConnectSession:  For variables, look at type UpdateConnectSessionVars in ../index.d.ts
+const { data } = await UpdateConnectSession(dataConnect, updateConnectSessionVars);
+
+// Operation CreateConnectScore:  For variables, look at type CreateConnectScoreVars in ../index.d.ts
+const { data } = await CreateConnectScore(dataConnect, createConnectScoreVars);
 
 
 ```
