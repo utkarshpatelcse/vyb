@@ -25,11 +25,16 @@ const HINT_PENALTY_SECONDS = 15;
 const ERROR_PENALTY_SECONDS = 5;
 const NO_HINT_STREAK_POINTS = 25;
 const DEFAULT_LAUNCH_DATE = "2026-05-01T00:00:00+05:30";
+const IS_DEPLOYED_SERVER_RUNTIME =
+  process.env.NODE_ENV === "production" ||
+  Boolean(process.env.VERCEL || process.env.K_SERVICE || process.env.K_REVISION || process.env.K_CONFIGURATION);
 const QUEENS_GAME_LEVEL_STORE_ID =
   process.env.VYB_QUEENS_GAME_LEVEL_STORE_ID ?? process.env.VYB_QUEENS_LEVEL_STORE_ID ?? "queens-1000-levels";
 const QUEENS_LEVELS_SOURCE = process.env.VYB_QUEENS_LEVELS_SOURCE ?? "auto";
 const QUEENS_ALLOW_LOCAL_LEVEL_FALLBACK =
-  process.env.VYB_QUEENS_ALLOW_LOCAL_LEVEL_FALLBACK === "1" || QUEENS_LEVELS_SOURCE === "auto";
+  process.env.VYB_QUEENS_ALLOW_LOCAL_LEVEL_FALLBACK === "1" ||
+  QUEENS_LEVELS_SOURCE === "local" ||
+  (QUEENS_LEVELS_SOURCE === "auto" && !IS_DEPLOYED_SERVER_RUNTIME);
 const QUEENS_REPLAY_TESTER_EMAILS = new Set([
   "utkarsh.2226cse1210@kiet.edu",
   ...(process.env.VYB_QUEENS_REPLAY_TESTER_EMAILS ?? "")
@@ -228,6 +233,10 @@ function shouldLoadDataconnectQueensLevelStore() {
     return true;
   }
 
+  if (IS_DEPLOYED_SERVER_RUNTIME) {
+    return true;
+  }
+
   if (QUEENS_ALLOW_LOCAL_LEVEL_FALLBACK) {
     return hasUsableFirebaseAdminCredentials() || canUseGoogleMetadataCredentials();
   }
@@ -369,7 +378,7 @@ async function loadDataconnectSeedFile() {
       queensGameLevelSkipLogged = true;
       console.info("[queens-data] DataConnect game level store skipped; using local seed file.", {
         storeId: QUEENS_GAME_LEVEL_STORE_ID,
-        reason: "firebase-admin-credentials-unavailable"
+        reason: "local-development-credentials-unavailable"
       });
     }
     return null;
@@ -429,7 +438,9 @@ async function loadSeedFile() {
       throw error;
     }
 
-    throw new Error("Queens levels are not seeded. Import the generated payload into DataConnect or add it at `data/queens-levels.json`.");
+    throw new Error(
+      `Queens levels are not seeded in DataConnect game level store '${QUEENS_GAME_LEVEL_STORE_ID}'. Run pnpm queens:seed or set VYB_QUEENS_LEVELS_SOURCE=local with an explicit local fallback.`
+    );
   }
 }
 
