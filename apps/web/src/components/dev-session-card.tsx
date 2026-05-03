@@ -374,25 +374,25 @@ async function activateServerSession(user: User) {
   });
 
   const idToken = await user.getIdToken(true);
-  const csrfResponse = await fetch("/api/auth/session", {
+  const csrfToken = await fetch("/api/auth/session", {
     method: "GET",
     cache: "no-store"
-  });
-  const csrfPayload = (await csrfResponse.json().catch(() => null)) as { csrfToken?: string } | null;
-  const csrfToken = csrfPayload?.csrfToken?.trim();
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        return null;
+      }
 
-  if (!csrfResponse.ok || !csrfToken) {
-    const error = new Error("The session request could not be verified.") as AuthFailure;
-    error.code = "SESSION_CSRF_UNAVAILABLE";
-    error.step = "session-bootstrap";
-    throw error;
-  }
+      const csrfPayload = (await response.json().catch(() => null)) as { csrfToken?: string } | null;
+      return csrfPayload?.csrfToken?.trim() || null;
+    })
+    .catch(() => null);
 
   const response = await fetch("/api/auth/session", {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-vyb-session-csrf": csrfToken
+      ...(csrfToken ? { "x-vyb-session-csrf": csrfToken } : {})
     },
     body: JSON.stringify({
       idToken,

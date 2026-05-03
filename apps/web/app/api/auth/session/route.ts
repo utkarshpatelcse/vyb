@@ -79,6 +79,10 @@ async function verifySessionBootstrapRequest(request: Request) {
   const cookieToken = cookieStore.get(SESSION_CSRF_COOKIE)?.value;
   const headerToken = request.headers.get("x-vyb-session-csrf")?.trim();
 
+  if (!cookieToken && !headerToken) {
+    return null;
+  }
+
   if (!cookieToken || !headerToken || !timingSafeStringEqual(cookieToken, headerToken)) {
     return NextResponse.json(
       {
