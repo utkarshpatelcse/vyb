@@ -33,6 +33,32 @@ function isBackendUnavailableError(error: unknown): error is Error {
   return /fetch failed|econnrefused|enotfound|etimedout|socket hang up/i.test(error.message);
 }
 
+function getSessionSetupError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return null;
+  }
+
+  if (/VYB_SESSION_SECRET/i.test(error.message)) {
+    return {
+      code: "SESSION_SECRET_MISSING",
+      message: "The production session secret is not configured."
+    };
+  }
+
+  if (
+    /default credentials|application default|Firebase admin credentials|service account|private key|client email/i.test(
+      error.message
+    )
+  ) {
+    return {
+      code: "FIREBASE_ADMIN_CREDENTIALS_MISSING",
+      message: "Firebase Admin credentials are not configured for session cookies."
+    };
+  }
+
+  return null;
+}
+
 function buildCookieOptions(httpOnly = true) {
   return {
     httpOnly,
@@ -230,6 +256,16 @@ export async function POST(request: Request) {
     }
 
     console.error("[web/auth/session] bootstrap failed", error);
+
+    const sessionSetupError = getSessionSetupError(error);
+    if (sessionSetupError) {
+      return NextResponse.json(
+        {
+          error: sessionSetupError
+        },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json(
       {
