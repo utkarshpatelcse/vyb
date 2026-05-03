@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { SessionBootstrapRequest, SessionBootstrapResponse } from "@vyb/contracts";
-import { bootstrapViewerSession, isBackendRequestError } from "../../../../src/lib/backend";
-import { getFirebaseAdminAuth } from "../../../../src/lib/firebase-admin-server";
 import {
   createViewerSession,
   DEV_SESSION_COOKIE,
@@ -17,6 +15,12 @@ export const runtime = "nodejs";
 
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 8;
 const ID_TOKEN_SESSION_MAX_AGE_SECONDS = 50 * 60;
+
+type BackendRequestFailure = Error & {
+  statusCode: number;
+  code: string;
+  details?: unknown;
+};
 
 function getBootstrapErrorStatus(code: string) {
   return code === "INVALID_TOKEN"
@@ -32,6 +36,20 @@ function isBackendUnavailableError(error: unknown): error is Error {
   }
 
   return /fetch failed|econnrefused|enotfound|etimedout|socket hang up/i.test(error.message);
+}
+
+function isBackendRequestError(error: unknown): error is BackendRequestFailure {
+  return (
+    error instanceof Error &&
+    error.name === "BackendRequestError" &&
+    typeof (error as Partial<BackendRequestFailure>).statusCode === "number" &&
+    typeof (error as Partial<BackendRequestFailure>).code === "string"
+  );
+}
+
+async function bootstrapViewerSession(payload: SessionBootstrapRequest) {
+  const backendModule = await import("../../../../src/lib/backend");
+  return backendModule.bootstrapViewerSession(payload);
 }
 
 function getSessionSetupError(error: unknown) {
@@ -200,6 +218,7 @@ async function finalizeBootstrapResponse(bootstrap: SessionBootstrapResponse, id
 
 async function createFirebaseBearerCookie(idToken: string) {
   try {
+    const { getFirebaseAdminAuth } = await import("../../../../src/lib/firebase-admin-server");
     return {
       value: await getFirebaseAdminAuth().createSessionCookie(idToken, {
         expiresIn: SESSION_MAX_AGE_SECONDS * 1000
