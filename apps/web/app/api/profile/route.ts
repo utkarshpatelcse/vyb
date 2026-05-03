@@ -76,8 +76,7 @@ export async function PUT(request: Request) {
   const parsedPayload = onboardingProfileSchema.safeParse(payload);
   if (!parsedPayload.success) {
     console.warn("[web/profile] invalid-profile", {
-      issues: parsedPayload.error.issues,
-      payload
+      issues: parsedPayload.error.issues
     });
     return NextResponse.json(
       {
@@ -130,7 +129,7 @@ export async function PUT(request: Request) {
     if (!upstream.ok) {
       console.warn("[web/profile] upstream-save-failed", {
         status: upstream.status,
-        payload: parsed
+        code: parsed?.error?.code ?? null
       });
     }
 

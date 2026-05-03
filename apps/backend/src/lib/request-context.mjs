@@ -21,6 +21,19 @@ function readBearerToken(request) {
   return match?.[1]?.trim() || null;
 }
 
+async function verifyFirebaseBearerToken(token) {
+  const auth = getFirebaseAdminAuth();
+  try {
+    return await auth.verifyIdToken(token, true);
+  } catch (idTokenError) {
+    try {
+      return await auth.verifySessionCookie(token, true);
+    } catch (sessionCookieError) {
+      throw idTokenError instanceof Error ? idTokenError : sessionCookieError;
+    }
+  }
+}
+
 export async function createRequestContext(request) {
   const requestId =
     typeof request.headers["x-request-id"] === "string" && request.headers["x-request-id"].trim()
@@ -29,8 +42,10 @@ export async function createRequestContext(request) {
 
   const providedInternalKey = request.headers["x-vyb-internal-key"];
   const isTrustedInternalRequest = isTrustedInternalApiKey(providedInternalKey);
+  const allowInternalHeaderActor =
+    process.env.NODE_ENV !== "production" || process.env.VYB_ALLOW_INTERNAL_HEADER_AUTH === "1";
 
-  if (isTrustedInternalRequest) {
+  if (isTrustedInternalRequest && allowInternalHeaderActor) {
     const actorId = request.headers["x-demo-user-id"];
     const actorEmail = request.headers["x-demo-email"];
     const actorDisplayName = request.headers["x-demo-display-name"];
@@ -52,6 +67,15 @@ export async function createRequestContext(request) {
     };
   }
 
+  if (isTrustedInternalRequest) {
+    return {
+      requestId,
+      actor: null,
+      isTrustedInternalRequest,
+      authSource: "internal"
+    };
+  }
+
   const bearerToken = readBearerToken(request);
   if (!bearerToken) {
     return {
@@ -63,7 +87,7 @@ export async function createRequestContext(request) {
   }
 
   try {
-    const decoded = await getFirebaseAdminAuth().verifyIdToken(bearerToken, true);
+    const decoded = await verifyFirebaseBearerToken(bearerToken);
     const email = typeof decoded.email === "string" ? decoded.email.trim().toLowerCase() : null;
 
     if (!email) {
@@ -73,6 +97,16 @@ export async function createRequestContext(request) {
         isTrustedInternalRequest,
         authSource: "firebase",
         authError: "EMAIL_REQUIRED"
+      };
+    }
+
+    if (decoded.email_verified === false) {
+      return {
+        requestId,
+        actor: null,
+        isTrustedInternalRequest,
+        authSource: "firebase",
+        authError: "EMAIL_NOT_VERIFIED"
       };
     }
 

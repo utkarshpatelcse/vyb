@@ -13,7 +13,8 @@ export function getSuperAdminEmails() {
     .map((item) => normalizeAdminEmail(item))
     .filter(Boolean);
 
-  return Array.from(new Set([...defaultSuperAdminEmails, ...(configured ?? [])]));
+  const fallbackAdmins = process.env.NODE_ENV === "production" ? [] : defaultSuperAdminEmails;
+  return Array.from(new Set([...fallbackAdmins, ...(configured ?? [])]));
 }
 
 export function isSuperAdminEmail(email: string | null | undefined) {

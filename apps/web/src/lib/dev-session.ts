@@ -7,10 +7,13 @@ export interface DevSession {
   membershipId: string;
   tenantId: string;
   role: "student" | "faculty" | "alumni" | "moderator" | "admin";
+  firebaseSessionCookie?: string;
 }
 
 export const DEV_SESSION_COOKIE = "vyb-session";
+export const FIREBASE_SESSION_COOKIE = "vyb-firebase-session";
 export const PROFILE_COMPLETION_COOKIE = "vyb-profile-complete";
+export const SESSION_CSRF_COOKIE = "vyb-session-csrf";
 const DEFAULT_TENANT_ID = "tenant-demo";
 const LOCAL_SESSION_SECRET = "local-vyb-session-secret";
 
@@ -60,7 +63,15 @@ export function createDevSession(input: { email: string; displayName: string }):
 }
 
 export function encodeDevSession(session: DevSession) {
-  const encodedPayload = Buffer.from(JSON.stringify(session), "utf8").toString("base64url");
+  const payload = {
+    userId: session.userId,
+    email: session.email,
+    displayName: session.displayName,
+    membershipId: session.membershipId,
+    tenantId: session.tenantId,
+    role: session.role
+  };
+  const encodedPayload = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
   const signature = createHmac("sha256", getSessionSecret()).update(encodedPayload).digest("base64url");
   return `${encodedPayload}.${signature}`;
 }
@@ -118,5 +129,14 @@ export function decodeDevSession(value: string | null | undefined): DevSession |
 export function readDevSessionFromCookieStore(cookieStore: {
   get(name: string): { value: string } | undefined;
 }) {
-  return decodeDevSession(cookieStore.get(DEV_SESSION_COOKIE)?.value);
+  const session = decodeDevSession(cookieStore.get(DEV_SESSION_COOKIE)?.value);
+  if (!session) {
+    return null;
+  }
+
+  const firebaseSessionCookie = cookieStore.get(FIREBASE_SESSION_COOKIE)?.value;
+  return {
+    ...session,
+    firebaseSessionCookie
+  };
 }

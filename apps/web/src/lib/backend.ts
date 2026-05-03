@@ -124,9 +124,19 @@ function delay(ms: number) {
 function buildBackendHeaders(viewer?: DevSession): Record<string, string> {
   if (!viewer) {
     return {
-      "content-type": "application/json",
-      "x-vyb-internal-key": getInternalApiKey()
+      "content-type": "application/json"
     };
+  }
+
+  if (viewer.firebaseSessionCookie) {
+    return {
+      "content-type": "application/json",
+      authorization: `Bearer ${viewer.firebaseSessionCookie}`
+    };
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("A Firebase-backed session is required for authenticated backend requests.");
   }
 
   return {

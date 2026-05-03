@@ -12,7 +12,6 @@ import {
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
-  signInWithRedirect,
   signOut,
   updateProfile,
   type Auth,
@@ -49,6 +48,7 @@ type AuthWithStateReady = {
 };
 
 const GOOGLE_REDIRECT_INTENT_KEY = "vyb-google-redirect-intent";
+const PROGRESS_DOTS = [".", "..", "..."] as const;
 
 function GoogleGlyph() {
   return (
@@ -103,7 +103,7 @@ function mapFirebaseError(code: string) {
     case "auth/network-request-failed":
       return "A network issue interrupted the request. Check your connection and try again.";
     case "auth/operation-not-supported-in-this-environment":
-      return "This browser cannot complete popup sign-in. Redirect sign-in will be used instead.";
+      return "This browser cannot complete Google popup sign-in. Open the app in Chrome and try again.";
     case "auth/too-many-requests":
       return "Too many attempts were made. Please wait a moment and try again.";
     case "COLLEGE_DOMAIN_NOT_ALLOWED":
@@ -274,14 +274,6 @@ function buildErrorFeedback(error: unknown, title: string, fallbackMessage: stri
   });
 }
 
-function persistGoogleRedirectIntent(intent: Mode) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.sessionStorage.setItem(GOOGLE_REDIRECT_INTENT_KEY, intent);
-}
-
 function readGoogleRedirectIntent() {
   if (typeof window === "undefined") {
     return null;
@@ -382,10 +374,25 @@ async function activateServerSession(user: User) {
   });
 
   const idToken = await user.getIdToken(true);
+  const csrfResponse = await fetch("/api/auth/session", {
+    method: "GET",
+    cache: "no-store"
+  });
+  const csrfPayload = (await csrfResponse.json().catch(() => null)) as { csrfToken?: string } | null;
+  const csrfToken = csrfPayload?.csrfToken?.trim();
+
+  if (!csrfResponse.ok || !csrfToken) {
+    const error = new Error("The session request could not be verified.") as AuthFailure;
+    error.code = "SESSION_CSRF_UNAVAILABLE";
+    error.step = "session-bootstrap";
+    throw error;
+  }
+
   const response = await fetch("/api/auth/session", {
     method: "POST",
     headers: {
-      "content-type": "application/json"
+      "content-type": "application/json",
+      "x-vyb-session-csrf": csrfToken
     },
     body: JSON.stringify({
       idToken,
@@ -441,6 +448,27 @@ export function DevSessionCard({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [feedback, setFeedback] = useState<AuthFeedback | null>(null);
+  const [progressDotIndex, setProgressDotIndex] = useState(0);
+
+  const isProgressFeedback = feedback?.tone === "neutral" && isBusy;
+  const feedbackTitle = feedback
+    ? `${feedback.title}${isProgressFeedback ? PROGRESS_DOTS[progressDotIndex] : ""}`
+    : "";
+
+  useEffect(() => {
+    if (!isProgressFeedback) {
+      setProgressDotIndex(0);
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setProgressDotIndex((current) => (current + 1) % PROGRESS_DOTS.length);
+    }, 420);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isProgressFeedback]);
 
   useEffect(() => {
     let cancelled = false;
@@ -717,6 +745,13 @@ export function DevSessionCard({
         return;
       }
 
+      setFeedback(
+        buildFeedback({
+          tone: "neutral",
+          title: "Signing you in",
+          message: "Your account is verified. Setting up your campus session now."
+        })
+      );
       const session = await activateServerSession(credential.user);
       setPassword("");
       logAuthEvent("info", "email-signin:navigate", {
@@ -779,6 +814,13 @@ export function DevSessionCard({
         email: resolvedEmail
       });
       ensureAllowedCollegeEmail(resolvedEmail);
+      setFeedback(
+        buildFeedback({
+          tone: "neutral",
+          title: "Signing you in",
+          message: "Google verified your account. Setting up your campus session now."
+        })
+      );
       const session = await activateServerSession(credential.user);
       logAuthEvent("info", "google-auth:navigate", {
         uid: credential.user.uid,
@@ -792,37 +834,6 @@ export function DevSessionCard({
       if (isFirebaseClientConfigured()) {
         const auth = await getFirebaseClientAuth();
         await secureFirebaseSignOut(auth).catch(() => undefined);
-      }
-
-      if (code === "auth/popup-blocked" || code === "auth/operation-not-supported-in-this-environment") {
-        try {
-          const auth = await getFirebaseClientAuth();
-          persistGoogleRedirectIntent(mode);
-          setFeedback(
-            buildFeedback({
-              tone: "neutral",
-              title: "Popup unavailable",
-              message: "Popup sign-in is not available here. Redirecting to Google instead.",
-              code
-            })
-          );
-          logAuthEvent("warn", "google-auth:popup-fallback", {
-            code
-          });
-          await signInWithRedirect(auth, createGoogleProvider());
-          return;
-        } catch (redirectError) {
-          logAuthEvent("error", "google-auth:redirect-failed", {
-            code: extractErrorCode(redirectError),
-            message: extractErrorMessage(redirectError, "Google sign-in failed."),
-            details:
-              typeof redirectError === "object" && redirectError && "details" in redirectError
-                ? normalizeFeedbackDetails(redirectError.details)
-                : null
-          });
-          setFeedback(buildErrorFeedback(redirectError, "Google sign-in failed", "Google sign-in failed."));
-          return;
-        }
       }
 
       if (isExpectedAuthIssue(code)) {
@@ -976,6 +987,18 @@ export function DevSessionCard({
           </p>
         </div>
 
+        {feedback ? (
+          <div
+            className={`vyb-inline-message vyb-inline-message-${feedback.tone}`}
+            role={feedback.tone === "error" ? "alert" : "status"}
+          >
+            <strong>{feedbackTitle}</strong>
+            <span>{feedback.message}</span>
+            {feedback.code ? <code>{feedback.code}</code> : null}
+            {feedback.details ? <small>{feedback.details}</small> : null}
+          </div>
+        ) : null}
+
         <button type="button" className="vyb-google-button" onClick={handleGoogleAuth} disabled={isBusy}>
           <GoogleGlyph />
           <span>{mode === "sign-in" ? "Continue with Google" : "Register with Google"}</span>
@@ -1066,17 +1089,6 @@ export function DevSessionCard({
           )}
         </div>
 
-        {feedback ? (
-          <div
-            className={`vyb-inline-message vyb-inline-message-${feedback.tone}`}
-            role={feedback.tone === "error" ? "alert" : "status"}
-          >
-            <strong>{feedback.title}</strong>
-            <span>{feedback.message}</span>
-            {feedback.code ? <code>{feedback.code}</code> : null}
-            {feedback.details ? <small>{feedback.details}</small> : null}
-          </div>
-        ) : null}
       </section>
     </div>
   );
