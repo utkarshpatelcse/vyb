@@ -1,4 +1,4 @@
-const CACHE_NAME = "vyb-shell-v3";
+const CACHE_NAME = "vyb-shell-v4";
 const STATIC_PATHS = [
   "/",
   "/manifest.webmanifest",
@@ -64,21 +64,20 @@ self.addEventListener("fetch", (event) => {
   }
 
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      const networkFetch = fetch(event.request)
-        .then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
-            const responseClone = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseClone);
-            });
-          }
+    fetch(event.request)
+      .then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200) {
+          const responseClone = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseClone);
+          });
+        }
 
-          return networkResponse;
-        })
-        .catch(() => cachedResponse);
-
-      return cachedResponse || networkFetch;
-    })
+        return networkResponse;
+      })
+      .catch(async () => {
+        const cache = await caches.open(CACHE_NAME);
+        return cache.match(event.request) || Response.error();
+      })
   );
 });

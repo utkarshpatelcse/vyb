@@ -41,7 +41,8 @@ function getSessionSetupError(error: unknown) {
   if (/VYB_SESSION_SECRET/i.test(error.message)) {
     return {
       code: "SESSION_SECRET_MISSING",
-      message: "The production session secret is not configured."
+      message: "The production session secret is not configured.",
+      details: buildSessionSetupDetails()
     };
   }
 
@@ -52,7 +53,52 @@ function getSessionSetupError(error: unknown) {
   ) {
     return {
       code: "FIREBASE_ADMIN_CREDENTIALS_MISSING",
-      message: "Firebase Admin credentials are not configured for session cookies."
+      message: "Firebase Admin credentials are not configured for session cookies.",
+      details: buildSessionSetupDetails()
+    };
+  }
+
+  return null;
+}
+
+function hasEnvValue(name: string) {
+  return Boolean(process.env[name]?.trim());
+}
+
+function buildSessionSetupDetails() {
+  return {
+    deployment: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? process.env.K_REVISION ?? null,
+    runtime: process.env.VERCEL ? "vercel" : process.env.K_SERVICE ? "cloud-run" : "node"
+  };
+}
+
+function getSessionConfigurationError() {
+  if (process.env.NODE_ENV !== "production") {
+    return null;
+  }
+
+  if (!hasEnvValue("VYB_SESSION_SECRET")) {
+    return {
+      code: "SESSION_SECRET_MISSING",
+      message: "The production session secret is not configured.",
+      details: buildSessionSetupDetails()
+    };
+  }
+
+  const hasInlineAdminCredentials =
+    hasEnvValue("FIREBASE_ADMIN_CREDENTIALS_JSON") ||
+    hasEnvValue("FIREBASE_SERVICE_ACCOUNT_JSON") ||
+    hasEnvValue("FIREBASE_ADMIN_CREDENTIALS_BASE64") ||
+    hasEnvValue("FIREBASE_SERVICE_ACCOUNT_BASE64") ||
+    (hasEnvValue("FIREBASE_PROJECT_ID") &&
+      hasEnvValue("FIREBASE_ADMIN_CLIENT_EMAIL") &&
+      hasEnvValue("FIREBASE_ADMIN_PRIVATE_KEY"));
+
+  if (process.env.VERCEL && !hasInlineAdminCredentials) {
+    return {
+      code: "FIREBASE_ADMIN_CREDENTIALS_MISSING",
+      message: "Firebase Admin credentials are not configured for session cookies.",
+      details: buildSessionSetupDetails()
     };
   }
 
@@ -203,6 +249,17 @@ export async function POST(request: Request) {
     console.info("[web/auth/session] bootstrap:start", {
       hasDisplayName: Boolean(payload.displayName?.trim())
     });
+    const configurationError = getSessionConfigurationError();
+    if (configurationError) {
+      console.error("[web/auth/session] bootstrap:configuration-error", configurationError);
+      return NextResponse.json(
+        {
+          error: configurationError
+        },
+        { status: 500 }
+      );
+    }
+
     const bootstrap = await bootstrapViewerSession({
       idToken: payload.idToken.trim(),
       displayName: payload.displayName?.trim()
