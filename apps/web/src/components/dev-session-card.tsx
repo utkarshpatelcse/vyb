@@ -761,15 +761,6 @@ export function DevSessionCard({
     void handleEmailAuth();
   }
 
-  function shouldPreferGoogleRedirect() {
-    if (typeof window === "undefined") {
-      return false;
-    }
-
-    const standalone = window.matchMedia("(display-mode: standalone)").matches;
-    return standalone;
-  }
-
   async function handleGoogleAuth() {
     setFeedback(null);
     setIsBusy(true);
@@ -780,22 +771,6 @@ export function DevSessionCard({
       logAuthEvent("info", "google-auth:start", {
         mode
       });
-
-      if (shouldPreferGoogleRedirect()) {
-        persistGoogleRedirectIntent(mode);
-        setFeedback(
-          buildFeedback({
-            tone: "neutral",
-            title: "Redirecting to Google",
-            message: "You will return here after Google verifies your account."
-          })
-        );
-        logAuthEvent("info", "google-auth:redirect", {
-          reason: "mobile-or-narrow-screen"
-        });
-        await signInWithRedirect(auth, provider);
-        return;
-      }
 
       const credential = await signInWithPopup(auth, provider);
       const resolvedEmail = normalizeEmail(credential.user.email ?? "");
