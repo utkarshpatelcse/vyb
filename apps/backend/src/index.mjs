@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { loadRootEnv } from "../../../packages/config/src/index.mjs";
-import { buildCorsHeaders, sendError, sendJson } from "./lib/http.mjs";
+import { attachCorsContext, buildCorsHeaders, sendError, sendJson } from "./lib/http.mjs";
 import { createRequestContext } from "./lib/request-context.mjs";
 import { launchCollege } from "./modules/identity/college-access.mjs";
 import { getCampusModuleHealth, handleCampusRoute } from "./modules/campus/index.mjs";
@@ -25,6 +25,7 @@ const routeHandlers = [handleIdentityRoute, handleCampusRoute, handleSocialRoute
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+  attachCorsContext(response, request);
   const context = await createRequestContext(request);
   const startedAt = Date.now();
   const actorLabel = context.actor ? `${context.actor.id}:${context.actor.email}` : "anonymous";
@@ -38,7 +39,7 @@ const server = createServer(async (request, response) => {
   try {
     if (request.method === "OPTIONS") {
       response.writeHead(204, {
-        ...buildCorsHeaders(),
+        ...buildCorsHeaders(response.__vybCorsAllowOrigin ?? null),
         "x-request-id": context.requestId
       });
       response.end();

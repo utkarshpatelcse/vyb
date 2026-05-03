@@ -1864,7 +1864,7 @@ function isChatMessageExpired(message, now = Date.now()) {
 }
 
 async function buildConversationPreview(viewer, conversation, viewerParticipant, peerParticipant, hiddenMessageIds = new Set()) {
-  const [peerProfile, peerIdentity, lastMessageRaw, peerPrivacySettings] = await Promise.all([
+  const [peerProfile, peerIdentity, messageSummary, peerPrivacySettings] = await Promise.all([
     getProfileByUserId({
       tenantId: viewer.tenantId,
       userId: peerParticipant.userId
@@ -1873,7 +1873,7 @@ async function buildConversationPreview(viewer, conversation, viewerParticipant,
       tenantId: viewer.tenantId,
       userId: peerParticipant.userId
     }),
-    getLastVisibleMessageRaw(conversation.id, hiddenMessageIds),
+    getVisibleMessageSummary(conversation.id, hiddenMessageIds),
     getChatPrivacySettings({
       tenantId: viewer.tenantId,
       userId: peerParticipant.userId
@@ -1881,17 +1881,17 @@ async function buildConversationPreview(viewer, conversation, viewerParticipant,
   ]);
   const peerPresence = await getVisiblePeerPresence(viewer, peerParticipant.userId, peerPrivacySettings);
 
-  const lastMessage = await hydrateChatMessage(lastMessageRaw);
+  const lastMessage = await hydrateChatMessage(messageSummary.lastMessageRaw);
   const lastMessageAt = lastMessage?.createdAt ?? toIsoString(conversation.updatedAt);
   const viewerLastReadAt = viewerParticipant.lastReadAt ? new Date(viewerParticipant.lastReadAt).getTime() : 0;
-  const messageTimestamp = lastMessage?.createdAt ? new Date(lastMessage.createdAt).getTime() : 0;
-  const unreadCount =
-    lastMessage &&
-    lastMessage.cipherAlgorithm !== CHAT_DELETED_MESSAGE_ALGORITHM &&
-    lastMessage.senderUserId !== viewer.userId &&
-    messageTimestamp > viewerLastReadAt
-      ? 1
-      : 0;
+  const unreadCount = messageSummary.visibleMessages.filter((message) => {
+    const messageTimestamp = message.createdAt ? new Date(message.createdAt).getTime() : 0;
+    return (
+      message.cipherAlgorithm !== CHAT_DELETED_MESSAGE_ALGORITHM &&
+      message.senderUserId !== viewer.userId &&
+      messageTimestamp > viewerLastReadAt
+    );
+  }).length;
 
   return {
     id: conversation.id,
@@ -2477,6 +2477,16 @@ async function getLastVisibleMessageRaw(conversationId, hiddenMessageIds) {
   const rawMessages = await listChatMessagesByConversation(conversationId);
   const visibleMessages = applyViewerHiddenMessageFilter(rawMessages, hiddenMessageIds);
   return visibleMessages[visibleMessages.length - 1] ?? null;
+}
+
+async function getVisibleMessageSummary(conversationId, hiddenMessageIds) {
+  const rawMessages = await listChatMessagesByConversation(conversationId);
+  const visibleMessages = applyViewerHiddenMessageFilter(rawMessages, hiddenMessageIds);
+
+  return {
+    lastMessageRaw: visibleMessages[visibleMessages.length - 1] ?? null,
+    visibleMessages
+  };
 }
 
 async function syncConversationLastMessage(conversationId) {

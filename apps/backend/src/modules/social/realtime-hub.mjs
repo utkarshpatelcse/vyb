@@ -1,15 +1,13 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { WebSocketServer } from "ws";
+import { getConfiguredInternalApiKey } from "../../lib/internal-auth.mjs";
 
 const SOCIAL_SOCKET_PATH = "/ws/social";
 const subscriptionsByTenant = new Map();
 
-function getSocketSecret() {
-  return process.env.VYB_INTERNAL_API_KEY ?? "local-vyb-internal-key";
-}
-
 function signPayload(encodedPayload) {
-  return createHmac("sha256", getSocketSecret()).update(encodedPayload).digest("base64url");
+  const secret = getConfiguredInternalApiKey();
+  return secret ? createHmac("sha256", secret).update(encodedPayload).digest("base64url") : null;
 }
 
 function verifySocialSocketToken(token) {
@@ -23,6 +21,9 @@ function verifySocialSocketToken(token) {
   }
 
   const expectedSignature = signPayload(encodedPayload);
+  if (!expectedSignature) {
+    return null;
+  }
   const providedBuffer = Buffer.from(providedSignature);
   const expectedBuffer = Buffer.from(expectedSignature);
 
@@ -36,6 +37,7 @@ function verifySocialSocketToken(token) {
       typeof payload?.tenantId !== "string" ||
       typeof payload?.userId !== "string" ||
       typeof payload?.membershipId !== "string" ||
+      typeof payload?.email !== "string" ||
       typeof payload?.exp !== "number"
     ) {
       return null;

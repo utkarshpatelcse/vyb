@@ -4529,7 +4529,8 @@
   --connect-line: rgba(148, 163, 184, 0.16);
   --connect-hot: #22d3ee;
   --connect-good: #34d399;
-  padding: 1rem clamp(0.85rem, 3vw, 1.35rem) 7rem;
+  box-sizing: border-box;
+  padding: 1rem clamp(0.85rem, 3vw, 1.35rem) calc(7rem + env(safe-area-inset-bottom) + var(--vyb-keyboard-inset, 0px));
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -4539,7 +4540,9 @@
     radial-gradient(circle at 90% 15%, rgba(99, 102, 241, 0.2), transparent 34%),
     linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(8, 13, 26, 0.98));
   color: var(--connect-ink);
-  min-height: 100%;
+  min-height: var(--vyb-visual-viewport-height, 100dvh);
+  overflow-x: hidden;
+  overflow-y: auto;
   /* touch-action: none removed to allow scroll */
 }
 
@@ -5481,14 +5484,17 @@
   --queens-muted: rgba(226, 232, 240, 0.68);
   --queens-line: rgba(226, 232, 240, 0.14);
   --queens-panel: rgba(15, 23, 42, 0.76);
-  min-height: 100%;
+  box-sizing: border-box;
+  min-height: var(--vyb-visual-viewport-height, 100dvh);
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  padding: 1rem clamp(0.85rem, 3vw, 1.35rem) 7rem;
+  padding: 1rem clamp(0.85rem, 3vw, 1.35rem) calc(7rem + env(safe-area-inset-bottom) + var(--vyb-keyboard-inset, 0px));
   background: linear-gradient(155deg, #09111f 0%, #10201d 44%, #17140b 100%);
   color: var(--queens-ink);
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .vyb-queens-topbar,
@@ -5584,7 +5590,7 @@
 }
 
 .vyb-queens-board {
-  width: min(100%, 60vh, 26rem);
+  width: min(100%, calc(var(--vyb-visual-viewport-height, 100dvh) * 0.6), 26rem);
   aspect-ratio: 1;
   display: grid;
   grid-template-columns: repeat(var(--queens-grid-size), minmax(0, 1fr));
@@ -5863,14 +5869,15 @@
   --scribble-green: #34d399;
   box-sizing: border-box;
   min-height: 0;
-  height: 100dvh;
+  height: var(--vyb-visual-viewport-height, 100dvh);
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  padding: 1rem clamp(0.8rem, 2.5vw, 1.25rem) clamp(0.75rem, 2vh, 1.25rem);
+  padding: 1rem clamp(0.8rem, 2.5vw, 1.25rem) calc(0.75rem + env(safe-area-inset-bottom) + var(--vyb-keyboard-inset, 0px));
   color: var(--scribble-text);
-  overflow: hidden !important;
+  overflow-x: hidden;
+  overflow-y: auto;
   background:
     repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 14px),
     linear-gradient(180deg, #101827 0%, var(--scribble-bg) 100%);
@@ -6587,9 +6594,8 @@
 
 @media (max-width: 640px) {
   .vyb-scribble-shell {
-    height: 100dvh;
-    overflow: hidden !important;
-    padding-bottom: 0.75rem !important;
+    height: var(--vyb-visual-viewport-height, 100dvh);
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom) + var(--vyb-keyboard-inset, 0px)) !important;
   }
   .vyb-scribble-game-grid {
     flex: 1;

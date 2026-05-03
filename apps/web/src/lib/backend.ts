@@ -92,6 +92,7 @@ import type {
 } from "@vyb/contracts";
 import type { DevSession } from "./dev-session";
 import { invokeBackendRoute, isBackendConnectionError } from "./backend-bridge";
+import { getInternalApiKey } from "./internal-api-key";
 
 export type UploadedSocialMediaAsset = {
   mediaType: "image" | "video";
@@ -103,7 +104,6 @@ export type UploadedSocialMediaAsset = {
 
 const API_BASE_URL =
   process.env.VYB_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
-const INTERNAL_API_KEY = process.env.VYB_INTERNAL_API_KEY ?? "local-vyb-internal-key";
 
 export class BackendRequestError extends Error {
   statusCode: number;
@@ -125,13 +125,13 @@ function buildBackendHeaders(viewer?: DevSession): Record<string, string> {
   if (!viewer) {
     return {
       "content-type": "application/json",
-      "x-vyb-internal-key": INTERNAL_API_KEY
+      "x-vyb-internal-key": getInternalApiKey()
     };
   }
 
   return {
     "content-type": "application/json",
-    "x-vyb-internal-key": INTERNAL_API_KEY,
+    "x-vyb-internal-key": getInternalApiKey(),
     "x-demo-user-id": viewer.userId,
     "x-demo-email": viewer.email,
     "x-demo-display-name": viewer.displayName

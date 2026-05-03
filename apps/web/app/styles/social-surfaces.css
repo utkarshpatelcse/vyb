@@ -277,7 +277,7 @@
 
   .vyb-campus-home {
     height: auto;
-    min-height: 100dvh;
+    min-height: var(--vyb-visual-viewport-height, 100dvh);
     overflow-x: hidden;
     overflow-y: auto;
   }
@@ -305,10 +305,10 @@
 
   .vyb-campus-main {
     height: auto;
-    min-height: 100dvh;
+    min-height: var(--vyb-visual-viewport-height, 100dvh);
     overflow-y: visible;
     overscroll-behavior-y: auto;
-    padding-bottom: 4.6rem;
+    padding-bottom: calc(4.6rem + var(--vyb-keyboard-inset, 0px));
   }
 
   .vyb-reels-feed {

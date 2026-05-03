@@ -103,6 +103,11 @@ export async function handleResourcesRoute({ request, response, url, context }) 
       return true;
     }
 
+    if (tenantId.trim() !== resolved.live.tenant.id) {
+      sendError(response, 403, "FORBIDDEN", "Requested tenant does not match your active membership.");
+      return true;
+    }
+
     try {
       const data = courseId
         ? await listResourcesByCourse(getFirebaseDataConnect(resourcesConnectorConfig), {
@@ -117,7 +122,7 @@ export async function handleResourcesRoute({ request, response, url, context }) 
       sendJson(response, 200, {
         tenantId: resolved.live.tenant.id,
         courseId,
-        items: data.data.resources.map((item) => ({
+        items: data.data.resources.filter((item) => item.tenantId === resolved.live.tenant.id).map((item) => ({
           id: item.id,
           tenantId: item.tenantId,
           membershipId: item.membershipId,
@@ -156,6 +161,11 @@ export async function handleResourcesRoute({ request, response, url, context }) 
       });
 
       if (!data.data.resource) {
+        sendError(response, 404, "RESOURCE_NOT_FOUND", "Resource not found.");
+        return true;
+      }
+
+      if (data.data.resource.tenantId !== resolved.live.tenant.id) {
         sendError(response, 404, "RESOURCE_NOT_FOUND", "Resource not found.");
         return true;
       }

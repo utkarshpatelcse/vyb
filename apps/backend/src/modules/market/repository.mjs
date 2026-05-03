@@ -39,6 +39,19 @@ const SAVE_LOOKUP_LIMIT = 8;
 const LEGACY_MARKET_SEED_USER_ID_PREFIX = "seed-";
 const MARKET_DEFAULT_LOCATION = "Campus";
 const MARKET_DEFAULT_CAMPUS_SPOT = "Meetup in chat";
+const MARKET_MEDIA_PATH_EXTENSIONS = new Set([
+  "jpg",
+  "jpeg",
+  "png",
+  "webp",
+  "gif",
+  "heic",
+  "heif",
+  "mp4",
+  "webm",
+  "mov",
+  "mkv"
+]);
 
 function getMarketplaceDc() {
   return getFirebaseDataConnect(marketplaceConnectorConfig);
@@ -46,6 +59,142 @@ function getMarketplaceDc() {
 
 function getMarketplaceStorageBucket() {
   return getStorage(getFirebaseAdminApp("backend-market-storage")).bucket();
+}
+
+function decodeStorageObjectPath(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function getFirebaseStorageObjectPath(pathname) {
+  const objectMarker = "/o/";
+  const markerIndex = pathname.indexOf(objectMarker);
+
+  if (markerIndex === -1) {
+    return null;
+  }
+
+  return decodeStorageObjectPath(pathname.slice(markerIndex + objectMarker.length));
+}
+
+function getLocalMarketMediaObjectPath(mediaUrl) {
+  const localPrefix = "/api/market/media/";
+  let pathname = String(mediaUrl ?? "").split(/[?#]/)[0] ?? "";
+
+  try {
+    pathname = new URL(mediaUrl).pathname;
+  } catch {
+    // Relative local URLs are expected in development fallback mode.
+  }
+
+  if (!pathname.startsWith(localPrefix)) {
+    return null;
+  }
+
+  return decodeStorageObjectPath(pathname.slice(localPrefix.length));
+}
+
+function parseMarketMediaStoragePath(storagePath) {
+  const normalized = typeof storagePath === "string" ? storagePath.trim() : "";
+  const segments = normalized.split("/").filter(Boolean);
+  const fileName = segments[5] ?? "";
+  const extension = fileName.includes(".") ? fileName.split(".").pop()?.toLowerCase() : null;
+
+  if (
+    segments.length !== 6 ||
+    segments[0] !== "market" ||
+    (segments[2] !== "sale" && segments[2] !== "buying" && segments[2] !== "lend") ||
+    !segments[1] ||
+    !segments[3] ||
+    !segments[4] ||
+    !extension ||
+    !MARKET_MEDIA_PATH_EXTENSIONS.has(extension)
+  ) {
+    return null;
+  }
+
+  return {
+    storagePath: normalized,
+    tenantId: segments[1],
+    tab: segments[2],
+    userId: segments[3],
+    postId: segments[4],
+    fileName
+  };
+}
+
+function isSafeMarketMediaUrl(value, storagePath) {
+  if (typeof value !== "string" || !value.trim() || typeof storagePath !== "string" || !storagePath.trim()) {
+    return false;
+  }
+
+  const mediaUrl = value.trim();
+  const localObjectPath = getLocalMarketMediaObjectPath(mediaUrl);
+
+  if (localObjectPath) {
+    return localObjectPath === storagePath;
+  }
+
+  try {
+    const parsed = new URL(mediaUrl);
+    const firebaseObjectPath = getFirebaseStorageObjectPath(parsed.pathname);
+
+    return parsed.hostname === "firebasestorage.googleapis.com" && firebaseObjectPath === storagePath;
+  } catch {
+    return false;
+  }
+}
+
+function assertOwnedMarketMediaAsset(asset, { tenantId, userId }) {
+  const storagePath = typeof asset?.storagePath === "string" && asset.storagePath.trim() ? asset.storagePath.trim() : null;
+
+  if (!storagePath) {
+    return {
+      ...asset,
+      url: typeof asset?.url === "string" ? asset.url.trim() : asset?.url,
+      storagePath: null
+    };
+  }
+
+  const parsed = parseMarketMediaStoragePath(storagePath);
+  if (!parsed || parsed.tenantId !== tenantId || parsed.userId !== userId) {
+    throw new Error("Market media must be uploaded by your account before it can be attached.");
+  }
+
+  const url = typeof asset?.url === "string" ? asset.url.trim() : "";
+  if (!isSafeMarketMediaUrl(url, storagePath)) {
+    throw new Error("Market media URL does not match the uploaded storage object.");
+  }
+
+  return {
+    ...asset,
+    url,
+    storagePath
+  };
+}
+
+function filterOwnedMarketMediaAssetsForDelete(assets, { tenantId, userId }) {
+  return assets.filter((asset) => {
+    const storagePath = typeof asset.storagePath === "string" && asset.storagePath.trim() ? asset.storagePath.trim() : null;
+    if (!storagePath) {
+      return false;
+    }
+
+    const parsed = parseMarketMediaStoragePath(storagePath);
+    const allowed = Boolean(parsed && parsed.tenantId === tenantId && parsed.userId === userId);
+    if (!allowed) {
+      console.warn("[market] skipped unsafe media deletion path", {
+        tenantId,
+        userId,
+        storagePath
+      });
+    }
+
+    return allowed;
+  });
 }
 
 function normalizeText(value, fallback = "") {
@@ -142,15 +291,16 @@ function toMediaSizeBytes(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function buildPersistedMedia(asset, createdAt) {
+function buildPersistedMedia(asset, createdAt, owner) {
+  const verified = assertOwnedMarketMediaAsset(asset, owner);
   return {
-    id: asset.id || `media-${randomUUID()}`,
-    kind: asset.kind,
-    url: asset.url,
-    fileName: asset.fileName,
-    mimeType: asset.mimeType,
-    sizeBytes: String(Math.max(0, Math.round(asset.sizeBytes ?? 0))),
-    storagePath: asset.storagePath ?? null,
+    id: verified.id || `media-${randomUUID()}`,
+    kind: verified.kind,
+    url: verified.url,
+    fileName: verified.fileName,
+    mimeType: verified.mimeType,
+    sizeBytes: String(Math.max(0, Math.round(verified.sizeBytes ?? 0))),
+    storagePath: verified.storagePath ?? null,
     createdAt
   };
 }
@@ -346,8 +496,8 @@ async function getLiveRequestMediaRecords(tenantId, requestId) {
   return response.data.marketRequestMediaRecords.filter((item) => !item.deletedAt && item.requestId === requestId);
 }
 
-async function deleteMarketMediaAssets(assets) {
-  const removable = assets.filter((asset) => typeof asset.storagePath === "string" && asset.storagePath.length > 0);
+async function deleteMarketMediaAssets(assets, owner) {
+  const removable = filterOwnedMarketMediaAssetsForDelete(assets, owner);
 
   if (removable.length === 0) {
     return;
@@ -429,7 +579,10 @@ export async function createLiveMarketPost(viewer, payload) {
 
     await Promise.all(
       media.map((asset) => {
-        const persisted = buildPersistedMedia(asset, createdAt);
+        const persisted = buildPersistedMedia(asset, createdAt, {
+          tenantId: viewer.tenantId,
+          userId: viewer.userId
+        });
         return createMarketListingMedia(dc, {
           id: persisted.id,
           tenantId: viewer.tenantId,
@@ -475,7 +628,10 @@ export async function createLiveMarketPost(viewer, payload) {
 
   await Promise.all(
     media.map((asset) => {
-      const persisted = buildPersistedMedia(asset, createdAt);
+      const persisted = buildPersistedMedia(asset, createdAt, {
+        tenantId: viewer.tenantId,
+        userId: viewer.userId
+      });
       return createMarketRequestMedia(dc, {
         id: persisted.id,
         tenantId: viewer.tenantId,
@@ -523,7 +679,10 @@ export async function updateLiveMarketListing(viewer, payload) {
   const createdAt = new Date().toISOString();
   await Promise.all(
     (payload.media ?? []).map((asset) => {
-      const persisted = buildPersistedMedia(asset, createdAt);
+      const persisted = buildPersistedMedia(asset, createdAt, {
+        tenantId: viewer.tenantId,
+        userId: viewer.userId
+      });
       return createMarketListingMedia(dc, {
         id: persisted.id,
         tenantId: viewer.tenantId,
@@ -548,7 +707,11 @@ export async function updateLiveMarketListing(viewer, payload) {
       mimeType: item.mimeType,
       sizeBytes: toMediaSizeBytes(item.sizeBytes),
       storagePath: item.storagePath ?? null
-    }))
+    })),
+    {
+      tenantId: viewer.tenantId,
+      userId: viewer.userId
+    }
   );
 
   return {
@@ -586,7 +749,10 @@ export async function updateLiveMarketRequest(viewer, payload) {
   const createdAt = new Date().toISOString();
   await Promise.all(
     (payload.media ?? []).map((asset) => {
-      const persisted = buildPersistedMedia(asset, createdAt);
+      const persisted = buildPersistedMedia(asset, createdAt, {
+        tenantId: viewer.tenantId,
+        userId: viewer.userId
+      });
       return createMarketRequestMedia(dc, {
         id: persisted.id,
         tenantId: viewer.tenantId,
@@ -611,7 +777,11 @@ export async function updateLiveMarketRequest(viewer, payload) {
       mimeType: item.mimeType,
       sizeBytes: toMediaSizeBytes(item.sizeBytes),
       storagePath: item.storagePath ?? null
-    }))
+    })),
+    {
+      tenantId: viewer.tenantId,
+      userId: viewer.userId
+    }
   );
 
   return {
@@ -645,7 +815,11 @@ export async function deleteLiveMarketListing(viewer, listingId) {
       mimeType: item.mimeType,
       sizeBytes: toMediaSizeBytes(item.sizeBytes),
       storagePath: item.storagePath ?? null
-    }))
+    })),
+    {
+      tenantId: viewer.tenantId,
+      userId: viewer.userId
+    }
   );
 
   return {
@@ -669,7 +843,11 @@ export async function deleteLiveMarketRequest(viewer, requestId) {
       mimeType: item.mimeType,
       sizeBytes: toMediaSizeBytes(item.sizeBytes),
       storagePath: item.storagePath ?? null
-    }))
+    })),
+    {
+      tenantId: viewer.tenantId,
+      userId: viewer.userId
+    }
   );
 
   return {

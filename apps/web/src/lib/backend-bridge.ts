@@ -8,7 +8,7 @@ type BackendRouteArgs = {
 };
 
 type BackendModules = {
-  createRequestContext: (request: MockNodeRequest) => any;
+  createRequestContext: (request: MockNodeRequest) => Promise<any>;
   sendError: (
     response: MockNodeResponse,
     statusCode: number,
@@ -176,7 +176,7 @@ export async function invokeBackendRoute(requestInit: BackendBridgeRequest) {
   const request = createMockRequest(requestInit);
   const response = new MockNodeResponse();
   const url = new URL(requestInit.path, BACKEND_BASE_URL);
-  const context = modules.createRequestContext(request);
+  const context = await modules.createRequestContext(request);
   const routeHandlers = [
     modules.handleIdentityRoute,
     modules.handleCampusRoute,

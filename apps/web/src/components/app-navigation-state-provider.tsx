@@ -101,6 +101,38 @@ export function AppNavigationStateProvider() {
       return;
     }
 
+    const root = document.documentElement;
+    const updateVisualViewport = () => {
+      const layoutHeight = window.innerHeight;
+      const visualViewport = window.visualViewport;
+      const viewportHeight = Math.max(320, Math.round(visualViewport?.height ?? layoutHeight));
+      const keyboardInset = visualViewport
+        ? Math.max(0, Math.round(layoutHeight - visualViewport.height - visualViewport.offsetTop))
+        : 0;
+
+      root.style.setProperty("--vyb-visual-viewport-height", `${viewportHeight}px`);
+      root.style.setProperty("--vyb-keyboard-inset", `${keyboardInset}px`);
+    };
+
+    updateVisualViewport();
+    window.visualViewport?.addEventListener("resize", updateVisualViewport);
+    window.visualViewport?.addEventListener("scroll", updateVisualViewport);
+    window.addEventListener("resize", updateVisualViewport);
+
+    return () => {
+      window.visualViewport?.removeEventListener("resize", updateVisualViewport);
+      window.visualViewport?.removeEventListener("scroll", updateVisualViewport);
+      window.removeEventListener("resize", updateVisualViewport);
+      root.style.removeProperty("--vyb-visual-viewport-height");
+      root.style.removeProperty("--vyb-keyboard-inset");
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!canUseDom()) {
+      return;
+    }
+
     const previous = window.history.scrollRestoration;
     window.history.scrollRestoration = "manual";
 

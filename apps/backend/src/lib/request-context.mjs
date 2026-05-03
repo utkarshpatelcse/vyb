@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getFirebaseAdminAuth } from "../../../../packages/config/src/index.mjs";
+import { isTrustedInternalApiKey } from "./internal-auth.mjs";
 
 function buildActor({ id, email, displayName = null }) {
   return {
@@ -26,10 +27,8 @@ export async function createRequestContext(request) {
       ? request.headers["x-request-id"]
       : randomUUID();
 
-  const internalApiKey = process.env.VYB_INTERNAL_API_KEY ?? "local-vyb-internal-key";
   const providedInternalKey = request.headers["x-vyb-internal-key"];
-  const isTrustedInternalRequest =
-    typeof providedInternalKey === "string" && providedInternalKey === internalApiKey;
+  const isTrustedInternalRequest = isTrustedInternalApiKey(providedInternalKey);
 
   if (isTrustedInternalRequest) {
     const actorId = request.headers["x-demo-user-id"];

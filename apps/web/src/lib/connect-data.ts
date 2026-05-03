@@ -1558,7 +1558,7 @@ function normalizeClientElapsedSeconds(value: number | null | undefined, serverE
     return serverElapsedSeconds;
   }
 
-  return Number(Math.min(value, serverElapsedSeconds).toFixed(2));
+  return serverElapsedSeconds;
 }
 
 function secondsBetween(startIso: string, endIso: string) {

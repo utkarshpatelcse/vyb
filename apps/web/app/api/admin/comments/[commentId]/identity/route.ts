@@ -18,18 +18,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ comm
     );
   }
 
-  if (viewer.role !== "admin") {
-    return NextResponse.json(
-      {
-        error: {
-          code: "FORBIDDEN",
-          message: "Admin access is required."
-        }
-      },
-      { status: 403 }
-    );
-  }
-
   const { commentId } = await params;
   const { searchParams } = new URL(request.url);
   const reason = searchParams.get("reason")?.trim();

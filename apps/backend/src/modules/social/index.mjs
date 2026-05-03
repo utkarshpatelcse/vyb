@@ -44,6 +44,10 @@ const allowedReactionTypes = new Set(["fire", "support", "like", "love", "insigh
 const allowedStoryMediaTypes = new Set(["image", "video"]);
 const allowedCommentMediaTypes = new Set(["image", "gif", "sticker"]);
 const allowedVibeVideoMimeTypes = new Set(["video/mp4", "video/webm", "video/quicktime"]);
+const allowedSocialImageMimeTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"]);
+const allowedSocialVideoMimeTypes = new Set(["video/mp4", "video/webm", "video/quicktime"]);
+const MAX_SOCIAL_IMAGE_BYTES = 4 * 1024 * 1024;
+const MAX_SOCIAL_VIDEO_BYTES = 40 * 1024 * 1024;
 const MAX_VIBE_VIDEO_BYTES = 40 * 1024 * 1024;
 
 function requireNonEmptyString(value) {
@@ -73,6 +77,35 @@ function isSafeVibeStoragePath(value, tenantId, userIds) {
     segments[3] === "vibe" &&
     allowedUserIds.has(segments[4]) &&
     /\.(mp4|webm|mov)$/i.test(segments[5] ?? "")
+  );
+}
+
+function isSafeSocialStoragePath(value, { tenantId, userIds, assetType, placement, mediaType }) {
+  if (!requireNonEmptyString(value)) {
+    return false;
+  }
+
+  const allowedUserIds = new Set(
+    (Array.isArray(userIds) ? userIds : [userIds])
+      .filter(requireNonEmptyString)
+      .map((userId) => userId.trim())
+  );
+  const segments = value.split("/").filter(Boolean);
+  const fileName = segments[5] ?? "";
+  const extension = fileName.includes(".") ? fileName.split(".").pop()?.toLowerCase() : "";
+  const allowedExtensions =
+    mediaType === "video"
+      ? new Set(["mp4", "webm", "mov"])
+      : new Set(["jpg", "jpeg", "png", "webp", "gif", "heic", "heif"]);
+
+  return (
+    segments.length === 6 &&
+    segments[0] === "social" &&
+    segments[1] === tenantId &&
+    segments[2] === assetType &&
+    segments[3] === placement &&
+    allowedUserIds.has(segments[4]) &&
+    allowedExtensions.has(extension)
   );
 }
 
@@ -132,6 +165,136 @@ function isSafeVibeMediaUrl(value, storagePath) {
   } catch {
     return false;
   }
+}
+
+function isSafeSocialMediaUrl(value, storagePath) {
+  if (!requireNonEmptyString(value) || !requireNonEmptyString(storagePath)) {
+    return false;
+  }
+
+  const mediaUrl = value.trim();
+  const localObjectPath = getLocalMediaObjectPath(mediaUrl);
+
+  if (localObjectPath) {
+    return localObjectPath === storagePath;
+  }
+
+  try {
+    const parsed = new URL(mediaUrl);
+    const firebaseObjectPath = getFirebaseStorageObjectPath(parsed.pathname);
+
+    return parsed.hostname === "firebasestorage.googleapis.com" && firebaseObjectPath === storagePath;
+  } catch {
+    return false;
+  }
+}
+
+function getDataUrlMediaInfo(value) {
+  if (!requireNonEmptyString(value)) {
+    return null;
+  }
+
+  const match = value.trim().match(/^data:([^;,]+);base64,([a-z0-9+/=\s]+)$/iu);
+  if (!match) {
+    return null;
+  }
+
+  const mimeType = normalizeMimeType(match[1]);
+  const base64Body = match[2].replace(/\s+/g, "");
+  return {
+    mimeType,
+    estimatedBytes: Math.floor((base64Body.length * 3) / 4)
+  };
+}
+
+function isAllowedSocialMimeType(mimeType, mediaType) {
+  return mediaType === "video" ? allowedSocialVideoMimeTypes.has(mimeType) : allowedSocialImageMimeTypes.has(mimeType);
+}
+
+function isSafeInlineSocialMedia(value, mediaType) {
+  const info = getDataUrlMediaInfo(value);
+  if (!info || !isAllowedSocialMimeType(info.mimeType, mediaType)) {
+    return false;
+  }
+
+  const maxBytes = mediaType === "video" ? MAX_SOCIAL_VIDEO_BYTES : MAX_SOCIAL_IMAGE_BYTES;
+  return info.estimatedBytes > 0 && info.estimatedBytes <= maxBytes;
+}
+
+function getSocialMediaPayloadChecks({
+  mediaUrl,
+  storagePath,
+  mediaMimeType,
+  mediaSizeBytes,
+  tenantId,
+  userIds,
+  assetType,
+  placement,
+  mediaType
+}) {
+  const trimmedMediaUrl = requireNonEmptyString(mediaUrl) ? mediaUrl.trim() : "";
+  const trimmedStoragePath = requireNonEmptyString(storagePath) ? storagePath.trim() : "";
+  const normalizedMimeType = normalizeMimeType(mediaMimeType);
+  const sizeBytes = Number(mediaSizeBytes);
+  const maxBytes = mediaType === "video" ? MAX_SOCIAL_VIDEO_BYTES : MAX_SOCIAL_IMAGE_BYTES;
+
+  if (isSafeInlineSocialMedia(trimmedMediaUrl, mediaType) && !trimmedStoragePath) {
+    return {
+      safeInlineMedia: true,
+      safeStoragePath: true,
+      safeMediaUrl: true,
+      allowedMimeType: true,
+      safeSize: true
+    };
+  }
+
+  return {
+    safeInlineMedia: false,
+    safeStoragePath: isSafeSocialStoragePath(trimmedStoragePath, {
+      tenantId,
+      userIds,
+      assetType,
+      placement,
+      mediaType
+    }),
+    safeMediaUrl: isSafeSocialMediaUrl(trimmedMediaUrl, trimmedStoragePath),
+    allowedMimeType: isAllowedSocialMimeType(normalizedMimeType, mediaType),
+    safeSize: Number.isFinite(sizeBytes) && sizeBytes > 0 && sizeBytes <= maxBytes
+  };
+}
+
+function validateSocialMediaPayload(input) {
+  const checks = getSocialMediaPayloadChecks(input);
+  return checks.safeInlineMedia || (checks.safeStoragePath && checks.safeMediaUrl && checks.allowedMimeType && checks.safeSize);
+}
+
+function validateSocialMediaAssetTree(asset, context) {
+  if (!asset || typeof asset !== "object") {
+    return false;
+  }
+
+  const mediaType =
+    asset.kind === "video" || asset.mediaType === "video" || normalizeMimeType(asset.mimeType).startsWith("video/")
+      ? "video"
+      : "image";
+  const valid = validateSocialMediaPayload({
+    ...context,
+    mediaType,
+    mediaUrl: typeof asset.url === "string" ? asset.url : typeof asset.mediaUrl === "string" ? asset.mediaUrl : "",
+    storagePath: typeof asset.storagePath === "string" ? asset.storagePath : "",
+    mediaMimeType: asset.mimeType,
+    mediaSizeBytes: asset.sizeBytes
+  });
+
+  if (!valid) {
+    return false;
+  }
+
+  return !Array.isArray(asset.variants) || asset.variants.every((variant) => validateSocialMediaAssetTree(variant, context));
+}
+
+function validateSocialMediaAssets(assets, context) {
+  return Array.isArray(assets) && assets.every((asset) => validateSocialMediaAssetTree(asset, context));
 }
 
 function getVibePostPayloadChecks(payload, tenantId, userIds) {
@@ -205,6 +368,18 @@ function buildPostCursor(item) {
 
 function isAdminRole(role) {
   return role === "admin";
+}
+
+function isSocialRoutePath(pathname) {
+  return (
+    pathname === "/v1/feed" ||
+    pathname === "/v1/vibes" ||
+    pathname === "/v1/social-media/upload" ||
+    pathname === "/v1/posts" ||
+    pathname === "/v1/stories" ||
+    pathname === "/v1/users/search" ||
+    /^\/v1\/(?:posts|comments|stories|users|follows|admin\/posts|admin\/comments)\//u.test(pathname)
+  );
 }
 
 function buildCommentAuthor(profile, authorUserId) {
@@ -476,11 +651,28 @@ export function getSocialModuleHealth() {
   };
 }
 
-export async function canOpenSocialRealtimeConnection({ tenantId, userId, membershipId }) {
-  return requireNonEmptyString(tenantId) && requireNonEmptyString(userId) && requireNonEmptyString(membershipId);
+export async function canOpenSocialRealtimeConnection({ tenantId, userId, membershipId, email }) {
+  if (!requireNonEmptyString(tenantId) || !requireNonEmptyString(userId) || !requireNonEmptyString(membershipId) || !requireNonEmptyString(email)) {
+    return false;
+  }
+
+  const resolved = await resolveLiveContext({
+    id: userId,
+    email,
+    displayName: null
+  });
+
+  return (
+    resolved?.live?.tenant?.id === tenantId &&
+    resolved.live?.membership?.id === membershipId
+  );
 }
 
 export async function handleSocialRoute({ request, response, url, context }) {
+  if (!isSocialRoutePath(url.pathname)) {
+    return false;
+  }
+
   if (!context.actor) {
     return false;
   }
@@ -488,6 +680,10 @@ export async function handleSocialRoute({ request, response, url, context }) {
   const resolved = await resolveLiveContext(context.actor);
   if (!resolved?.viewer) {
     return false;
+  }
+  if (!resolved.live?.tenant || !resolved.live.user || !resolved.live.membership) {
+    sendError(response, 401, "UNAUTHENTICATED", "An authenticated membership is required.");
+    return true;
   }
   const resolvedTenantId = resolved.live?.tenant?.id ?? null;
   const resolvedMembershipId = resolved.live?.membership?.id ?? null;
@@ -666,6 +862,44 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
+    if (payload.placement !== "vibe" && hasMedia) {
+      const socialUploaderIds = [resolvedUserId, context.actor?.id].filter(requireNonEmptyString);
+      const mediaKind = payload.kind === "video" || normalizeMimeType(payload.mediaMimeType).startsWith("video/") ? "video" : "image";
+      const mediaAssets = Array.isArray(payload.mediaAssets) ? payload.mediaAssets : [];
+      const topLevelMediaValid = !requireNonEmptyString(payload.mediaUrl) || validateSocialMediaPayload({
+        tenantId,
+        userIds: socialUploaderIds,
+        assetType: "posts",
+        placement: "feed",
+        mediaType: mediaKind,
+        mediaUrl: payload.mediaUrl,
+        storagePath: payload.mediaStoragePath,
+        mediaMimeType: payload.mediaMimeType,
+        mediaSizeBytes: payload.mediaSizeBytes
+      });
+      const mediaAssetsValid =
+        mediaAssets.length === 0 ||
+        validateSocialMediaAssets(mediaAssets, {
+          tenantId,
+          userIds: socialUploaderIds,
+          assetType: "posts",
+          placement: "feed"
+        });
+
+      if (!topLevelMediaValid || !mediaAssetsValid) {
+        console.warn("[social] invalid-feed-media", {
+          tenantId,
+          actorId: context.actor?.id ?? null,
+          resolvedUserId,
+          hasMediaUrl: requireNonEmptyString(payload.mediaUrl),
+          mediaStoragePath: requireNonEmptyString(payload.mediaStoragePath) ? payload.mediaStoragePath.trim() : null,
+          mediaAssetsCount: mediaAssets.length
+        });
+        sendError(response, 400, "INVALID_POST_MEDIA", "Posts must use verified media uploaded by your account.");
+        return true;
+      }
+    }
+
     const profile = await getProfileByUserId({
       tenantId,
       userId: resolvedUserId
@@ -751,6 +985,32 @@ export async function handleSocialRoute({ request, response, url, context }) {
 
     if (!requireNonEmptyString(payload.mediaUrl)) {
       sendError(response, 400, "MISSING_MEDIA", "Add story media before publishing.");
+      return true;
+    }
+
+    const storyUploaderIds = [resolvedUserId, context.actor?.id].filter(requireNonEmptyString);
+    if (
+      !validateSocialMediaPayload({
+        tenantId,
+        userIds: storyUploaderIds,
+        assetType: "stories",
+        placement: "feed",
+        mediaType: payload.mediaType,
+        mediaUrl: payload.mediaUrl,
+        storagePath: payload.mediaStoragePath,
+        mediaMimeType: payload.mediaMimeType,
+        mediaSizeBytes: payload.mediaSizeBytes
+      })
+    ) {
+      console.warn("[social] invalid-story-media", {
+        tenantId,
+        actorId: context.actor?.id ?? null,
+        resolvedUserId,
+        mediaStoragePath: requireNonEmptyString(payload.mediaStoragePath) ? payload.mediaStoragePath.trim() : null,
+        mediaMimeType: normalizeMimeType(payload.mediaMimeType),
+        mediaSizeBytes: Number(payload.mediaSizeBytes)
+      });
+      sendError(response, 400, "INVALID_STORY_MEDIA", "Stories must use verified media uploaded by your account.");
       return true;
     }
 

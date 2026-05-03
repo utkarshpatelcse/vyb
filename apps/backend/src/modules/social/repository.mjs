@@ -51,6 +51,7 @@ const VIBE_VIDEO_VARIANT_TARGETS = [
   { label: "1440p", height: 1440, crf: 21 },
   { label: "4k", height: 2160, crf: 20 }
 ];
+const FFMPEG_TIMEOUT_MS = 120000;
 
 const defaultFallbackStore = {
   posts: [],
@@ -825,6 +826,22 @@ function runFfmpeg(args, options = {}) {
     });
     const stdoutChunks = [];
     const stderrChunks = [];
+    let settled = false;
+    const timeout = setTimeout(() => {
+      finish(() => {
+        child.kill("SIGKILL");
+        reject(new Error("FFmpeg timed out while processing media."));
+      });
+    }, options.timeoutMs ?? FFMPEG_TIMEOUT_MS);
+
+    function finish(callback) {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      callback();
+    }
 
     child.stdout.on("data", (chunk) => {
       stdoutChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -832,19 +849,21 @@ function runFfmpeg(args, options = {}) {
     child.stderr.on("data", (chunk) => {
       stderrChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     });
-    child.on("error", reject);
+    child.on("error", (error) => finish(() => reject(error)));
     child.on("close", (code) => {
-      const result = {
-        stdout: Buffer.concat(stdoutChunks).toString("utf8"),
-        stderr: Buffer.concat(stderrChunks).toString("utf8")
-      };
+      finish(() => {
+        const result = {
+          stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+          stderr: Buffer.concat(stderrChunks).toString("utf8")
+        };
 
-      if (code === 0 || options.allowNonZeroExit) {
-        resolve(result);
-        return;
-      }
+        if (code === 0 || options.allowNonZeroExit) {
+          resolve(result);
+          return;
+        }
 
-      reject(new Error(result.stderr || `FFmpeg failed with exit code ${code}.`));
+        reject(new Error(result.stderr || `FFmpeg failed with exit code ${code}.`));
+      });
     });
   });
 }

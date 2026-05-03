@@ -731,8 +731,39 @@ export function QueensDailyGame({ onExit, backHref = "/hub/gameshub" }: QueensDa
     );
   }
 
-  function restartTesterRun() {
-    window.location.reload();
+  async function restartTesterRun() {
+    if (!daily?.canReplay || isLoading) {
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setMessage(null);
+    setResult(null);
+    setQueenKeys(new Set());
+    setMarkKeys(new Set());
+    setHistory([]);
+    setActiveHint(null);
+    setHighlightedRegionId(null);
+    setCooldownUntil(null);
+    setLocalCompletionElapsedSeconds(null);
+    autoSubmitKeyRef.current = "";
+
+    try {
+      const nextLeaderboardPreference = readBooleanSetting(QUEENS_LEADERBOARD_SETTING_KEY, true);
+      const dailyUrl = `/api/games/queens/daily${nextLeaderboardPreference ? "" : "?leaderboard=off"}`;
+      const response = await fetch(dailyUrl, { cache: "no-store" });
+      const payload = await readJsonResponse<QueensDailyLevelResponse>(response);
+
+      setDaily(payload);
+      setLeaderboardPreference(payload.leaderboardOptIn);
+      setAutoFillX(readBooleanSetting(QUEENS_AUTO_X_SETTING_KEY, false));
+      setMessage("Replay ready.");
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "We could not restart Queens.");
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   if (isLoading) {
@@ -811,7 +842,7 @@ export function QueensDailyGame({ onExit, backHref = "/hub/gameshub" }: QueensDa
           disabled={Boolean(solvedResult)}
         >
           <span className="vyb-queens-cell-bg" />
-          {hasQueen ? <span className="vyb-queens-queen">♛</span> : hasMark || isGhost ? <span className="vyb-queens-x">X</span> : null}
+          {hasQueen ? <span className="vyb-queens-queen">Q</span> : hasMark || isGhost ? <span className="vyb-queens-x">X</span> : null}
         </button>
       );
     }

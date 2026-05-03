@@ -1,17 +1,15 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { WebSocketServer } from "ws";
+import { getConfiguredInternalApiKey } from "../../lib/internal-auth.mjs";
 import { canExposeChatTyping, getChatPrivacySettings } from "./privacy-settings-store.mjs";
 
 const CHAT_SOCKET_PATH = "/ws/chat";
 const CHAT_REALTIME_DEBUG_PREFIX = "[chat-realtime-debug]";
 const subscriptionsByConversation = new Map();
 
-function getSocketSecret() {
-  return process.env.VYB_INTERNAL_API_KEY ?? "local-vyb-internal-key";
-}
-
 function signPayload(encodedPayload) {
-  return createHmac("sha256", getSocketSecret()).update(encodedPayload).digest("base64url");
+  const secret = getConfiguredInternalApiKey();
+  return secret ? createHmac("sha256", secret).update(encodedPayload).digest("base64url") : null;
 }
 
 function verifyChatSocketToken(token) {
@@ -25,6 +23,9 @@ function verifyChatSocketToken(token) {
   }
 
   const expectedSignature = signPayload(encodedPayload);
+  if (!expectedSignature) {
+    return null;
+  }
   const providedBuffer = Buffer.from(providedSignature);
   const expectedBuffer = Buffer.from(expectedSignature);
 

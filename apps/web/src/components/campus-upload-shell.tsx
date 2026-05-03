@@ -869,8 +869,8 @@ export function CampusUploadShell({
               <button
                 type="button"
                 className="cs-back-btn"
-                onClick={() => setMode("choice")}
-                aria-label="Back to choice"
+                onClick={handleClose}
+                aria-label="Back"
               >
                 <svg viewBox="0 0 24 24" className="cs-icon" aria-hidden="true">
                   <path d="M19 12H5M12 5l-7 7 7 7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />

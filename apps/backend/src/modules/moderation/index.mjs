@@ -27,6 +27,15 @@ function hasModerationAccess(role) {
   return role === "admin" || role === "moderator";
 }
 
+function sendModerationMutationError(response, error) {
+  if (Number.isInteger(error?.statusCode) && typeof error?.code === "string") {
+    sendError(response, error.statusCode, error.code, error.message);
+    return true;
+  }
+
+  throw error;
+}
+
 export function getModerationModuleHealth() {
   return {
     module: "moderation",
@@ -180,13 +189,18 @@ export async function handleModerationRoute({ request, response, url, context })
       return true;
     }
 
-    const item = await createModerationCaseRecord({
-      tenantId,
-      reportId: payload.reportId.trim(),
-      assignedUserId: requireNonEmptyString(payload.assignedUserId) ? payload.assignedUserId.trim() : null,
-      decision: requireNonEmptyString(payload.decision) ? payload.decision.trim() : null,
-      notes: requireNonEmptyString(payload.notes) ? payload.notes.trim() : null
-    });
+    let item;
+    try {
+      item = await createModerationCaseRecord({
+        tenantId,
+        reportId: payload.reportId.trim(),
+        assignedUserId: requireNonEmptyString(payload.assignedUserId) ? payload.assignedUserId.trim() : null,
+        decision: requireNonEmptyString(payload.decision) ? payload.decision.trim() : null,
+        notes: requireNonEmptyString(payload.notes) ? payload.notes.trim() : null
+      });
+    } catch (error) {
+      return sendModerationMutationError(response, error);
+    }
 
     await trackActivity({
       tenantId,
@@ -223,11 +237,17 @@ export async function handleModerationRoute({ request, response, url, context })
       return true;
     }
 
-    const item = await resolveModerationCaseRecord({
-      id: resolveCaseMatch[1],
-      decision: payload.decision.trim(),
-      notes: requireNonEmptyString(payload.notes) ? payload.notes.trim() : null
-    });
+    let item;
+    try {
+      item = await resolveModerationCaseRecord({
+        tenantId,
+        id: resolveCaseMatch[1],
+        decision: payload.decision.trim(),
+        notes: requireNonEmptyString(payload.notes) ? payload.notes.trim() : null
+      });
+    } catch (error) {
+      return sendModerationMutationError(response, error);
+    }
 
     await trackActivity({
       tenantId,

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { WebSocketServer } from "ws";
 import { getFirebaseDataConnect } from "../../../../../packages/config/src/index.mjs";
+import { getConfiguredInternalApiKey } from "../../lib/internal-auth.mjs";
 import { sendJson } from "../../lib/http.mjs";
 
 const SCRIBBLE_SOCKET_PATH = "/ws/games/scribble";
@@ -225,12 +226,9 @@ function normalizeWordList(value) {
     .filter((word) => word.length >= 2 && word.length <= 40);
 }
 
-function getSocketSecret() {
-  return process.env.VYB_INTERNAL_API_KEY ?? "local-vyb-internal-key";
-}
-
 function signPayload(encodedPayload) {
-  return createHmac("sha256", getSocketSecret()).update(encodedPayload).digest("base64url");
+  const secret = getConfiguredInternalApiKey();
+  return secret ? createHmac("sha256", secret).update(encodedPayload).digest("base64url") : null;
 }
 
 function verifyScribbleSocketToken(token) {
@@ -248,6 +246,12 @@ function verifyScribbleSocketToken(token) {
   }
 
   const expectedSignature = signPayload(encodedPayload);
+  if (!expectedSignature) {
+    scribbleLog("socket-token.signing-secret-missing", {
+      hasConfiguredKey: false
+    }, "warn");
+    return null;
+  }
   const providedBuffer = Buffer.from(providedSignature);
   const expectedBuffer = Buffer.from(expectedSignature);
 

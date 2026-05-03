@@ -37,12 +37,17 @@
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "firebase-tools": "^15.15.0",
+    "firebase-tools": "^15.16.0",
     "pnpm": "^10.33.0",
     "turbo": "latest",
     "typescript": "latest"
   },
   "pnpm": {
+    "overrides": {
+      "@tootallnate/once": "3.0.1",
+      "postcss": "8.5.13",
+      "uuid": "14.0.0"
+    },
     "onlyBuiltDependencies": [
       "ffmpeg-static"
     ]

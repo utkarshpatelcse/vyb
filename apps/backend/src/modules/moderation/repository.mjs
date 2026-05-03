@@ -16,6 +16,46 @@ function getModerationDc() {
   return getFirebaseDataConnect(moderationConnectorConfig);
 }
 
+const GET_REPORT_BY_TENANT_AND_ID_QUERY = `
+  query GetReportByTenantAndId($tenantId: UUID!, $reportId: UUID!) {
+    reports(
+      where: {
+        tenantId: { eq: $tenantId }
+        id: { eq: $reportId }
+        deletedAt: { isNull: true }
+      }
+      limit: 1
+    ) {
+      id
+      tenantId
+    }
+  }
+`;
+
+const GET_MODERATION_CASE_BY_TENANT_AND_ID_QUERY = `
+  query GetModerationCaseByTenantAndId($tenantId: UUID!, $id: UUID!) {
+    moderationCases(
+      where: {
+        tenantId: { eq: $tenantId }
+        id: { eq: $id }
+        deletedAt: { isNull: true }
+      }
+      limit: 1
+    ) {
+      id
+      tenantId
+      reportId
+    }
+  }
+`;
+
+function createModerationError(code, message, statusCode = 400) {
+  const error = new Error(message);
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
+}
+
 function toDate(value) {
   const parsed = new Date(value ?? Date.now());
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
@@ -234,6 +274,30 @@ export async function listReports({ tenantId, limit = 50 }) {
   return response.data.reports.map((item) => mapReportRecord(item));
 }
 
+async function getReportByTenantAndId({ tenantId, reportId }) {
+  const response = await getModerationDc().executeGraphqlRead(GET_REPORT_BY_TENANT_AND_ID_QUERY, {
+    operationName: "GetReportByTenantAndId",
+    variables: {
+      tenantId,
+      reportId
+    }
+  });
+
+  return response.data.reports?.[0] ?? null;
+}
+
+async function getModerationCaseByTenantAndId({ tenantId, id }) {
+  const response = await getModerationDc().executeGraphqlRead(GET_MODERATION_CASE_BY_TENANT_AND_ID_QUERY, {
+    operationName: "GetModerationCaseByTenantAndId",
+    variables: {
+      tenantId,
+      id
+    }
+  });
+
+  return response.data.moderationCases?.[0] ?? null;
+}
+
 export async function createModerationCaseRecord({
   tenantId,
   reportId,
@@ -241,6 +305,18 @@ export async function createModerationCaseRecord({
   decision = null,
   notes = null
 }) {
+  const report = await getReportByTenantAndId({
+    tenantId,
+    reportId
+  });
+  if (!report) {
+    throw createModerationError(
+      "REPORT_NOT_FOUND",
+      "That report could not be found in this tenant.",
+      404
+    );
+  }
+
   const created = await createModerationCaseMutation(getModerationDc(), {
     tenantId,
     reportId,
@@ -262,7 +338,19 @@ export async function createModerationCaseRecord({
   };
 }
 
-export async function resolveModerationCaseRecord({ id, decision, notes = null }) {
+export async function resolveModerationCaseRecord({ tenantId, id, decision, notes = null }) {
+  const moderationCase = await getModerationCaseByTenantAndId({
+    tenantId,
+    id
+  });
+  if (!moderationCase) {
+    throw createModerationError(
+      "MODERATION_CASE_NOT_FOUND",
+      "That moderation case could not be found in this tenant.",
+      404
+    );
+  }
+
   await resolveModerationCaseMutation(getModerationDc(), {
     id,
     decision,
@@ -271,6 +359,8 @@ export async function resolveModerationCaseRecord({ id, decision, notes = null }
 
   return {
     id,
+    tenantId,
+    reportId: moderationCase.reportId,
     decision,
     notes,
     resolvedAt: new Date().toISOString()
