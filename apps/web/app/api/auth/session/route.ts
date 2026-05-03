@@ -16,6 +16,7 @@ import {
 export const runtime = "nodejs";
 
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 8;
+const ID_TOKEN_SESSION_MAX_AGE_SECONDS = 50 * 60;
 
 function getBootstrapErrorStatus(code: string) {
   return code === "INVALID_TOKEN"
@@ -81,23 +82,6 @@ function getSessionConfigurationError() {
     return {
       code: "SESSION_SECRET_MISSING",
       message: "The production session secret is not configured.",
-      details: buildSessionSetupDetails()
-    };
-  }
-
-  const hasInlineAdminCredentials =
-    hasEnvValue("FIREBASE_ADMIN_CREDENTIALS_JSON") ||
-    hasEnvValue("FIREBASE_SERVICE_ACCOUNT_JSON") ||
-    hasEnvValue("FIREBASE_ADMIN_CREDENTIALS_BASE64") ||
-    hasEnvValue("FIREBASE_SERVICE_ACCOUNT_BASE64") ||
-    (hasEnvValue("FIREBASE_PROJECT_ID") &&
-      hasEnvValue("FIREBASE_ADMIN_CLIENT_EMAIL") &&
-      hasEnvValue("FIREBASE_ADMIN_PRIVATE_KEY"));
-
-  if (process.env.VERCEL && !hasInlineAdminCredentials) {
-    return {
-      code: "FIREBASE_ADMIN_CREDENTIALS_MISSING",
-      message: "Firebase Admin credentials are not configured for session cookies.",
       details: buildSessionSetupDetails()
     };
   }
@@ -180,29 +164,28 @@ async function finalizeBootstrapResponse(bootstrap: SessionBootstrapResponse, id
     role: bootstrap.session.role
   });
 
-  const firebaseSessionCookie = await getFirebaseAdminAuth().createSessionCookie(idToken, {
-    expiresIn: SESSION_MAX_AGE_SECONDS * 1000
-  });
+  const firebaseBearer = await createFirebaseBearerCookie(idToken);
 
   const cookieStore = await cookies();
   cookieStore.set(DEV_SESSION_COOKIE, encodeDevSession(session), {
     ...buildCookieOptions(),
-    maxAge: SESSION_MAX_AGE_SECONDS
+    maxAge: firebaseBearer.maxAge
   });
-  cookieStore.set(FIREBASE_SESSION_COOKIE, firebaseSessionCookie, {
+  cookieStore.set(FIREBASE_SESSION_COOKIE, firebaseBearer.value, {
     ...buildCookieOptions(),
-    maxAge: SESSION_MAX_AGE_SECONDS
+    maxAge: firebaseBearer.maxAge
   });
   cookieStore.set(PROFILE_COMPLETION_COOKIE, bootstrap.profileCompleted ? "1" : "0", {
     ...buildCookieOptions(),
-    maxAge: SESSION_MAX_AGE_SECONDS
+    maxAge: firebaseBearer.maxAge
   });
 
   console.info("[web/auth/session] bootstrap:success", {
     userId: bootstrap.session.userId,
     email: bootstrap.session.email,
     nextPath: bootstrap.nextPath,
-    profileCompleted: bootstrap.profileCompleted
+    profileCompleted: bootstrap.profileCompleted,
+    firebaseBearerSource: firebaseBearer.source
   });
 
   return NextResponse.json({
@@ -213,6 +196,29 @@ async function finalizeBootstrapResponse(bootstrap: SessionBootstrapResponse, id
     profileCompleted: bootstrap.profileCompleted,
     nextPath: bootstrap.nextPath
   });
+}
+
+async function createFirebaseBearerCookie(idToken: string) {
+  try {
+    return {
+      value: await getFirebaseAdminAuth().createSessionCookie(idToken, {
+        expiresIn: SESSION_MAX_AGE_SECONDS * 1000
+      }),
+      maxAge: SESSION_MAX_AGE_SECONDS,
+      source: "session-cookie"
+    };
+  } catch (error) {
+    console.warn("[web/auth/session] firebase-session-cookie:fallback-to-id-token", {
+      message: error instanceof Error ? error.message : "unknown",
+      ...buildSessionSetupDetails()
+    });
+
+    return {
+      value: idToken,
+      maxAge: ID_TOKEN_SESSION_MAX_AGE_SECONDS,
+      source: "id-token"
+    };
+  }
 }
 
 export async function GET() {
@@ -279,7 +285,7 @@ export async function POST(request: Request) {
           error: {
             code: error.code,
             message: error.message,
-            details: null
+            details: error.details ?? null
           }
         },
         { status: getBootstrapErrorStatus(error.code) }

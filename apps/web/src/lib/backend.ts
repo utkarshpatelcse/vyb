@@ -108,12 +108,14 @@ const API_BASE_URL =
 export class BackendRequestError extends Error {
   statusCode: number;
   code: string;
+  details: unknown;
 
-  constructor(statusCode: number, code: string, message: string) {
+  constructor(statusCode: number, code: string, message: string, details: unknown = null) {
     super(message);
     this.name = "BackendRequestError";
     this.statusCode = statusCode;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -160,13 +162,15 @@ async function buildBackendRequestError(response: Response, path: string) {
       error?: {
         code?: string;
         message?: string;
+        details?: unknown;
       };
     };
 
     return new BackendRequestError(
       response.status,
       payload?.error?.code?.trim() || "BACKEND_REQUEST_FAILED",
-      payload?.error?.message?.trim() || fallbackMessage
+      payload?.error?.message?.trim() || fallbackMessage,
+      payload?.error?.details ?? null
     );
   } catch {
     const text = await response.text().catch(() => "");
@@ -434,7 +438,9 @@ export async function getViewerMe(viewer: DevSession) {
 }
 
 export async function bootstrapViewerSession(payload: SessionBootstrapRequest) {
-  return postBackendJson<SessionBootstrapResponse>("/v1/auth/session/bootstrap", payload);
+  return postBackendJson<SessionBootstrapResponse>("/v1/auth/session/bootstrap", payload, undefined, {
+    allowBridgeFallback: process.env.NODE_ENV !== "production"
+  });
 }
 
 export async function getCampusFeed(viewer: DevSession, options?: { authorUserId?: string; limit?: number }) {
