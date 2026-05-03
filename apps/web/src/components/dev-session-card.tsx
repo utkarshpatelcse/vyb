@@ -400,7 +400,17 @@ async function activateServerSession(user: User) {
     })
   });
 
-  const payload = (await response.json().catch(() => null)) as
+  const responseContentType = response.headers.get("content-type") ?? "";
+  const responseText = await response.text().catch(() => "");
+  const payload = (responseContentType.includes("application/json") && responseText
+    ? (() => {
+        try {
+          return JSON.parse(responseText);
+        } catch {
+          return null;
+        }
+      })()
+    : null) as
     | {
         nextPath?: string;
         error?: {
@@ -413,8 +423,14 @@ async function activateServerSession(user: User) {
 
   if (!response.ok) {
     const error = new Error(payload?.error?.message ?? "The authenticated session could not be created.") as AuthFailure;
-    error.code = payload?.error?.code;
-    error.details = payload?.error?.details ?? null;
+    error.code = payload?.error?.code ?? "SESSION_RESPONSE_NOT_JSON";
+    error.details =
+      payload?.error?.details ??
+      {
+        status: response.status,
+        contentType: responseContentType || null,
+        response: responseText.slice(0, 240) || null
+      };
     error.step = "session-bootstrap";
     throw error;
   }

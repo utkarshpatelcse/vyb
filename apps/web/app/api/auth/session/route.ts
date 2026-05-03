@@ -231,7 +231,7 @@ export async function GET() {
   });
 }
 
-export async function POST(request: Request) {
+async function handleSessionPost(request: Request) {
   const requestError = await verifySessionBootstrapRequest(request);
   if (requestError) {
     return requestError;
@@ -340,6 +340,27 @@ export async function POST(request: Request) {
         }
       },
       { status: 502 }
+    );
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    return await handleSessionPost(request);
+  } catch (error) {
+    console.error("[web/auth/session] route failed before bootstrap response", error);
+    return NextResponse.json(
+      {
+        error: {
+          code: "SESSION_ROUTE_FAILED",
+          message: "The authentication session route failed before it could create a session.",
+          details: {
+            message: error instanceof Error ? error.message : "unknown",
+            ...buildSessionSetupDetails()
+          }
+        }
+      },
+      { status: 500 }
     );
   }
 }
