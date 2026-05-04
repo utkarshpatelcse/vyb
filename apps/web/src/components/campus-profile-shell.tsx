@@ -61,6 +61,7 @@ type CampusProfileShellProps = {
   initialAvatarUrl?: string | null;
   profileBio?: string | null;
   profileSocialLinks?: Partial<Record<CampusSocialLinkKey, string>> | null;
+  initialPanel?: "settings" | "edit" | null;
   stories?: StoryCard[];
 };
 
@@ -716,6 +717,7 @@ export function CampusProfileShell({
   initialAvatarUrl = null,
   profileBio: initialProfileBio = null,
   profileSocialLinks = null,
+  initialPanel = null,
   stories = []
 }: CampusProfileShellProps) {
   const router = useRouter();
@@ -737,8 +739,8 @@ export function CampusProfileShell({
   const [profileBusy, setProfileBusy] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [passwordBusy, setPasswordBusy] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(initialPanel === "settings");
+  const [editProfileOpen, setEditProfileOpen] = useState(initialPanel === "edit");
   const [themeMode, setThemeMode] = useState<ThemeMode>("dark");
   const [profileDraft, setProfileDraft] = useState(() =>
     buildProfileDraft({ initialProfile, username, viewerName, course, stream })

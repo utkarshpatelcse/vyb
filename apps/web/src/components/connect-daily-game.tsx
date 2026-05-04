@@ -15,6 +15,7 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent
 } from "react";
+import { VybLoadingMark } from "./vyb-loading-mark";
 
 type ConnectDailyGameProps = {
   onExit?: () => void;
@@ -852,7 +853,10 @@ export function ConnectDailyGame({ onExit, backHref = "/hub/gameshub" }: Connect
         <button type="button" className="vyb-connect-back" onClick={handleExit}>
           Back to hub
         </button>
-        <div className="vyb-connect-loading">Loading today's Connect...</div>
+        <div className="vyb-connect-loading" aria-label="Loading today's Connect">
+          <VybLoadingMark />
+          <span>Loading today's Connect...</span>
+        </div>
       </section>
     );
   }

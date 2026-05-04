@@ -5076,10 +5076,23 @@
 
 .vyb-connect-loading {
   margin: auto;
+  display: grid;
+  justify-items: center;
+  gap: 0.65rem;
   color: var(--connect-muted);
   font-weight: 900;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.vyb-connect-loading .vyb-loading-mark,
+.vyb-queens-loading .vyb-loading-mark {
+  width: 8.5rem;
+}
+
+.vyb-connect-loading span,
+.vyb-queens-loading span {
+  font-size: 0.72rem;
 }
 
 @media (max-width: 520px) {
@@ -5822,6 +5835,8 @@
 .vyb-queens-loading {
   min-height: 40vh;
   display: grid;
+  justify-items: center;
+  gap: 0.65rem;
   place-items: center;
   color: var(--queens-muted);
   font-weight: 900;

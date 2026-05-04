@@ -8,7 +8,6 @@ import {
   getCampusStories,
   getChatInbox,
   getSuggestedCampusUsers,
-  getViewerMe,
   getViewerProfile
 } from "../../src/lib/backend";
 import { isSuperAdminEmail } from "../../src/lib/admin-access";
@@ -33,9 +32,8 @@ export default async function AuthenticatedHomePage({
     redirect("/admin");
   }
 
-  const [profile, me, storyResponse, feedResponse, vibesResponse, suggestedResponse, chatInbox] = await Promise.all([
+  const [profile, storyResponse, feedResponse, vibesResponse, suggestedResponse, chatInbox] = await Promise.all([
     getViewerProfile(viewer).catch(() => null),
-    getViewerMe(viewer).catch(() => null),
     getCampusStories(viewer).catch(() => ({ items: [] })),
     getCampusFeed(viewer).catch(() => ({ tenantId: viewer.tenantId, communityId: null, items: [], nextCursor: null })),
     getCampusVibes(viewer, 10).catch(() => ({ tenantId: viewer.tenantId, communityId: null, items: [], nextCursor: null })),
@@ -71,7 +69,8 @@ export default async function AuthenticatedHomePage({
       viewerEmail={viewer.email}
       course={profile.profile?.course}
       stream={profile.profile?.stream}
-      role={me?.membershipSummary.role ?? viewer.role}
+      profileBio={profile.profile?.bio ?? null}
+      profileSocialLinks={profile.profile?.socialLinks ?? null}
       stories={storyResponse.items}
       initialPosts={feedResponse.items}
       trendingVibes={vibesResponse.items}

@@ -1,10 +1,12 @@
+import { VybLoadingState } from "../../src/components/vyb-loading-mark";
+
 const skeletonRows = Array.from({ length: 5 }, (_, index) => index);
 const skeletonBubbles = Array.from({ length: 4 }, (_, index) => index);
 
-export default function MessagesLoading() {
+function MessagesSkeleton() {
   return (
-    <main className="spm spm-loading-shell" aria-busy="true" aria-live="polite">
-      <aside className="spm-nav spm-loading-nav" aria-hidden="true">
+    <div className="spm spm-loading-shell">
+      <aside className="spm-nav spm-loading-nav">
         <div className="spm-loading-logo" />
         <div className="spm-loading-nav-lines">
           <span />
@@ -13,7 +15,7 @@ export default function MessagesLoading() {
         </div>
       </aside>
 
-      <section className="spm-list-pane spm-loading-list" aria-hidden="true">
+      <section className="spm-list-pane spm-loading-list">
         <div className="spm-loading-tabs">
           <span />
           <span />
@@ -32,7 +34,7 @@ export default function MessagesLoading() {
         </div>
       </section>
 
-      <section className="spm-chat-pane spm-loading-chat" aria-label="Opening messages">
+      <section className="spm-chat-pane spm-loading-chat">
         <header className="spm-chat-header">
           <div className="spm-chat-peer">
             <span className="spm-loading-avatar" />
@@ -52,6 +54,10 @@ export default function MessagesLoading() {
         </div>
         <div className="spm-loading-composer" />
       </section>
-    </main>
+    </div>
   );
+}
+
+export default function MessagesLoading() {
+  return <VybLoadingState background={<MessagesSkeleton />} label="Opening Vyb messages" />;
 }

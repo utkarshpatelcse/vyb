@@ -1,8 +1,8 @@
 # Vyb Documentation Hub
 
 Owner: Architecture and Product
-Last Updated: 2026-04-23
-Change Summary: Added the canonical Locked-In UI theme guide and kept the docs hub aligned with the live product, architecture, and implementation rules.
+Last Updated: 2026-05-05
+Change Summary: Added the universal Vyb loading state to the canonical UI theme guide and kept the docs hub aligned with the live product, architecture, and implementation rules.
 
 This directory is the single source of truth for product, architecture, delivery, and engineering process.
 
@@ -19,7 +19,7 @@ This directory is the single source of truth for product, architecture, delivery
 5. `docs/product/MASTER_PLAN.md`
    The execution narrative: what we are building, why, what is done, and what comes next.
 6. `docs/product/UI_THEME_GUIDE.md`
-   The canonical visual system for colors, typography, glass surfaces, and shared interaction styling across all pages and future features.
+   The canonical visual system for colors, typography, glass surfaces, universal loading state, and shared interaction styling across all pages and future features.
 7. `docs/lld/phase-1/`
    Execution-ready LLDs for the core Phase 1 backend modules.
 8. `docs/contracts/phase-1/`

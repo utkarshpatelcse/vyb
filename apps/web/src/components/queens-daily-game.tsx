@@ -15,6 +15,7 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent
 } from "react";
+import { VybLoadingMark } from "./vyb-loading-mark";
 
 type QueensDailyGameProps = {
   onExit?: () => void;
@@ -772,7 +773,10 @@ export function QueensDailyGame({ onExit, backHref = "/hub/gameshub" }: QueensDa
         <button type="button" className="vyb-queens-back" onClick={handleExit}>
           Back
         </button>
-        <div className="vyb-queens-loading">Loading Daily Queens...</div>
+        <div className="vyb-queens-loading" aria-label="Loading Daily Queens">
+          <VybLoadingMark />
+          <span>Loading Daily Queens...</span>
+        </div>
       </section>
     );
   }

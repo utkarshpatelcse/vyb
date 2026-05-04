@@ -1,6 +1,6 @@
 "use client";
 
-import type { ChatConversationPreview, ChatIdentitySummary, FeedCard, PostLikerItem, ReactionKind, StoryCard, UserSearchItem } from "@vyb/contracts";
+import type { ChatConversationPreview, ChatIdentitySummary, FeedCard, PostLikerItem, ProfileSocialLinks, ReactionKind, StoryCard, UserSearchItem } from "@vyb/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
@@ -12,7 +12,6 @@ import { SocialPostRepostSheet } from "./social-post-repost-sheet";
 import { SocialPostShareSheet, type SocialShareTarget } from "./social-post-share-sheet";
 import { SocialThreadSheet } from "./social-thread-sheet";
 import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
-import { SignOutButton } from "./sign-out-button";
 import { useSocialPostEngagement } from "./use-social-post-engagement";
 import { VybLogoLockup, VybLogoMark } from "./vyb-logo";
 import { MediaCarousel } from "./media-carousel";
@@ -37,13 +36,18 @@ import {
   type StoredChatKeyMaterial
 } from "../lib/chat-e2ee";
 import {
+  CAMPUS_SOCIAL_LINK_KEYS,
+  CAMPUS_SOCIAL_LINK_LABELS,
   createDefaultCampusSettings,
+  getCampusSocialLinkHref,
   getPostDisplayControls,
+  normalizeStoredSocialLinks,
   persistPostDisplayPreference,
   readPostDisplayPreferences,
   readStoredCampusSettings,
   subscribeToCampusSettings,
   subscribeToPostDisplayPreferences,
+  type CampusSocialLinkKey,
   type PostDisplayPreference
 } from "./campus-settings-storage";
 
@@ -94,7 +98,8 @@ type CampusHomeShellProps = {
   viewerEmail: string;
   course?: string | null;
   stream?: string | null;
-  role: string;
+  profileBio?: string | null;
+  profileSocialLinks?: ProfileSocialLinks | null;
   stories: StoryCard[];
   initialPosts: FeedCard[];
   trendingVibes: FeedCard[];
@@ -287,6 +292,30 @@ function ProfileIcon() {
   );
 }
 
+function EditIcon() {
+  return (
+    <IconBase>
+      <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </IconBase>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <IconBase>
+      <path
+        d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.8" />
+    </IconBase>
+  );
+}
+
 function SearchIcon() {
   return (
     <IconBase>
@@ -437,6 +466,69 @@ function PlayIcon() {
   );
 }
 
+function SocialBrandIcon({ brand }: { brand: CampusSocialLinkKey }) {
+  if (brand === "linkedin") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7.2 10h3v7h-3v-7Zm1.5-3.5a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2ZM12 10h2.8v1.1c.5-.8 1.3-1.3 2.5-1.3 2 0 3.1 1.3 3.1 3.7V17h-3v-3.1c0-.9-.4-1.5-1.2-1.5-.9 0-1.3.6-1.3 1.6v3h-3V10Z" fill="currentColor" />
+      </svg>
+    );
+  }
+
+  if (brand === "github") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3.6a8.6 8.6 0 0 0-2.7 16.8c.4.1.6-.2.6-.4v-1.5c-2.4.5-2.9-1-2.9-1-.4-.9-.9-1.1-.9-1.1-.8-.5.1-.5.1-.5.8.1 1.3.9 1.3.9.8 1.3 2 1 2.5.8.1-.6.3-1 .5-1.2-1.9-.2-3.9-1-3.9-4.2 0-.9.3-1.7.9-2.3-.1-.2-.4-1.1.1-2.3 0 0 .7-.2 2.4.9.7-.2 1.4-.3 2.1-.3s1.4.1 2.1.3c1.6-1.1 2.4-.9 2.4-.9.5 1.2.2 2.1.1 2.3.5.6.9 1.4.9 2.3 0 3.3-2 4-3.9 4.2.3.3.6.8.6 1.6v2c0 .3.2.5.6.4A8.6 8.6 0 0 0 12 3.6Z" fill="currentColor" />
+      </svg>
+    );
+  }
+
+  if (brand === "instagram") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4.5" y="4.5" width="15" height="15" rx="4.2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <circle cx="12" cy="12" r="3.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <circle cx="16.8" cy="7.4" r="1" fill="currentColor" />
+      </svg>
+    );
+  }
+
+  if (brand === "email") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="3.8" y="5.8" width="16.4" height="12.4" rx="3" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <path d="m5 8 7 5 7-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+
+  if (brand === "codeforces") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="5" y="9.5" width="3.2" height="8.5" rx="1" fill="currentColor" opacity="0.9" />
+        <rect x="10.4" y="5.5" width="3.2" height="12.5" rx="1" fill="currentColor" />
+        <rect x="15.8" y="11.5" width="3.2" height="6.5" rx="1" fill="currentColor" opacity="0.75" />
+      </svg>
+    );
+  }
+
+  if (brand === "leetcode") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M14.9 4.5 8.2 11a3.8 3.8 0 0 0 0 5.5l2.2 2.1a3.8 3.8 0 0 0 5.4 0l2-2" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M10.1 11.9h7.1" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" />
+        <path d="M12.2 7.1 15 4.4" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 4.6h4.7l3.5 5 4.3-5H20l-6.2 7.1 6.5 7.7h-4.7l-3.8-5.5-4.8 5.5H3.5l6.8-7.7L4 4.6Zm2.4 1.8 10.2 11.2h1.2L7.6 6.4H6.4Z" fill="currentColor" />
+    </svg>
+  );
+}
+
 function getProfileHref(username: string, viewerUsername: string) {
   return username === viewerUsername ? "/dashboard" : `/u/${encodeURIComponent(username)}`;
 }
@@ -557,7 +649,8 @@ export function CampusHomeShell({
   viewerEmail,
   course,
   stream,
-  role,
+  profileBio: initialProfileBio = null,
+  profileSocialLinks = null,
   stories,
   initialPosts,
   trendingVibes,
@@ -862,6 +955,21 @@ export function CampusHomeShell({
   }, [selectedStory, isStoryPaused, isStoryMuted]);
 
   const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
+  const persistedProfileBio = (initialProfileBio ?? "").trim();
+  const viewerProfileBio = persistedProfileBio || storedCampusSettings.bio.trim();
+  const persistedSocialLinks = useMemo(() => normalizeStoredSocialLinks(profileSocialLinks), [profileSocialLinks]);
+  const visibleSocialLinks = useMemo(
+    () =>
+      CAMPUS_SOCIAL_LINK_KEYS.map((key) => {
+        const value = persistedSocialLinks[key] || storedCampusSettings.socialLinks[key];
+        const href = getCampusSocialLinkHref(key, value);
+        return href ? { key, href } : null;
+      }).filter((item): item is { key: CampusSocialLinkKey; href: string } => Boolean(item)),
+    [persistedSocialLinks, storedCampusSettings.socialLinks]
+  );
+  const profileHref = "/dashboard";
+  const settingsHref = "/dashboard?profile=settings";
+  const editProfileHref = "/dashboard?profile=edit";
   const navItems = useMemo(() => buildPrimaryCampusNav("home", { unreadCount: unreadChatCount }), [unreadChatCount]);
   const viewerAvatarUrl = useResolvedAvatarUrl({
     username: viewerUsername,
@@ -2289,67 +2397,82 @@ export function CampusHomeShell({
         <div className="vyb-campus-side-card">
           <span className="vyb-campus-side-label">Your vibe</span>
           <div className={`vyb-campus-side-user${ownStoryRingClass}`}>
-            <span className="vyb-campus-side-avatar">
+            <Link href={profileHref} className="vyb-campus-side-avatar" aria-label="Open your profile">
               <img
                 src={viewerAvatarUrl ?? buildDefaultAvatarUrl({ seed: viewerEmail, displayName: viewerName, username: viewerUsername, size: 120 })}
                 alt={viewerName}
               />
-            </span>
-            <div>
-              <strong>{viewerName}</strong>
-              <span>@{viewerUsername}</span>
+            </Link>
+            <div className="vyb-campus-side-user-copy">
+              <Link href={profileHref} className="vyb-campus-side-name">
+                <strong>{viewerName}</strong>
+              </Link>
+              <div className="vyb-campus-side-identity-row">
+                <Link href={profileHref} className="vyb-campus-side-handle">
+                  @{viewerUsername}
+                </Link>
+                <Link href={settingsHref} className="vyb-campus-side-icon-link" aria-label="Open profile settings" title="Profile settings">
+                  <SettingsIcon />
+                </Link>
+                <Link href={editProfileHref} className="vyb-campus-side-icon-link" aria-label="Edit profile" title="Edit profile">
+                  <EditIcon />
+                </Link>
+              </div>
             </div>
           </div>
           <p className="vyb-campus-side-copy">{identityLine}</p>
-        </div>
-
-        <div className="vyb-campus-side-card">
-          <div className="vyb-campus-side-header">
-            <span className="vyb-campus-side-label">Suggested vibes</span>
-            <Link href="/search" className="vyb-campus-inline-link">
-              Search
-            </Link>
-          </div>
-
-          {recommendedUsers.length === 0 ? (
-            <p className="vyb-campus-side-copy">Campus suggestions will appear here as more profiles go live.</p>
+          {viewerProfileBio ? <p className="vyb-campus-side-bio">{viewerProfileBio}</p> : null}
+          {visibleSocialLinks.length > 0 ? (
+            <div className="vyb-campus-side-social-links" aria-label="Social profile links">
+              {visibleSocialLinks.map(({ key, href }) => (
+                <a
+                  key={key}
+                  href={href}
+                  className={`vyb-campus-side-social-link is-${key}`}
+                  target={href.startsWith("mailto:") ? undefined : "_blank"}
+                  rel={href.startsWith("mailto:") ? undefined : "noreferrer"}
+                  aria-label={CAMPUS_SOCIAL_LINK_LABELS[key]}
+                  title={CAMPUS_SOCIAL_LINK_LABELS[key]}
+                >
+                  <SocialBrandIcon brand={key} />
+                </a>
+              ))}
+            </div>
           ) : null}
 
-          {recommendedUsers.map((user) => (
-            <div key={user.userId} className="vyb-campus-suggestion">
-              <div>
-                <Link href={`/u/${encodeURIComponent(user.username)}`}>
-                  <strong>{user.username}</strong>
-                </Link>
-                <span>{user.displayName}</span>
-              </div>
-              <button
-                type="button"
-                disabled={followBusyUsername === user.username}
-                onClick={() => handleFollowToggle(user.username, !user.isFollowing)}
-              >
-                {followBusyUsername === user.username
-                  ? "..."
-                  : user.isFollowing
-                    ? "Following"
-                    : "Follow"}
-              </button>
+          <div className="vyb-campus-side-suggestions">
+            <div className="vyb-campus-side-header">
+              <span className="vyb-campus-side-label">Suggested vybers</span>
+              <Link href="/search" className="vyb-campus-inline-link">
+                Search
+              </Link>
             </div>
-          ))}
-        </div>
 
-        <div className="vyb-campus-side-card">
-          <span className="vyb-campus-side-label">Campus access</span>
-          <ul className="vyb-campus-side-list">
-            <li>{collegeName}</li>
-            <li>{viewerEmail}</li>
-            <li>Role: {role}</li>
-          </ul>
-          <div className="vyb-campus-side-actions">
-            <Link href="/dashboard" className="vyb-campus-profile-link">
-              Open profile
-            </Link>
-            <SignOutButton className="vyb-campus-signout vyb-campus-signout-wide" />
+            {recommendedUsers.length === 0 ? (
+              <p className="vyb-campus-side-copy">Campus suggestions will appear here as more profiles go live.</p>
+            ) : null}
+
+            {recommendedUsers.map((user) => (
+              <div key={user.userId} className="vyb-campus-suggestion">
+                <div>
+                  <Link href={`/u/${encodeURIComponent(user.username)}`}>
+                    <strong>{user.username}</strong>
+                  </Link>
+                  <span>{user.displayName}</span>
+                </div>
+                <button
+                  type="button"
+                  disabled={followBusyUsername === user.username}
+                  onClick={() => handleFollowToggle(user.username, !user.isFollowing)}
+                >
+                  {followBusyUsername === user.username
+                    ? "..."
+                    : user.isFollowing
+                      ? "Following"
+                      : "Follow"}
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       </aside>

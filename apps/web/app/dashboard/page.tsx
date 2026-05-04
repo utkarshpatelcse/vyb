@@ -5,7 +5,16 @@ import { getCampusCourses, getCampusResources, getCampusStories, getCampusUserPr
 import { getDisplayCollegeName } from "../../src/lib/college-access";
 import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
 
-export default async function DashboardPage() {
+function normalizeProfilePanel(value: string | string[] | undefined) {
+  return value === "settings" || value === "edit" ? value : null;
+}
+
+export default async function DashboardPage({
+  searchParams
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const resolvedSearchParams = (await searchParams) ?? {};
   const viewer = readDevSessionFromCookieStore(await cookies());
 
   if (!viewer) {
@@ -51,6 +60,7 @@ export default async function DashboardPage() {
       initialProfile={profile.profile}
       initialAvatarUrl={publicProfile?.profile.avatarUrl ?? profile.profile.avatarUrl ?? null}
       profileSocialLinks={publicProfile?.profile.socialLinks ?? profile.profile.socialLinks ?? null}
+      initialPanel={normalizeProfilePanel(resolvedSearchParams.profile)}
       stories={stories.items}
     />
   );
