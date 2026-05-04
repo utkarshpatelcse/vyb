@@ -3,23 +3,33 @@ import { NextResponse } from "next/server";
 import { startDailyQueensSession } from "../../../../../src/lib/queens-data";
 import { readDevSessionFromCookieStore } from "../../../../../src/lib/dev-session";
 
-function buildError(status: number, code: string, message: string) {
-  return NextResponse.json({ error: { code, message } }, { status });
+function buildError(status: number, code: string, message: string, details: unknown = null) {
+  return NextResponse.json({ error: { code, message, details } }, { status });
 }
 
-function getQueensErrorMessage(error: unknown) {
+function getQueensError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
   const normalizedMessage = message.toLowerCase();
 
   if (
     normalizedMessage.includes("google oauth2 access token") ||
     normalizedMessage.includes("default credentials") ||
-    normalizedMessage.includes("application default credentials")
+    normalizedMessage.includes("application default credentials") ||
+    normalizedMessage.includes("firebase admin") ||
+    normalizedMessage.includes("credential")
   ) {
-    return "Queens storage is not configured for this environment.";
+    return {
+      code: "QUEENS_DATACONNECT_CONFIG_FAILED",
+      message: "Queens DataConnect storage is not configured for this environment.",
+      details: message || null
+    };
   }
 
-  return message || "We could not load today's Queens puzzle.";
+  return {
+    code: "QUEENS_DAILY_FAILED",
+    message: message || "We could not load today's Queens puzzle.",
+    details: null
+  };
 }
 
 function parseLeaderboardOptIn(request: Request) {
@@ -37,6 +47,7 @@ export async function GET(request: Request) {
   try {
     return NextResponse.json(await startDailyQueensSession(viewer, parseLeaderboardOptIn(request)));
   } catch (error) {
-    return buildError(500, "QUEENS_DAILY_FAILED", getQueensErrorMessage(error));
+    const queensError = getQueensError(error);
+    return buildError(500, queensError.code, queensError.message, queensError.details);
   }
 }

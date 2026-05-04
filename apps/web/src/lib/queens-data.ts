@@ -363,6 +363,10 @@ function getQueensDc() {
   return getFirebaseDataConnect(queensConnectorConfig);
 }
 
+function isDataconnectRequiredForQueens() {
+  return shouldLoadDataconnectQueensLevelStore() && !QUEENS_ALLOW_LOCAL_LEVEL_FALLBACK;
+}
+
 async function loadDataconnectSeedFile() {
   if (!shouldLoadDataconnectQueensLevelStore()) {
     if (!queensGameLevelSkipLogged) {
@@ -386,7 +390,10 @@ async function loadDataconnectSeedFile() {
 
     if (!payloadJson) {
       if (!QUEENS_ALLOW_LOCAL_LEVEL_FALLBACK) {
-        throw new Error(`Queens levels are not seeded in DataConnect game level store '${QUEENS_GAME_LEVEL_STORE_ID}'.`);
+        throw new Error(
+          `Queens levels were not found in DataConnect game level store '${QUEENS_GAME_LEVEL_STORE_ID}'. ` +
+            `Verified seed target should be service 'vyb', connector 'connect', location 'asia-south1'.`
+        );
       }
       return null;
     }
@@ -413,10 +420,18 @@ async function loadSeedFile() {
     return seedFileCache;
   }
 
+  const dataconnectRequired = isDataconnectRequiredForQueens();
   const dataconnectSeed = await loadDataconnectSeedFile();
   if (dataconnectSeed) {
     seedFileCache = dataconnectSeed;
     return seedFileCache;
+  }
+
+  if (dataconnectRequired) {
+    throw new Error(
+      `Queens levels were not returned from DataConnect game level store '${QUEENS_GAME_LEVEL_STORE_ID}'. ` +
+        `Production Queens is configured to read DataConnect only.`
+    );
   }
 
   const seedPath = getQueensLevelsPath();
@@ -429,8 +444,9 @@ async function loadSeedFile() {
       throw error;
     }
 
+    const dataconnectMessage = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `Queens levels are not seeded in DataConnect game level store '${QUEENS_GAME_LEVEL_STORE_ID}'. Run pnpm queens:seed or set VYB_QUEENS_LEVELS_SOURCE=local with an explicit local fallback.`
+      `Queens levels could not be loaded from DataConnect game level store '${QUEENS_GAME_LEVEL_STORE_ID}'. ${dataconnectMessage}`
     );
   }
 }

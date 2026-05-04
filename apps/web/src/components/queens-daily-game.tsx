@@ -97,10 +97,19 @@ function formatSeconds(value: number | null) {
 }
 
 async function readJsonResponse<T>(response: Response): Promise<T> {
-  const payload = (await response.json().catch(() => null)) as (T & { error?: { message?: string } }) | null;
+  const payload = (await response.json().catch(() => null)) as
+    | (T & { error?: { code?: string; message?: string; details?: unknown } })
+    | null;
 
   if (!response.ok) {
-    throw new Error(payload?.error?.message || "Queens request failed.");
+    const errorCode = payload?.error?.code ? `${payload.error.code}: ` : "";
+    const errorDetails =
+      typeof payload?.error?.details === "string"
+        ? ` ${payload.error.details}`
+        : payload?.error?.details
+          ? ` ${JSON.stringify(payload.error.details)}`
+          : "";
+    throw new Error(`${errorCode}${payload?.error?.message || "Queens request failed."}${errorDetails}`);
   }
 
   if (!payload) {
