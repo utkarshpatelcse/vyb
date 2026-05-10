@@ -5,6 +5,7 @@ import type { CampusEventEntryMode, CampusEventFormField, CampusEventPassKind, C
 import { readDevSessionFromCookieStore } from "../../../../src/lib/dev-session";
 import { deleteCampusEvent, getEventForViewer, updateCampusEvent } from "../../../../src/lib/events-data";
 import { deleteEventMediaAssets, persistEventMediaAssets } from "../../../../src/lib/events-media-server";
+import { toSafeApiErrorMessage } from "../../../../src/lib/safe-api-error";
 
 type ParsedUpdatePayload = Omit<Partial<UpdateCampusEventRequest>, "capacity" | "teamSizeMin" | "teamSizeMax" | "formFields"> & {
   capacity?: string | number | null;
@@ -301,7 +302,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ event
       await deleteEventMediaAssets(uploadedMedia).catch(() => undefined);
     }
 
-    return buildError(400, "EVENT_UPDATE_FAILED", error instanceof Error ? error.message : "We could not update the event.");
+    console.error("[api/events] update failed", error);
+    return buildError(400, "EVENT_UPDATE_FAILED", toSafeApiErrorMessage(error, "We could not update the event."));
   }
 }
 
@@ -317,6 +319,7 @@ export async function DELETE(_: Request, context: { params: Promise<{ eventId: s
   try {
     return NextResponse.json(await deleteCampusEvent(viewer, eventId));
   } catch (error) {
-    return buildError(400, "EVENT_DELETE_FAILED", error instanceof Error ? error.message : "We could not delete the event.");
+    console.error("[api/events] delete failed", error);
+    return buildError(400, "EVENT_DELETE_FAILED", toSafeApiErrorMessage(error, "We could not delete the event."));
   }
 }

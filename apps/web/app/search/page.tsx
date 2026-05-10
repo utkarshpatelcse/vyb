@@ -8,6 +8,7 @@ import {
   getViewerProfile,
   searchCampusUsers
 } from "../../src/lib/backend";
+import { getDisplayCollegeName } from "../../src/lib/college-access";
 import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
 import { getMarketDashboard } from "../../src/lib/market-data";
 
@@ -31,6 +32,8 @@ export default async function SearchPage({
   }
 
   const viewerUsername = profile.profile.username;
+  const viewerName = profile.profile.fullName ?? viewer.displayName;
+  const displayCollegeName = getDisplayCollegeName(profile.collegeName);
   const trimmedQuery = q.trim();
   const [results, feedResponse, vibesResponse, suggestedResponse, marketDashboard] = await Promise.all([
     trimmedQuery
@@ -76,7 +79,12 @@ export default async function SearchPage({
     <CampusSearchShell
       initialQuery={trimmedQuery}
       results={results.items}
+      viewerName={viewerName}
       viewerUsername={viewerUsername}
+      viewerEmail={viewer.email}
+      collegeName={displayCollegeName}
+      course={profile.profile.course}
+      stream={profile.profile.stream}
       hasSearched={Boolean(trimmedQuery)}
       initialFeedItems={feedResponse.items}
       initialVibeItems={vibesResponse.items}

@@ -1,7 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { deleteCampusPost, updateCampusPost } from "../../../../src/lib/backend";
+import { deleteCampusPost, isBackendRequestError, updateCampusPost } from "../../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../../src/lib/dev-session";
+
+function buildPostMutationError(error: unknown, fallbackCode: string, fallbackMessage: string) {
+  if (isBackendRequestError(error)) {
+    return NextResponse.json(
+      {
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      { status: error.statusCode }
+    );
+  }
+
+  console.error("[api/posts] mutation failed", error);
+  return NextResponse.json(
+    {
+      error: {
+        code: fallbackCode,
+        message: fallbackMessage
+      }
+    },
+    { status: 500 }
+  );
+}
 
 export async function DELETE(
   _request: NextRequest,
@@ -28,15 +53,7 @@ export async function DELETE(
   try {
     return NextResponse.json(await deleteCampusPost(viewer, postId));
   } catch (error) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "BACKEND_UNAVAILABLE",
-          message: error instanceof Error ? error.message : "The delete service is unavailable right now."
-        }
-      },
-      { status: 502 }
-    );
+    return buildPostMutationError(error, "POST_DELETE_FAILED", "We could not delete this post right now.");
   }
 }
 
@@ -93,14 +110,6 @@ export async function PATCH(
       })
     );
   } catch (error) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "BACKEND_UNAVAILABLE",
-          message: error instanceof Error ? error.message : "The edit service is unavailable right now."
-        }
-      },
-      { status: 502 }
-    );
+    return buildPostMutationError(error, "POST_UPDATE_FAILED", "We could not edit this post right now.");
   }
 }

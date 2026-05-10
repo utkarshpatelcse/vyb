@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
@@ -24,6 +25,7 @@ import {
   type StoryMusicTrack,
 } from "../lib/story-music";
 import { CampusAvatarContent } from "./campus-avatar";
+import { buildPrimaryCampusNav, CampusDesktopNavigation } from "./campus-navigation";
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 type CampusUploadShellProps = {
@@ -58,6 +60,12 @@ const CREATION_MODE_OPTIONS: Array<{ value: PublishableCreationMode; label: stri
   { value: "moment", label: "Post" },
   { value: "vibe", label: "Vibe" }
 ];
+
+function layoutStyle() {
+  return {
+    "--vyb-campus-left-width": "260px"
+  } as CSSProperties;
+}
 
 /* ─── Icon components ────────────────────────────────────────────────────── */
 function Ico({ children }: { children: ReactNode }) {
@@ -851,7 +859,13 @@ export function CampusUploadShell({
   /* ════════════════════════════════════════════════════════════════════════
      RENDER
      ════════════════════════════════════════════════════════════════════════ */
+  const navItems = useMemo(() => buildPrimaryCampusNav("home", { profileHref: "/dashboard" }), []);
+
   return (
+    <main className="vyb-campus-home cs-route-shell" style={layoutStyle()}>
+      <CampusDesktopNavigation navItems={navItems} viewerName={viewerName} viewerUsername={viewerUsername} />
+
+      <section className="vyb-campus-main cs-route-main">
     <div className="cs-overlay">
       {/* backdrop blur */}
       <div className="cs-backdrop" onClick={handleClose} aria-hidden="true" />
@@ -1564,5 +1578,7 @@ export function CampusUploadShell({
         )}
       </div>
     </div>
+      </section>
+    </main>
   );
 }

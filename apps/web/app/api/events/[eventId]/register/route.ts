@@ -10,6 +10,7 @@ import { getViewerProfile } from "../../../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../../../src/lib/dev-session";
 import { getViewerCampusEventRegistration, upsertCampusEventRegistration } from "../../../../../src/lib/events-data";
 import { deleteEventMediaAssets, persistEventRegistrationAssets } from "../../../../../src/lib/events-media-server";
+import { toSafeApiErrorMessage } from "../../../../../src/lib/safe-api-error";
 
 type RegistrationBody = Omit<UpsertCampusEventRegistrationRequest, "answers" | "teamMembers" | "attachments" | "keepAttachmentIds"> & {
   answers?: CampusEventRegistrationAnswer[];
@@ -101,7 +102,12 @@ export async function GET(_: Request, context: { params: Promise<unknown> }) {
   try {
     return NextResponse.json(await getViewerCampusEventRegistration(viewer, eventId));
   } catch (error) {
-    return buildError(400, "EVENT_REGISTRATION_LOOKUP_FAILED", error instanceof Error ? error.message : "We could not load your registration.");
+    console.error("[api/events] registration lookup failed", error);
+    return buildError(
+      400,
+      "EVENT_REGISTRATION_LOOKUP_FAILED",
+      toSafeApiErrorMessage(error, "We could not load your registration.")
+    );
   }
 }
 
@@ -162,6 +168,7 @@ export async function POST(request: Request, context: { params: Promise<unknown>
       await deleteEventMediaAssets(uploadedAttachments).catch(() => undefined);
     }
 
-    return buildError(400, "EVENT_REGISTRATION_FAILED", error instanceof Error ? error.message : "We could not submit this registration.");
+    console.error("[api/events] registration failed", error);
+    return buildError(400, "EVENT_REGISTRATION_FAILED", toSafeApiErrorMessage(error, "We could not submit this registration."));
   }
 }

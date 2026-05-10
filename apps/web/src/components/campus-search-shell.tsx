@@ -4,8 +4,9 @@ import type { FeedCard, MarketListing, MarketRequest, UserSearchItem } from "@vy
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { startTransition, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type UIEvent } from "react";
 import { CampusAvatarContent } from "./campus-avatar";
+import { buildPrimaryCampusNav, CampusDesktopNavigation } from "./campus-navigation";
 import {
   captureSearchScrollPosition,
   queueSearchNavigationOrigin,
@@ -16,7 +17,12 @@ import { queueAppRouteOrigin } from "../lib/app-navigation-state";
 type CampusSearchShellProps = {
   initialQuery: string;
   results: UserSearchItem[];
+  viewerName: string;
   viewerUsername: string;
+  viewerEmail: string;
+  collegeName: string;
+  course?: string | null;
+  stream?: string | null;
   hasSearched: boolean;
   initialFeedItems: FeedCard[];
   initialVibeItems: FeedCard[];
@@ -80,6 +86,8 @@ type DiscoveryViewModel = {
   trendingProfiles: TrendingProfile[];
   gridItems: DiscoveryGridItem[];
 };
+
+const TRENDING_PROFILE_BATCH_SIZE = 6;
 
 function SearchIcon() {
   return (
@@ -178,6 +186,13 @@ function getDiscoveryTarget(entry: FeedCard) {
   };
 }
 
+function layoutStyle() {
+  return {
+    "--vyb-campus-left-width": "260px",
+    "--vyb-campus-right-width": "320px"
+  } as CSSProperties;
+}
+
 function computeAgeInHours(createdAt: string) {
   return Math.max(0, (Date.now() - new Date(createdAt).getTime()) / 3_600_000);
 }
@@ -234,7 +249,8 @@ function buildDiscoveryViewModel(
       trendingRank: index + 1
     }));
 
-  const trendingProfiles = Array.from(
+  const trendingProfileMap = new Map<string, TrendingProfile>();
+  for (const profile of Array.from(
     vibeItems.reduce<Map<string, TrendingProfile>>((accumulator, vibe) => {
       if (vibe.isAnonymous || !vibe.author.userId) {
         return accumulator;
@@ -251,6 +267,7 @@ function buildDiscoveryViewModel(
           userId: vibe.author.userId,
           username: vibe.author.username,
           displayName: vibe.author.displayName,
+          avatarUrl: vibe.author.avatarUrl ?? null,
           score: vibeScore,
           rank: 0,
           recentVibeAt: vibe.createdAt,
@@ -264,6 +281,7 @@ function buildDiscoveryViewModel(
         !current.recentVibeAt || new Date(vibe.createdAt).getTime() > new Date(current.recentVibeAt).getTime()
           ? vibe.createdAt
           : current.recentVibeAt;
+      current.avatarUrl = current.avatarUrl ?? vibe.author.avatarUrl ?? null;
       current.isGlowing = current.isGlowing || isGlowing;
       return accumulator;
     }, new Map()).values()
@@ -275,15 +293,51 @@ function buildDiscoveryViewModel(
 
       return right.score - left.score;
     })
-    .slice(0, 5)
+  ) {
+    trendingProfileMap.set(profile.userId, profile);
+  }
+
+  for (const user of suggestedUsers) {
+    if (trendingProfileMap.has(user.userId)) {
+      const existing = trendingProfileMap.get(user.userId);
+      if (existing) {
+        existing.avatarUrl = existing.avatarUrl ?? user.avatarUrl ?? null;
+      }
+      continue;
+    }
+
+    trendingProfileMap.set(user.userId, {
+      userId: user.userId,
+      username: user.username,
+      displayName: user.displayName,
+      avatarUrl: user.avatarUrl ?? null,
+      score: 0,
+      rank: 0,
+      recentVibeAt: null,
+      isGlowing: false
+    });
+  }
+
+  const trendingProfiles = Array.from(trendingProfileMap.values())
+    .sort((left, right) => {
+      if (left.isGlowing !== right.isGlowing) {
+        return left.isGlowing ? -1 : 1;
+      }
+
+      if (Math.abs(right.score - left.score) > 0.001) {
+        return right.score - left.score;
+      }
+
+      return left.displayName.localeCompare(right.displayName);
+    })
     .map((profile, index) => ({
       ...profile,
       rank: index + 1
     }));
 
   const squadPromos: DiscoveryPromo[] = [];
-  for (let index = 0; index < suggestedUsers.length; index += 3) {
-    const people = suggestedUsers.slice(index, index + 3);
+  for (let index = 0; index < suggestedUsers.length; index += 6) {
+    const people = suggestedUsers.slice(index, index + 6);
     if (people.length === 0) {
       continue;
     }
@@ -411,7 +465,12 @@ function DiscoverySkeleton() {
 export function CampusSearchShell({
   initialQuery,
   results,
+  viewerName,
   viewerUsername,
+  viewerEmail,
+  collegeName,
+  course,
+  stream,
   hasSearched,
   initialFeedItems,
   initialVibeItems,
@@ -428,8 +487,12 @@ export function CampusSearchShell({
   const [isSearching, setIsSearching] = useState(false);
   const [loadedMediaIds, setLoadedMediaIds] = useState<Record<string, true>>({});
   const [discoveryModel, setDiscoveryModel] = useState<DiscoveryViewModel | null>(null);
+  const [visibleTrendingCount, setVisibleTrendingCount] = useState(TRENDING_PROFILE_BATCH_SIZE);
+  const [expandedSquadIds, setExpandedSquadIds] = useState<Record<string, true>>({});
+  const navItems = useMemo(() => buildPrimaryCampusNav("home", { profileHref: "/dashboard" }), []);
 
   const hasActiveQuery = query.trim().length > 0;
+  const profileLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
   const baseDiscoveryInputs = useMemo(
     () => ({
       initialFeedItems,
@@ -444,6 +507,10 @@ export function CampusSearchShell({
   useEffect(() => {
     setQuery(initialQuery);
   }, [initialQuery]);
+
+  useEffect(() => {
+    setVisibleTrendingCount(TRENDING_PROFILE_BATCH_SIZE);
+  }, [discoveryModel?.trendingProfiles.length]);
 
   useEffect(() => {
     setItems(results);
@@ -627,8 +694,40 @@ export function CampusSearchShell({
     });
   }
 
+  function handleTrendingStripScroll(event: UIEvent<HTMLDivElement>) {
+    const totalProfiles = discoveryModel?.trendingProfiles.length ?? 0;
+    if (visibleTrendingCount >= totalProfiles) {
+      return;
+    }
+
+    const target = event.currentTarget;
+    const distanceToEnd = target.scrollWidth - target.scrollLeft - target.clientWidth;
+    if (distanceToEnd < target.clientWidth * 0.7) {
+      setVisibleTrendingCount((current) => Math.min(totalProfiles, current + TRENDING_PROFILE_BATCH_SIZE));
+    }
+  }
+
+  function toggleSquadExpanded(id: string) {
+    setExpandedSquadIds((current) => {
+      if (current[id]) {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      }
+
+      return {
+        ...current,
+        [id]: true
+      };
+    });
+  }
+
   return (
-    <main className="vyb-search-page-modern">
+    <main className="vyb-campus-home vyb-search-route-shell" style={layoutStyle()}>
+      <CampusDesktopNavigation navItems={navItems} viewerName={viewerName} viewerUsername={viewerUsername} />
+
+      <section className="vyb-campus-main vyb-search-route-main">
+        <div className="vyb-search-page-modern">
       <div className="vyb-search-top-bar">
         <Link href="/home" className="search-back-btn" aria-label="Back to campus feed">
           <BackIcon />
@@ -730,22 +829,12 @@ export function CampusSearchShell({
               exit={{ opacity: 0, y: -12 }}
               transition={{ duration: 0.28, ease: "easeOut" }}
             >
-              <section className="search-section trending-section">
-                <div className="section-head">
-                  <div className="icon-label">
-                    <TrendingIcon />
-                    <div>
-                      <h2>Trending profiles</h2>
-                      <span>Fresh momentum from the last campus wave</span>
-                    </div>
-                  </div>
-                </div>
-
+              <section className="search-section trending-section" aria-label="Trending profiles">
                 {!discoveryModel ? (
                   <DiscoverySkeleton />
                 ) : (
-                  <div className="vyb-search-trending-strip" role="list" aria-label="Trending campus profiles">
-                    {discoveryModel.trendingProfiles.map((profile, index) => (
+                  <div className="vyb-search-trending-strip" role="list" aria-label="Trending campus profiles" onScroll={handleTrendingStripScroll}>
+                    {discoveryModel.trendingProfiles.slice(0, visibleTrendingCount).map((profile, index) => (
                       <motion.button
                         key={profile.userId}
                         type="button"
@@ -755,7 +844,7 @@ export function CampusSearchShell({
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: Math.min(index * 0.05, 0.18), duration: 0.22 }}
                       >
-                        <span className={`vyb-search-trending-avatar-shell${profile.isGlowing ? " is-glowing" : ""}`}>
+                        <span className="vyb-search-trending-avatar-shell">
                           <span className="vyb-search-trending-badge">🔥 #{profile.rank}</span>
                           <span className="vyb-search-trending-avatar">
                             <CampusAvatarContent
@@ -776,18 +865,7 @@ export function CampusSearchShell({
                 )}
               </section>
 
-              <section className="search-section">
-                <div className="section-head">
-                  <div className="icon-label">
-                    <SparkIcon />
-                    <div>
-                      <h2>Campus discovery hub</h2>
-                      <span>Momentum-ranked posts, vibes, deals, and squad prompts</span>
-                    </div>
-                  </div>
-                  <span>Freshest six-hour velocity first</span>
-                </div>
-
+              <section className="search-section" aria-label="Campus discovery">
                 {!discoveryModel ? (
                   <DiscoverySkeleton />
                 ) : discoveryModel.gridItems.length === 0 ? (
@@ -802,6 +880,10 @@ export function CampusSearchShell({
                         const promo = gridItem.entry;
 
                         if (promo.type === "squad") {
+                          const isExpanded = Boolean(expandedSquadIds[promo.id]);
+                          const visiblePeople = isExpanded ? promo.people : promo.people.slice(0, 3);
+                          const hiddenPeopleCount = Math.max(0, promo.people.length - visiblePeople.length);
+
                           return (
                             <motion.article
                               key={gridItem.id}
@@ -816,9 +898,9 @@ export function CampusSearchShell({
                                   {promo.title}
                                 </span>
                               </div>
-                              <strong>{promo.description}</strong>
+                              <strong>Profiles you may know</strong>
                               <div className="vyb-search-squad-stack">
-                                {promo.people.slice(0, 3).map((person) => (
+                                {visiblePeople.map((person) => (
                                   <button
                                     key={person.userId}
                                     type="button"
@@ -842,6 +924,13 @@ export function CampusSearchShell({
                                   </button>
                                 ))}
                               </div>
+                              <button
+                                type="button"
+                                className="vyb-search-squad-see-more"
+                                onClick={() => toggleSquadExpanded(promo.id)}
+                              >
+                                {isExpanded ? "Show less" : hiddenPeopleCount > 0 ? `See more ${hiddenPeopleCount}` : "See more"}
+                              </button>
                             </motion.article>
                           );
                         }
@@ -882,49 +971,49 @@ export function CampusSearchShell({
                       }
 
                       const entry = gridItem.entry;
-                      const media = entry.item.media?.[0]?.url ?? entry.item.mediaUrl;
-                      const isTall = entry.type === "vibe";
+                      const primaryMedia = entry.item.media?.[0] ?? null;
+                      const media = primaryMedia?.url ?? entry.item.mediaUrl ?? null;
+                      const hasMedia = typeof media === "string" && media.trim().length > 0;
+                      const isVideo = primaryMedia?.kind === "video" || entry.item.kind === "video";
                       const isLoaded = !media || Boolean(loadedMediaIds[entry.id]);
+                      const titleText = entry.item.title.trim();
+                      const bodyText = entry.item.body.trim();
+                      const headline = titleText || bodyText || "Campus moment";
 
                       return (
                         <motion.button
                           key={gridItem.id}
                           type="button"
-                          className={`vyb-search-discovery-card${isTall ? " is-tall" : " is-square"}`}
+                          className={`vyb-search-discovery-card${hasMedia ? " has-media" : " is-text-only"}${entry.type === "vibe" ? " is-vibe" : ""}`}
                           onClick={() => handleSearchDestination(entry.href, entry.type, entry.id)}
                           initial={{ opacity: 0, y: 18 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: Math.min(index * 0.025, 0.26), duration: 0.22 }}
                         >
-                          <div className={`vyb-search-discovery-media${isLoaded ? " is-loaded" : ""}`}>
-                            {!isLoaded ? <span className="vyb-search-media-skeleton" aria-hidden="true" /> : null}
+                          {hasMedia ? (
+                            <div className={`vyb-search-discovery-media${isLoaded ? " is-loaded" : ""}`}>
+                              {!isLoaded ? <span className="vyb-search-media-skeleton" aria-hidden="true" /> : null}
 
-                            {media ? (
-                              entry.item.kind === "video" ? (
+                              {isVideo ? (
                                 <video
-                                  src={media}
+                                  src={media ?? undefined}
                                   muted
                                   playsInline
                                   preload="metadata"
                                   onLoadedData={() => markMediaLoaded(entry.id)}
                                 />
                               ) : (
-                                <img src={media} alt={entry.item.title || entry.item.body || entry.item.author.displayName} loading="lazy" onLoad={() => markMediaLoaded(entry.id)} />
-                              )
-                            ) : (
-                              <div className="vyb-search-discovery-fallback">
-                                <strong>{entry.item.title || "Campus drop"}</strong>
-                                <p>{entry.item.body}</p>
-                              </div>
-                            )}
+                                <img src={media ?? undefined} alt={headline || entry.item.author.displayName} loading="lazy" onLoad={() => markMediaLoaded(entry.id)} />
+                              )}
 
-                            {entry.type === "vibe" ? (
-                              <span className="vyb-search-vibe-pill">
-                                <PlayIcon />
-                                Vibe
-                              </span>
-                            ) : null}
-                          </div>
+                              {entry.type === "vibe" ? (
+                                <span className="vyb-search-vibe-pill">
+                                  <PlayIcon />
+                                  Vibe
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : null}
 
                           <div className="vyb-search-discovery-overlay">
                             <div className="vyb-search-discovery-author">
@@ -945,8 +1034,8 @@ export function CampusSearchShell({
                             </div>
 
                             <div className="vyb-search-discovery-copy">
-                              <strong>{entry.item.title || entry.item.body || "Campus moment"}</strong>
-                              <p>{entry.item.body}</p>
+                              <strong>{headline}</strong>
+                              {bodyText && bodyText !== headline ? <p>{bodyText}</p> : null}
                             </div>
 
                             <div className="vyb-search-discovery-meta">
@@ -971,6 +1060,62 @@ export function CampusSearchShell({
           )}
         </AnimatePresence>
       </div>
+        </div>
+      </section>
+
+      <aside className="vyb-campus-right-panel vyb-campus-rail vyb-search-side-panel">
+        <div className="vyb-campus-side-card">
+          <span className="vyb-campus-side-label">Your vibe</span>
+          <div className="vyb-campus-side-user">
+            <Link href="/dashboard" className="vyb-campus-side-avatar" aria-label="Open your profile">
+              <CampusAvatarContent
+                username={viewerUsername}
+                email={viewerEmail}
+                displayName={viewerName}
+                fallback={getInitials(viewerName || viewerUsername)}
+                decorative
+              />
+            </Link>
+            <div className="vyb-campus-side-user-copy">
+              <Link href="/dashboard" className="vyb-campus-side-name">
+                <strong>{viewerName}</strong>
+              </Link>
+              <Link href="/dashboard" className="vyb-campus-side-handle">
+                @{viewerUsername}
+              </Link>
+            </div>
+          </div>
+          <p className="vyb-campus-side-copy">{profileLine}</p>
+        </div>
+
+        <div className="vyb-campus-side-card">
+          <span className="vyb-campus-side-label">Suggested vybers</span>
+          {suggestedUsers.slice(0, 5).map((user) => (
+            <button
+              key={user.userId}
+              type="button"
+              className="vyb-search-side-user"
+              onClick={() => handleProfileOpen(user.username)}
+            >
+              <span className="vyb-search-side-avatar" aria-hidden="true">
+                <CampusAvatarContent
+                  userId={user.userId}
+                  username={user.username}
+                  displayName={user.displayName}
+                  avatarUrl={user.avatarUrl ?? null}
+                  fallback={getInitials(user.displayName || user.username)}
+                  decorative
+                />
+              </span>
+              <span>
+                <strong>{user.username}</strong>
+                <small>{user.displayName}</small>
+              </span>
+            </button>
+          ))}
+          {suggestedUsers.length === 0 ? <p className="vyb-campus-side-copy">More campus profiles will appear here soon.</p> : null}
+        </div>
+      </aside>
     </main>
   );
 }

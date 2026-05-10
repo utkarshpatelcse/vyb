@@ -678,8 +678,19 @@ function toCampusEvent(event: StoredEvent, viewer?: Pick<DevSession, "userId">):
 }
 
 function getLocalEventsStoreRoot() {
+  if (process.env.VYB_EVENTS_STORE_ROOT) {
+    return path.join(process.env.VYB_EVENTS_STORE_ROOT, "vyb-campus-events");
+  }
+
+  if (process.env.VYB_LOCAL_MEDIA_ROOT) {
+    return path.join(process.env.VYB_LOCAL_MEDIA_ROOT, "vyb-campus-events");
+  }
+
+  if (process.env.VERCEL) {
+    return path.join("/tmp", "vyb-campus-events");
+  }
+
   const configuredRoot =
-    process.env.VYB_LOCAL_MEDIA_ROOT ??
     process.env.TMPDIR ??
     process.env.TEMP ??
     process.env.TMP ??

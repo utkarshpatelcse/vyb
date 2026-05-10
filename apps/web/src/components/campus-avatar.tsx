@@ -44,14 +44,14 @@ export function buildDefaultAvatarUrl({
 }) {
   const source = seed?.trim() || displayName?.trim() || username?.trim() || "vyb-user";
   const palette = [
-    ["#23395d", "#1fb6a8"],
-    ["#3f3c8f", "#14b8a6"],
-    ["#26324f", "#f59e0b"],
-    ["#164e63", "#a855f7"],
-    ["#365314", "#38bdf8"]
+    ["#f8fafc", "#d1d5db", "#263443"],
+    ["#f4f4f5", "#cbd5e1", "#27313d"],
+    ["#f1f5f9", "#d4d4d8", "#243241"],
+    ["#f5f5f4", "#d6d3d1", "#2a3440"]
   ];
-  const [background, accent] = palette[hashString(source) % palette.length] ?? palette[0];
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><defs><radialGradient id="g" cx="32%" cy="24%" r="78%"><stop offset="0" stop-color="${accent}"/><stop offset="0.52" stop-color="${background}"/><stop offset="1" stop-color="#07111f"/></radialGradient></defs><rect width="${size}" height="${size}" rx="${Math.round(size / 2)}" fill="url(#g)"/><circle cx="${Math.round(size / 2)}" cy="${Math.round(size * 0.39)}" r="${Math.round(size * 0.18)}" fill="#f8fafc" opacity="0.94"/><path d="M${Math.round(size * 0.22)} ${Math.round(size * 0.82)}c${Math.round(size * 0.06)}-${Math.round(size * 0.22)} ${Math.round(size * 0.23)}-${Math.round(size * 0.34)} ${Math.round(size * 0.28)}-${Math.round(size * 0.34)}s${Math.round(size * 0.22)} ${Math.round(size * 0.12)} ${Math.round(size * 0.28)} ${Math.round(size * 0.34)}" fill="#f8fafc" opacity="0.94"/><circle cx="${Math.round(size * 0.76)}" cy="${Math.round(size * 0.24)}" r="${Math.round(size * 0.06)}" fill="${accent}" opacity="0.95"/></svg>`;
+  const [highlight, background, ink] = palette[hashString(source) % palette.length] ?? palette[0];
+  const center = Math.round(size / 2);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><defs><radialGradient id="bg" cx="34%" cy="22%" r="82%"><stop offset="0" stop-color="${highlight}"/><stop offset="0.56" stop-color="${background}"/><stop offset="1" stop-color="#b7bec8"/></radialGradient></defs><rect width="${size}" height="${size}" rx="${center}" fill="url(#bg)"/><circle cx="${center}" cy="${Math.round(size * 0.36)}" r="${Math.round(size * 0.16)}" fill="${ink}"/><path d="M${Math.round(size * 0.2)} ${Math.round(size * 0.86)}c${Math.round(size * 0.08)}-${Math.round(size * 0.26)} ${Math.round(size * 0.26)}-${Math.round(size * 0.39)} ${Math.round(size * 0.3)}-${Math.round(size * 0.39)}h${Math.round(size * 0.02)}c${Math.round(size * 0.04)} 0 ${Math.round(size * 0.22)} ${Math.round(size * 0.13)} ${Math.round(size * 0.3)} ${Math.round(size * 0.39)}z" fill="${ink}"/></svg>`;
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 

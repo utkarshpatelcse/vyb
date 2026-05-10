@@ -6,6 +6,7 @@ import { getViewerProfile } from "../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../src/lib/dev-session";
 import { createCampusEvent, getEventsDashboard } from "../../../src/lib/events-data";
 import { deleteEventMediaAssets, persistEventMediaAssets } from "../../../src/lib/events-media-server";
+import { toSafeApiErrorMessage } from "../../../src/lib/safe-api-error";
 
 type ParsedCreatePayload = Omit<Partial<CreateCampusEventRequest>, "capacity" | "teamSizeMin" | "teamSizeMax" | "formFields"> & {
   capacity?: string | number | null;
@@ -147,7 +148,12 @@ export async function GET() {
     return buildError(401, "UNAUTHENTICATED", "You must sign in before opening events.");
   }
 
-  return NextResponse.json(await getEventsDashboard(viewer));
+  try {
+    return NextResponse.json(await getEventsDashboard(viewer));
+  } catch (error) {
+    console.error("[api/events] dashboard lookup failed", error);
+    return buildError(500, "EVENTS_DASHBOARD_FAILED", "We could not load events right now.");
+  }
 }
 
 export async function POST(request: Request) {
@@ -323,6 +329,7 @@ export async function POST(request: Request) {
       await deleteEventMediaAssets(uploadedMedia).catch(() => undefined);
     }
 
-    return buildError(400, "EVENT_CREATE_FAILED", error instanceof Error ? error.message : "We could not publish the event.");
+    console.error("[api/events] create failed", error);
+    return buildError(400, "EVENT_CREATE_FAILED", toSafeApiErrorMessage(error, "We could not publish the event."));
   }
 }

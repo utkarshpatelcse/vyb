@@ -18,7 +18,7 @@ import type {
 } from "@vyb/contracts";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
-import { buildDefaultAvatarUrl, CampusAvatarContent, useResolvedAvatarUrl } from "./campus-avatar";
+import { buildDefaultAvatarUrl, useResolvedAvatarUrl } from "./campus-avatar";
 import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
 import { SignOutButton } from "./sign-out-button";
 import { VybLogoLockup } from "./vyb-logo";
@@ -951,7 +951,6 @@ export function CampusEventsShell({
         .slice(0, 6),
     [dashboard.events]
   );
-  const connectPlayerPreview = connectSummary?.leaderboard.slice(0, 3) ?? [];
   const connectRankSubtitle = connectSummary?.viewerBest
     ? `#${connectSummary.viewerBest.rank} on ${connectSummary.dailyKey}`
     : connectSummary && connectSummary.totalSolvers > 0
@@ -962,14 +961,81 @@ export function CampusEventsShell({
       ? `${connectSummary.totalSolvers} solver${connectSummary.totalSolvers === 1 ? "" : "s"} today`
       : "Be the first valid solver today"
     : "Daily board loading";
-  const connectCountBadge =
-    connectSummary && connectSummary.totalSolvers > connectPlayerPreview.length ? `+${connectSummary.totalSolvers - connectPlayerPreview.length}` : null;
   const streakLabel = connectSummary ? `${connectSummary.viewerStreak} day${connectSummary.viewerStreak === 1 ? "" : "s"}` : "--";
   const queensPlayerSummary = queensSummary
     ? queensSummary.totalSolvers > 0
       ? `${queensSummary.totalSolvers} solver${queensSummary.totalSolvers === 1 ? "" : "s"} today`
       : "Daily logic board"
     : "Daily puzzle";
+  const gameCards: Array<{
+    id: string;
+    title: string;
+    subtitle: string;
+    badge: string;
+    icon: ReactNode;
+    isActive: boolean;
+    href?: string;
+  }> = [
+    {
+      id: "connect",
+      title: "Connect",
+      subtitle: connectPlayerSummary,
+      badge: "Live",
+      icon: "C",
+      isActive: true,
+      href: "/hub/gameshub/connect"
+    },
+    {
+      id: "scribble",
+      title: "Scribble",
+      subtitle: "Draw - Guess - Repeat",
+      badge: "Live",
+      icon: "S",
+      isActive: true,
+      href: "/hub/gameshub/scribble"
+    },
+    {
+      id: "queens",
+      title: "N-Queens",
+      subtitle: queensPlayerSummary,
+      badge: "Daily",
+      icon: "Q",
+      isActive: true,
+      href: "/hub/gameshub/queens"
+    },
+    {
+      id: "uno",
+      title: "Uno Cards",
+      subtitle: "2-4 Players",
+      badge: "Soon",
+      icon: "U",
+      isActive: false
+    },
+    {
+      id: "iq",
+      title: "1% IQ",
+      subtitle: "Fast Reaction",
+      badge: "Soon",
+      icon: "%",
+      isActive: false
+    },
+    {
+      id: "color-sort",
+      title: "Color Sort",
+      subtitle: "Relaxing Solo",
+      badge: "Soon",
+      icon: "C",
+      isActive: false
+    },
+    {
+      id: "more",
+      title: "More",
+      subtitle: "TBA",
+      badge: "Soon",
+      icon: "+",
+      isActive: false
+    }
+  ].sort((left, right) => Number(right.isActive) - Number(left.isActive));
 
   const identityLine = [course, stream].filter(Boolean).join(" / ") || collegeName;
   const layoutStyle = {
@@ -1030,130 +1096,36 @@ export function CampusEventsShell({
               </div>
             </header>
 
-            <section className="vyb-games-featured-card">
-              <div className="vyb-games-featured-top">
-                <span className="vyb-games-neon-pill">Featured Challenge</span>
-                <span className="vyb-games-featured-badge">Daily Zip</span>
-              </div>
-              <div className="vyb-games-featured-content">
-                <h2>CONNECT</h2>
-                <p>{connectPlayerSummary}</p>
-              </div>
-              <div className="vyb-games-featured-bottom">
-                <div className="vyb-games-players">
-                  {connectPlayerPreview.length === 0 ? (
-                    <div className="vyb-games-player-avatar" style={{ zIndex: 3 }}>
-                      <CampusAvatarContent username={viewerUsername} email={viewerEmail} displayName={viewerName} />
+            <div className="vyb-games-grid" aria-label="Games">
+              {gameCards.map((game) => {
+                const cardClassName = `vyb-games-glass-card vyb-games-card-shell${game.isActive ? " is-active-game" : " is-coming-soon"}`;
+                const cardContent = (
+                  <>
+                    <div className="vyb-games-card-top">
+                      <div className="vyb-games-icon">{game.icon}</div>
+                      <span className={`vyb-games-status-pill${game.isActive ? " is-live" : ""}`}>
+                        {game.isActive ? <span className="vyb-games-status-dot" /> : null}
+                        {game.badge}
+                      </span>
                     </div>
-                  ) : null}
-                  {connectPlayerPreview.map((entry, index) => (
-                    <div key={entry.userId} className="vyb-games-player-avatar" style={{ zIndex: connectPlayerPreview.length - index + 1 }}>
-                      <CampusAvatarContent userId={entry.userId} username={entry.username} displayName={entry.displayName} />
+                    <div className="vyb-games-card-copy">
+                      <h4 className="vyb-games-card-title">{game.title}</h4>
+                      <p className="vyb-games-card-subtitle">{game.subtitle}</p>
                     </div>
-                  ))}
-                  {connectCountBadge ? (
-                    <div className="vyb-games-player-avatar is-count" style={{ zIndex: 1 }}>
-                      {connectCountBadge}
-                    </div>
-                  ) : null}
-                </div>
-                <Link href="/hub/gameshub/connect" className="vyb-games-play-btn">Play</Link>
-              </div>
-            </section>
+                    <span className="vyb-games-card-action">{game.href ? "Play" : "Soon"}</span>
+                  </>
+                );
 
-            <div>
-              <h3 className="vyb-games-section-title">Game Library</h3>
-              <div className="vyb-games-grid">
-                <Link
-                  href="/hub/gameshub/scribble"
-                  className="vyb-games-glass-card"
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "0.6rem",
-                    background: "linear-gradient(135deg, rgba(99,102,241,0.18) 0%, rgba(139,92,246,0.22) 100%)",
-                    border: "1px solid rgba(139,92,246,0.3)",
-                    position: "relative",
-                    overflow: "hidden",
-                    textDecoration: "none",
-                  }}
-                >
-                  {/* glow top-right */}
-                  <div style={{ position: "absolute", top: "-1.5rem", right: "-1.5rem", width: "5rem", height: "5rem", borderRadius: "50%", background: "rgba(139,92,246,0.2)", filter: "blur(20px)", pointerEvents: "none" }} />
-
-                  {/* top row: icon + LIVE pill */}
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div className="vyb-games-icon" style={{ background: "rgba(139,92,246,0.15)" }}>🎨</div>
-                    <span style={{ display: "flex", alignItems: "center", gap: "0.3rem", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: "999px", padding: "0.22rem 0.65rem", fontSize: "0.7rem", fontWeight: 800, color: "#34d399", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                      <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#34d399", boxShadow: "0 0 6px #34d399" }} />
-                      Live
-                    </span>
+                return game.href ? (
+                  <Link key={game.id} href={game.href} className={cardClassName}>
+                    {cardContent}
+                  </Link>
+                ) : (
+                  <div key={game.id} className={cardClassName} aria-disabled="true">
+                    {cardContent}
                   </div>
-
-                  {/* title + subtitle */}
-                  <div>
-                    <h4 className="vyb-games-card-title" style={{ color: "#fff", fontSize: "1rem" }}>Scribble</h4>
-                    <p className="vyb-games-card-subtitle">Draw · Guess · Repeat</p>
-                  </div>
-
-                  {/* play button */}
-                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "0.25rem" }}>
-                    <span style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)", color: "#fff", borderRadius: "999px", padding: "0.45rem 1.2rem", fontSize: "0.82rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em", boxShadow: "0 4px 12px rgba(99,102,241,0.4)" }}>
-                      Play
-                    </span>
-                  </div>
-                </Link>
-                <div className="vyb-games-glass-card">
-                  <div className="vyb-games-icon">🃏</div>
-                  <h4 className="vyb-games-card-title">Uno Cards</h4>
-                  <p className="vyb-games-card-subtitle">2-4 Players</p>
-                </div>
-                <div className="vyb-games-glass-card">
-                  <div className="vyb-games-icon">⚡</div>
-                  <h4 className="vyb-games-card-title">1% IQ</h4>
-                  <p className="vyb-games-card-subtitle">Fast Reaction</p>
-                </div>
-                <Link
-                  href="/hub/gameshub/queens"
-                  className="vyb-games-glass-card"
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "0.6rem",
-                    background: "linear-gradient(135deg, rgba(20,184,166,0.16) 0%, rgba(234,179,8,0.16) 100%)",
-                    border: "1px solid rgba(45,212,191,0.26)",
-                    position: "relative",
-                    overflow: "hidden",
-                    textDecoration: "none"
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div className="vyb-games-icon" style={{ background: "rgba(20,184,166,0.15)" }}>Q</div>
-                    <span style={{ background: "rgba(234,179,8,0.12)", border: "1px solid rgba(234,179,8,0.3)", borderRadius: "999px", padding: "0.22rem 0.65rem", fontSize: "0.7rem", fontWeight: 800, color: "#fde68a", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                      Daily
-                    </span>
-                  </div>
-                  <div>
-                    <h4 className="vyb-games-card-title" style={{ color: "#fff", fontSize: "1rem" }}>N-Queens</h4>
-                    <p className="vyb-games-card-subtitle">{queensPlayerSummary}</p>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "0.25rem" }}>
-                    <span style={{ background: "linear-gradient(135deg, #14b8a6, #eab308)", color: "#0f172a", borderRadius: "999px", padding: "0.45rem 1.2rem", fontSize: "0.82rem", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                      Play
-                    </span>
-                  </div>
-                </Link>
-                <div className="vyb-games-glass-card">
-                  <div className="vyb-games-icon">🌈</div>
-                  <h4 className="vyb-games-card-title">Color Sort</h4>
-                  <p className="vyb-games-card-subtitle">Relaxing Solo</p>
-                </div>
-                <div className="vyb-games-glass-card is-dashed">
-                  <div className="vyb-games-icon">🔒</div>
-                  <h4 className="vyb-games-card-title">More...</h4>
-                  <p className="vyb-games-card-subtitle">TBA</p>
-                </div>
-              </div>
+                );
+              })}
             </div>
 
             <div style={{ textAlign: "center", marginTop: "2rem" }}>
