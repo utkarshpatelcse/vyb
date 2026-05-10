@@ -22,6 +22,9 @@ import { getFirebaseDataConnect } from "./firebase-admin.mjs";
 import { loadRootEnv } from "./root-env.mjs";
 import { isSuperAdminEmail } from "./super-admin-access.mjs";
 
+const MEMBERSHIP_CONTEXT_CACHE_TTL_MS = 15_000;
+const membershipContextCache = new Map();
+
 function getEmailDomain(email) {
   return String(email).split("@")[1]?.trim().toLowerCase() ?? null;
 }
@@ -46,6 +49,19 @@ function buildTenantMembershipKey(tenantId, userId) {
 
 function buildCommunityMembershipKey(communityId, membershipId) {
   return `${communityId}:${membershipId}`;
+}
+
+function buildMembershipContextCacheKey({ firebaseUid, primaryEmail, displayName, role }) {
+  return [
+    firebaseUid,
+    String(primaryEmail ?? "").trim().toLowerCase(),
+    String(displayName ?? "").trim(),
+    role ?? "student"
+  ].join("|");
+}
+
+export function clearMembershipContextCache() {
+  membershipContextCache.clear();
 }
 
 function getIdentityDc() {
@@ -162,7 +178,38 @@ async function resolveTenantForSuperAdminEmail(email) {
   return tenantResponse.data.tenants[0] ?? null;
 }
 
-export async function ensureMembershipContext({
+export async function ensureMembershipContext(input) {
+  const key = buildMembershipContextCacheKey(input);
+  const now = Date.now();
+  const cached = membershipContextCache.get(key);
+
+  if (cached && cached.expiresAt > now) {
+    return cached.value ?? cached.promise;
+  }
+
+  const promise = ensureMembershipContextUncached(input);
+  const entry = {
+    expiresAt: now + MEMBERSHIP_CONTEXT_CACHE_TTL_MS,
+    promise,
+    value: null
+  };
+  membershipContextCache.set(key, entry);
+
+  try {
+    const value = await promise;
+    entry.value = value;
+    entry.promise = null;
+    entry.expiresAt = Date.now() + MEMBERSHIP_CONTEXT_CACHE_TTL_MS;
+    return value;
+  } catch (error) {
+    if (membershipContextCache.get(key) === entry) {
+      membershipContextCache.delete(key);
+    }
+    throw error;
+  }
+}
+
+async function ensureMembershipContextUncached({
   firebaseUid,
   primaryEmail,
   displayName,

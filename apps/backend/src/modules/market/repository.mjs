@@ -32,9 +32,10 @@ import {
   updateMarketListingDetails,
   updateMarketRequestDetails
 } from "../../../../../packages/dataconnect/marketplace-admin-sdk/esm/index.esm.js";
-import { listProfilesByTenant } from "../identity/profile-repository.mjs";
+import { listProfilesByUserIds } from "../identity/profile-repository.mjs";
 
 const TENANT_SCAN_LIMIT = 5000;
+const MARKET_SNAPSHOT_CACHE_TTL_MS = 5_000;
 const SAVE_LOOKUP_LIMIT = 8;
 const LEGACY_MARKET_SEED_USER_ID_PREFIX = "seed-";
 const MARKET_DEFAULT_LOCATION = "Campus";
@@ -53,12 +54,23 @@ const MARKET_MEDIA_PATH_EXTENSIONS = new Set([
   "mkv"
 ]);
 
+const marketSnapshotCache = new Map();
+
 function getMarketplaceDc() {
   return getFirebaseDataConnect(marketplaceConnectorConfig);
 }
 
 function getMarketplaceStorageBucket() {
   return getStorage(getFirebaseAdminApp("backend-market-storage")).bucket();
+}
+
+function invalidateMarketSnapshotCache(tenantId) {
+  if (!tenantId) {
+    marketSnapshotCache.clear();
+    return;
+  }
+
+  marketSnapshotCache.delete(tenantId);
 }
 
 function decodeStorageObjectPath(value) {
@@ -313,16 +325,10 @@ async function buildProfileByUserIdMap(tenantId, userIds) {
     return new Map();
   }
 
-  const userIdSet = new Set(normalizedUserIds);
-  const profiles = await listProfilesByTenant(tenantId);
-  return new Map(
-    profiles
-      .filter((profile) => userIdSet.has(profile.userId))
-      .map((profile) => [profile.userId, profile])
-  );
+  return new Map((await listProfilesByUserIds(tenantId, normalizedUserIds)).map((profile) => [profile.userId, profile]));
 }
 
-async function readLiveMarketSnapshot(tenantId) {
+async function fetchLiveMarketSnapshot(tenantId) {
   const dc = getMarketplaceDc();
   const [
     listingsResponse,
@@ -351,6 +357,35 @@ async function readLiveMarketSnapshot(tenantId) {
     listingContacts: listingContactsResponse.data.marketListingContacts,
     requestContacts: requestContactsResponse.data.marketRequestContacts
   };
+}
+
+async function readLiveMarketSnapshot(tenantId) {
+  const now = Date.now();
+  const cached = marketSnapshotCache.get(tenantId);
+  if (cached && cached.expiresAt > now) {
+    return cached.value ?? cached.promise;
+  }
+
+  const promise = fetchLiveMarketSnapshot(tenantId);
+  const entry = {
+    expiresAt: now + MARKET_SNAPSHOT_CACHE_TTL_MS,
+    promise,
+    value: null
+  };
+  marketSnapshotCache.set(tenantId, entry);
+
+  try {
+    const snapshot = await promise;
+    entry.value = snapshot;
+    entry.promise = null;
+    entry.expiresAt = Date.now() + MARKET_SNAPSHOT_CACHE_TTL_MS;
+    return snapshot;
+  } catch (error) {
+    if (marketSnapshotCache.get(tenantId) === entry) {
+      marketSnapshotCache.delete(tenantId);
+    }
+    throw error;
+  }
 }
 
 function buildDashboard(snapshot, viewer, profileMap = null) {
@@ -539,10 +574,15 @@ async function requireOwnedActiveLiveRequest(viewer, requestId) {
 
 export async function getLiveMarketDashboard(viewer) {
   const snapshot = await readLiveMarketSnapshot(viewer.tenantId);
-  const profileMap = await buildProfileByUserIdMap(viewer.tenantId, [
-    ...snapshot.listings.map((item) => item.sellerUserId),
-    ...snapshot.requests.map((item) => item.requesterUserId)
-  ]);
+  const profileUserIds = [
+    ...snapshot.listings
+      .filter((item) => isActiveRecord(item) && !isLegacySeedMarketActorId(item.sellerUserId))
+      .map((item) => item.sellerUserId),
+    ...snapshot.requests
+      .filter((item) => isActiveRecord(item) && !isLegacySeedMarketActorId(item.requesterUserId))
+      .map((item) => item.requesterUserId)
+  ];
+  const profileMap = await buildProfileByUserIdMap(viewer.tenantId, profileUserIds);
 
   return buildDashboard(snapshot, viewer, profileMap);
 }
@@ -598,6 +638,8 @@ export async function createLiveMarketPost(viewer, payload) {
       })
     );
 
+    invalidateMarketSnapshotCache(viewer.tenantId);
+
     return {
       dashboard: await getLiveMarketDashboard(viewer),
       itemId: listingId,
@@ -646,6 +688,8 @@ export async function createLiveMarketPost(viewer, payload) {
       });
     })
   );
+
+  invalidateMarketSnapshotCache(viewer.tenantId);
 
   return {
     dashboard: await getLiveMarketDashboard(viewer),
@@ -714,6 +758,8 @@ export async function updateLiveMarketListing(viewer, payload) {
     }
   );
 
+  invalidateMarketSnapshotCache(viewer.tenantId);
+
   return {
     dashboard: await getLiveMarketDashboard(viewer),
     listingId: listing.id
@@ -768,6 +814,8 @@ export async function updateLiveMarketRequest(viewer, payload) {
     })
   );
 
+  invalidateMarketSnapshotCache(viewer.tenantId);
+
   await deleteMarketMediaAssets(
     removedMedia.map((item) => ({
       id: item.id,
@@ -793,6 +841,7 @@ export async function updateLiveMarketRequest(viewer, payload) {
 export async function markLiveMarketListingSold(viewer, listingId) {
   const { dc, listing } = await requireOwnedActiveLiveListing(viewer, listingId);
   await markMarketListingSold(dc, { id: listing.id });
+  invalidateMarketSnapshotCache(viewer.tenantId);
 
   return {
     dashboard: await getLiveMarketDashboard(viewer),
@@ -806,6 +855,7 @@ export async function deleteLiveMarketListing(viewer, listingId) {
   const existingMedia = await getLiveListingMediaRecords(viewer.tenantId, listing.id);
   await softDeleteMarketListing(dc, { id: listing.id });
   await Promise.all(existingMedia.map((item) => softDeleteMarketListingMedia(dc, { id: item.id })));
+  invalidateMarketSnapshotCache(viewer.tenantId);
   await deleteMarketMediaAssets(
     existingMedia.map((item) => ({
       id: item.id,
@@ -834,6 +884,7 @@ export async function deleteLiveMarketRequest(viewer, requestId) {
   const existingMedia = await getLiveRequestMediaRecords(viewer.tenantId, request.id);
   await softDeleteMarketRequest(dc, { id: request.id });
   await Promise.all(existingMedia.map((item) => softDeleteMarketRequestMedia(dc, { id: item.id })));
+  invalidateMarketSnapshotCache(viewer.tenantId);
   await deleteMarketMediaAssets(
     existingMedia.map((item) => ({
       id: item.id,
@@ -892,6 +943,8 @@ export async function toggleLiveMarketSave(viewer, listingId) {
     isSaved = true;
   }
 
+  invalidateMarketSnapshotCache(viewer.tenantId);
+
   return {
     dashboard: await getLiveMarketDashboard(viewer),
     listingId,
@@ -944,6 +997,8 @@ export async function createLiveMarketContact(viewer, input) {
       createdAt
     });
   }
+
+  invalidateMarketSnapshotCache(viewer.tenantId);
 
   return {
     dashboard: await getLiveMarketDashboard(viewer),

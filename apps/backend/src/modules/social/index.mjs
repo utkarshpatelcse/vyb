@@ -2,7 +2,9 @@ import { readJson, sendError, sendJson } from "../../lib/http.mjs";
 import {
   getProfileByUsername,
   getProfileByUserId,
-  listProfilesByTenant,
+  listProfilesByMembershipIds,
+  listProfilesByUserIds,
+  listRecentProfilesByTenant,
   searchProfiles
 } from "../identity/profile-repository.mjs";
 import { trackActivity } from "../moderation/repository.mjs";
@@ -10,7 +12,6 @@ import { resolveLiveContext } from "../shared/viewer-context.mjs";
 import { persistSocialMediaAsset } from "./media-storage.mjs";
 import { emitSocialRealtimeEvent } from "./realtime-hub.mjs";
 import {
-  countPostsByUser,
   createComment,
   createPost,
   createStory,
@@ -23,6 +24,7 @@ import {
   findStoryById,
   followUser,
   getFollowStats,
+  getUserSocialStatsMap,
   isFollowing,
   listCommentsByPost,
   listProfileConnections,
@@ -415,16 +417,7 @@ async function enrichCommentItems(tenantId, items) {
         .filter((value) => typeof value === "string" && value.trim().length > 0)
     )
   );
-  const profiles = await Promise.all(
-    uniqueUserIds.map(async (userId) => [
-      userId,
-      await getProfileByUserId({
-        tenantId,
-        userId
-      })
-    ])
-  );
-  const profileMap = new Map(profiles);
+  const profileMap = new Map((await listProfilesByUserIds(tenantId, uniqueUserIds)).map((profile) => [profile.userId, profile]));
 
   return items.map((item) => ({
     ...item,
@@ -437,7 +430,10 @@ async function buildReactionMemberItems(tenantId, items) {
     return [];
   }
 
-  const profiles = await listProfilesByTenant(tenantId);
+  const profiles = await listProfilesByMembershipIds(
+    tenantId,
+    items.map((item) => item.membershipId)
+  );
   const profileByMembershipId = new Map(
     profiles
       .filter((profile) => typeof profile.membershipId === "string" && profile.membershipId.trim().length > 0)
@@ -504,6 +500,35 @@ function isRecoverableReadError(error) {
   );
 }
 
+function getDefaultUserSearchMetrics() {
+  return {
+    isFollowing: false,
+    posts: 0,
+    followers: 0,
+    following: 0
+  };
+}
+
+function buildUserSearchResponseItem(profile, metrics) {
+  const resolvedMetrics = metrics ?? getDefaultUserSearchMetrics();
+
+  return {
+    userId: profile.userId,
+    username: profile.username,
+    displayName: profile.fullName,
+    avatarUrl: profile.avatarUrl ?? null,
+    collegeName: profile.collegeName,
+    course: profile.course,
+    stream: profile.stream,
+    isFollowing: resolvedMetrics.isFollowing,
+    stats: {
+      posts: resolvedMetrics.posts,
+      followers: resolvedMetrics.followers,
+      following: resolvedMetrics.following
+    }
+  };
+}
+
 async function buildUserSearchItems({ tenantId, viewerUserId, query, limit }) {
   let profiles = [];
 
@@ -526,53 +551,24 @@ async function buildUserSearchItems({ tenantId, viewerUserId, query, limit }) {
     });
   }
 
-  return Promise.all(
-    profiles.map(async (profile) => {
-      const followStats = await getFollowStats({
-        tenantId,
-        userId: profile.userId
-      });
+  const metricsMap = await getUserSocialStatsMap({
+    tenantId,
+    userIds: profiles.map((profile) => profile.userId),
+    viewerUserId
+  });
 
-        return {
-          userId: profile.userId,
-          username: profile.username,
-          displayName: profile.fullName,
-          avatarUrl: profile.avatarUrl ?? null,
-          collegeName: profile.collegeName,
-          course: profile.course,
-          stream: profile.stream,
-        isFollowing: await isFollowing({
-          tenantId,
-          followerUserId: viewerUserId,
-          followingUserId: profile.userId
-        }),
-        stats: {
-          posts:
-            (await countPostsByUser({
-              tenantId,
-              userId: profile.userId,
-              placement: "feed"
-            })) +
-            (await countPostsByUser({
-              tenantId,
-              userId: profile.userId,
-              placement: "vibe"
-            })),
-          followers: followStats.followers,
-          following: followStats.following
-        }
-      };
-    })
-  );
+  return profiles.map((profile) => buildUserSearchResponseItem(profile, metricsMap.get(profile.userId)));
 }
 
 async function buildSuggestedUserItems({ tenantId, viewerUserId, limit }) {
   let profiles = [];
 
   try {
-    profiles = (await listProfilesByTenant(tenantId))
-      .filter((profile) => profile.userId !== viewerUserId)
-      .slice(0, limit);
+    profiles = await listRecentProfilesByTenant({
+      tenantId,
+      limit,
+      excludedUserId: viewerUserId
+    });
   } catch (error) {
     if (!isRecoverableReadError(error)) {
       throw error;
@@ -584,44 +580,13 @@ async function buildSuggestedUserItems({ tenantId, viewerUserId, limit }) {
     });
   }
 
-  return Promise.all(
-    profiles.map(async (profile) => {
-      const followStats = await getFollowStats({
-        tenantId,
-        userId: profile.userId
-      });
+  const metricsMap = await getUserSocialStatsMap({
+    tenantId,
+    userIds: profiles.map((profile) => profile.userId),
+    viewerUserId
+  });
 
-        return {
-          userId: profile.userId,
-          username: profile.username,
-          displayName: profile.fullName,
-          avatarUrl: profile.avatarUrl ?? null,
-          collegeName: profile.collegeName,
-          course: profile.course,
-          stream: profile.stream,
-        isFollowing: await isFollowing({
-          tenantId,
-          followerUserId: viewerUserId,
-          followingUserId: profile.userId
-        }),
-        stats: {
-          posts:
-            (await countPostsByUser({
-              tenantId,
-              userId: profile.userId,
-              placement: "feed"
-            })) +
-            (await countPostsByUser({
-              tenantId,
-              userId: profile.userId,
-              placement: "vibe"
-            })),
-          followers: followStats.followers,
-          following: followStats.following
-        }
-      };
-    })
-  );
+  return profiles.map((profile) => buildUserSearchResponseItem(profile, metricsMap.get(profile.userId)));
 }
 
 async function logSocialActivity({
@@ -736,6 +701,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
     });
     const limit = parseLimit(url.searchParams.get("limit"), 24);
     const cursor = url.searchParams.get("cursor");
+    const authorUserId = url.searchParams.get("authorUserId");
 
     if (!requireNonEmptyString(tenantId)) {
       sendError(response, 400, "INVALID_TENANT", "tenantId is required.");
@@ -751,6 +717,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       tenantId,
       limit: limit + 1,
       placement: "vibe",
+      userId: authorUserId ?? null,
       viewerMembershipId: resolvedMembershipId,
       viewerUserId: resolvedUserId,
       cursor

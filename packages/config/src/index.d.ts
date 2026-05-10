@@ -48,3 +48,5 @@ export function ensureMembershipContext(input: {
   displayName: string;
   role?: string;
 }): Promise<MembershipContext>;
+
+export function clearMembershipContextCache(): void;

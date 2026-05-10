@@ -32,7 +32,7 @@ import {
   updateReaction as updateReactionMutation,
   updateStoryReaction as updateStoryReactionMutation
 } from "../../../../../packages/dataconnect/social-admin-sdk/esm/index.esm.js";
-import { listProfilesByTenant } from "../identity/profile-repository.mjs";
+import { listProfilesByUserIds } from "../identity/profile-repository.mjs";
 
 const directoryName = path.dirname(fileURLToPath(import.meta.url));
 const fallbackStorePath = path.resolve(directoryName, "../../data/social-store.json");
@@ -277,6 +277,22 @@ const LIST_COMMENTS_BY_POST_EXTENDED_QUERY = `
   }
 `;
 
+const LIST_COMMENTS_BY_POST_IDS_EXTENDED_QUERY = `
+  query ListCommentsByPostIdsExtended($tenantId: UUID!, $postIds: [UUID!]!, $limit: Int!) {
+    comments(
+      where: {
+        tenantId: { eq: $tenantId }
+        postId: { in: $postIds }
+        deletedAt: { isNull: true }
+      }
+      orderBy: [{ createdAt: ASC }]
+      limit: $limit
+    ) {
+      ${EXTENDED_COMMENT_FIELDS}
+    }
+  }
+`;
+
 const GET_COMMENT_BY_ID_QUERY = `
   query GetCommentById($id: UUID!) {
     comment(key: { id: $id }) {
@@ -307,6 +323,27 @@ const LIST_COMMENT_REACTIONS_BY_COMMENT_QUERY = `
   query ListCommentReactionsByComment($commentId: UUID!, $limit: Int!) {
     commentReactions(
       where: { commentId: { eq: $commentId }, deletedAt: { isNull: true } }
+      orderBy: [{ createdAt: DESC }]
+      limit: $limit
+    ) {
+      id
+      commentId
+      membershipId
+      reactionType
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+const LIST_COMMENT_REACTIONS_BY_COMMENT_IDS_QUERY = `
+  query ListCommentReactionsByCommentIds($tenantId: UUID!, $commentIds: [UUID!]!, $limit: Int!) {
+    commentReactions(
+      where: {
+        comment: { tenantId: { eq: $tenantId } }
+        commentId: { in: $commentIds }
+        deletedAt: { isNull: true }
+      }
       orderBy: [{ createdAt: DESC }]
       limit: $limit
     ) {
@@ -474,6 +511,46 @@ const LIST_POSTS_BY_AUTHOR_PRIVATE_QUERY = `
   }
 `;
 
+const LIST_FOLLOWS_BY_TENANT_PRIVATE_QUERY = `
+  query ListFollowsByTenantPrivate($tenantId: UUID!, $limit: Int!) {
+    follows(
+      where: {
+        tenantId: { eq: $tenantId }
+        deletedAt: { isNull: true }
+      }
+      limit: $limit
+    ) {
+      id
+      tenantId
+      followerUserId
+      followingUserId
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+const LIST_REACTIONS_BY_POST_IDS_QUERY = `
+  query ListReactionsByPostIds($tenantId: UUID!, $postIds: [UUID!]!, $limit: Int!) {
+    reactions(
+      where: {
+        post: { tenantId: { eq: $tenantId } }
+        postId: { in: $postIds }
+        deletedAt: { isNull: true }
+      }
+      orderBy: [{ createdAt: DESC }]
+      limit: $limit
+    ) {
+      id
+      postId
+      membershipId
+      reactionType
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
 const GET_POST_BY_ID_PRIVATE_QUERY = `
   query GetPostByIdPrivate($id: UUID!) {
     post(key: { id: $id }) {
@@ -514,6 +591,34 @@ const LIST_POST_MEDIA_BY_POST_PRIVATE_QUERY = `
     postMediaRecords(
       where: {
         postId: { eq: $postId }
+        deletedAt: { isNull: true }
+      }
+      orderBy: [{ createdAt: ASC }]
+      limit: $limit
+    ) {
+      id
+      tenantId
+      postId
+      mediaUrl
+      storagePath
+      mediaType
+      mimeType
+      sizeBytes
+      width
+      height
+      durationMs
+      processingStatus
+      createdAt
+    }
+  }
+`;
+
+const LIST_POST_MEDIA_BY_POST_IDS_PRIVATE_QUERY = `
+  query ListPostMediaByPostIdsPrivate($tenantId: UUID!, $postIds: [UUID!]!, $limit: Int!) {
+    postMediaRecords(
+      where: {
+        tenantId: { eq: $tenantId }
+        postId: { in: $postIds }
         deletedAt: { isNull: true }
       }
       orderBy: [{ createdAt: ASC }]
@@ -660,6 +765,48 @@ const LIST_STORY_VIEWS_BY_TENANT_QUERY = `
   query ListStoryViewsByTenant($tenantId: UUID!, $limit: Int!) {
     storyViews(
       where: { story: { tenantId: { eq: $tenantId } }, deletedAt: { isNull: true } }
+      orderBy: [{ createdAt: DESC }]
+      limit: $limit
+    ) {
+      id
+      storyId
+      membershipId
+      seenAt
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+const LIST_STORY_REACTIONS_BY_STORY_IDS_QUERY = `
+  query ListStoryReactionsByStoryIds($tenantId: UUID!, $storyIds: [UUID!]!, $limit: Int!) {
+    storyReactions(
+      where: {
+        story: { tenantId: { eq: $tenantId } }
+        storyId: { in: $storyIds }
+        deletedAt: { isNull: true }
+      }
+      orderBy: [{ createdAt: DESC }]
+      limit: $limit
+    ) {
+      id
+      storyId
+      membershipId
+      reactionType
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+const LIST_STORY_VIEWS_BY_STORY_IDS_QUERY = `
+  query ListStoryViewsByStoryIds($tenantId: UUID!, $storyIds: [UUID!]!, $limit: Int!) {
+    storyViews(
+      where: {
+        story: { tenantId: { eq: $tenantId } }
+        storyId: { in: $storyIds }
+        deletedAt: { isNull: true }
+      }
       orderBy: [{ createdAt: DESC }]
       limit: $limit
     ) {
@@ -1100,21 +1247,23 @@ function isViewerManagingPost(item, { viewerUserId = null, viewerMembershipId = 
   );
 }
 
-async function buildProfileByUserIdMap(tenantId, userIds) {
-  const normalizedUserIds = Array.from(
-    new Set(userIds.filter((value) => typeof value === "string" && value.trim().length > 0))
+function normalizeUserIdList(userIds) {
+  return Array.from(
+    new Set(
+      (Array.isArray(userIds) ? userIds : [])
+        .filter((value) => typeof value === "string" && value.trim().length > 0)
+        .map((value) => value.trim())
+    )
   );
+}
+
+async function buildProfileByUserIdMap(tenantId, userIds) {
+  const normalizedUserIds = normalizeUserIdList(userIds);
   if (!tenantId || normalizedUserIds.length === 0) {
     return new Map();
   }
 
-  const userIdSet = new Set(normalizedUserIds);
-  const profiles = await listProfilesByTenant(tenantId);
-  return new Map(
-    profiles
-      .filter((profile) => userIdSet.has(profile.userId))
-      .map((profile) => [profile.userId, profile])
-  );
+  return new Map((await listProfilesByUserIds(tenantId, normalizedUserIds)).map((profile) => [profile.userId, profile]));
 }
 
 function decodeDataUrl(value) {
@@ -1308,32 +1457,97 @@ async function processStoredVibeVideo({ tenantId, userId, storagePath, mediaUrl,
   }
 }
 
-async function buildPostCountMaps(tenantId, postIds, viewerMembershipId = null) {
+async function listCommentsByPostIdsForCounts(tenantId, postIds) {
+  const normalizedPostIds = normalizeUserIdList(postIds);
+  if (!tenantId || normalizedPostIds.length === 0) {
+    return [];
+  }
+
   try {
-    const [commentsResponse, reactionsResponse] = await Promise.all([
-      listCommentsByTenantQuery(getSocialDc(), {
+    const response = await getSocialDc().executeGraphqlRead(LIST_COMMENTS_BY_POST_IDS_EXTENDED_QUERY, {
+      operationName: "ListCommentsByPostIdsExtended",
+      variables: {
         tenantId,
+        postIds: normalizedPostIds,
         limit: TENANT_SCAN_LIMIT
-      }),
-      listReactionsByTenantQuery(getSocialDc(), {
+      }
+    });
+
+    return Array.isArray(response.data.comments) ? response.data.comments : [];
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const response = await listCommentsByTenantQuery(getSocialDc(), {
+      tenantId,
+      limit: TENANT_SCAN_LIMIT
+    });
+    const idSet = new Set(normalizedPostIds);
+    return response.data.comments.filter((item) => idSet.has(item.postId));
+  }
+}
+
+async function listReactionsByPostIdsForCounts(tenantId, postIds) {
+  const normalizedPostIds = normalizeUserIdList(postIds);
+  if (!tenantId || normalizedPostIds.length === 0) {
+    return [];
+  }
+
+  try {
+    const response = await getSocialDc().executeGraphqlRead(LIST_REACTIONS_BY_POST_IDS_QUERY, {
+      operationName: "ListReactionsByPostIds",
+      variables: {
         tenantId,
+        postIds: normalizedPostIds,
         limit: TENANT_SCAN_LIMIT
-      })
+      }
+    });
+
+    return Array.isArray(response.data.reactions) ? response.data.reactions : [];
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const response = await listReactionsByTenantQuery(getSocialDc(), {
+      tenantId,
+      limit: TENANT_SCAN_LIMIT
+    });
+    const idSet = new Set(normalizedPostIds);
+    return response.data.reactions.filter((item) => idSet.has(item.postId));
+  }
+}
+
+async function buildPostCountMaps(tenantId, postIds, viewerMembershipId = null) {
+  const normalizedPostIds = normalizeUserIdList(postIds);
+  const comments = new Map();
+  const reactions = new Map();
+  const viewerReactions = new Map();
+
+  if (!tenantId || normalizedPostIds.length === 0) {
+    return {
+      comments,
+      reactions,
+      viewerReactions
+    };
+  }
+
+  try {
+    const [commentItems, reactionItems] = await Promise.all([
+      listCommentsByPostIdsForCounts(tenantId, normalizedPostIds),
+      listReactionsByPostIdsForCounts(tenantId, normalizedPostIds)
     ]);
+    const idSet = new Set(normalizedPostIds);
 
-    const idSet = new Set(postIds);
-    const comments = new Map();
-    const reactions = new Map();
-    const viewerReactions = new Map();
-
-    for (const item of commentsResponse.data.comments) {
+    for (const item of commentItems) {
       if (!idSet.has(item.postId)) {
         continue;
       }
       comments.set(item.postId, Number(comments.get(item.postId) ?? 0) + 1);
     }
 
-    for (const item of reactionsResponse.data.reactions) {
+    for (const item of reactionItems) {
       const reactionType = item.reactionType ?? "like";
       if (!idSet.has(item.postId) || reactionType === INACTIVE_REACTION_TYPE) {
         continue;
@@ -1356,13 +1570,10 @@ async function buildPostCountMaps(tenantId, postIds, viewerMembershipId = null) 
     }
 
     const store = await ensureFallbackStore();
-    const idSet = new Set(postIds);
-    const comments = new Map();
-    const reactions = new Map();
-    const viewerReactions = new Map();
+    const idSet = new Set(normalizedPostIds);
 
     for (const item of store.comments.map(normalizeFallbackCommentRecord)) {
-      if (item.status === "removed" || !idSet.has(item.postId)) {
+      if (item.status === "removed" || item.tenantId !== tenantId || !idSet.has(item.postId)) {
         continue;
       }
       comments.set(item.postId, Number(comments.get(item.postId) ?? 0) + 1);
@@ -1370,7 +1581,7 @@ async function buildPostCountMaps(tenantId, postIds, viewerMembershipId = null) 
 
     for (const item of store.reactions.map(normalizeFallbackReactionRecord)) {
       const reactionType = item.reactionType ?? "like";
-      if (item.deletedAt || !idSet.has(item.postId) || reactionType === INACTIVE_REACTION_TYPE) {
+      if (item.deletedAt || item.tenantId !== tenantId || !idSet.has(item.postId) || reactionType === INACTIVE_REACTION_TYPE) {
         continue;
       }
       reactions.set(item.postId, Number(reactions.get(item.postId) ?? 0) + 1);
@@ -1407,16 +1618,44 @@ async function countReactionsByPost(postId) {
 }
 
 async function buildStoryReactionMaps(tenantId, storyIds, viewerMembershipId = null) {
-  const response = await listStoryReactionsByTenantQuery(getSocialDc(), {
-    tenantId,
-    limit: TENANT_SCAN_LIMIT
-  });
-
-  const idSet = new Set(storyIds);
+  const normalizedStoryIds = normalizeUserIdList(storyIds);
+  const idSet = new Set(normalizedStoryIds);
   const reactions = new Map();
   const viewerReactions = new Map();
 
-  for (const item of response.data.storyReactions) {
+  if (!tenantId || normalizedStoryIds.length === 0) {
+    return {
+      reactions,
+      viewerReactions
+    };
+  }
+
+  let items = [];
+  try {
+    const response = await getSocialDc().executeGraphqlRead(LIST_STORY_REACTIONS_BY_STORY_IDS_QUERY, {
+      operationName: "ListStoryReactionsByStoryIds",
+      variables: {
+        tenantId,
+        storyIds: normalizedStoryIds,
+        limit: TENANT_SCAN_LIMIT
+      }
+    });
+    items = Array.isArray(response.data.storyReactions) ? response.data.storyReactions : [];
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const response = await listStoryReactionsByTenantQuery(getSocialDc(), {
+      tenantId,
+      limit: TENANT_SCAN_LIMIT
+    });
+    items = Array.isArray(response.data.storyReactions)
+      ? response.data.storyReactions.filter((item) => idSet.has(item.storyId))
+      : [];
+  }
+
+  for (const item of items) {
     if (!idSet.has(item.storyId)) {
       continue;
     }
@@ -1435,20 +1674,34 @@ async function buildStoryReactionMaps(tenantId, storyIds, viewerMembershipId = n
 }
 
 async function buildCommentReactionMaps(tenantId, commentIds, viewerMembershipId = null) {
+  const normalizedCommentIds = normalizeUserIdList(commentIds);
+  const idSet = new Set(normalizedCommentIds);
+  const reactions = new Map();
+  const viewerReactions = new Map();
+
+  if (normalizedCommentIds.length === 0) {
+    return {
+      reactions,
+      viewerReactions
+    };
+  }
+
   try {
-    const response = await getSocialDc().executeGraphqlRead(LIST_COMMENT_REACTIONS_BY_TENANT_QUERY, {
-      operationName: "ListCommentReactionsByTenant",
+    const response = await getSocialDc().executeGraphqlRead(LIST_COMMENT_REACTIONS_BY_COMMENT_IDS_QUERY, {
+      operationName: "ListCommentReactionsByCommentIds",
       variables: {
         tenantId,
+        commentIds: normalizedCommentIds,
         limit: TENANT_SCAN_LIMIT
       }
     });
 
-    const idSet = new Set(commentIds);
-    const reactions = new Map();
-    const viewerReactions = new Map();
+    let items = response.data.commentReactions ?? [];
+    if (!Array.isArray(items)) {
+      items = [];
+    }
 
-    for (const item of response.data.commentReactions ?? []) {
+    for (const item of items) {
       if ((item.reactionType ?? "like") === INACTIVE_COMMENT_REACTION_TYPE) {
         continue;
       }
@@ -1473,10 +1726,38 @@ async function buildCommentReactionMaps(tenantId, commentIds, viewerMembershipId
       throw error;
     }
 
+    try {
+      const response = await getSocialDc().executeGraphqlRead(LIST_COMMENT_REACTIONS_BY_TENANT_QUERY, {
+        operationName: "ListCommentReactionsByTenant",
+        variables: {
+          tenantId,
+          limit: TENANT_SCAN_LIMIT
+        }
+      });
+
+      for (const item of response.data.commentReactions ?? []) {
+        if ((item.reactionType ?? "like") === INACTIVE_COMMENT_REACTION_TYPE || !idSet.has(item.commentId)) {
+          continue;
+        }
+
+        reactions.set(item.commentId, Number(reactions.get(item.commentId) ?? 0) + 1);
+
+        if (viewerMembershipId && item.membershipId === viewerMembershipId && !viewerReactions.has(item.commentId)) {
+          viewerReactions.set(item.commentId, item.reactionType ?? "like");
+        }
+      }
+
+      return {
+        reactions,
+        viewerReactions
+      };
+    } catch (fallbackError) {
+      if (!isFallbackEligibleError(fallbackError)) {
+        throw fallbackError;
+      }
+    }
+
     const store = await ensureFallbackStore();
-    const idSet = new Set(commentIds);
-    const reactions = new Map();
-    const viewerReactions = new Map();
 
     for (const item of store.commentReactions.map(normalizeFallbackCommentReactionRecord)) {
       if ((item.reactionType ?? "like") === INACTIVE_COMMENT_REACTION_TYPE || !idSet.has(item.commentId)) {
@@ -1498,18 +1779,45 @@ async function buildCommentReactionMaps(tenantId, commentIds, viewerMembershipId
 }
 
 async function buildStoryViewMaps(tenantId, storyIds, viewerMembershipId = null) {
-  const response = await getSocialDc().executeGraphqlRead(LIST_STORY_VIEWS_BY_TENANT_QUERY, {
-    operationName: "ListStoryViewsByTenant",
-    variables: {
-      tenantId,
-      limit: TENANT_SCAN_LIMIT
-    }
-  });
-
-  const idSet = new Set(storyIds);
+  const normalizedStoryIds = normalizeUserIdList(storyIds);
+  const idSet = new Set(normalizedStoryIds);
   const viewerSeen = new Map();
 
-  for (const item of response.data.storyViews ?? []) {
+  if (!tenantId || normalizedStoryIds.length === 0) {
+    return {
+      viewerSeen
+    };
+  }
+
+  let items = [];
+  try {
+    const response = await getSocialDc().executeGraphqlRead(LIST_STORY_VIEWS_BY_STORY_IDS_QUERY, {
+      operationName: "ListStoryViewsByStoryIds",
+      variables: {
+        tenantId,
+        storyIds: normalizedStoryIds,
+        limit: TENANT_SCAN_LIMIT
+      }
+    });
+    items = Array.isArray(response.data.storyViews) ? response.data.storyViews : [];
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const response = await getSocialDc().executeGraphqlRead(LIST_STORY_VIEWS_BY_TENANT_QUERY, {
+      operationName: "ListStoryViewsByTenant",
+      variables: {
+        tenantId,
+        limit: TENANT_SCAN_LIMIT
+      }
+    });
+    items = Array.isArray(response.data.storyViews)
+      ? response.data.storyViews.filter((item) => idSet.has(item.storyId))
+      : [];
+  }
+
+  for (const item of items) {
     if (!idSet.has(item.storyId)) {
       continue;
     }
@@ -1560,17 +1868,19 @@ async function countCommentReactionsByComment(commentId) {
 }
 
 async function listPostMediaByTenant(tenantId, postIds = []) {
-  if (!postIds.length) {
+  const normalizedPostIds = normalizeUserIdList(postIds);
+  if (!tenantId || normalizedPostIds.length === 0) {
     return new Map();
   }
 
-  const wanted = new Set(postIds);
+  const wanted = new Set(normalizedPostIds);
 
   try {
-    const response = await getSocialDc().executeGraphqlRead(LIST_POST_MEDIA_BY_TENANT_PRIVATE_QUERY, {
-      operationName: "ListPostMediaByTenantPrivate",
+    const response = await getSocialDc().executeGraphqlRead(LIST_POST_MEDIA_BY_POST_IDS_PRIVATE_QUERY, {
+      operationName: "ListPostMediaByPostIdsPrivate",
       variables: {
         tenantId,
+        postIds: normalizedPostIds,
         limit: POST_MEDIA_SCAN_LIMIT
       }
     });
@@ -1590,11 +1900,36 @@ async function listPostMediaByTenant(tenantId, postIds = []) {
       throw error;
     }
 
-    console.warn("[social/repository] post media hydration skipped", {
-      tenantId,
-      message: error instanceof Error ? error.message : String(error)
-    });
-    return new Map();
+    try {
+      const response = await getSocialDc().executeGraphqlRead(LIST_POST_MEDIA_BY_TENANT_PRIVATE_QUERY, {
+        operationName: "ListPostMediaByTenantPrivate",
+        variables: {
+          tenantId,
+          limit: POST_MEDIA_SCAN_LIMIT
+        }
+      });
+
+      const grouped = new Map();
+      for (const item of response.data.postMediaRecords ?? []) {
+        if (!wanted.has(item.postId)) {
+          continue;
+        }
+        const existing = grouped.get(item.postId) ?? [];
+        existing.push(item);
+        grouped.set(item.postId, existing);
+      }
+      return grouped;
+    } catch (fallbackError) {
+      if (!isFallbackEligibleError(fallbackError)) {
+        throw fallbackError;
+      }
+
+      console.warn("[social/repository] post media hydration skipped", {
+        tenantId,
+        message: fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+      });
+      return new Map();
+    }
   }
 }
 
@@ -1932,6 +2267,109 @@ export async function countPostsByUser({ tenantId, userId, placement = "feed", i
     });
     return items.length;
   }
+}
+
+async function listFollowsByTenantForStats(tenantId) {
+  try {
+    const response = await getSocialDc().executeGraphqlRead(LIST_FOLLOWS_BY_TENANT_PRIVATE_QUERY, {
+      operationName: "ListFollowsByTenantPrivate",
+      variables: {
+        tenantId,
+        limit: TENANT_SCAN_LIMIT
+      }
+    });
+
+    return Array.isArray(response.data.follows) ? response.data.follows : [];
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const store = await ensureFallbackStore();
+    return store.follows
+      .map(normalizeFallbackFollowRecord)
+      .filter((item) => item.tenantId === tenantId && !item.deletedAt);
+  }
+}
+
+async function listPostsByTenantForStats({ tenantId, placement }) {
+  const normalizedPlacement = normalizePlacement(placement);
+  try {
+    const response = await getSocialDc().executeGraphqlRead(LIST_POSTS_BY_TENANT_PRIVATE_QUERY, {
+      operationName: "ListPostsByTenantPrivate",
+      variables: {
+        tenantId,
+        placement: normalizedPlacement,
+        limit: TENANT_SCAN_LIMIT
+      }
+    });
+
+    return Array.isArray(response.data.posts) ? response.data.posts : [];
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const store = await ensureFallbackStore();
+    const adminStore = await readSuperAdminStore();
+    return store.posts
+      .map(normalizeFallbackPostRecord)
+      .filter((item) => item.tenantId === tenantId)
+      .filter((item) => item.status === "published")
+      .filter((item) => normalizePlacement(item.placement) === normalizedPlacement)
+      .filter((item) => !isBlockedByAdminControls(item, adminStore));
+  }
+}
+
+export async function getUserSocialStatsMap({ tenantId, userIds, viewerUserId = null }) {
+  const normalizedUserIds = normalizeUserIdList(userIds);
+  const statsMap = new Map(
+    normalizedUserIds.map((userId) => [
+      userId,
+      {
+        isFollowing: false,
+        posts: 0,
+        followers: 0,
+        following: 0
+      }
+    ])
+  );
+
+  if (!tenantId || normalizedUserIds.length === 0) {
+    return statsMap;
+  }
+
+  const targetUserIds = new Set(normalizedUserIds);
+  const [follows, feedPosts, vibePosts, adminStore] = await Promise.all([
+    listFollowsByTenantForStats(tenantId),
+    listPostsByTenantForStats({ tenantId, placement: "feed" }),
+    listPostsByTenantForStats({ tenantId, placement: "vibe" }),
+    readSuperAdminStore()
+  ]);
+
+  for (const follow of follows) {
+    if (targetUserIds.has(follow.followingUserId)) {
+      const stats = statsMap.get(follow.followingUserId);
+      stats.followers += 1;
+      stats.isFollowing = stats.isFollowing || follow.followerUserId === viewerUserId;
+    }
+
+    if (targetUserIds.has(follow.followerUserId)) {
+      statsMap.get(follow.followerUserId).following += 1;
+    }
+  }
+
+  for (const post of [...feedPosts, ...vibePosts]) {
+    if (
+      !post.isAnonymous &&
+      targetUserIds.has(post.authorUserId) &&
+      !isBlockedByAdminControls(post, adminStore, post.authorUserId)
+    ) {
+      statsMap.get(post.authorUserId).posts += 1;
+    }
+  }
+
+  return statsMap;
 }
 
 export async function findPostRecordById(postId, { tenantId = null } = {}) {

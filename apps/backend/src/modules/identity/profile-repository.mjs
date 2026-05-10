@@ -9,6 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const TENANT_PROFILE_LIMIT = 5000;
+const TENANT_PROFILE_CACHE_TTL_MS = 15_000;
 const directoryName = path.dirname(fileURLToPath(import.meta.url));
 const avatarStorePath = path.resolve(directoryName, "../../data/avatar-store.json");
 const profileSettingsStorePath = path.resolve(directoryName, "../../data/profile-settings-store.json");
@@ -24,6 +25,7 @@ let avatarStoreCache = null;
 let avatarWriteQueue = Promise.resolve();
 let profileSettingsStoreCache = null;
 let profileSettingsWriteQueue = Promise.resolve();
+const tenantProfileCache = new Map();
 
 const PROFILE_FIELDS = `
   id
@@ -105,6 +107,38 @@ const LIST_PROFILES_BY_TENANT_QUERY = `
   }
 `;
 
+const LIST_PROFILES_BY_USER_IDS_QUERY = `
+  query ListTenantMembershipProfilesByUserIds($tenantId: UUID!, $userIds: [UUID!]!, $limit: Int!) {
+    tenantMemberships(
+      where: {
+        tenantId: { eq: $tenantId }
+        userId: { in: $userIds }
+        profileCompleted: { eq: true }
+        deletedAt: { isNull: true }
+      }
+      limit: $limit
+    ) {
+      ${PROFILE_FIELDS}
+    }
+  }
+`;
+
+const LIST_PROFILES_BY_MEMBERSHIP_IDS_QUERY = `
+  query ListTenantMembershipProfilesByMembershipIds($tenantId: UUID!, $membershipIds: [UUID!]!, $limit: Int!) {
+    tenantMemberships(
+      where: {
+        tenantId: { eq: $tenantId }
+        id: { in: $membershipIds }
+        profileCompleted: { eq: true }
+        deletedAt: { isNull: true }
+      }
+      limit: $limit
+    ) {
+      ${PROFILE_FIELDS}
+    }
+  }
+`;
+
 const UPDATE_PROFILE_MUTATION = `
   mutation UpdateTenantMembershipProfile(
     $id: UUID!
@@ -164,6 +198,34 @@ function getCampusDc() {
 
 function getIdentityDc() {
   return getFirebaseDataConnect(identityConnectorConfig);
+}
+
+function invalidateTenantProfileCache(tenantId) {
+  if (!tenantId) {
+    tenantProfileCache.clear();
+    return;
+  }
+
+  tenantProfileCache.delete(tenantId);
+}
+
+function normalizeLimit(value, fallback = TENANT_PROFILE_LIMIT) {
+  const parsed = Number(value ?? fallback);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    return fallback;
+  }
+
+  return Math.min(parsed, TENANT_PROFILE_LIMIT);
+}
+
+function normalizeIdList(values) {
+  return Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .filter((value) => typeof value === "string" && value.trim().length > 0)
+        .map((value) => value.trim())
+    )
+  );
 }
 
 function buildAvatarStoreKey(tenantId, userId) {
@@ -294,9 +356,7 @@ async function persistProfileSettingsStore() {
 }
 
 async function readAvatarMap(tenantId, userIds) {
-  const normalizedUserIds = Array.from(
-    new Set(userIds.filter((value) => typeof value === "string" && value.trim().length > 0))
-  );
+  const normalizedUserIds = normalizeIdList(userIds);
   const map = new Map();
 
   if (!tenantId || normalizedUserIds.length === 0) {
@@ -318,9 +378,7 @@ async function readAvatarMap(tenantId, userIds) {
 }
 
 async function readProfileSettingsMap(tenantId, userIds) {
-  const normalizedUserIds = Array.from(
-    new Set(userIds.filter((value) => typeof value === "string" && value.trim().length > 0))
-  );
+  const normalizedUserIds = normalizeIdList(userIds);
   const map = new Map();
 
   if (!tenantId || normalizedUserIds.length === 0) {
@@ -413,6 +471,7 @@ export async function storeAvatarUrl({ tenantId, userId, avatarUrl }) {
 
     delete store.avatars[key];
     await persistAvatarStore();
+    invalidateTenantProfileCache(tenantId);
     return null;
   }
 
@@ -422,6 +481,7 @@ export async function storeAvatarUrl({ tenantId, userId, avatarUrl }) {
 
   store.avatars[key] = normalizedAvatarUrl;
   await persistAvatarStore();
+  invalidateTenantProfileCache(tenantId);
   return normalizedAvatarUrl;
 }
 
@@ -473,6 +533,7 @@ export async function storeProfileSettings({ tenantId, userId, bio, socialLinks 
   }
 
   await persistProfileSettingsStore();
+  invalidateTenantProfileCache(tenantId);
   return {
     bio: normalizedBio,
     socialLinks: normalizedSocialLinks
@@ -566,6 +627,52 @@ function mapMembershipProfile(item) {
   };
 }
 
+function sortProfilesByName(profiles) {
+  return [...profiles].sort((left, right) => left.fullName.localeCompare(right.fullName));
+}
+
+async function hydrateProfiles(tenantId, profiles) {
+  if (!tenantId || profiles.length === 0) {
+    return [];
+  }
+
+  const userIds = profiles.map((profile) => profile.userId);
+  const [avatarMap, settingsMap] = await Promise.all([
+    readAvatarMap(tenantId, userIds),
+    readProfileSettingsMap(tenantId, userIds)
+  ]);
+
+  return profiles.map((profile) =>
+    attachProfileDisplayFields(profile, {
+      avatarUrl: avatarMap.get(profile.userId) ?? null,
+      bio: settingsMap.get(profile.userId)?.bio ?? null,
+      socialLinks: settingsMap.get(profile.userId)?.socialLinks ?? null
+    })
+  );
+}
+
+async function mapAndHydrateProfiles(tenantId, items, { sortByName = true } = {}) {
+  const profiles = (Array.isArray(items) ? items : []).map((item) => mapMembershipProfile(item)).filter(Boolean);
+  const orderedProfiles = sortByName ? sortProfilesByName(profiles) : profiles;
+  return hydrateProfiles(tenantId, orderedProfiles);
+}
+
+async function fetchProfilesByTenant(tenantId, { limit = TENANT_PROFILE_LIMIT, sortByName = true } = {}) {
+  if (!tenantId) {
+    return [];
+  }
+
+  const response = await getCampusDc().executeGraphqlRead(LIST_PROFILES_BY_TENANT_QUERY, {
+    operationName: "ListTenantMembershipProfilesByTenant",
+    variables: {
+      tenantId,
+      limit: normalizeLimit(limit)
+    }
+  });
+
+  return mapAndHydrateProfiles(tenantId, response.data.tenantMemberships, { sortByName });
+}
+
 async function queryMembershipProfile(query, variables, operationName) {
   const response = await getCampusDc().executeGraphqlRead(query, {
     operationName,
@@ -650,44 +757,142 @@ export async function getProfileByUsername({ tenantId, username }) {
   });
 }
 
-export async function listProfilesByTenant(tenantId) {
-  const response = await getCampusDc().executeGraphqlRead(LIST_PROFILES_BY_TENANT_QUERY, {
-    operationName: "ListTenantMembershipProfilesByTenant",
-    variables: {
-      tenantId,
-      limit: TENANT_PROFILE_LIMIT
+export async function listProfilesByTenant(tenantId, options = {}) {
+  if (!tenantId) {
+    return [];
+  }
+
+  const limit = normalizeLimit(options.limit);
+  const useCache = options.useCache !== false && limit === TENANT_PROFILE_LIMIT;
+
+  if (!useCache) {
+    return fetchProfilesByTenant(tenantId, {
+      limit,
+      sortByName: options.sortByName !== false
+    });
+  }
+
+  const now = Date.now();
+  const cached = tenantProfileCache.get(tenantId);
+  if (cached && cached.expiresAt > now) {
+    return cached.value ?? cached.promise;
+  }
+
+  const promise = fetchProfilesByTenant(tenantId, { limit: TENANT_PROFILE_LIMIT });
+  const entry = {
+    expiresAt: now + TENANT_PROFILE_CACHE_TTL_MS,
+    promise,
+    value: null
+  };
+  tenantProfileCache.set(tenantId, entry);
+
+  try {
+    const profiles = await promise;
+    entry.value = profiles;
+    entry.promise = null;
+    entry.expiresAt = Date.now() + TENANT_PROFILE_CACHE_TTL_MS;
+    return profiles;
+  } catch (error) {
+    if (tenantProfileCache.get(tenantId) === entry) {
+      tenantProfileCache.delete(tenantId);
     }
+    throw error;
+  }
+}
+
+export async function listRecentProfilesByTenant({ tenantId, limit = 12, excludedUserId = null }) {
+  const normalizedLimit = normalizeLimit(limit, 12);
+  const scanLimit = Math.min(TENANT_PROFILE_LIMIT, Math.max(normalizedLimit * 4, normalizedLimit + 8));
+  const profiles = await listProfilesByTenant(tenantId, {
+    limit: scanLimit,
+    useCache: false,
+    sortByName: false
   });
 
-  const profiles = (Array.isArray(response.data.tenantMemberships) ? response.data.tenantMemberships : [])
-    .map((item) => mapMembershipProfile(item))
-    .filter(Boolean)
-    .sort((left, right) => left.fullName.localeCompare(right.fullName));
+  return profiles.filter((profile) => profile.userId !== excludedUserId).slice(0, normalizedLimit);
+}
 
-  const avatarMap = await readAvatarMap(
-    tenantId,
-    profiles.map((profile) => profile.userId)
-  );
-  const settingsMap = await readProfileSettingsMap(
-    tenantId,
-    profiles.map((profile) => profile.userId)
-  );
+export async function listProfilesByUserIds(tenantId, userIds) {
+  const normalizedUserIds = normalizeIdList(userIds);
+  if (!tenantId || normalizedUserIds.length === 0) {
+    return [];
+  }
 
-  return profiles.map((profile) =>
-    attachProfileDisplayFields(profile, {
-      avatarUrl: avatarMap.get(profile.userId) ?? null,
-      bio: settingsMap.get(profile.userId)?.bio ?? null,
-      socialLinks: settingsMap.get(profile.userId)?.socialLinks ?? null
-    })
-  );
+  try {
+    const response = await getCampusDc().executeGraphqlRead(LIST_PROFILES_BY_USER_IDS_QUERY, {
+      operationName: "ListTenantMembershipProfilesByUserIds",
+      variables: {
+        tenantId,
+        userIds: normalizedUserIds,
+        limit: Math.min(normalizedUserIds.length, TENANT_PROFILE_LIMIT)
+      }
+    });
+
+    return mapAndHydrateProfiles(tenantId, response.data.tenantMemberships);
+  } catch {
+    const userIdSet = new Set(normalizedUserIds);
+    const profiles = await listProfilesByTenant(tenantId);
+    return profiles.filter((profile) => userIdSet.has(profile.userId));
+  }
+}
+
+export async function listProfilesByMembershipIds(tenantId, membershipIds) {
+  const normalizedMembershipIds = normalizeIdList(membershipIds);
+  if (!tenantId || normalizedMembershipIds.length === 0) {
+    return [];
+  }
+
+  try {
+    const response = await getCampusDc().executeGraphqlRead(LIST_PROFILES_BY_MEMBERSHIP_IDS_QUERY, {
+      operationName: "ListTenantMembershipProfilesByMembershipIds",
+      variables: {
+        tenantId,
+        membershipIds: normalizedMembershipIds,
+        limit: Math.min(normalizedMembershipIds.length, TENANT_PROFILE_LIMIT)
+      }
+    });
+
+    return mapAndHydrateProfiles(tenantId, response.data.tenantMemberships);
+  } catch {
+    const membershipIdSet = new Set(normalizedMembershipIds);
+    const profiles = await listProfilesByTenant(tenantId);
+    return profiles.filter((profile) => membershipIdSet.has(profile.membershipId));
+  }
 }
 
 export async function searchProfiles({ tenantId, query, limit = 12, excludedUserId = null }) {
+  const normalizedLimit = normalizeLimit(limit, 12);
+  const normalizedQuery = typeof query === "string" ? query.trim() : "";
+  if (!tenantId || !normalizedQuery) {
+    return [];
+  }
+
+  const results = [];
+  const seenUserIds = new Set();
+  const exactUsername = sanitizeUsername(normalizedQuery);
+  if (exactUsername) {
+    const exactProfile = await getProfileByUsername({ tenantId, username: exactUsername });
+    if (exactProfile && exactProfile.userId !== excludedUserId) {
+      results.push(exactProfile);
+      seenUserIds.add(exactProfile.userId);
+    }
+  }
+
   const profiles = await listProfilesByTenant(tenantId);
-  return profiles
-    .filter((profile) => profile.userId !== excludedUserId)
-    .filter((profile) => matchQuery(profile, query.trim()))
-    .slice(0, limit);
+  for (const profile of profiles) {
+    if (results.length >= normalizedLimit) {
+      break;
+    }
+
+    if (profile.userId === excludedUserId || seenUserIds.has(profile.userId) || !matchQuery(profile, normalizedQuery)) {
+      continue;
+    }
+
+    results.push(profile);
+    seenUserIds.add(profile.userId);
+  }
+
+  return results;
 }
 
 export async function updateUsername({ tenantId, userId, username }) {
@@ -722,6 +927,7 @@ export async function updateUsername({ tenantId, userId, username }) {
       usernameKey: buildUsernameKey(tenantId, normalizedUsername)
     }
   });
+  invalidateTenantProfileCache(tenantId);
 
   return getProfileByUserId({ tenantId, userId });
 }
@@ -803,4 +1009,5 @@ export async function upsertProfile(input) {
     tenantId: input.tenantId,
     userId: input.userId
   });
+  invalidateTenantProfileCache(input.tenantId);
 }

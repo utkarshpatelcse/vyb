@@ -2,6 +2,7 @@ import { getStorage } from "firebase-admin/storage";
 import { getFirebaseAdminApp } from "../../../../../packages/config/src/index.mjs";
 
 const CHAT_PRIVACY_VISIBILITY_OPTIONS = new Set(["Everyone", "My Contacts", "Nobody"]);
+const CHAT_PRIVACY_SETTINGS_CACHE_TTL_MS = 15 * 1000;
 
 export const DEFAULT_CHAT_PRIVACY_SETTINGS = Object.freeze({
   lastSeenOnline: "My Contacts",
@@ -9,12 +10,18 @@ export const DEFAULT_CHAT_PRIVACY_SETTINGS = Object.freeze({
   typingIndicator: true
 });
 
+const chatPrivacySettingsCache = new Map();
+
 function getChatBucket() {
   return getStorage(getFirebaseAdminApp("backend-chat-storage")).bucket();
 }
 
 function buildChatPrivacySettingsStoragePath(tenantId, userId) {
   return `chat/${tenantId}/users/${userId}/privacy-settings.json`;
+}
+
+function buildChatPrivacySettingsCacheKey(tenantId, userId) {
+  return `${tenantId}:${userId}`;
 }
 
 function normalizeVisibility(value, fallback) {
@@ -40,7 +47,25 @@ export function normalizeChatPrivacySettings(value = {}, now = new Date()) {
   };
 }
 
-export async function getChatPrivacySettings({ tenantId, userId }) {
+function cacheChatPrivacySettings(cacheKey, settings) {
+  const cachedSettings = normalizeChatPrivacySettings(settings);
+  chatPrivacySettingsCache.set(cacheKey, {
+    expiresAt: Date.now() + CHAT_PRIVACY_SETTINGS_CACHE_TTL_MS,
+    value: cachedSettings
+  });
+  return cachedSettings;
+}
+
+export function clearChatPrivacySettingsCache(tenantId, userId) {
+  if (!tenantId || !userId) {
+    chatPrivacySettingsCache.clear();
+    return;
+  }
+
+  chatPrivacySettingsCache.delete(buildChatPrivacySettingsCacheKey(tenantId, userId));
+}
+
+async function getChatPrivacySettingsFromStorage({ tenantId, userId }) {
   if (!tenantId || !userId) {
     return normalizeChatPrivacySettings();
   }
@@ -58,6 +83,33 @@ export async function getChatPrivacySettings({ tenantId, userId }) {
   } catch {
     return normalizeChatPrivacySettings();
   }
+}
+
+export async function getChatPrivacySettings({ tenantId, userId }) {
+  if (!tenantId || !userId) {
+    return normalizeChatPrivacySettings();
+  }
+
+  const cacheKey = buildChatPrivacySettingsCacheKey(tenantId, userId);
+  const cached = chatPrivacySettingsCache.get(cacheKey);
+  const now = Date.now();
+
+  if (cached?.expiresAt > now) {
+    if (cached.promise) {
+      return { ...(await cached.promise) };
+    }
+
+    return { ...cached.value };
+  }
+
+  const promise = getChatPrivacySettingsFromStorage({ tenantId, userId });
+  chatPrivacySettingsCache.set(cacheKey, {
+    expiresAt: now + CHAT_PRIVACY_SETTINGS_CACHE_TTL_MS,
+    promise
+  });
+
+  const settings = await promise;
+  return { ...cacheChatPrivacySettings(cacheKey, settings) };
 }
 
 export async function upsertChatPrivacySettings(viewer, payload = {}) {
@@ -81,7 +133,9 @@ export async function upsertChatPrivacySettings(viewer, payload = {}) {
       }
     });
 
-  return { settings };
+  cacheChatPrivacySettings(buildChatPrivacySettingsCacheKey(viewer.tenantId, viewer.userId), settings);
+
+  return { settings: { ...settings } };
 }
 
 export function canExposeChatPresence(settings) {

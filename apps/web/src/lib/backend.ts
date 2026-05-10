@@ -456,7 +456,12 @@ export async function getCampusFeed(viewer: DevSession, options?: { authorUserId
   return fetchBackendJson<FeedListResponse>(`/v1/feed?${params.toString()}`, viewer);
 }
 
-export async function getCampusVibes(viewer: DevSession, limit = 24, cursor?: string | null) {
+export async function getCampusVibes(
+  viewer: DevSession,
+  limit = 24,
+  cursor?: string | null,
+  options?: { authorUserId?: string | null }
+) {
   const params = new URLSearchParams({
     tenantId: viewer.tenantId,
     limit: String(limit)
@@ -464,6 +469,10 @@ export async function getCampusVibes(viewer: DevSession, limit = 24, cursor?: st
 
   if (cursor?.trim()) {
     params.set("cursor", cursor.trim());
+  }
+
+  if (options?.authorUserId?.trim()) {
+    params.set("authorUserId", options.authorUserId.trim());
   }
 
   return fetchBackendJson<FeedListResponse>(`/v1/vibes?${params.toString()}`, viewer);

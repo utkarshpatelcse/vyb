@@ -1,7 +1,7 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { getStorage } from "firebase-admin/storage";
 import { getFirebaseAdminApp, getFirebaseDataConnect } from "../../../../../packages/config/src/index.mjs";
-import { getProfileByUserId, getProfileByUsername } from "../identity/profile-repository.mjs";
+import { getProfileByUserId, getProfileByUsername, listProfilesByUserIds } from "../identity/profile-repository.mjs";
 import { trackActivity } from "../moderation/repository.mjs";
 import { getChatPresenceSnapshot } from "./presence-store.mjs";
 import {
@@ -107,6 +107,29 @@ const GET_CHAT_IDENTITY_BY_USER_QUERY = `
   }
 `;
 
+const LIST_CHAT_IDENTITIES_BY_USER_IDS_QUERY = `
+  query ListChatIdentitiesByUserIds($tenantId: UUID!, $userIds: [UUID!]!, $limit: Int!) {
+    chatIdentities(
+      where: {
+        tenantId: { eq: $tenantId }
+        userId: { in: $userIds }
+        deletedAt: { isNull: true }
+      }
+      orderBy: [{ updatedAt: DESC }]
+      limit: $limit
+    ) {
+      id
+      tenantId
+      userId
+      membershipId
+      publicKey
+      algorithm
+      keyVersion
+      updatedAt
+    }
+  }
+`;
+
 const GET_CHAT_CONVERSATION_BY_KEY_QUERY = `
   query GetChatConversationByKey($conversationKey: String!) {
     chatConversations(
@@ -151,6 +174,29 @@ const GET_CHAT_CONVERSATION_BY_ID_QUERY = `
   }
 `;
 
+const LIST_CHAT_CONVERSATIONS_BY_IDS_QUERY = `
+  query ListChatConversationsByIds($tenantId: UUID!, $conversationIds: [UUID!]!, $limit: Int!) {
+    chatConversations(
+      where: {
+        tenantId: { eq: $tenantId }
+        id: { in: $conversationIds }
+        deletedAt: { isNull: true }
+      }
+      limit: $limit
+    ) {
+      id
+      tenantId
+      conversationKey
+      kind
+      createdByUserId
+      lastMessageId
+      lastMessageAt
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
 const LIST_CHAT_PARTICIPANTS_BY_MEMBERSHIP_QUERY = `
   query ListChatParticipantsByMembership($membershipId: UUID!, $limit: Int!) {
     chatParticipants(
@@ -159,6 +205,30 @@ const LIST_CHAT_PARTICIPANTS_BY_MEMBERSHIP_QUERY = `
         deletedAt: { isNull: true }
       }
       orderBy: [{ updatedAt: DESC }]
+      limit: $limit
+    ) {
+      id
+      tenantId
+      conversationId
+      membershipId
+      userId
+      lastReadMessageId
+      lastReadAt
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+const LIST_CHAT_PARTICIPANTS_BY_CONVERSATION_IDS_QUERY = `
+  query ListChatParticipantsByConversationIds($tenantId: UUID!, $conversationIds: [UUID!]!, $limit: Int!) {
+    chatParticipants(
+      where: {
+        tenantId: { eq: $tenantId }
+        conversationId: { in: $conversationIds }
+        deletedAt: { isNull: true }
+      }
+      orderBy: [{ createdAt: DESC }]
       limit: $limit
     ) {
       id
@@ -191,6 +261,39 @@ const LIST_CHAT_PARTICIPANTS_BY_CONVERSATION_QUERY = `
       userId
       lastReadMessageId
       lastReadAt
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+const LIST_CHAT_MESSAGES_BY_IDS_QUERY = `
+  query ListChatMessagesByIds($messageIds: [UUID!]!, $limit: Int!) {
+    chatMessages(
+      where: {
+        id: { in: $messageIds }
+        deletedAt: { isNull: true }
+      }
+      limit: $limit
+    ) {
+      id
+      tenantId
+      conversationId
+      senderMembershipId
+      senderUserId
+      senderIdentityId
+      messageKind
+      cipherText
+      cipherIv
+      cipherAlgorithm
+      replyToMessageId
+      attachmentUrl
+      attachmentStoragePath
+      attachmentMimeType
+      attachmentSizeBytes
+      attachmentWidth
+      attachmentHeight
+      attachmentDurationMs
       createdAt
       updatedAt
     }
@@ -875,6 +978,21 @@ function toIsoString(value) {
 
 function normalizeString(value) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function normalizeIdList(values) {
+  return Array.from(new Set((Array.isArray(values) ? values : []).map((value) => normalizeString(value)).filter(Boolean)));
+}
+
+function isBatchReadFallbackEligibleError(error) {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return (
+    message.includes("unrecognized operation query") ||
+    message.includes("cannot query field") ||
+    message.includes("unknown field") ||
+    message.includes("unsupported") ||
+    message.includes("invalid argument")
+  );
 }
 
 function normalizeBoolean(value) {
@@ -1756,6 +1874,136 @@ async function listChatMessageReactionsByConversation(conversationId) {
   return Array.isArray(response.data.chatMessageReactions) ? response.data.chatMessageReactions : [];
 }
 
+async function listChatIdentitiesByUserIds(tenantId, userIds) {
+  const normalizedUserIds = normalizeIdList(userIds);
+  if (!tenantId || normalizedUserIds.length === 0) {
+    return new Map();
+  }
+
+  try {
+    const response = await getChatDc().executeGraphqlRead(LIST_CHAT_IDENTITIES_BY_USER_IDS_QUERY, {
+      operationName: "ListChatIdentitiesByUserIds",
+      variables: {
+        tenantId,
+        userIds: normalizedUserIds,
+        limit: normalizedUserIds.length
+      }
+    });
+
+    const identityMap = new Map();
+    for (const item of response.data.chatIdentities ?? []) {
+      if (!identityMap.has(item.userId)) {
+        identityMap.set(item.userId, mapChatIdentity(item));
+      }
+    }
+    return identityMap;
+  } catch (error) {
+    if (!isBatchReadFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const results = await Promise.all(
+      normalizedUserIds.map(async (userId) => [userId, await getChatIdentityByUser({ tenantId, userId })])
+    );
+    return new Map(results);
+  }
+}
+
+async function listChatConversationsByIds(tenantId, conversationIds) {
+  const normalizedConversationIds = normalizeIdList(conversationIds);
+  if (!tenantId || normalizedConversationIds.length === 0) {
+    return new Map();
+  }
+
+  try {
+    const response = await getChatDc().executeGraphqlRead(LIST_CHAT_CONVERSATIONS_BY_IDS_QUERY, {
+      operationName: "ListChatConversationsByIds",
+      variables: {
+        tenantId,
+        conversationIds: normalizedConversationIds,
+        limit: normalizedConversationIds.length
+      }
+    });
+
+    return new Map((response.data.chatConversations ?? []).map((item) => [item.id, item]));
+  } catch (error) {
+    if (!isBatchReadFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const results = await Promise.all(
+      normalizedConversationIds.map(async (conversationId) => [conversationId, await getChatConversationById(conversationId)])
+    );
+    return new Map(results.filter(([, conversation]) => conversation));
+  }
+}
+
+async function listChatParticipantsByConversationIds(tenantId, conversationIds) {
+  const normalizedConversationIds = normalizeIdList(conversationIds);
+  if (!tenantId || normalizedConversationIds.length === 0) {
+    return new Map();
+  }
+
+  try {
+    const response = await getChatDc().executeGraphqlRead(LIST_CHAT_PARTICIPANTS_BY_CONVERSATION_IDS_QUERY, {
+      operationName: "ListChatParticipantsByConversationIds",
+      variables: {
+        tenantId,
+        conversationIds: normalizedConversationIds,
+        limit: normalizedConversationIds.length * 8
+      }
+    });
+
+    const participantMap = new Map();
+    for (const item of response.data.chatParticipants ?? []) {
+      const current = participantMap.get(item.conversationId) ?? [];
+      current.push(item);
+      participantMap.set(item.conversationId, current);
+    }
+    return participantMap;
+  } catch (error) {
+    if (!isBatchReadFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const results = await Promise.all(
+      normalizedConversationIds.map(async (conversationId) => [
+        conversationId,
+        await listChatParticipantsByConversation(conversationId)
+      ])
+    );
+    return new Map(results);
+  }
+}
+
+async function listChatMessagesByIds(messageIds) {
+  const normalizedMessageIds = normalizeIdList(messageIds);
+  if (normalizedMessageIds.length === 0) {
+    return new Map();
+  }
+
+  try {
+    const response = await getChatDc().executeGraphqlRead(LIST_CHAT_MESSAGES_BY_IDS_QUERY, {
+      operationName: "ListChatMessagesByIds",
+      variables: {
+        messageIds: normalizedMessageIds,
+        limit: normalizedMessageIds.length
+      }
+    });
+
+    return new Map((response.data.chatMessages ?? []).map((item) => [item.id, item]));
+  } catch (error) {
+    if (!isBatchReadFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const results = await Promise.all(
+      normalizedMessageIds.map(async (messageId) => [messageId, await getChatMessageById(messageId)])
+    );
+    return new Map(results.filter(([, message]) => message));
+  }
+}
+
 async function listExpiredChatMessages(limit = CHAT_MESSAGE_LIMIT * 10) {
   const response = await getChatDc().executeGraphqlRead(LIST_EXPIRED_CHAT_MESSAGES_QUERY, {
     operationName: "ListExpiredChatMessages",
@@ -1863,20 +2111,31 @@ function isChatMessageExpired(message, now = Date.now()) {
   return new Date(message.expiresAt).getTime() <= now;
 }
 
-async function buildConversationPreview(viewer, conversation, viewerParticipant, peerParticipant, hiddenMessageIds = new Set()) {
+async function buildConversationPreview(
+  viewer,
+  conversation,
+  viewerParticipant,
+  peerParticipant,
+  hiddenMessageIds = new Set(),
+  options = {}
+) {
+  const peerUserId = peerParticipant.userId;
   const [peerProfile, peerIdentity, messageSummary, peerPrivacySettings] = await Promise.all([
-    getProfileByUserId({
+    options.profileMap ? Promise.resolve(options.profileMap.get(peerUserId) ?? null) : getProfileByUserId({
       tenantId: viewer.tenantId,
-      userId: peerParticipant.userId
+      userId: peerUserId
     }),
-    getChatIdentityByUser({
+    options.identityMap ? Promise.resolve(options.identityMap.get(peerUserId) ?? null) : getChatIdentityByUser({
       tenantId: viewer.tenantId,
-      userId: peerParticipant.userId
+      userId: peerUserId
     }),
-    getVisibleMessageSummary(conversation.id, hiddenMessageIds),
-    getChatPrivacySettings({
+    options.messageSummaryMap ? Promise.resolve(options.messageSummaryMap.get(conversation.id) ?? {
+      lastMessageRaw: null,
+      visibleMessages: []
+    }) : getVisibleMessageSummary(conversation.id, hiddenMessageIds),
+    options.privacySettingsMap ? Promise.resolve(options.privacySettingsMap.get(peerUserId) ?? null) : getChatPrivacySettings({
       tenantId: viewer.tenantId,
-      userId: peerParticipant.userId
+      userId: peerUserId
     })
   ]);
   const peerPresence = await getVisiblePeerPresence(viewer, peerParticipant.userId, peerPrivacySettings);
@@ -2489,6 +2748,48 @@ async function getVisibleMessageSummary(conversationId, hiddenMessageIds) {
   };
 }
 
+async function buildInboxMessageSummaryMap(accessItems, hiddenMessageIds) {
+  const summaryMap = new Map();
+  if (accessItems.length === 0) {
+    return summaryMap;
+  }
+
+  const lastMessageIds = accessItems
+    .map(({ conversation }) => conversation.lastMessageId)
+    .filter((value) => value && !hiddenMessageIds.has(value));
+  const lastMessageMap = await listChatMessagesByIds(lastMessageIds);
+  const unreadAccessItems = [];
+
+  for (const access of accessItems) {
+    const { conversation, viewerParticipant } = access;
+    const lastMessageAt = conversation.lastMessageAt ? new Date(conversation.lastMessageAt).getTime() : 0;
+    const lastReadAt = viewerParticipant.lastReadAt ? new Date(viewerParticipant.lastReadAt).getTime() : 0;
+    const hasHiddenLastMessage = Boolean(conversation.lastMessageId && hiddenMessageIds.has(conversation.lastMessageId));
+
+    if (!hasHiddenLastMessage && (!lastMessageAt || lastReadAt >= lastMessageAt)) {
+      summaryMap.set(conversation.id, {
+        lastMessageRaw: conversation.lastMessageId ? lastMessageMap.get(conversation.lastMessageId) ?? null : null,
+        visibleMessages: []
+      });
+      continue;
+    }
+
+    unreadAccessItems.push(access);
+  }
+
+  const unreadSummaries = await Promise.all(
+    unreadAccessItems.map(async ({ conversation }) => [
+      conversation.id,
+      await getVisibleMessageSummary(conversation.id, hiddenMessageIds)
+    ])
+  );
+  for (const [conversationId, summary] of unreadSummaries) {
+    summaryMap.set(conversationId, summary);
+  }
+
+  return summaryMap;
+}
+
 async function syncConversationLastMessage(conversationId) {
   const lastVisibleMessage = await getLastVisibleMessageRaw(conversationId, new Set());
 
@@ -2523,16 +2824,77 @@ export async function listChatInbox(viewer) {
     getHiddenChatMessageState(viewer)
   ]);
   const hiddenMessageIds = new Set(hiddenState.hiddenMessageIds);
+  const conversationIds = normalizeIdList(viewerParticipants.map((item) => item.conversationId));
+  const [conversationMap, participantsByConversationId] = await Promise.all([
+    listChatConversationsByIds(viewer.tenantId, conversationIds),
+    listChatParticipantsByConversationIds(viewer.tenantId, conversationIds)
+  ]);
+
+  const accessItems = [];
+  for (const viewerParticipant of viewerParticipants) {
+    const conversation = conversationMap.get(viewerParticipant.conversationId);
+    if (!conversation || conversation.tenantId !== viewer.tenantId) {
+      continue;
+    }
+
+    const participants = participantsByConversationId.get(viewerParticipant.conversationId) ?? [];
+    const confirmedViewerParticipant =
+      participants.find((item) => item.membershipId === viewer.membershipId || item.userId === viewer.userId) ??
+      viewerParticipant;
+    const peerParticipant = participants.find((item) => item.userId !== viewer.userId) ?? null;
+
+    if (!confirmedViewerParticipant || !peerParticipant) {
+      continue;
+    }
+
+    accessItems.push({
+      conversation,
+      viewerParticipant: confirmedViewerParticipant,
+      peerParticipant
+    });
+  }
+
+  const peerUserIds = normalizeIdList(accessItems.map(({ peerParticipant }) => peerParticipant.userId));
+  const [peerProfiles, identityMap, privacyEntries, messageSummaryMap] = await Promise.all([
+    listProfilesByUserIds(viewer.tenantId, peerUserIds).catch((error) => {
+      console.warn("[chat] inbox_profile_batch_skipped", {
+        tenantId: viewer.tenantId,
+        userId: viewer.userId,
+        message: error instanceof Error ? error.message : "Unknown profile batch failure"
+      });
+      return [];
+    }),
+    listChatIdentitiesByUserIds(viewer.tenantId, peerUserIds),
+    Promise.all(
+      peerUserIds.map(async (userId) => [
+        userId,
+        await getChatPrivacySettings({
+          tenantId: viewer.tenantId,
+          userId
+        })
+      ])
+    ),
+    buildInboxMessageSummaryMap(accessItems, hiddenMessageIds)
+  ]);
+  const profileMap = new Map(peerProfiles.map((profile) => [profile.userId, profile]));
+  const privacySettingsMap = new Map(privacyEntries);
 
   const previewResults = await Promise.allSettled(
-    viewerParticipants.map(async (viewerParticipant) => {
-      const access = await resolveConversationAccess(viewer, viewerParticipant.conversationId);
-      if (!access) {
-        return null;
-      }
-
-      return buildConversationPreview(viewer, access.conversation, access.viewerParticipant, access.peerParticipant, hiddenMessageIds);
-    })
+    accessItems.map((access) =>
+      buildConversationPreview(
+        viewer,
+        access.conversation,
+        access.viewerParticipant,
+        access.peerParticipant,
+        hiddenMessageIds,
+        {
+          identityMap,
+          messageSummaryMap,
+          privacySettingsMap,
+          profileMap
+        }
+      )
+    )
   );
   const previews = previewResults.flatMap((result, index) => {
     if (result.status === "fulfilled") {
@@ -2542,7 +2904,7 @@ export async function listChatInbox(viewer) {
     console.warn("[chat] inbox_preview_skipped", {
       tenantId: viewer.tenantId,
       userId: viewer.userId,
-      conversationId: viewerParticipants[index]?.conversationId ?? null,
+      conversationId: accessItems[index]?.conversation.id ?? null,
       message: result.reason instanceof Error ? result.reason.message : "Unknown inbox preview failure"
     });
     return [];

@@ -1,7 +1,6 @@
 "use client";
 
 import type {
-  CampusEventsDashboardResponse,
   ChatEncryptedAttachment,
   ChatConversationPreview,
   ChatConversationResponse,
@@ -18,8 +17,6 @@ import type {
   ChatMessageTtlKey,
   ChatVibeCardPayload,
   DeleteChatMessageScope,
-  FeedListResponse,
-  MarketDashboardResponse,
   UpdateChatMessageResponse,
   UserSearchItem
 } from "@vyb/contracts";
@@ -94,6 +91,9 @@ type PendingSharedPost = {
 };
 type ShareMenuTab = "deals" | "events" | "vibes" | "profiles";
 type ShareMenuCollections = Record<ShareMenuTab, PendingShareCard[]>;
+type ShareMenuOptionsResponse = {
+  collections?: Partial<ShareMenuCollections>;
+};
 type PendingMediaAttachment = {
   id: string;
   file: File;
@@ -388,14 +388,6 @@ function buildShareMenuCollections(): ShareMenuCollections {
     vibes: [],
     profiles: []
   };
-}
-
-function formatCurrencyLabel(amount: number | null | undefined, fallback: string | null | undefined) {
-  if (typeof amount === "number" && Number.isFinite(amount) && amount > 0) {
-    return `Rs ${Math.round(amount).toLocaleString("en-IN")}`;
-  }
-
-  return fallback?.trim() || "Open offer";
 }
 
 function timeAgo(dateString: string) {
@@ -5480,89 +5472,17 @@ export function CampusMessagesShell({
     setShareMenuError(null);
 
     try {
-      const [marketResponse, eventsResponse, vibesResponse] = await Promise.all([
-        fetchChatEndpoint("/api/market"),
-        fetchChatEndpoint("/api/events"),
-        fetchChatEndpoint("/api/vibes")
-      ]);
-      const [marketData, eventsData, vibesData] = await Promise.all([
-        marketResponse.json().catch(() => null) as Promise<MarketDashboardResponse | null>,
-        eventsResponse.json().catch(() => null) as Promise<CampusEventsDashboardResponse | null>,
-        vibesResponse.json().catch(() => null) as Promise<FeedListResponse | null>
-      ]);
-
+      const response = await fetchChatEndpoint("/api/chats/share-options");
+      const shareData = (await response.json().catch(() => null)) as ShareMenuOptionsResponse | null;
       const nextCollections = buildShareMenuCollections();
 
-      if (marketResponse.ok && marketData) {
-        nextCollections.deals = [
-          ...marketData.viewerActiveListings.map((listing) => ({
-            kind: "deal_card" as const,
-            payload: {
-              targetType: "listing" as const,
-              targetId: listing.id,
-              title: listing.title,
-              amountLabel: formatCurrencyLabel(listing.priceAmount, null),
-              category: listing.category,
-              campusSpot: listing.campusSpot ?? listing.location ?? "",
-              counterpartUsername: listing.seller.username,
-              counterpartDisplayName: listing.seller.displayName,
-              imageUrl: listing.media[0]?.url ?? null,
-              description: listing.description
-            }
-          })),
-          ...marketData.viewerActiveRequests.map((request) => ({
-            kind: "deal_card" as const,
-            payload: {
-              targetType: "request" as const,
-              targetId: request.id,
-              title: request.title,
-              amountLabel: formatCurrencyLabel(request.budgetAmount ?? null, request.budgetLabel ?? null),
-              category: request.category,
-              campusSpot: request.tag ?? "",
-              counterpartUsername: request.requester.username,
-              counterpartDisplayName: request.requester.displayName,
-              imageUrl: request.media[0]?.url ?? null,
-              description: request.detail
-            }
-          }))
-        ];
+      if (!response.ok || !shareData?.collections) {
+        throw new Error("Share options request failed.");
       }
 
-      if (eventsResponse.ok && eventsData) {
-        nextCollections.events = eventsData.hostedEvents.map((event) => ({
-          kind: "event_card" as const,
-          payload: {
-            eventId: event.id,
-            title: event.title,
-            club: event.club,
-            location: event.location,
-            startsAt: event.startsAt,
-            passLabel: event.passLabel,
-            responseMode: event.responseMode,
-            imageUrl: event.media[0]?.url ?? null,
-            description: event.description,
-            hostUsername: event.host.username
-          }
-        }));
-      }
-
-      if (vibesResponse.ok && vibesData) {
-        nextCollections.vibes = vibesData.items
-          .filter((item) => item.userId === viewerUserId)
-          .map((item) => ({
-            kind: "vibe_card" as const,
-            payload: {
-              postId: item.id,
-              title: item.title || "Campus vibe",
-              body: item.body,
-              mediaUrl: item.media.find((media) => media.kind === "video")?.url ?? item.mediaUrl,
-              thumbnailUrl: item.media[0]?.url ?? item.mediaUrl,
-              authorUsername: item.author.username,
-              authorDisplayName: item.author.displayName
-            }
-          }));
-      }
-
+      nextCollections.deals = Array.isArray(shareData.collections.deals) ? shareData.collections.deals : [];
+      nextCollections.events = Array.isArray(shareData.collections.events) ? shareData.collections.events : [];
+      nextCollections.vibes = Array.isArray(shareData.collections.vibes) ? shareData.collections.vibes : [];
       nextCollections.profiles = [
         {
           kind: "profile_card" as const,

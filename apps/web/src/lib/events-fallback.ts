@@ -66,6 +66,17 @@ type EventStore = {
   events: StoredEvent[];
 };
 
+type EventStoreCacheEntry = {
+  expiresAt: number;
+  value?: EventStore;
+  promise?: Promise<EventStore>;
+};
+
+type EventDashboardCacheEntry = {
+  expiresAt: number;
+  value: CampusEventsDashboardResponse;
+};
+
 type CampusEventStoreRecord = {
   id: string;
   tenantId: string;
@@ -76,6 +87,11 @@ type CampusEventStoreRecord = {
 const defaultStore: EventStore = {
   events: []
 };
+
+const EVENTS_STORE_CACHE_TTL_MS = 15_000;
+const EVENTS_DASHBOARD_CACHE_TTL_MS = 10_000;
+const eventStoreCache = new Map<string, EventStoreCacheEntry>();
+const eventDashboardCache = new Map<string, EventDashboardCacheEntry>();
 
 const seedMediaByCategory: Record<string, string> = {
   Cultural: "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=1200&q=80&auto=format&fit=crop",
@@ -727,12 +743,33 @@ async function readStoreRecord(tenantId: string) {
   }
 }
 
+function cacheEventStore(tenantId: string, store: EventStore) {
+  eventStoreCache.set(tenantId, {
+    expiresAt: Date.now() + EVENTS_STORE_CACHE_TTL_MS,
+    value: clone(store)
+  });
+}
+
+function clearEventDashboardCache(tenantId: string) {
+  for (const key of eventDashboardCache.keys()) {
+    if (key.startsWith(`${tenantId}:`)) {
+      eventDashboardCache.delete(key);
+    }
+  }
+}
+
+function buildDashboardCacheKey(viewer: DevSession) {
+  return `${viewer.tenantId}:${viewer.userId}`;
+}
+
 async function writeStoreRecord(tenantId: string, store: EventStore) {
   const eventsJson = JSON.stringify(serializeStore(store));
   const filePath = resolveLocalEventsStorePath(tenantId);
 
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, eventsJson, "utf8");
+  cacheEventStore(tenantId, store);
+  clearEventDashboardCache(tenantId);
 }
 
 function seedTenantStoreIfEmpty(store: EventStore, tenantId: string) {
@@ -744,9 +781,34 @@ function seedTenantStoreIfEmpty(store: EventStore, tenantId: string) {
   return true;
 }
 
-async function loadStore(tenantId: string) {
+async function readStoreFromDisk(tenantId: string) {
   const record = await readStoreRecord(tenantId);
   return normalizeStore(parseStoreJson(record?.eventsJson), tenantId);
+}
+
+async function loadStore(tenantId: string) {
+  const cached = eventStoreCache.get(tenantId);
+  const now = Date.now();
+
+  if (cached && cached.expiresAt > now) {
+    if (cached.promise) {
+      return clone(await cached.promise);
+    }
+
+    if (cached.value) {
+      return clone(cached.value);
+    }
+  }
+
+  const promise = readStoreFromDisk(tenantId);
+  eventStoreCache.set(tenantId, {
+    expiresAt: now + EVENTS_STORE_CACHE_TTL_MS,
+    promise
+  });
+
+  const store = await promise;
+  cacheEventStore(tenantId, store);
+  return clone(store);
 }
 
 async function transactStore<T>(
@@ -759,8 +821,7 @@ async function transactStore<T>(
   let finalStore = clone(defaultStore);
   let finalResult: T | undefined;
   let shouldPersist = false;
-  const existingRecord = await readStoreRecord(tenantId);
-  const store = normalizeStore(parseStoreJson(existingRecord?.eventsJson), tenantId);
+  const store = await loadStore(tenantId);
   const outcome = mutate(store);
 
   finalStore = store;
@@ -1036,8 +1097,20 @@ function buildRegistrationsCsv(event: StoredEvent) {
 }
 
 export async function getEventsDashboard(viewer: DevSession): Promise<CampusEventsDashboardResponse> {
+  const cacheKey = buildDashboardCacheKey(viewer);
+  const cached = eventDashboardCache.get(cacheKey);
+
+  if (cached && cached.expiresAt > Date.now()) {
+    return clone(cached.value);
+  }
+
   const store = await ensureTenantSeeded(viewer.tenantId);
-  return buildDashboard(store, viewer);
+  const dashboard = buildDashboard(store, viewer);
+  eventDashboardCache.set(cacheKey, {
+    expiresAt: Date.now() + EVENTS_DASHBOARD_CACHE_TTL_MS,
+    value: clone(dashboard)
+  });
+  return dashboard;
 }
 
 export async function getEventForViewer(viewer: DevSession, eventId: string): Promise<CampusEvent | null> {
