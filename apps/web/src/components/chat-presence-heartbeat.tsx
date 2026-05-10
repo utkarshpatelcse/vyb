@@ -1,15 +1,33 @@
 "use client";
 
 import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 
 const HEARTBEAT_INTERVAL_MS = 45 * 1000;
+const PRESENCE_DISABLED_PATHS = new Set(["/", "/login"]);
 
 export function ChatPresenceHeartbeat() {
+  const pathname = usePathname();
+
   useEffect(() => {
+    if (pathname && PRESENCE_DISABLED_PATHS.has(pathname)) {
+      return;
+    }
+
     let cancelled = false;
+    let authenticationRejected = false;
+    let intervalId: number | null = null;
+
+    function stopHeartbeat() {
+      authenticationRejected = true;
+      if (intervalId) {
+        window.clearInterval(intervalId);
+        intervalId = null;
+      }
+    }
 
     async function sendHeartbeat() {
-      if (cancelled || typeof document === "undefined" || typeof navigator === "undefined") {
+      if (cancelled || authenticationRejected || typeof document === "undefined" || typeof navigator === "undefined") {
         return;
       }
 
@@ -18,7 +36,7 @@ export function ChatPresenceHeartbeat() {
       }
 
       try {
-        await fetch("/api/chats/presence/heartbeat", {
+        const response = await fetch("/api/chats/presence/heartbeat", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({}),
@@ -26,6 +44,10 @@ export function ChatPresenceHeartbeat() {
           credentials: "same-origin",
           keepalive: true
         });
+
+        if (response.status === 401 || response.status === 403) {
+          stopHeartbeat();
+        }
       } catch {
         // Presence updates are best-effort only.
       }
@@ -33,7 +55,7 @@ export function ChatPresenceHeartbeat() {
 
     void sendHeartbeat();
 
-    const intervalId = window.setInterval(() => {
+    intervalId = window.setInterval(() => {
       void sendHeartbeat();
     }, HEARTBEAT_INTERVAL_MS);
 
@@ -52,11 +74,13 @@ export function ChatPresenceHeartbeat() {
 
     return () => {
       cancelled = true;
-      window.clearInterval(intervalId);
+      if (intervalId) {
+        window.clearInterval(intervalId);
+      }
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("online", handleOnline);
     };
-  }, []);
+  }, [pathname]);
 
   return null;
 }

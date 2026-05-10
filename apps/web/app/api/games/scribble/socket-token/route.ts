@@ -1,23 +1,17 @@
-import { createHmac } from "node:crypto";
 import { cookies } from "next/headers";
-import { NextResponse } from "next/server";
 import { readDevSessionFromCookieStore } from "../../../../../src/lib/dev-session";
-import { buildClientSocketUrl } from "../../../../../src/lib/client-socket-url";
-import { getInternalApiKey } from "../../../../../src/lib/internal-api-key";
+import {
+  REALTIME_SOCKET_PATHS,
+  buildRealtimeSocketError,
+  buildRealtimeSocketTokenResponse,
+  withRealtimeSocketExpiry
+} from "../../../../../src/lib/realtime-socket-token";
 
 function scribbleTokenLog(event: string, details: Record<string, unknown> = {}, level: "log" | "warn" | "error" = "log") {
   console[level](`[scribble-token] ${event}`, {
     at: new Date().toISOString(),
     ...details
   });
-}
-
-function buildError(status: number, code: string, message: string) {
-  return NextResponse.json({ error: { code, message } }, { status });
-}
-
-function signPayload(encodedPayload: string) {
-  return createHmac("sha256", getInternalApiKey()).update(encodedPayload).digest("base64url");
 }
 
 function getViewerUsername(email: string) {
@@ -30,21 +24,28 @@ export async function GET(request: Request) {
     scribbleTokenLog("request.rejected", {
       reason: "unauthenticated"
     }, "warn");
-    return buildError(401, "UNAUTHENTICATED", "You must sign in before opening Scribble.");
+    return buildRealtimeSocketError(401, "UNAUTHENTICATED", "You must sign in before opening Scribble.");
   }
 
-  const payload = {
+  const payload = withRealtimeSocketExpiry({
     tenantId: viewer.tenantId,
     userId: viewer.userId,
     membershipId: viewer.membershipId,
     displayName: viewer.displayName || getViewerUsername(viewer.email),
-    username: getViewerUsername(viewer.email),
-    exp: Date.now() + 5 * 60 * 1000
-  };
-
-  const encodedPayload = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
-  const token = `${encodedPayload}.${signPayload(encodedPayload)}`;
-  const socketUrl = buildClientSocketUrl(request, "/ws/games/scribble", token);
+    username: getViewerUsername(viewer.email)
+  });
+  const { response, socketUrl } = buildRealtimeSocketTokenResponse(request, {
+    path: REALTIME_SOCKET_PATHS.scribble,
+    payload,
+    responseExtras: {
+      viewer: {
+        userId: payload.userId,
+        membershipId: payload.membershipId,
+        username: payload.username,
+        displayName: payload.displayName
+      }
+    }
+  });
 
   scribbleTokenLog("request.accepted", {
     wsOrigin: socketUrl.origin,
@@ -56,14 +57,5 @@ export async function GET(request: Request) {
     expiresAt: payload.exp
   });
 
-  return NextResponse.json({
-    wsUrl: socketUrl.toString(),
-    expiresAt: payload.exp,
-    viewer: {
-      userId: payload.userId,
-      membershipId: payload.membershipId,
-      username: payload.username,
-      displayName: payload.displayName
-    }
-  });
+  return response;
 }
