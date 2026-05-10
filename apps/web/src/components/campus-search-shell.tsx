@@ -291,7 +291,7 @@ function buildDiscoveryViewModel(
     squadPromos.push({
       type: "squad",
       id: `squad-${people.map((person) => person.userId).join("-")}`,
-      title: "Squad recommendation",
+      title: "Recommendation",
       description: "People with overlapping campus energy and likely mutual circles.",
       people
     });
@@ -311,7 +311,7 @@ function buildDiscoveryViewModel(
     .map((listing) => ({
       type: "deal" as const,
       id: `deal-${listing.id}`,
-      title: "Marketplace deal",
+      title: "Deal",
       description: `${listing.title} is moving fast on campus.`,
       listing,
       request: null
@@ -325,7 +325,7 @@ function buildDiscoveryViewModel(
       marketPromos.push({
         type: "deal",
         id: `deal-${fallbackRequest.id}`,
-        title: "Marketplace signal",
+        title: "Deal",
         description: `${fallbackRequest.title} is getting attention right now.`,
         listing: null,
         request: fallbackRequest
@@ -818,7 +818,7 @@ export function CampusSearchShell({
                               </div>
                               <strong>{promo.description}</strong>
                               <div className="vyb-search-squad-stack">
-                                {promo.people.map((person) => (
+                                {promo.people.slice(0, 3).map((person) => (
                                   <button
                                     key={person.userId}
                                     type="button"
@@ -835,7 +835,7 @@ export function CampusSearchShell({
                                         decorative
                                       />
                                     </span>
-                                    <span>
+                                    <span className="vyb-search-squad-copy">
                                       <strong>{person.displayName}</strong>
                                       <small>{person.course} • {person.stream}</small>
                                     </span>
@@ -870,7 +870,7 @@ export function CampusSearchShell({
                             <div className="vyb-search-promo-head">
                               <span className="vyb-search-promo-chip">
                                 <DealIcon />
-                                Marketplace deal
+                                {promo.title}
                               </span>
                               <span className="vyb-search-promo-meta">{marketAmount}</span>
                             </div>

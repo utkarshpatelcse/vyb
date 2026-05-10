@@ -6334,6 +6334,14 @@ export function CampusMessagesShell({
             </div>
 
             <div className="spm-list-search-wrap">
+              <button
+                type="button"
+                className="spm-list-back"
+                onClick={handleExitMessages}
+                aria-label={activeConversationId ? "Back to conversations" : "Back to home"}
+              >
+                <IconArrowLeft />
+              </button>
               <label
                 className={`spm-ghost-search${focused || query ? " spm-ghost-search-active" : ""}`}
                 aria-label="Search campus users"

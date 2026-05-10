@@ -10089,7 +10089,7 @@ button.vyb-chat-privacy-choice-card:hover:not(:disabled) {
 }
 
 .vyb-search-discovery-card.is-promo.is-deal {
-  padding: 1rem !important;
+  padding: 0.95rem !important;
 }
 
 .vyb-search-grid-skeleton {
@@ -10265,6 +10265,7 @@ button.vyb-chat-privacy-choice-card:hover:not(:disabled) {
   display: inline-flex !important;
   align-items: center !important;
   gap: 0.4rem !important;
+  min-width: 0 !important;
   padding: 0.34rem 0.65rem !important;
   border-radius: 999px !important;
   background: rgba(15, 23, 42, 0.72) !important;
@@ -10275,9 +10276,23 @@ button.vyb-chat-privacy-choice-card:hover:not(:disabled) {
 }
 
 .vyb-search-promo-meta {
+  flex: 0 0 auto !important;
   color: #fef08a !important;
   font-size: 0.78rem !important;
   font-weight: 800 !important;
+  line-height: 1.15 !important;
+  white-space: nowrap !important;
+}
+
+.vyb-search-discovery-card.is-deal .vyb-search-promo-head {
+  align-items: flex-start !important;
+  flex-wrap: wrap !important;
+  gap: 0.45rem 0.6rem !important;
+  margin-bottom: 0.8rem !important;
+}
+
+.vyb-search-discovery-card.is-deal .vyb-search-promo-meta {
+  margin-left: auto !important;
 }
 
 .vyb-search-discovery-card.is-promo strong {
@@ -10305,18 +10320,20 @@ button.vyb-chat-privacy-choice-card:hover:not(:disabled) {
 .vyb-search-squad-stack {
   display: flex !important;
   flex-direction: column !important;
-  gap: 0.6rem !important;
-  margin-top: 0.9rem !important;
+  gap: 0.5rem !important;
+  margin-top: 0.72rem !important;
 }
 
 .vyb-search-squad-person {
   display: flex !important;
+  flex-direction: row !important;
   align-items: center !important;
-  gap: 0.7rem !important;
+  justify-content: flex-start !important;
+  gap: 0.62rem !important;
   border: none !important;
   border-radius: 1rem !important;
   background: rgba(15, 23, 42, 0.58) !important;
-  padding: 0.7rem !important;
+  padding: 0.5rem 0.55rem !important;
   color: #f8fafc !important;
   cursor: pointer !important;
 }
@@ -10330,18 +10347,33 @@ button.vyb-chat-privacy-choice-card:hover:not(:disabled) {
   flex: 0 0 auto !important;
 }
 
-.vyb-search-squad-person span {
+.vyb-search-squad-copy {
+  flex: 1 1 auto !important;
   min-width: 0 !important;
+  overflow: hidden !important;
 }
 
-.vyb-search-squad-person strong {
+.vyb-search-discovery-card.is-promo .vyb-search-squad-person strong {
   margin: 0 !important;
-  font-size: 0.8rem !important;
+  display: block !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  font-size: 0.72rem !important;
+  line-height: 1.15 !important;
+  text-align: left !important;
 }
 
-.vyb-search-squad-person small {
+.vyb-search-discovery-card.is-promo .vyb-search-squad-person small {
   display: block !important;
-  margin-top: 0.16rem !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  margin-top: 0.12rem !important;
+  font-size: 0.6rem !important;
+  line-height: 1.15 !important;
 }
 
 .search-explore-prompt {
