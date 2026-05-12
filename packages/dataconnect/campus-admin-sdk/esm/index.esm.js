@@ -42,6 +42,18 @@ export function listCommunitiesForMembership(dcOrVarsOrOptions, varsOrOptions, o
   return dcInstance.executeQuery('ListCommunitiesForMembership', inputVars, inputOpts);
 }
 
+export function listCommunityMembers(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListCommunityMembers', inputVars, inputOpts);
+}
+
+export function listCommunityMembersAfterJoinedAt(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListCommunityMembersAfterJoinedAt', inputVars, inputOpts);
+}
+
 export function getTenantMembershipProfileByUserAndTenant(dcOrVarsOrOptions, varsOrOptions, options) {
   const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
   dcInstance.useGen(true);

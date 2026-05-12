@@ -24,7 +24,7 @@ export default async function DashboardPage({
   const [profile, me, resources, courses, activity, stories] = await Promise.all([
     getViewerProfile(viewer).catch(() => null),
     getViewerMe(viewer).catch(() => null),
-    getCampusResources(viewer, { limit: 4 }).catch(() => ({ tenantId: viewer.tenantId, courseId: null, items: [], nextCursor: null })),
+    getCampusResources(viewer, { limit: 4 }).catch(() => ({ tenantId: viewer.tenantId, courseId: null, communityId: null, items: [], nextCursor: null })),
     getCampusCourses(viewer, 8).catch(() => ({ tenantId: viewer.tenantId, items: [] })),
     getViewerActivity(viewer, 8).catch(() => ({ tenantId: viewer.tenantId, items: [] })),
     getCampusStories(viewer).catch(() => ({ items: [] }))

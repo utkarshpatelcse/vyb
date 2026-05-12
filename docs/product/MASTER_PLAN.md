@@ -1,8 +1,8 @@
 # Vyb Master Plan
 
 Owner: Product and Engineering
-Last Updated: 2026-04-29
-Change Summary: Added server-side Vibe video processing with adaptive playback variants while keeping the Phase 1 modular monolith path.
+Last Updated: 2026-05-12
+Change Summary: Set Community Connect V1 as the current focused implementation slice while keeping the Phase 1 modular monolith path.
 
 ## 1. Why We Are Building This
 
@@ -57,6 +57,7 @@ Scope:
 - tenant onboarding
 - college join-request review queue
 - memberships and communities
+- Community Connect V1 with community as the primary Connect tab and private E2EE chats as the secondary tab
 - Campus Square feed with posts, stories, immersive vibes, threaded comments, baseline repost/report flows, and single-asset story music composition
 - one-to-one encrypted campus messaging with inbox search, market deal cards, and low-cost realtime presence or typing fanout
 - Resource Vault
@@ -66,6 +67,9 @@ Scope:
 Exit criteria:
 
 - a verified student can join a college cluster
+- a verified student can open Connect and see official campus communities as the primary surface
+- a verified student can open a community detail view for feed, resources, members, and events
+- a verified community member can publish a text post directly from the community detail feed
 - an unknown-domain student can submit a college join request
 - an admin can approve, reject, or send back a college join request
 - a user can post to the correct community
@@ -181,18 +185,24 @@ After implementation:
 
 ## 7. Current Next Actions
 
-1. extend backend token verification beyond session bootstrap to the rest of the authenticated API edge
-2. implement the college join-request submission and admin decision workflow
-3. add backend-edge rate limiting and richer structured error metadata
-4. start real upload registration and resource file flows through the media module
-5. add moderation publish and review flows for posts, stories, vibes, and resources
-6. introduce a simple admin surface for onboarding and moderation operations
-7. refine ranking, moderation review ergonomics, and creator-quality media/transcoding behavior on top of the live engagement baseline
-8. evaluate low-end-device fallback behavior for client-side story music export and browser autoplay restrictions
-9. ship the Phase 1 encrypted campus-chat slice with one-to-one conversations, deal-card entry points, and low-cost realtime fanout
+1. ship Community Connect V1 docs, contracts, query reviews, and first web/backend slice
+2. enrich `/v1/communities/my` and add community detail/member endpoints with tenant-safe authorization
+3. replace the Connect community placeholder with official community cards and responsive empty/loading/error states
+4. complete community thread UX with secured comments, replies, reactions, and burst limits
+5. prepare indexed event rows for high-volume community event feeds and add moderation review queues for community resources/events
+6. extend backend token verification beyond session bootstrap to the rest of the authenticated API edge
+7. implement the college join-request submission and admin decision workflow
+8. add backend-edge rate limiting and richer structured error metadata
+9. add moderation publish and review flows for posts, stories, vibes, resources, and community-scoped content
+10. introduce a simple admin surface for onboarding and moderation operations
 
 ## 8. Decision Log Snapshot
 
+- Community V1 uses the existing `/messages` route family as a compatibility path for the Connect surface: Community becomes the primary tab and private E2EE Chats remain the second tab.
+- Community V1 does not introduce E2EE group rooms or uncontrolled community chat; reviewable community content and moderation take priority.
+- Community-scoped social interactions must resolve the owning post before comments, reactions, reposts, edits, deletes, or liker-list reads so forged ids cannot cross the community boundary.
+- Community-scoped posts use verified identity only in Phase 1; anonymous comments are disabled for community posts and reposts.
+- Community detail Resources and Events tabs render bounded community-owned records through `communityId`; resource reads/writes verify community membership and event composition hides non-member community events.
 - A dedicated vibes lane ships in Phase 1, while ranking-heavy reels expansion stays deferred
 - Phase 1 story music uses a royalty-free search provider plus client-side `ffmpeg.wasm` composition for one selected story asset instead of adding a backend transcoding service
 - Phase 1 encrypted chat stays inside the modular monolith with Firebase Realtime Database only for presence, typing, and encrypted delivery fanout, not as a second custom Socket deployable

@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { CampusMessagesShell } from "../../src/components/campus-messages-shell";
-import { getChatInbox, getChatKeyBackup, getViewerProfile } from "../../src/lib/backend";
+import { getChatInbox, getChatKeyBackup, getMyCampusCommunities, getViewerProfile } from "../../src/lib/backend";
 import { getDisplayCollegeName } from "../../src/lib/college-access";
 import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
 
@@ -12,7 +12,7 @@ export default async function MessagesPage() {
     redirect("/login");
   }
 
-  const [profile, inboxResult, backupResult] = await Promise.all([
+  const [profile, inboxResult, backupResult, communitiesResult] = await Promise.all([
     getViewerProfile(viewer).catch(() => null),
     getChatInbox(viewer)
       .then((value) => ({ value, error: null }))
@@ -32,15 +32,17 @@ export default async function MessagesPage() {
       .catch((error) => ({
         value: { backup: null },
         error: error instanceof Error ? error.message : "We could not load your encrypted key backup."
+      })),
+    getMyCampusCommunities(viewer)
+      .then((value) => ({ value, error: null }))
+      .catch((error) => ({
+        value: { tenant: { id: viewer.tenantId, name: "", slug: "" }, communities: [] },
+        error: error instanceof Error ? error.message : "We could not load your campus communities right now."
       }))
   ]);
 
   if (!profile?.profileCompleted) {
     redirect("/onboarding");
-  }
-
-  if (!inboxResult.value.viewer.activeIdentity) {
-    redirect("/profile/settings/chat-privacy?intent=create-identity&returnTo=%2Fmessages");
   }
 
   const viewerName = profile.profile?.fullName ?? viewer.displayName;
@@ -58,6 +60,8 @@ export default async function MessagesPage() {
       collegeName={displayCollegeName}
       initialItems={inboxResult.value.items}
       loadError={inboxResult.error}
+      initialCommunities={communitiesResult.value.communities}
+      communityLoadError={communitiesResult.error}
       initialViewerIdentity={inboxResult.value.viewer.activeIdentity}
       initialRemoteKeyBackup={backupResult.value.backup}
     />

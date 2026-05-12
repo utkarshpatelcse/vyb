@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { createPostComment, getPostComments } from "../../../../../src/lib/backend";
+import { createPostComment, getPostComments, isBackendRequestError } from "../../../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../../../src/lib/dev-session";
 
 export async function GET(
@@ -31,7 +31,19 @@ export async function GET(
 
   try {
     return NextResponse.json(await getPostComments(viewer, postId, Number.isInteger(limit) && limit > 0 ? limit : 50));
-  } catch {
+  } catch (error) {
+    if (isBackendRequestError(error)) {
+      return NextResponse.json(
+        {
+          error: {
+            code: error.code,
+            message: error.message
+          }
+        },
+        { status: error.statusCode }
+      );
+    }
+
     return NextResponse.json({
       postId,
       items: []
@@ -101,6 +113,18 @@ export async function POST(
       { status: 201 }
     );
   } catch (error) {
+    if (isBackendRequestError(error)) {
+      return NextResponse.json(
+        {
+          error: {
+            code: error.code,
+            message: error.message
+          }
+        },
+        { status: error.statusCode }
+      );
+    }
+
     return NextResponse.json(
       {
         error: {

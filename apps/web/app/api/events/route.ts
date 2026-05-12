@@ -50,6 +50,7 @@ function readOptionalJsonFromForm<T>(formData: FormData, key: string) {
 function buildParsedCreateBodyFromFormData(formData: FormData): ParsedCreateBody {
   return {
     payload: {
+      communityId: readOptionalStringFromForm(formData, "communityId"),
       title: readOptionalStringFromForm(formData, "title") ?? "",
       club: readOptionalStringFromForm(formData, "club") ?? "",
       category: readOptionalStringFromForm(formData, "category") ?? "",
@@ -180,6 +181,7 @@ export async function POST(request: Request) {
   const passKind = parsePassKind(payload.passKind);
   const responseMode = parseResponseMode(payload.responseMode);
   const entryMode = parseEntryMode(payload.entryMode);
+  const communityId = typeof payload.communityId === "string" ? payload.communityId.trim() || null : null;
   const capacity = parseCapacity(payload.capacity);
   const teamSizeMin = parseCapacity(payload.teamSizeMin);
   const teamSizeMax = parseCapacity(payload.teamSizeMax);
@@ -301,6 +303,7 @@ export async function POST(request: Request) {
         role: viewer.role
       },
       {
+        communityId,
         title,
         club,
         category,

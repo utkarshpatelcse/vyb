@@ -1,8 +1,8 @@
 # API Contract
 
 Owner: Architecture Team
-Last Updated: 2026-04-28
-Change Summary: Added the companion social WebSocket event contract for active feed and vibe clients.
+Last Updated: 2026-05-12
+Change Summary: Documented community feed and interaction authorization for Community Connect reads.
 
 ## 1. Metadata
 
@@ -25,7 +25,10 @@ Change Summary: Added the companion social WebSocket event contract for active f
 
 - Auth mechanism: backend edge verified identity
 - Required roles: verified membership
-- Tenant checks: tenant and optional community must be authorized by the campus module
+- Tenant checks: tenant and optional community must be authorized by the active membership context
+- Community checks: when `communityId` is present, the viewer must belong to that community before posts are returned
+- Interaction checks: when a target post has `communityId`, likes, comments, comment likes, reposts, post edits, post deletes, and liker-list reads must verify the same active community membership before mutating or revealing data
+- Identity checks: community-scoped posts disable anonymous comments in V1
 - Rate limit policy: moderate per user
 
 ## 4. Request Schema
@@ -40,6 +43,7 @@ Change Summary: Added the companion social WebSocket event contract for active f
 - Success response: `tenantId`, `communityId`, `items[]`, `nextCursor`
 - Feed items include `id`, `placement`, `kind`, `mediaUrl`, `location`, `title`, `body`, `reactions`, `comments`, `viewerReactionType`, `createdAt`, and `author { userId, username, displayName }`
 - The response is sufficient for feed cards, profile grids, lightbox views, likers sheets, and the vibes teaser row without a second list-read call
+- Public profile feeds must filter community-scoped posts that the viewer cannot access, even when the profile owner authored the content
 - Pagination model: simple limit-based read in the current implementation
 - Metadata: no total count on hot feed path
 
@@ -47,8 +51,9 @@ Change Summary: Added the companion social WebSocket event contract for active f
 
 - Validation errors: invalid tenant or limit
 - Auth errors: unauthenticated
-- Authorization errors: unauthorized tenant/community access
+- Authorization errors: unauthorized tenant/community access, viewer is not a member of the target community, viewer is not allowed to interact with the target community-scoped post
 - Domain errors: community not found
+- Throttle errors: `RATE_LIMITED` with `retry-after` when a viewer exceeds comment, reaction, repost, thread-read, or content-management burst limits
 - Retryable errors: downstream access resolution timeout
 
 ## 7. Side Effects
@@ -83,6 +88,7 @@ Change Summary: Added the companion social WebSocket event contract for active f
 - `PUT /v1/comments/{commentId}/reactions` toggles comment likes
 - `PUT /v1/posts/{postId}/reactions` toggles the viewer reaction on a post or vibe
 - `POST /v1/posts/{postId}/repost` creates a direct repost or quote repost
+- All companion endpoints must first load the target post, then enforce tenant and community access before returning liker/comment data or applying a mutation.
 
 ## 12. Realtime Companion Contract
 

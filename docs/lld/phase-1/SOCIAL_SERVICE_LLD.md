@@ -1,8 +1,8 @@
 # Social Module LLD
 
 Owner: Social Platform
-Last Updated: 2026-04-28
-Change Summary: Added the Phase 1 social WebSocket fanout model for post, comment, and reaction updates.
+Last Updated: 2026-05-12
+Change Summary: Added Community Connect target-post authorization across feed interactions.
 
 ## 1. Metadata
 
@@ -68,8 +68,8 @@ Out of scope:
 - Flow 2: user opens the feed, sees the latest published posts from allowed scopes, and opens media in a full-screen viewer.
 - Flow 3: user searches another member by campus user ID and follows them.
 - Flow 4: user publishes a story and followed profiles see it in their story lane while it is active.
-- Flow 5: user comments, replies, reacts, or attaches a supported GIF or sticker in a comment thread.
-- Flow 6: user inspects likers, direct reposts, or quote reposts an existing post or vibe.
+- Flow 5: user comments, replies, reacts, or attaches a supported GIF or sticker in a comment thread after tenant and community access are verified for the target post.
+- Flow 6: user inspects likers, direct reposts, or quote reposts an existing post or vibe after the target post scope is verified.
 - Flow 7: an author edits or soft-deletes their own post or vibe.
 - Flow 8: a viewer opens the story viewer, progresses through stories, marks them seen, and optionally likes a story.
 - Flow 9: user reports unsafe social content when moderation support is enabled.
@@ -87,6 +87,8 @@ Out of scope:
 - response schema: live published post payload
 - error schema: unauthorized scope, invalid media, validation failure
 - rate limit policy: moderate per user, tighter burst protection
+- Community Connect rule: if `communityId` is present, the social module must verify the viewer has an active membership in that community before writing the post.
+- Community identity rule: community-scoped posts force verified identity and `allowAnonymousComments: false` in V1.
 
 ### `PATCH /v1/posts/{postId}`
 
@@ -96,6 +98,7 @@ Out of scope:
 - response schema: updated published post payload
 - error schema: post not found, unauthorized author, validation failure
 - rate limit policy: moderate per user
+- Community Connect rule: if the existing post has `communityId`, the author must still have active membership in that community before editing.
 
 ### `DELETE /v1/posts/{postId}`
 
@@ -105,6 +108,7 @@ Out of scope:
 - response schema: `postId`, `deleted`
 - error schema: post not found, unauthorized author
 - rate limit policy: moderate per user
+- Community Connect rule: if the existing post has `communityId`, the author must still have active membership in that community before deleting.
 
 ### `GET /v1/feed`
 
@@ -114,6 +118,7 @@ Out of scope:
 - response schema: paginated published posts
 - error schema: invalid tenant, unauthorized community, bad cursor
 - rate limit policy: moderate per user
+- Community Connect rule: community-scoped feed reads are member-only in the current V1 implementation.
 
 ### `GET /v1/vibes`
 
@@ -130,8 +135,9 @@ Out of scope:
 - auth requirement: verified membership required
 - request schema: optional `limit`
 - response schema: member list for the active post reactions
-- error schema: post not found, invalid limit
+- error schema: post not found, invalid limit, unauthorized community scope
 - rate limit policy: moderate per user
+- Community Connect rule: liker lists for community-scoped posts are member-only.
 
 ### `POST /v1/stories`
 
@@ -177,6 +183,7 @@ Out of scope:
 - response schema: public campus profile, follow stats, and recent posts
 - error schema: user not found, invalid tenant
 - rate limit policy: moderate per user
+- Community Connect rule: recent posts must exclude community-scoped posts from communities the viewer cannot access.
 
 ### `PUT/DELETE /v1/users/{username}/follow`
 
@@ -195,6 +202,8 @@ Out of scope:
 - response schema: created comment
 - error schema: post not found, unauthorized scope, validation failure
 - rate limit policy: moderate per user
+- Community Connect rule: comments and replies on community-scoped posts are member-only.
+- Community identity rule: anonymous comments are not accepted for community-scoped posts in V1.
 
 ### `PUT /v1/comments/{commentId}/reactions`
 
@@ -204,6 +213,7 @@ Out of scope:
 - response schema: current comment-like state and aggregate count snapshot
 - error schema: comment not found, unauthorized scope
 - rate limit policy: moderate per user
+- Community Connect rule: the comment's parent post must pass tenant and community access before the reaction is accepted.
 
 ### `PUT /v1/posts/{postId}/reactions`
 
@@ -213,6 +223,7 @@ Out of scope:
 - response schema: current reaction state and aggregate count snapshot
 - error schema: post not found, unauthorized scope
 - rate limit policy: moderate per user
+- Community Connect rule: reactions on community-scoped posts are member-only.
 
 ### `POST /v1/posts/{postId}/repost`
 
@@ -222,6 +233,7 @@ Out of scope:
 - response schema: created repost item in feed or vibe placement
 - error schema: post not found, incomplete profile, unauthorized scope
 - rate limit policy: moderate per user
+- Community Connect rule: reposts preserve the source post's `communityId` and require access to that source community.
 
 ### `PUT /v1/stories/{storyId}/reactions`
 
@@ -323,9 +335,11 @@ Out of scope:
 ## 10. Validation and Security
 
 - auth checks: membership must be verified for posting, story creation, following, commenting, reacting, reposting, and reporting
+- community guard: every interaction that accepts a post id or comment id must resolve the owning post and reject the request when the viewer lacks active membership in that post's community
+- burst limits: comment writes, reaction writes, reposts, thread reads, and content-management mutations use per-member short-window limits at the backend boundary
 - tenant checks: reads and writes validated through campus-owned context
 - input validation: body length, media count, allowed MIME types, campus user-ID resolution, reaction enums, repost quote length, author-only edit/delete gates, story music clip lengths limited to 15 or 30 or 45 or 60 seconds, and story music publish limited to one selected asset at a time
-- abuse prevention: post, comment, reaction, and report rate limits plus content status workflow
+- abuse prevention: post, comment, reaction, repost, thread-read, and report rate limits plus content status workflow
 - audit logging: report creation, moderator removals, and privileged edits
 - client behavior notes: vibe playback should attempt sound-on startup with safe muted fallback if the browser blocks autoplay; story viewer audio must remain user-toggleable; own-story bubbles must support separate open-story and add-story interactions
 

@@ -13,6 +13,7 @@ type CampusEventHostShellProps = {
   collegeName: string;
   role: string;
   initialEvent?: CampusEvent | null;
+  initialCommunityId?: string | null;
 };
 
 type EventMediaPreview = {
@@ -142,9 +143,11 @@ export function CampusEventHostShell({
   viewerUsername,
   collegeName,
   role,
-  initialEvent
+  initialEvent,
+  initialCommunityId = null
 }: CampusEventHostShellProps) {
   const router = useRouter();
+  const communityId = initialEvent?.communityId ?? initialCommunityId ?? "";
   const initialCategoryChoice = initialEvent?.category && PRESET_EVENT_CATEGORIES.includes(initialEvent.category as (typeof PRESET_EVENT_CATEGORIES)[number]) ? initialEvent.category : "Other";
   const [title, setTitle] = useState(initialEvent?.title ?? "");
   const [club, setClub] = useState(initialEvent?.club ?? viewerName);
@@ -407,6 +410,9 @@ export function CampusEventHostShell({
     setMessage(null);
 
     const formData = new FormData();
+    if (communityId.trim()) {
+      formData.set("communityId", communityId.trim());
+    }
     formData.set("title", title.trim());
     formData.set("club", club.trim());
     formData.set("category", category.trim());

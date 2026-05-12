@@ -1,8 +1,8 @@
 # API Contract
 
 Owner: Architecture Team
-Last Updated: 2026-04-19
-Change Summary: Updated contract language for the Phase 1 modular monolith backend.
+Last Updated: 2026-05-12
+Change Summary: Added optional `communityId` filtering and membership authorization for Community Connect resources.
 
 ## 1. Metadata
 
@@ -25,28 +25,28 @@ Change Summary: Updated contract language for the Phase 1 modular monolith backe
 
 - Auth mechanism: backend edge verified identity
 - Required roles: verified membership
-- Tenant checks: tenant and course must belong to caller membership context
+- Tenant checks: tenant, optional course, and optional community must belong to caller membership context
 - Rate limit policy: moderate per user
 
 ## 4. Request Schema
 
 - Headers: auth token or approved local dev identity headers
 - Path params: none
-- Query params: `tenantId`, optional `courseId`, optional `cursor`, optional `limit`
+- Query params: `tenantId`, optional `courseId`, optional `communityId`, optional `cursor`, optional `limit`
 - Body: none
 
 ## 5. Response Schema
 
-- Success response: `tenantId`, `courseId`, `items[]`, `nextCursor`
+- Success response: `tenantId`, `courseId`, `communityId`, `items[]`, `nextCursor`
 - Pagination model: cursor-based
 - Metadata: no total count on hot path
 
 ## 6. Error Schema
 
-- Validation errors: invalid tenant, course, or cursor
+- Validation errors: invalid tenant, course, community, or cursor
 - Auth errors: unauthenticated
-- Authorization errors: unauthorized tenant or course access
-- Domain errors: course not found
+- Authorization errors: unauthorized tenant, course, or community access
+- Domain errors: course or community not found
 - Retryable errors: storage metadata read issue
 
 ## 7. Side Effects

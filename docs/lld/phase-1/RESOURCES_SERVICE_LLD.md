@@ -51,19 +51,19 @@ Out of scope:
 ### `POST /v1/resources`
 
 - caller: web or future native client
-- auth requirement: verified membership required
-- request schema: tenant id, course id, title, description, type, file references
+- auth requirement: verified membership required; active community membership required when `communityId` is present
+- request schema: tenant id, optional course id, optional community id, title, description, type, file references
 - response schema: created resource with file metadata
-- error schema: invalid course, unauthorized tenant, invalid file references
+- error schema: invalid course, invalid community, unauthorized tenant/community, invalid file references
 - rate limit policy: moderate per user
 
 ### `GET /v1/resources`
 
 - caller: web or future native client
-- auth requirement: verified membership required
-- request schema: tenant id, optional course id, cursor, limit, sort
+- auth requirement: verified membership required; active community membership required when `communityId` is present
+- request schema: tenant id, optional course id, optional community id, cursor, limit, sort
 - response schema: paginated resource list
-- error schema: invalid tenant, invalid course, bad cursor
+- error schema: invalid tenant, invalid course, invalid community, bad cursor
 - rate limit policy: moderate per user
 
 ### `GET /v1/resources/{resourceId}`
@@ -84,7 +84,7 @@ Out of scope:
 
 - calling module: `resources`
 - target module: `campus`
-- reason: validate tenant membership and upload access
+- reason: validate tenant membership, community membership, and upload access
 - interaction type: direct in-process domain call
 - failure handling: reject upload or read request
 
@@ -97,8 +97,8 @@ Out of scope:
 ## 8. Data Model Changes
 
 - tables touched: `courses`, `resources`, `resource_files`, `audit_logs`, `user_activity`
-- columns added: none beyond HLD baseline
-- indexes added: `resources (tenant_id, created_at desc)`, `resources (course_id, created_at desc)`, `resource_files (resource_id)`
+- columns added: `resources.community_id`
+- indexes added: `resources (tenant_id, created_at desc)`, `resources (course_id, created_at desc)`, `resources (community_id, created_at desc)`, `resource_files (resource_id)`
 - unique constraints: `resource_files (resource_id, storage_path)`
 - soft delete impact: resources and files use soft delete for moderation and recovery flows
 - backfill required: initial course catalog seed per tenant
@@ -119,6 +119,13 @@ Out of scope:
 - supporting index: `resources (course_id, created_at desc)`
 - why this is safe: selective course filter
 
+- query name: resources by community
+- filter fields: `tenant_id`, `community_id`, `status = published`, `deleted_at is null`
+- sort order: `created_at desc`
+- expected scale: medium for active communities
+- supporting index: `resources (community_id, created_at desc)`
+- why this is safe: selective community filter plus backend membership guard
+
 - query name: files by resource
 - filter fields: `resource_id`, `deleted_at is null`
 - sort order: `created_at asc`
@@ -129,7 +136,7 @@ Out of scope:
 ## 10. Validation and Security
 
 - auth checks: verified membership required
-- tenant checks: course and resource must belong to the caller's tenant
+- tenant checks: course, community, and resource must belong to the caller's tenant
 - input validation: title, description length, resource type, file count, MIME type
 - abuse prevention: upload quotas, report flow, moderation state
 - audit logging: moderator removals and admin catalog edits

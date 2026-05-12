@@ -24,6 +24,18 @@ export function listResourcesByCourse(dcOrVarsOrOptions, varsOrOptions, options)
   return dcInstance.executeQuery('ListResourcesByCourse', inputVars, inputOpts);
 }
 
+export function listResourcesByCommunity(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListResourcesByCommunity', inputVars, inputOpts);
+}
+
+export function listResourcesByCommunityCourse(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListResourcesByCommunityCourse', inputVars, inputOpts);
+}
+
 export function getResourceDetail(dcOrVarsOrOptions, varsOrOptions, options) {
   const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
   dcInstance.useGen(true);

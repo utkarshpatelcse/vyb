@@ -1,8 +1,8 @@
 # Vyb Software Requirements Specification
 
 Owner: Product Team
-Last Updated: 2026-04-29
-Change Summary: Added Vibe video quality and adaptive playback requirements while keeping Data Connect as the durable source of truth.
+Last Updated: 2026-05-12
+Change Summary: Locked Community Connect V1 as the primary community surface with private E2EE chats kept as the secondary Connect tab.
 
 ## 1. Introduction
 
@@ -50,6 +50,13 @@ Phase 1 ships through the web client and one backend runtime. The architecture m
 - The system shall support communities such as batch, branch, hostel, club, and general.
 - A verified user shall only access tenant data for the tenant they belong to.
 - Admins and moderators shall manage community visibility and membership flows where required.
+- The authenticated Connect surface shall prioritize Community as the default tab when no one-to-one conversation is open.
+- The Community tab shall show the user's official communities before optional or discoverable communities.
+- Community cards shall expose name, type, member count, joined or locked state, membership role where relevant, and latest activity where available.
+- A community detail surface shall support Feed, Resources, Members, and Events sections in V1.
+- Community detail and member-list reads shall enforce tenant membership and community visibility before returning data.
+- Community detail Feed shall allow an active community member to publish a text post scoped to that community.
+- Personal communities, broad user-created squads, and community creation flows shall remain controlled until moderation, limits, and admin policies are ready.
 
 ### 2.3 College Join Requests
 
@@ -67,6 +74,10 @@ Phase 1 ships through the web client and one backend runtime. The architecture m
 - Vibe video uploads shall enforce a 40 MB maximum source size and shall use server-side processing to create adaptive playback variants when the source resolution supports them.
 - The home feed shall show the live campus feed, story lane, and a vibes teaser surface that links into dedicated vibe discovery.
 - Posts shall belong to a tenant and optionally to a community.
+- Community-scoped post creation shall require active membership in the target community.
+- Community-scoped post reads and interactions shall reject forged post or comment ids when the viewer is not an active member of the owning community.
+- Community-scoped posts shall require verified identity and shall not allow anonymous comments in Phase 1.
+- Community comments, reactions, reposts, and thread reads shall be protected by backend burst limits.
 - Users shall browse posts in reverse chronological order initially.
 - Users shall open post or vibe media in a full-screen viewer, with zoom support for compatible images.
 - Users shall comment on posts.
@@ -90,11 +101,14 @@ Phase 1 ships through the web client and one backend runtime. The architecture m
 - Verified users shall upload notes and academic files.
 - Resources shall be categorized by course or subject metadata.
 - Users shall browse and search recent or relevant resources within their tenant.
-- Resource access controls shall respect tenant membership.
+- Resource access controls shall respect tenant membership and, when `communityId` is present, active membership in the owning community.
 
 ### 2.6 Direct Messaging
 
 - Verified users shall open a direct-message inbox scoped to their current tenant.
+- The direct-message inbox shall live as the Chats tab inside the Connect surface while Community remains the default tab.
+- Community detail tabs shall show feed, members, community-owned resources, and community-owned events in Phase 1.
+- Community-owned resource and event reads shall hide records from users who are not active members of the owning community.
 - The inbox shall support search across active chats and searchable campus profiles.
 - Direct messaging in Phase 1 shall be limited to one-to-one conversations.
 - Clients shall encrypt chat message payloads before those payloads are sent to the backend.
@@ -107,6 +121,7 @@ Phase 1 ships through the web client and one backend runtime. The architecture m
 - Realtime presence, typing, and encrypted delivery fanout shall use an approved low-cost realtime channel.
 - Active direct chat rooms shall render newly received messages immediately through WebSocket delivery, with periodic reconciliation reserved for missed-event recovery.
 - Phase 1 E2EE shall start with one active browser-held key per account; secure multi-device key sync is deferred.
+- Community surfaces shall not store community content inside chat tables and shall not use E2EE in V1 because community moderation and safety require reviewable content.
 
 ### 2.7 Moderation
 
@@ -152,6 +167,8 @@ The following are intentionally deferred out of Phase 1:
 ### 4.4 Performance
 
 - Feed and resource list endpoints shall use pagination.
+- Community member lists and community-scoped feeds shall use cursor pagination.
+- Community summary reads should avoid tenant-wide scans and may use denormalized counters or cached summaries after scale testing.
 - Hot queries shall be index-backed.
 - Large image uploads should use client-side compression before upload where practical.
 - Realtime chat fanout should feel effectively instant for active conversations on supported networks.
@@ -173,6 +190,7 @@ The following are intentionally deferred out of Phase 1:
 - The vibes surface shall support default sound-on playback, tap pause or resume, and press-and-hold speed boost on both mobile and desktop pointer-capable clients.
 - Comment threads shall support a desktop side-panel treatment and a mobile bottom-sheet treatment with keyboard-safe composer behavior.
 - The chat inbox shall support responsive split-pane desktop behavior and conversation-first mobile behavior with a sticky bottom composer.
+- The Connect surface shall support a community-first mobile and desktop experience while preserving private chat ergonomics in the Chats tab.
 - Backend APIs shall remain portable across web and future native apps.
 - Shared code shall prioritize contracts, validation, and domain logic over forced component sharing.
 
@@ -216,6 +234,7 @@ The following are intentionally deferred out of Phase 1:
 
 - Phase 1 avoids high-legal-risk money flows
 - Phase 1 avoids anonymous posting
+- Phase 1 avoids E2EE community rooms and uncontrolled group chat until a moderation-ready community room design is approved
 - Phase 1 ships bounded short-form video and story engagement without advanced ranking or transcoding fleets
 - story music export remains a single-asset client-side composition flow in Phase 1 and does not introduce a backend transcoding service
 - direct messaging remains one-to-one in Phase 1 and does not include secure multi-device key sync yet
@@ -229,9 +248,12 @@ The following are intentionally deferred out of Phase 1:
 - An unknown-domain student can submit a college join request instead of being stranded
 - A platform admin can approve, reject, or send back a college join request
 - The student can enter relevant communities
+- The student can open Connect and see Community as the primary surface, with official communities grouped by campus identity.
+- The student can open a community detail surface and browse community-scoped feed, resources, members, and events where available.
 - The student lands on the main home feed after successful onboarding instead of being dropped into the profile page first
 - The student can create a post and see it in the live feed
-- The student can open a post or vibe in a full-screen viewer, like it, inspect likers, and interact through comments or replies
+- The student can open an authorized post or vibe in a full-screen viewer, like it, inspect likers, and interact through comments or replies
+- The student can open a community post thread from Connect and comment or reply using their verified campus identity
 - The student can repost or quote repost another campus post or vibe
 - The student can set a campus user ID, search other verified users by that ID, and follow them
 - The student can publish a story, optionally attach a royalty-free music clip to a single story asset, and followed users can see it in their story lane with seen-state, viewer progress, and embedded audio playback

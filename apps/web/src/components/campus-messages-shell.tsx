@@ -16,6 +16,7 @@ import type {
   ChatShareCardPayload,
   ChatMessageTtlKey,
   ChatVibeCardPayload,
+  CommunityLink,
   DeleteChatMessageScope,
   UpdateChatMessageResponse,
   UserSearchItem
@@ -65,6 +66,15 @@ import { MessageCardRenderer } from "./message-card-renderer";
 import { queueAppRouteOrigin, readAppRouteOrigin } from "../lib/app-navigation-state";
 
 type ActiveConversation = ChatConversationResponse["conversation"];
+type ConnectCommunity = CommunityLink & {
+  slug?: string;
+  visibility?: string;
+  membershipRole?: string;
+  joinedAt?: string;
+  isOfficial?: boolean;
+  isMember?: boolean;
+  latestActivityAt?: string | null;
+};
 type RealtimeState = "idle" | "offline" | "connecting" | "reconnecting" | "live";
 type PeerPresenceTone = "online" | "recent" | "away";
 type ConversationTypingState = {
@@ -138,6 +148,17 @@ const CHAT_REACTION_OPTIONS = [
   "\uD83C\uDF89",
   "\uD83D\uDE0E"
 ] as const;
+const OFFICIAL_COMMUNITY_TYPES = new Set(["general", "batch", "branch", "section", "hostel"]);
+const COMMUNITY_TYPE_LABELS: Record<string, string> = {
+  general: "Campus",
+  batch: "Batch",
+  branch: "Branch",
+  section: "Section",
+  hostel: "Hostel",
+  club: "Club",
+  personal: "Squad",
+  interest: "Interest"
+};
 const DELETE_FOR_EVERYONE_WINDOW_MS = 30 * 60 * 1000;
 const DELETE_UNDO_WINDOW_MS = 10 * 1000;
 const CHAT_DELETED_MESSAGE_ALGORITHM = "deleted";
@@ -403,6 +424,26 @@ function timeAgo(dateString: string) {
   const diffInDays = Math.floor(diffInHours / 24);
   if (diffInDays < 7) return `${diffInDays}d`;
   return date.toLocaleDateString("en-IN", { month: "short", day: "numeric" });
+}
+
+function getCommunityTypeLabel(type: string) {
+  return COMMUNITY_TYPE_LABELS[type] ?? type.replace(/[-_]+/gu, " ");
+}
+
+function isOfficialCommunity(community: ConnectCommunity) {
+  return community.isOfficial ?? OFFICIAL_COMMUNITY_TYPES.has(community.type);
+}
+
+function getCommunityActivityLabel(community: ConnectCommunity) {
+  if (community.latestActivityAt) {
+    return `Active ${timeAgo(community.latestActivityAt)} ago`;
+  }
+
+  if (community.joinedAt) {
+    return `Joined ${timeAgo(community.joinedAt)} ago`;
+  }
+
+  return "Official campus circle";
 }
 
 function formatMessageDay(dateString: string) {
@@ -1216,6 +1257,8 @@ export function CampusMessagesShell({
   initialConversationId = null,
   initialConversation = null,
   activeConversationError = null,
+  initialCommunities = [],
+  communityLoadError = null,
   initialViewerIdentity = null,
   initialRemoteKeyBackup = null
 }: {
@@ -1230,6 +1273,8 @@ export function CampusMessagesShell({
   initialConversationId?: string | null;
   initialConversation?: ActiveConversation | null;
   activeConversationError?: string | null;
+  initialCommunities?: ConnectCommunity[];
+  communityLoadError?: string | null;
   initialViewerIdentity?: ChatIdentitySummary | null;
   initialRemoteKeyBackup?: ChatKeyBackupRecord | null;
 }) {
@@ -1261,7 +1306,9 @@ export function CampusMessagesShell({
       initialConversation ? upsertConversationItem(initialItems, buildConversationPreview(initialConversation)) : initialItems
     )
   );
-  const [activeTab, setActiveTab] = useState<"chats" | "community">("chats");
+  const [activeTab, setActiveTab] = useState<"chats" | "community">(() =>
+    initialConversationId || searchParams.get("tab") === "chats" ? "chats" : "community"
+  );
   const [activeConversationId, setActiveConversationId] = useState<string | null>(initialConversationId);
   const [pendingConversationId, setPendingConversationId] = useState<string | null>(null);
   const [activeConversation, setActiveConversation] = useState<ActiveConversation | null>(initialConversation);
@@ -2400,6 +2447,7 @@ export function CampusMessagesShell({
   function openConversation(conversationId: string) {
     const instantConversation = getInstantConversation(conversationId);
 
+    setActiveTab("chats");
     setActiveConversationId(conversationId);
     setConversationError(null);
     setConversationLoading(true);
@@ -2452,6 +2500,26 @@ export function CampusMessagesShell({
     });
   }
 
+  function handleChatsTabClick() {
+    setActiveTab("chats");
+  }
+
+  function handleCommunityTabClick() {
+    setActiveTab("community");
+    if (!activeConversationId) {
+      return;
+    }
+
+    setActiveConversationId(null);
+    setActiveConversation(null);
+    activeConversationRef.current = null;
+    setConversationLoading(false);
+    setConversationError(null);
+    startTransition(() => {
+      router.replace("/messages");
+    });
+  }
+
   function handleConversationPointerDown(event: PointerEvent<HTMLAnchorElement>, conversationId: string) {
     if (shouldLetConversationLinkHandle(event) || activeConversationId === conversationId) {
       return;
@@ -2477,6 +2545,9 @@ export function CampusMessagesShell({
       activeConversationRef.current?.id === initialConversationId;
 
     setActiveConversationId(initialConversationId);
+    if (initialConversationId) {
+      setActiveTab("chats");
+    }
     if (initialConversationId && pendingConversationNavigationRef.current === initialConversationId) {
       pendingConversationNavigationRef.current = null;
       setPendingConversationId(null);
@@ -6221,6 +6292,16 @@ export function CampusMessagesShell({
   ) : null;
 
   const navItems = buildPrimaryCampusNav("messages", { unreadCount });
+  const officialCommunities = useMemo(
+    () => initialCommunities.filter((community) => isOfficialCommunity(community)),
+    [initialCommunities]
+  );
+  const otherCommunities = useMemo(
+    () => initialCommunities.filter((community) => !isOfficialCommunity(community)),
+    [initialCommunities]
+  );
+  const primaryCommunity = officialCommunities[0] ?? initialCommunities[0] ?? null;
+  const communityMemberTotal = initialCommunities.reduce((sum, community) => sum + Math.max(0, community.memberCount || 0), 0);
 
   return (
     <main ref={pageRef} className="spm-page">
@@ -6237,7 +6318,7 @@ export function CampusMessagesShell({
               <button
                 type="button"
                 className={`spm-tab-item${activeTab === "chats" ? " is-active" : ""}`}
-                onClick={() => setActiveTab("chats")}
+                onClick={handleChatsTabClick}
               >
                 <span className="spm-tab-label">CHATS</span>
                 {unreadCount > 0 && (
@@ -6247,7 +6328,7 @@ export function CampusMessagesShell({
               <button
                 type="button"
                 className={`spm-tab-item${activeTab === "community" ? " is-active" : ""}`}
-                onClick={() => setActiveTab("community")}
+                onClick={handleCommunityTabClick}
               >
                 <span className="spm-tab-label">COMMUNITY</span>
               </button>
@@ -6262,38 +6343,45 @@ export function CampusMessagesShell({
               >
                 <IconArrowLeft />
               </button>
-              <label
-                className={`spm-ghost-search${focused || query ? " spm-ghost-search-active" : ""}`}
-                aria-label="Search campus users"
-              >
-                <span className="spm-ghost-search-icon"><IconSearch /></span>
-                <input
-                  ref={searchInputRef}
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  onFocus={() => setFocused(true)}
-                  onBlur={() => setFocused(false)}
-                  placeholder="Search doston by handle or name..."
-                  autoCapitalize="none"
-                  autoComplete="off"
-                  spellCheck={false}
-                  id="spm-search-input"
-                  aria-label="Search chats by name or user ID"
-                />
-                {isSearching && (
-                  <button
-                    type="button"
-                    className="spm-ghost-search-clear"
-                    onClick={() => {
-                      setQuery("");
-                      searchInputRef.current?.focus();
-                    }}
-                    aria-label="Clear search"
-                  >
-                    x
-                  </button>
-                )}
-              </label>
+              {activeTab === "chats" ? (
+                <label
+                  className={`spm-ghost-search${focused || query ? " spm-ghost-search-active" : ""}`}
+                  aria-label="Search campus users"
+                >
+                  <span className="spm-ghost-search-icon"><IconSearch /></span>
+                  <input
+                    ref={searchInputRef}
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    onFocus={() => setFocused(true)}
+                    onBlur={() => setFocused(false)}
+                    placeholder="Search doston by handle or name..."
+                    autoCapitalize="none"
+                    autoComplete="off"
+                    spellCheck={false}
+                    id="spm-search-input"
+                    aria-label="Search chats by name or user ID"
+                  />
+                  {isSearching && (
+                    <button
+                      type="button"
+                      className="spm-ghost-search-clear"
+                      onClick={() => {
+                        setQuery("");
+                        searchInputRef.current?.focus();
+                      }}
+                      aria-label="Clear search"
+                    >
+                      x
+                    </button>
+                  )}
+                </label>
+              ) : (
+                <div className="spm-community-header-copy" role="status">
+                  <strong>Community</strong>
+                  <span>Official circles for {viewerName}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -6460,12 +6548,93 @@ export function CampusMessagesShell({
                 )}
               </>
             ) : (
-              <div className="spm-empty-state" role="status">
-                <div className="spm-empty-icon" aria-hidden="true">
-                  <IconMessages />
+              <div className="spm-community-panel" role="list" aria-label="Community list">
+                <div className="spm-community-hero">
+                  <span className="spm-community-kicker">YOUR CAMPUS</span>
+                  <strong>{collegeName}</strong>
+                  <span>{initialCommunities.length} circles - {communityMemberTotal.toLocaleString("en-IN")} visible memberships</span>
                 </div>
-                <strong>Community coming soon</strong>
-                <span>Connect with your campus groups and global campus vibes here.</span>
+
+                {communityLoadError ? (
+                  <p className="spm-load-error" role="alert">{communityLoadError}</p>
+                ) : null}
+
+                {initialCommunities.length === 0 ? (
+                  <div className="spm-empty-state" role="status">
+                    <div className="spm-empty-icon" aria-hidden="true">
+                      <IconMessages />
+                    </div>
+                    <strong>No community circles yet</strong>
+                    <span>Your official campus circles will appear here after membership sync.</span>
+                  </div>
+                ) : (
+                  <>
+                    <section className="spm-community-section" aria-label="Official communities">
+                      <div className="spm-community-section-heading">
+                        <span>OFFICIAL CIRCLES</span>
+                        <strong>{officialCommunities.length || initialCommunities.length}</strong>
+                      </div>
+                      {(officialCommunities.length ? officialCommunities : initialCommunities).map((community) => (
+                        <Link
+                          key={community.id}
+                          href={community.slug ? `/messages/community/${encodeURIComponent(community.slug)}` : "/messages"}
+                          className="spm-community-card"
+                          role="listitem"
+                          aria-label={`Open ${community.name}`}
+                        >
+                          <div className="spm-community-card-icon" aria-hidden="true">
+                            {getCommunityTypeLabel(community.type).slice(0, 1).toUpperCase()}
+                          </div>
+                          <div className="spm-community-card-copy">
+                            <div className="spm-community-card-top">
+                              <strong>{community.name}</strong>
+                              <span>{getCommunityTypeLabel(community.type)}</span>
+                            </div>
+                            <p>{getCommunityActivityLabel(community)}</p>
+                            <div className="spm-community-card-meta">
+                              <span>{community.memberCount.toLocaleString("en-IN")} members</span>
+                              <span>{community.membershipRole ?? "member"}</span>
+                              <span>{community.visibility ?? "tenant"}</span>
+                            </div>
+                          </div>
+                        </Link>
+                      ))}
+                    </section>
+
+                    {otherCommunities.length > 0 ? (
+                      <section className="spm-community-section" aria-label="Personal communities">
+                        <div className="spm-community-section-heading">
+                          <span>DISCOVERED</span>
+                          <strong>{otherCommunities.length}</strong>
+                        </div>
+                        {otherCommunities.map((community) => (
+                          <Link
+                            key={community.id}
+                            href={community.slug ? `/messages/community/${encodeURIComponent(community.slug)}` : "/messages"}
+                            className="spm-community-card"
+                            role="listitem"
+                            aria-label={`Open ${community.name}`}
+                          >
+                            <div className="spm-community-card-icon" aria-hidden="true">
+                              {getCommunityTypeLabel(community.type).slice(0, 1).toUpperCase()}
+                            </div>
+                            <div className="spm-community-card-copy">
+                              <div className="spm-community-card-top">
+                                <strong>{community.name}</strong>
+                                <span>{getCommunityTypeLabel(community.type)}</span>
+                              </div>
+                              <p>{getCommunityActivityLabel(community)}</p>
+                              <div className="spm-community-card-meta">
+                                <span>{community.memberCount.toLocaleString("en-IN")} members</span>
+                                <span>{community.membershipRole ?? "member"}</span>
+                              </div>
+                            </div>
+                          </Link>
+                        ))}
+                      </section>
+                    ) : null}
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -6485,7 +6654,25 @@ export function CampusMessagesShell({
         </section>
 
         <section className={`spm-chat-pane${activeConversationId ? " spm-chat-pane-active" : ""}`} aria-label="Active chat area">
-          {!activeConversationId && (
+          {!activeConversationId && activeTab === "community" && (
+            <div className="spm-chat-idle spm-community-idle">
+              <div className="spm-chat-idle-icon" aria-hidden="true">
+                <IconMessages />
+              </div>
+              <h2 className="spm-chat-idle-title">Community first</h2>
+              <p className="spm-chat-idle-sub">
+                {primaryCommunity
+                  ? `${primaryCommunity.name} is ready as your first official circle.`
+                  : "Your verified campus circles will appear here."}
+              </p>
+              <div className="spm-chat-idle-e2ee">
+                <IconShield />
+                Private chats stay E2EE in Chats
+              </div>
+            </div>
+          )}
+
+          {!activeConversationId && activeTab === "chats" && (
             <div className="spm-chat-idle">
               <div className="spm-chat-idle-icon" aria-hidden="true">
                 <IconMessages />

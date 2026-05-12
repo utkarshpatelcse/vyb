@@ -58,6 +58,7 @@ function buildParsedUpdateBodyFromFormData(formData: FormData): ParsedUpdateBody
   return {
     payload: {
       eventId: readOptionalStringFromForm(formData, "eventId") ?? "",
+      communityId: readOptionalStringFromForm(formData, "communityId"),
       title: readOptionalStringFromForm(formData, "title") ?? "",
       club: readOptionalStringFromForm(formData, "club") ?? "",
       category: readOptionalStringFromForm(formData, "category") ?? "",
@@ -192,6 +193,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ event
   const passKind = parsePassKind(payload.passKind);
   const responseMode = parseResponseMode(payload.responseMode);
   const entryMode = parseEntryMode(payload.entryMode);
+  const communityId = typeof payload.communityId === "string" ? payload.communityId.trim() || null : null;
   const capacity = parseCapacity(payload.capacity);
   const teamSizeMin = parseCapacity(payload.teamSizeMin);
   const teamSizeMax = parseCapacity(payload.teamSizeMax);
@@ -283,6 +285,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ event
 
     const response = await updateCampusEvent(viewer, {
       eventId,
+      communityId,
       title,
       club,
       category,

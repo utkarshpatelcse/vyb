@@ -1,8 +1,8 @@
 # API Contract
 
 Owner: Architecture Team
-Last Updated: 2026-04-19
-Change Summary: Updated contract language for the Phase 1 modular monolith backend.
+Last Updated: 2026-05-12
+Change Summary: Added optional community ownership and membership authorization for Community Connect resources.
 
 ## 1. Metadata
 
@@ -25,7 +25,7 @@ Change Summary: Updated contract language for the Phase 1 modular monolith backe
 
 - Auth mechanism: backend edge verified identity
 - Required roles: verified membership
-- Tenant checks: membership, tenant, and optional course must align
+- Tenant checks: membership, tenant, optional course, and optional community must align
 - Rate limit policy: moderate per user
 
 ## 4. Request Schema
@@ -33,7 +33,7 @@ Change Summary: Updated contract language for the Phase 1 modular monolith backe
 - Headers: auth token or approved local dev identity headers
 - Path params: none
 - Query params: none
-- Body: `tenantId`, `membershipId`, optional `courseId`, `title`, `description`, `type`
+- Body: `tenantId`, `membershipId`, optional `courseId`, optional `communityId`, `title`, `description`, `type`
 
 ## 5. Response Schema
 
@@ -45,13 +45,14 @@ Change Summary: Updated contract language for the Phase 1 modular monolith backe
 
 - Validation errors: invalid title, type, or course
 - Auth errors: unauthenticated
-- Authorization errors: unauthorized tenant or upload scope
-- Domain errors: course mismatch, invalid file registration references
+- Authorization errors: unauthorized tenant, community, or upload scope
+- Domain errors: course mismatch, invalid community membership, invalid file registration references
 - Retryable errors: media validation timeout
 
 ## 7. Side Effects
 
 - Tables written: `resources`, later `resource_files`, `user_activity`
+- Community side effect: when `communityId` is present, the created resource remains pending but is attached to that community for later published reads.
 - Events emitted: future moderation events
 - Async jobs triggered: optional moderation
 - Audit log entries: moderator and admin actions only

@@ -86,6 +86,8 @@ import type {
   RevokeChatTrustedDeviceResponse,
   ClearChatKeyBackupPinAttemptResponse,
   CommunitiesMyResponse,
+  CommunityDetailResponse,
+  CommunityMembersResponse,
   UpdateUsernameRequest,
   UpdateUsernameResponse,
   UserSearchResponse
@@ -443,7 +445,10 @@ export async function bootstrapViewerSession(payload: SessionBootstrapRequest) {
   });
 }
 
-export async function getCampusFeed(viewer: DevSession, options?: { authorUserId?: string; limit?: number }) {
+export async function getCampusFeed(
+  viewer: DevSession,
+  options?: { authorUserId?: string; communityId?: string; limit?: number }
+) {
   const params = new URLSearchParams({
     tenantId: viewer.tenantId,
     limit: String(options?.limit ?? 24)
@@ -451,6 +456,10 @@ export async function getCampusFeed(viewer: DevSession, options?: { authorUserId
 
   if (options?.authorUserId) {
     params.set("authorUserId", options.authorUserId);
+  }
+
+  if (options?.communityId) {
+    params.set("communityId", options.communityId);
   }
 
   return fetchBackendJson<FeedListResponse>(`/v1/feed?${params.toString()}`, viewer);
@@ -691,7 +700,10 @@ export async function getCampusCourses(viewer: DevSession, limit = 20) {
   return fetchBackendJson<ListCoursesResponse>(`/v1/courses?${params.toString()}`, viewer);
 }
 
-export async function getCampusResources(viewer: DevSession, options?: { courseId?: string | null; limit?: number }) {
+export async function getCampusResources(
+  viewer: DevSession,
+  options?: { courseId?: string | null; communityId?: string | null; limit?: number }
+) {
   const params = new URLSearchParams({
     tenantId: viewer.tenantId,
     limit: String(options?.limit ?? 20)
@@ -701,11 +713,34 @@ export async function getCampusResources(viewer: DevSession, options?: { courseI
     params.set("courseId", options.courseId);
   }
 
+  if (options?.communityId) {
+    params.set("communityId", options.communityId);
+  }
+
   return fetchBackendJson<ListResourcesResponse>(`/v1/resources?${params.toString()}`, viewer);
 }
 
 export async function getMyCampusCommunities(viewer: DevSession) {
   return fetchBackendJson<CommunitiesMyResponse>("/v1/communities/my", viewer);
+}
+
+export async function getCommunityDetail(viewer: DevSession, slug: string) {
+  return fetchBackendJson<CommunityDetailResponse>(`/v1/communities/${encodeURIComponent(slug)}`, viewer);
+}
+
+export async function getCommunityMembers(viewer: DevSession, slug: string, limit = 24, cursor?: string | null) {
+  const params = new URLSearchParams({
+    limit: String(limit)
+  });
+
+  if (cursor?.trim()) {
+    params.set("cursor", cursor.trim());
+  }
+
+  return fetchBackendJson<CommunityMembersResponse>(
+    `/v1/communities/${encodeURIComponent(slug)}/members?${params.toString()}`,
+    viewer
+  );
 }
 
 export async function getViewerActivity(viewer: DevSession, limit = 20) {

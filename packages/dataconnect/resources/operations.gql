@@ -28,6 +28,7 @@ query ListResourcesByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCE
     id
     tenantId
     courseId
+    communityId
     membershipId
     type
     title
@@ -50,6 +51,56 @@ query ListResourcesByCourse($courseId: UUID!, $limit: Int!) @auth(level: NO_ACCE
     id
     tenantId
     courseId
+    communityId
+    membershipId
+    type
+    title
+    description
+    status
+    createdAt
+  }
+}
+
+query ListResourcesByCommunity($tenantId: UUID!, $communityId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  resources(
+    where: {
+      tenantId: { eq: $tenantId }
+      communityId: { eq: $communityId }
+      status: { eq: "published" }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    courseId
+    communityId
+    membershipId
+    type
+    title
+    description
+    status
+    createdAt
+  }
+}
+
+query ListResourcesByCommunityCourse($tenantId: UUID!, $communityId: UUID!, $courseId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  resources(
+    where: {
+      tenantId: { eq: $tenantId }
+      communityId: { eq: $communityId }
+      courseId: { eq: $courseId }
+      status: { eq: "published" }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    courseId
+    communityId
     membershipId
     type
     title
@@ -64,6 +115,7 @@ query GetResourceDetail($resourceId: UUID!) @auth(level: NO_ACCESS) {
     id
     tenantId
     courseId
+    communityId
     membershipId
     type
     title
@@ -105,6 +157,7 @@ mutation CreateCourse(
 mutation CreateResource(
   $tenantId: UUID!
   $courseId: UUID
+  $communityId: UUID
   $membershipId: UUID!
   $type: String!
   $title: String!
@@ -114,6 +167,7 @@ mutation CreateResource(
     data: {
       tenantId: $tenantId
       courseId: $courseId
+      communityId: $communityId
       membershipId: $membershipId
       type: $type
       title: $title

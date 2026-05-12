@@ -21,12 +21,14 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const courseId = searchParams.get("courseId");
+  const communityId = searchParams.get("communityId");
   const limit = Number(searchParams.get("limit") ?? "20");
 
   try {
     return NextResponse.json(
       await getCampusResources(viewer, {
         courseId,
+        communityId,
         limit: Number.isInteger(limit) && limit > 0 ? limit : 20
       })
     );
@@ -34,6 +36,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       tenantId: viewer.tenantId,
       courseId,
+      communityId,
       items: [],
       nextCursor: null
     });
@@ -60,6 +63,7 @@ export async function POST(request: Request) {
         title?: string;
         description?: string;
         courseId?: string | null;
+        communityId?: string | null;
         type?: string;
         files?: Array<{
           storagePath?: string;
@@ -90,6 +94,7 @@ export async function POST(request: Request) {
         tenantId: viewer.tenantId,
         membershipId: viewer.membershipId,
         courseId: payload.courseId ?? null,
+        communityId: payload.communityId ?? null,
         title: payload.title ?? "",
         description: payload.description ?? "",
         type: payload.type ?? "notes",

@@ -10,6 +10,9 @@ type SocialEngagementViewer = {
   viewerUsername?: string;
   viewerUserId?: string | null;
 };
+type SocialEngagementOptions = {
+  communityId?: string | null;
+};
 
 type SocialRealtimeEvent =
   | { type: "social.connected"; tenantId?: string; payload?: never }
@@ -46,7 +49,8 @@ function isCommentItem(value: unknown): value is CommentItem {
 export function useSocialPostEngagement(
   initialPosts: FeedCard[],
   placementFilter: FeedCard["placement"] = "feed",
-  viewer: SocialEngagementViewer = {}
+  viewer: SocialEngagementViewer = {},
+  options: SocialEngagementOptions = {}
 ) {
   const [posts, setPosts] = useState(initialPosts);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
@@ -63,6 +67,7 @@ export function useSocialPostEngagement(
   const [threadDeletingCommentId, setThreadDeletingCommentId] = useState<string | null>(null);
   const [realtimeState, setRealtimeState] = useState<RealtimeState>("idle");
   const seenRealtimeCommentIdsRef = useRef<Set<string>>(new Set());
+  const communityIdFilter = options.communityId?.trim() || null;
 
   useEffect(() => {
     setPosts(initialPosts);
@@ -124,7 +129,7 @@ export function useSocialPostEngagement(
 
       if (event.type === "social.post.created") {
         const item = event.payload?.item;
-        if (!isFeedCard(item) || item.placement !== placementFilter) {
+        if (!isFeedCard(item) || item.placement !== placementFilter || (communityIdFilter && item.communityId !== communityIdFilter)) {
           return;
         }
 
@@ -134,7 +139,7 @@ export function useSocialPostEngagement(
 
       if (event.type === "social.post.updated") {
         const item = event.payload?.item;
-        if (!isFeedCard(item) || item.placement !== placementFilter) {
+        if (!isFeedCard(item) || item.placement !== placementFilter || (communityIdFilter && item.communityId !== communityIdFilter)) {
           return;
         }
 
@@ -399,7 +404,7 @@ export function useSocialPostEngagement(
       window.removeEventListener("offline", handleVisibilityOrNetworkChange);
       document.removeEventListener("visibilitychange", handleVisibilityOrNetworkChange);
     };
-  }, [placementFilter]);
+  }, [placementFilter, communityIdFilter]);
 
   const selectedPost = useMemo(
     () => posts.find((post) => post.id === selectedPostId) ?? null,

@@ -5,6 +5,8 @@ import {
   createResourceFile as createResourceFileMutation,
   getResourceDetail as getResourceDetailQuery,
   listCoursesByTenant,
+  listResourcesByCommunity,
+  listResourcesByCommunityCourse,
   listResourcesByCourse,
   listResourcesByTenant
 } from "../../../../../packages/dataconnect/resources-admin-sdk/esm/index.esm.js";
@@ -25,6 +27,47 @@ function parseLimit(value) {
     return null;
   }
   return parsed;
+}
+
+function normalizeOptionalString(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function getLiveCommunityMembership(live, communityId, tenantId) {
+  if (!requireNonEmptyString(communityId)) {
+    return null;
+  }
+
+  return (
+    live?.communities?.find(
+      (item) => item.community?.id === communityId && (!tenantId || item.community?.tenantId === tenantId)
+    ) ?? null
+  );
+}
+
+function mapResourceItem(item) {
+  return {
+    id: item.id,
+    tenantId: item.tenantId,
+    membershipId: item.membershipId,
+    courseId: item.courseId ?? null,
+    communityId: item.communityId ?? null,
+    title: item.title,
+    description: item.description ?? "",
+    type: item.type,
+    downloads: 0,
+    status: item.status,
+    createdAt: item.createdAt
+  };
 }
 
 export function getResourcesModuleHealth() {
@@ -85,11 +128,22 @@ export async function handleResourcesRoute({ request, response, url, context }) 
 
   if (request.method === "GET" && url.pathname === "/v1/resources") {
     const tenantId = url.searchParams.get("tenantId");
-    const courseId = url.searchParams.get("courseId");
+    const courseId = normalizeOptionalString(url.searchParams.get("courseId"));
+    const communityId = normalizeOptionalString(url.searchParams.get("communityId"));
     const limit = parseLimit(url.searchParams.get("limit"));
 
     if (!requireNonEmptyString(tenantId)) {
       sendError(response, 400, "INVALID_TENANT", "tenantId is required.");
+      return true;
+    }
+
+    if (courseId === false) {
+      sendError(response, 400, "INVALID_COURSE", "courseId must be a string.");
+      return true;
+    }
+
+    if (communityId === false) {
+      sendError(response, 400, "INVALID_COMMUNITY", "communityId must be a string.");
       return true;
     }
 
@@ -108,32 +162,66 @@ export async function handleResourcesRoute({ request, response, url, context }) 
       return true;
     }
 
+    if (communityId && !getLiveCommunityMembership(resolved.live, communityId, resolved.live.tenant.id)) {
+      sendError(response, 403, "FORBIDDEN_COMMUNITY", "You can only view resources from communities you belong to.");
+      return true;
+    }
+
     try {
-      const data = courseId
-        ? await listResourcesByCourse(getFirebaseDataConnect(resourcesConnectorConfig), {
-            courseId,
-            limit
-          })
-        : await listResourcesByTenant(getFirebaseDataConnect(resourcesConnectorConfig), {
+      const dataConnect = getFirebaseDataConnect(resourcesConnectorConfig);
+      let resources;
+
+      if (communityId) {
+        try {
+          const data = courseId
+            ? await listResourcesByCommunityCourse(dataConnect, {
+                tenantId: resolved.live.tenant.id,
+                communityId,
+                courseId,
+                limit
+              })
+            : await listResourcesByCommunity(dataConnect, {
+                tenantId: resolved.live.tenant.id,
+                communityId,
+                limit
+              });
+          resources = data.data.resources;
+        } catch (communityError) {
+          console.warn("[resources] community-list-fallback", {
             tenantId: resolved.live.tenant.id,
-            limit
+            courseId,
+            communityId,
+            message: communityError instanceof Error ? communityError.message : "unknown"
           });
+          const fallbackData = courseId
+            ? await listResourcesByCourse(dataConnect, {
+                courseId,
+                limit
+              })
+            : await listResourcesByTenant(dataConnect, {
+                tenantId: resolved.live.tenant.id,
+                limit
+              });
+          resources = fallbackData.data.resources.filter((item) => item.communityId === communityId);
+        }
+      } else {
+        const data = courseId
+          ? await listResourcesByCourse(dataConnect, {
+              courseId,
+              limit
+            })
+          : await listResourcesByTenant(dataConnect, {
+              tenantId: resolved.live.tenant.id,
+              limit
+            });
+        resources = data.data.resources;
+      }
 
       sendJson(response, 200, {
         tenantId: resolved.live.tenant.id,
         courseId,
-        items: data.data.resources.filter((item) => item.tenantId === resolved.live.tenant.id).map((item) => ({
-          id: item.id,
-          tenantId: item.tenantId,
-          membershipId: item.membershipId,
-          courseId: item.courseId ?? null,
-          title: item.title,
-          description: item.description ?? "",
-          type: item.type,
-          downloads: 0,
-          status: item.status,
-          createdAt: item.createdAt
-        })),
+        communityId,
+        items: resources.filter((item) => item.tenantId === resolved.live.tenant.id).map(mapResourceItem),
         nextCursor: null
       });
       return true;
@@ -141,6 +229,7 @@ export async function handleResourcesRoute({ request, response, url, context }) 
       console.error("[resources] list-failed", {
         tenantId: resolved.live.tenant.id,
         courseId,
+        communityId,
         message: error instanceof Error ? error.message : "unknown"
       });
       sendError(response, 502, "RESOURCES_UNAVAILABLE", "Resources are unavailable right now.");
@@ -170,12 +259,19 @@ export async function handleResourcesRoute({ request, response, url, context }) 
         return true;
       }
 
+      const resourceCommunityId = data.data.resource.communityId ?? null;
+      if (resourceCommunityId && !getLiveCommunityMembership(resolved.live, resourceCommunityId, resolved.live.tenant.id)) {
+        sendError(response, 404, "RESOURCE_NOT_FOUND", "Resource not found.");
+        return true;
+      }
+
       sendJson(response, 200, {
         item: {
           id: data.data.resource.id,
           tenantId: data.data.resource.tenantId,
           membershipId: data.data.resource.membershipId,
           courseId: data.data.resource.courseId ?? null,
+          communityId: data.data.resource.communityId ?? null,
           title: data.data.resource.title,
           description: data.data.resource.description ?? "",
           type: data.data.resource.type,
@@ -229,6 +325,13 @@ export async function handleResourcesRoute({ request, response, url, context }) 
       return true;
     }
 
+    const communityId = normalizeOptionalString(payload.communityId);
+
+    if (communityId === false) {
+      sendError(response, 400, "INVALID_COMMUNITY", "communityId must be a string.");
+      return true;
+    }
+
     const rawFiles = Array.isArray(payload.files) ? payload.files.slice(0, maxResourceFilesPerCreate) : [];
     const files = rawFiles
       .filter(
@@ -253,11 +356,17 @@ export async function handleResourcesRoute({ request, response, url, context }) 
       return true;
     }
 
+    if (communityId && !getLiveCommunityMembership(resolved.live, communityId, resolved.live.tenant.id)) {
+      sendError(response, 403, "FORBIDDEN_COMMUNITY", "You can only publish resources to communities you belong to.");
+      return true;
+    }
+
     try {
       const created = await createResourceMutation(getFirebaseDataConnect(resourcesConnectorConfig), {
         tenantId: resolved.live.tenant.id,
         membershipId: resolved.live.membership.id,
         courseId: requireNonEmptyString(payload.courseId) ? payload.courseId : null,
+        communityId,
         title: payload.title.trim(),
         description: requireNonEmptyString(payload.description) ? payload.description.trim() : null,
         type: payload.type ?? "notes"
@@ -285,6 +394,7 @@ export async function handleResourcesRoute({ request, response, url, context }) 
         entityId: created.data.resource_insert.id,
         metadata: {
           courseId: requireNonEmptyString(payload.courseId) ? payload.courseId : null,
+          communityId,
           type: payload.type ?? "notes",
           fileCount: files.length
         },
@@ -297,6 +407,7 @@ export async function handleResourcesRoute({ request, response, url, context }) 
           tenantId: resolved.live.tenant.id,
           membershipId: resolved.live.membership.id,
           courseId: requireNonEmptyString(payload.courseId) ? payload.courseId : null,
+          communityId,
           title: payload.title.trim(),
           description: requireNonEmptyString(payload.description) ? payload.description.trim() : "",
           type: payload.type ?? "notes",

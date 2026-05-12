@@ -51,9 +51,140 @@ const allowedSocialVideoMimeTypes = new Set(["video/mp4", "video/webm", "video/q
 const MAX_SOCIAL_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_SOCIAL_VIDEO_BYTES = 40 * 1024 * 1024;
 const MAX_VIBE_VIDEO_BYTES = 40 * 1024 * 1024;
+const SOCIAL_RATE_LIMIT_RULES = [
+  {
+    id: "post-create",
+    methods: new Set(["POST"]),
+    pattern: /^\/v1\/posts$/u,
+    max: 10,
+    windowMs: 60_000,
+    message: "Slow down before publishing another post."
+  },
+  {
+    id: "comment-write",
+    methods: new Set(["POST"]),
+    pattern: /^\/v1\/posts\/[^/]+\/comments$/u,
+    max: 20,
+    windowMs: 60_000,
+    message: "Slow down before adding more comments."
+  },
+  {
+    id: "reaction-write",
+    methods: new Set(["PUT"]),
+    pattern: /^\/v1\/(?:posts|comments)\/[^/]+\/reactions$/u,
+    max: 120,
+    windowMs: 60_000,
+    message: "Slow down before reacting again."
+  },
+  {
+    id: "repost-write",
+    methods: new Set(["POST"]),
+    pattern: /^\/v1\/posts\/[^/]+\/repost$/u,
+    max: 10,
+    windowMs: 60_000,
+    message: "Slow down before reposting again."
+  },
+  {
+    id: "thread-read",
+    methods: new Set(["GET"]),
+    pattern: /^\/v1\/posts\/[^/]+\/(?:comments|likes)$/u,
+    max: 180,
+    windowMs: 60_000,
+    message: "Slow down before refreshing this thread again."
+  },
+  {
+    id: "content-manage",
+    methods: new Set(["PATCH", "DELETE"]),
+    pattern: /^\/v1\/(?:posts|comments)\/[^/]+$/u,
+    max: 60,
+    windowMs: 60_000,
+    message: "Slow down before changing more content."
+  }
+];
+const socialRateLimitState = globalThis.__vybSocialRateLimitState ?? {
+  buckets: new Map(),
+  nextSweepAt: 0
+};
+globalThis.__vybSocialRateLimitState = socialRateLimitState;
 
 function requireNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function normalizeOptionalString(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function getSocialRateLimitRule(method, pathname) {
+  const normalizedMethod = typeof method === "string" ? method.toUpperCase() : "";
+  return SOCIAL_RATE_LIMIT_RULES.find((rule) => rule.methods.has(normalizedMethod) && rule.pattern.test(pathname)) ?? null;
+}
+
+function sweepSocialRateLimitBuckets(now) {
+  if (now < socialRateLimitState.nextSweepAt) {
+    return;
+  }
+
+  socialRateLimitState.nextSweepAt = now + 60_000;
+  for (const [key, bucket] of socialRateLimitState.buckets.entries()) {
+    if (bucket.resetAt <= now) {
+      socialRateLimitState.buckets.delete(key);
+    }
+  }
+}
+
+function enforceSocialRateLimit(response, { request, pathname, membershipId, userId, actorId }) {
+  const rule = getSocialRateLimitRule(request.method, pathname);
+  if (!rule) {
+    return true;
+  }
+
+  const now = Date.now();
+  sweepSocialRateLimitBuckets(now);
+  const subject = membershipId ?? userId ?? actorId ?? request.socket?.remoteAddress ?? "anonymous";
+  const key = `${rule.id}:${subject}`;
+  const existingBucket = socialRateLimitState.buckets.get(key);
+  const bucket =
+    existingBucket && existingBucket.resetAt > now
+      ? existingBucket
+      : {
+          count: 0,
+          resetAt: now + rule.windowMs
+        };
+
+  if (bucket.count >= rule.max) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+    sendError(
+      response,
+      429,
+      "RATE_LIMITED",
+      rule.message,
+      {
+        rule: rule.id,
+        retryAfterSeconds
+      },
+      {
+        "retry-after": String(retryAfterSeconds),
+        "x-ratelimit-limit": String(rule.max),
+        "x-ratelimit-remaining": "0",
+        "x-ratelimit-reset": String(Math.ceil(bucket.resetAt / 1000))
+      }
+    );
+    return false;
+  }
+
+  bucket.count += 1;
+  socialRateLimitState.buckets.set(key, bucket);
+  return true;
 }
 
 function normalizeMimeType(value) {
@@ -372,6 +503,45 @@ function isAdminRole(role) {
   return role === "admin";
 }
 
+function getLiveCommunityMembership(live, communityId, tenantId) {
+  if (!requireNonEmptyString(communityId)) {
+    return null;
+  }
+
+  return (
+    live?.communities?.find(
+      (item) => item.community?.id === communityId && (!tenantId || item.community?.tenantId === tenantId)
+    ) ?? null
+  );
+}
+
+function canAccessCommunityPost(live, post) {
+  const communityId = normalizeOptionalString(post?.communityId);
+  if (communityId === false || !communityId) {
+    return true;
+  }
+
+  return Boolean(getLiveCommunityMembership(live, communityId, post.tenantId));
+}
+
+function requireCommunityPostAccess(response, live, post, actionLabel) {
+  if (canAccessCommunityPost(live, post)) {
+    return true;
+  }
+
+  sendError(
+    response,
+    403,
+    "FORBIDDEN_COMMUNITY",
+    `You can only ${actionLabel} community posts from communities you belong to.`
+  );
+  return false;
+}
+
+function filterVisiblePostsForViewer(live, posts) {
+  return posts.filter((post) => canAccessCommunityPost(live, post));
+}
+
 function isSocialRoutePath(pathname) {
   return (
     pathname === "/v1/feed" ||
@@ -653,6 +823,17 @@ export async function handleSocialRoute({ request, response, url, context }) {
   const resolvedTenantId = resolved.live?.tenant?.id ?? null;
   const resolvedMembershipId = resolved.live?.membership?.id ?? null;
   const resolvedUserId = resolved.live?.user?.id ?? null;
+  if (
+    !enforceSocialRateLimit(response, {
+      request,
+      pathname: url.pathname,
+      membershipId: resolvedMembershipId,
+      userId: resolvedUserId,
+      actorId: context.actor?.id ?? null
+    })
+  ) {
+    return true;
+  }
 
   if (request.method === "GET" && url.pathname === "/v1/feed") {
     const tenantId = resolveTenantScope({
@@ -660,7 +841,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       resolvedTenantId,
       routeLabel: "feed"
     });
-    const communityId = url.searchParams.get("communityId");
+    const communityId = normalizeOptionalString(url.searchParams.get("communityId"));
     const authorUserId = url.searchParams.get("authorUserId");
     const limit = parseLimit(url.searchParams.get("limit"));
 
@@ -671,6 +852,16 @@ export async function handleSocialRoute({ request, response, url, context }) {
 
     if (limit === null) {
       sendError(response, 400, "INVALID_LIMIT", "limit must be an integer between 1 and 50.");
+      return true;
+    }
+
+    if (communityId === false) {
+      sendError(response, 400, "INVALID_COMMUNITY", "communityId must be a string.");
+      return true;
+    }
+
+    if (communityId && !getLiveCommunityMembership(resolved.live, communityId, tenantId)) {
+      sendError(response, 403, "FORBIDDEN_COMMUNITY", "You can only read feed posts from communities you belong to.");
       return true;
     }
 
@@ -800,6 +991,21 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
+    const communityId = normalizeOptionalString(payload.communityId);
+    if (communityId === false) {
+      sendError(response, 400, "INVALID_COMMUNITY", "communityId must be a string.");
+      return true;
+    }
+
+    if (communityId && !getLiveCommunityMembership(resolved.live, communityId, tenantId)) {
+      sendError(response, 403, "FORBIDDEN_COMMUNITY", "You can only post inside communities you belong to.");
+      return true;
+    }
+    if (communityId && payload.isAnonymous === true) {
+      sendError(response, 400, "ANONYMOUS_COMMUNITY_POST_DISABLED", "Community posts must use your verified campus identity.");
+      return true;
+    }
+
     if (!allowedPostKinds.has(payload.kind ?? "text")) {
       sendError(response, 400, "INVALID_KIND", "kind must be one of text, image, or video.");
       return true;
@@ -878,7 +1084,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
 
     const item = await createPost({
       tenantId,
-      communityId: payload.communityId ?? null,
+      communityId,
       userId: resolvedUserId,
       membershipId: resolvedMembershipId ?? payload.membershipId ?? context.actor.id,
       authorUsername: profile.username,
@@ -886,8 +1092,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
       authorEmail: profile.primaryEmail ?? null,
       placement: payload.placement === "vibe" ? "vibe" : "feed",
       kind: payload.kind ?? "text",
-      isAnonymous: payload.isAnonymous === true,
-      allowAnonymousComments: payload.allowAnonymousComments !== false,
+      isAnonymous: communityId ? false : payload.isAnonymous === true,
+      allowAnonymousComments: communityId ? false : payload.allowAnonymousComments !== false,
       mediaAssets: Array.isArray(payload.mediaAssets) ? payload.mediaAssets : null,
       mediaUrl: requireNonEmptyString(payload.mediaUrl) ? payload.mediaUrl.trim() : null,
       mediaStoragePath: requireNonEmptyString(payload.mediaStoragePath) ? payload.mediaStoragePath.trim() : null,
@@ -908,7 +1114,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
       entityId: item.id,
       metadata: {
         placement: item.placement,
-        kind: item.kind
+        kind: item.kind,
+        communityId: item.communityId ?? null
       }
     });
 
@@ -1173,7 +1380,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
         viewerUserId: resolvedUserId
       })
     ]);
-    const posts = [...feedPosts, ...vibePosts].sort(
+    const posts = filterVisiblePostsForViewer(resolved.live, [...feedPosts, ...vibePosts]).sort(
       (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
     );
 
@@ -1399,6 +1606,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
       return true;
     }
+    if (!requireCommunityPostAccess(response, resolved.live, post, "view reactions on")) {
+      return true;
+    }
 
     const limit = parseLimit(url.searchParams.get("limit"), 50);
     if (limit === null) {
@@ -1438,6 +1648,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
       return true;
     }
+    if (!requireCommunityPostAccess(response, resolved.live, post, "repost")) {
+      return true;
+    }
 
     const profile = await getProfileByUserId({
       tenantId: post.tenantId,
@@ -1457,6 +1670,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       authorName: profile.fullName,
       placement: payload.placement === "vibe" ? "vibe" : payload.placement === "feed" ? "feed" : post.placement,
       kind: post.kind,
+      allowAnonymousComments: post.communityId ? false : post.allowAnonymousComments !== false,
       mediaUrl: post.mediaUrl,
       location: post.location ?? profile.collegeName,
       title: requireNonEmptyString(payload.quote)
@@ -1499,6 +1713,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
     });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
+      return true;
+    }
+    if (!requireCommunityPostAccess(response, resolved.live, post, "delete")) {
       return true;
     }
 
@@ -1548,6 +1765,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
       return true;
     }
+    if (!requireCommunityPostAccess(response, resolved.live, post, "edit")) {
+      return true;
+    }
 
     if (post.authorUserId !== resolvedUserId) {
       sendError(response, 403, "FORBIDDEN", "Only the post author can edit this post.");
@@ -1562,8 +1782,11 @@ export async function handleSocialRoute({ request, response, url, context }) {
         : payload.location === null
           ? null
           : post.location;
-    const nextAllowAnonymousComments =
-      typeof payload.allowAnonymousComments === "boolean" ? payload.allowAnonymousComments : post.allowAnonymousComments !== false;
+    const nextAllowAnonymousComments = post.communityId
+      ? false
+      : typeof payload.allowAnonymousComments === "boolean"
+        ? payload.allowAnonymousComments
+        : post.allowAnonymousComments !== false;
 
     if (!requireNonEmptyString(nextBody) && !post.mediaUrl) {
       sendError(response, 400, "INVALID_BODY", "Add a caption or keep existing media before saving.");
@@ -1621,6 +1844,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
       return true;
     }
+    if (!requireCommunityPostAccess(response, resolved.live, post, "view comments on")) {
+      return true;
+    }
 
     const limit = parseLimit(url.searchParams.get("limit"), 50);
     if (limit === null) {
@@ -1660,6 +1886,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
     });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
+      return true;
+    }
+    if (!requireCommunityPostAccess(response, resolved.live, post, "comment on")) {
       return true;
     }
 
@@ -1778,6 +2007,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
       return true;
     }
+    if (!requireCommunityPostAccess(response, resolved.live, post, "delete comments on")) {
+      return true;
+    }
 
     const canDelete =
       comment.authorUserId === resolvedUserId ||
@@ -1856,6 +2088,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
       return true;
     }
+    if (!requireCommunityPostAccess(response, resolved.live, post, "edit comments on")) {
+      return true;
+    }
 
     const item = await updateComment(
       comment.id,
@@ -1904,6 +2139,17 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
+    const post = await findPostRecordById(comment.postId, {
+      tenantId: resolvedTenantId ?? null
+    });
+    if (!post) {
+      sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
+      return true;
+    }
+    if (!requireCommunityPostAccess(response, resolved.live, post, "react to comments on")) {
+      return true;
+    }
+
     const item = await upsertCommentReaction({
       commentId: comment.id,
       membershipId: resolvedMembershipId ?? context.actor.id,
@@ -1911,7 +2157,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
     });
 
     await logSocialActivity({
-      tenantId: resolvedTenantId,
+      tenantId: post.tenantId,
       membershipId: resolvedMembershipId ?? context.actor.id,
       activityType: "comment.reaction.updated",
       entityType: "comment",
@@ -1922,7 +2168,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
     });
 
     emitSocialRealtimeEvent({
-      tenantId: comment.tenantId ?? resolvedTenantId,
+      tenantId: post.tenantId,
       type: "social.comment.reaction.updated",
       payload: {
         postId: comment.postId,
@@ -1951,6 +2197,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
     });
     if (!post) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
+      return true;
+    }
+    if (!requireCommunityPostAccess(response, resolved.live, post, "react to")) {
       return true;
     }
 

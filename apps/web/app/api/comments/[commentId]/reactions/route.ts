@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { reactToComment } from "../../../../../src/lib/backend";
+import { isBackendRequestError, reactToComment } from "../../../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../../../src/lib/dev-session";
 
 export async function PUT(
@@ -30,6 +30,18 @@ export async function PUT(
   try {
     return NextResponse.json(await reactToComment(viewer, commentId));
   } catch (error) {
+    if (isBackendRequestError(error)) {
+      return NextResponse.json(
+        {
+          error: {
+            code: error.code,
+            message: error.message
+          }
+        },
+        { status: error.statusCode }
+      );
+    }
+
     return NextResponse.json(
       {
         error: {

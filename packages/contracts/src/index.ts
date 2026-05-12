@@ -1,5 +1,5 @@
 export type HealthStatus = "ok";
-export type CommunityType = "general" | "batch" | "branch" | "hostel" | "club";
+export type CommunityType = "general" | "batch" | "branch" | "section" | "hostel" | "club" | "personal" | "interest";
 export type ResourceType = "notes" | "pyq" | "guide";
 export type PostKind = "text" | "image" | "video";
 export type PublishStatus = "draft" | "pending" | "published" | "removed";
@@ -18,6 +18,13 @@ export interface CommunityLink {
   name: string;
   type: CommunityType;
   memberCount: number;
+  slug?: string;
+  visibility?: string;
+  membershipRole?: string;
+  joinedAt?: string;
+  isOfficial?: boolean;
+  isMember?: boolean;
+  latestActivityAt?: string | null;
 }
 
 export interface FeedPreviewCard {
@@ -174,7 +181,63 @@ export interface CommunitiesMyResponse {
     name: string;
     slug: string;
   };
+  viewer?: {
+    membershipId: string;
+    role: MembershipSummary["role"] | string;
+    verificationStatus: MembershipSummary["verificationStatus"] | string;
+  };
   communities: CommunityLink[];
+}
+
+export interface CommunityDetailResponse {
+  tenant: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+  community: CommunityLink & {
+    slug: string;
+    visibility: string;
+    isOfficial: boolean;
+    isMember: boolean;
+  };
+  viewer: {
+    isMember: boolean;
+    role: string | null;
+  };
+  summary: {
+    postCount: number | null;
+    resourceCount: number | null;
+    eventCount: number | null;
+    health: "normal" | "watch" | "restricted";
+  };
+}
+
+export interface CommunityMemberItem {
+  membershipId: string;
+  userId: string;
+  username: string | null;
+  displayName: string;
+  avatarUrl?: string | null;
+  role: string;
+  tenantRole: MembershipSummary["role"] | string | null;
+  verificationStatus: MembershipSummary["verificationStatus"] | string | null;
+  course?: string | null;
+  branch?: string | null;
+  batchYear?: number | null;
+  section?: string | null;
+  hostel?: string | null;
+  joinedAt: string;
+}
+
+export interface CommunityMembersResponse {
+  community: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+  items: CommunityMemberItem[];
+  nextCursor: string | null;
 }
 
 export interface FeedCard {
@@ -546,6 +609,7 @@ export interface ResourceItem {
   tenantId: string;
   membershipId: string;
   courseId: string | null;
+  communityId: string | null;
   title: string;
   description: string;
   type: ResourceType;
@@ -557,6 +621,7 @@ export interface ResourceItem {
 export interface ListResourcesResponse {
   tenantId: string;
   courseId: string | null;
+  communityId: string | null;
   items: ResourceItem[];
   nextCursor: string | null;
 }
@@ -565,6 +630,7 @@ export interface CreateResourceRequest {
   tenantId: string;
   membershipId: string;
   courseId?: string | null;
+  communityId?: string | null;
   title: string;
   description: string;
   type: ResourceType;
@@ -1473,6 +1539,7 @@ export interface CampusEventRegistration {
 export interface CampusEvent {
   id: string;
   tenantId: string;
+  communityId: string | null;
   host: CampusEventActorSummary;
   title: string;
   club: string;
@@ -1520,6 +1587,7 @@ export interface CampusEventsDashboardResponse {
 }
 
 export interface CreateCampusEventRequest {
+  communityId?: string | null;
   title: string;
   club: string;
   category: string;
@@ -1548,6 +1616,7 @@ export interface CreateCampusEventResponse {
 
 export interface UpdateCampusEventRequest {
   eventId: string;
+  communityId?: string | null;
   title: string;
   club: string;
   category: string;

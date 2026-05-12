@@ -9,7 +9,7 @@ import { getEventForViewer } from "../../../src/lib/events-data";
 export default async function EventHostPage({
   searchParams
 }: {
-  searchParams?: Promise<{ edit?: string | string[] | undefined }>;
+  searchParams?: Promise<{ edit?: string | string[] | undefined; communityId?: string | string[] | undefined }>;
 }) {
   const viewer = readDevSessionFromCookieStore(await cookies());
 
@@ -25,6 +25,7 @@ export default async function EventHostPage({
 
   const resolvedSearchParams = (await searchParams) ?? {};
   const editId = typeof resolvedSearchParams.edit === "string" ? resolvedSearchParams.edit.trim() : "";
+  const initialCommunityId = typeof resolvedSearchParams.communityId === "string" ? resolvedSearchParams.communityId.trim() || null : null;
   const initialEvent = editId ? await getEventForViewer(viewer, editId).catch(() => null) : null;
 
   if (editId && (!initialEvent || !initialEvent.isHostedByViewer)) {
@@ -38,6 +39,7 @@ export default async function EventHostPage({
       collegeName={getDisplayCollegeName(profile.collegeName)}
       role={viewer.role}
       initialEvent={initialEvent}
+      initialCommunityId={initialCommunityId}
     />
   );
 }

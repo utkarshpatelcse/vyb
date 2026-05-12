@@ -14,6 +14,7 @@ type Resource @table(name: "resources", singular: "resource", plural: "resources
   id: UUID! @default(expr: "uuidV4()")
   tenant: Tenant!
   course: Course
+  community: Community
   membership: TenantMembership!
   type: String! @default(value: "notes")
   title: String!
@@ -46,6 +47,7 @@ extend type Course {
 extend type Resource {
   tenantId: UUID!
   courseId: UUID
+  communityId: UUID
   membershipId: UUID!
 }
 
@@ -53,4 +55,3 @@ extend type ResourceFile {
   tenantId: UUID!
   resourceId: UUID!
 }
-

@@ -32,6 +32,7 @@ import type {
   UpsertCampusEventRegistrationResponse
 } from "@vyb/contracts";
 import type { DevSession } from "./dev-session";
+import { getMyCampusCommunities } from "./backend";
 import { deleteEventMediaAssets } from "./events-media-server";
 import type { EventViewerIdentity } from "./events-types";
 
@@ -40,6 +41,7 @@ type StoredRegistration = CampusEventRegistration;
 type StoredEvent = {
   id: string;
   tenantId: string;
+  communityId: string | null;
   host: CampusEventActorSummary;
   title: string;
   club: string;
@@ -90,8 +92,10 @@ const defaultStore: EventStore = {
 
 const EVENTS_STORE_CACHE_TTL_MS = 15_000;
 const EVENTS_DASHBOARD_CACHE_TTL_MS = 10_000;
+const EVENTS_COMMUNITY_ACCESS_CACHE_TTL_MS = 10_000;
 const eventStoreCache = new Map<string, EventStoreCacheEntry>();
 const eventDashboardCache = new Map<string, EventDashboardCacheEntry>();
+const eventCommunityAccessCache = new Map<string, { expiresAt: number; ids: string[] }>();
 
 const seedMediaByCategory: Record<string, string> = {
   Cultural: "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=1200&q=80&auto=format&fit=crop",
@@ -194,6 +198,7 @@ function normalizeStoredEvent(event: Partial<StoredEvent>): StoredEvent {
   return {
     id: normalizeText(event.id) || makeId("event"),
     tenantId: normalizeText(event.tenantId),
+    communityId: normalizeText(event.communityId ?? "", "") || null,
     host: {
       userId: normalizeText(event.host?.userId),
       username: normalizeText(event.host?.username),
@@ -338,6 +343,7 @@ function buildSeedEvents(tenantId: string): StoredEvent[] {
     {
       id: `event-${tenantId}-1`,
       tenantId,
+      communityId: null,
       host: {
         userId: "seed-culture",
         username: "culture.live",
@@ -377,6 +383,7 @@ function buildSeedEvents(tenantId: string): StoredEvent[] {
     {
       id: hackEventId,
       tenantId,
+      communityId: null,
       host: hackHost,
       title: "Hack Sprint Zero",
       club: "CodeCell",
@@ -430,6 +437,7 @@ function buildSeedEvents(tenantId: string): StoredEvent[] {
     {
       id: `event-${tenantId}-3`,
       tenantId,
+      communityId: null,
       host: {
         userId: "seed-ecell",
         username: "ecell.live",
@@ -479,6 +487,7 @@ function buildSeedEvents(tenantId: string): StoredEvent[] {
     {
       id: `event-${tenantId}-4`,
       tenantId,
+      communityId: null,
       host: {
         userId: "seed-sports",
         username: "fit.on.campus",
@@ -518,6 +527,7 @@ function buildSeedEvents(tenantId: string): StoredEvent[] {
     {
       id: `event-${tenantId}-5`,
       tenantId,
+      communityId: null,
       host: {
         userId: "seed-frame-house",
         username: "frame.house",
@@ -648,6 +658,7 @@ function toCampusEvent(event: StoredEvent, viewer?: Pick<DevSession, "userId">):
   return {
     id: event.id,
     tenantId: event.tenantId,
+    communityId: event.communityId,
     host: event.host,
     title: event.title,
     club: event.club,
@@ -773,6 +784,51 @@ function buildDashboardCacheKey(viewer: DevSession) {
   return `${viewer.tenantId}:${viewer.userId}`;
 }
 
+function buildCommunityAccessCacheKey(viewer: DevSession) {
+  return `${viewer.tenantId}:${viewer.userId}`;
+}
+
+async function getViewerEventCommunityIds(viewer: DevSession): Promise<Set<string>> {
+  const cacheKey = buildCommunityAccessCacheKey(viewer);
+  const cached = eventCommunityAccessCache.get(cacheKey);
+
+  if (cached && cached.expiresAt > Date.now()) {
+    return new Set<string>(cached.ids);
+  }
+
+  const response = await getMyCampusCommunities(viewer);
+  const ids = response.communities.filter((community) => community.isMember).map((community) => community.id);
+  eventCommunityAccessCache.set(cacheKey, {
+    expiresAt: Date.now() + EVENTS_COMMUNITY_ACCESS_CACHE_TTL_MS,
+    ids
+  });
+  return new Set<string>(ids);
+}
+
+async function getViewerEventCommunityIdsOrEmpty(viewer: DevSession): Promise<Set<string>> {
+  return getViewerEventCommunityIds(viewer).catch(() => new Set<string>());
+}
+
+async function requireCommunityEventMembership(viewer: DevSession, communityId: string | null | undefined) {
+  const normalizedCommunityId = normalizeText(communityId ?? "", "") || null;
+
+  if (!normalizedCommunityId) {
+    return null;
+  }
+
+  const communityIds = await getViewerEventCommunityIds(viewer).catch(() => null);
+
+  if (!communityIds?.has(normalizedCommunityId)) {
+    throw new Error("You can only attach events to communities you belong to.");
+  }
+
+  return normalizedCommunityId;
+}
+
+function canReadStoredEvent(event: StoredEvent, viewer: DevSession, communityIds: Set<string>) {
+  return !event.communityId || event.host.userId === viewer.userId || communityIds.has(event.communityId);
+}
+
 async function writeStoreRecord(tenantId: string, store: EventStore) {
   const eventsJson = JSON.stringify(serializeStore(store));
   const filePath = resolveLocalEventsStorePath(tenantId);
@@ -868,10 +924,11 @@ async function ensureTenantSeeded(tenantId: string) {
   return store;
 }
 
-function buildDashboard(store: EventStore, viewer: DevSession): CampusEventsDashboardResponse {
+function buildDashboard(store: EventStore, viewer: DevSession, communityIds: Set<string>): CampusEventsDashboardResponse {
   const tenantEvents = store.events
     .filter((event) => event.tenantId === viewer.tenantId)
     .filter((event) => event.status !== "deleted")
+    .filter((event) => canReadStoredEvent(event, viewer, communityIds))
     .filter((event) => event.status === "published" || event.status === "cancelled" || event.host.userId === viewer.userId);
   const publicEvents = tenantEvents
     .filter((event) => event.status === "published")
@@ -1116,7 +1173,7 @@ export async function getEventsDashboard(viewer: DevSession): Promise<CampusEven
   }
 
   const store = await ensureTenantSeeded(viewer.tenantId);
-  const dashboard = buildDashboard(store, viewer);
+  const dashboard = buildDashboard(store, viewer, await getViewerEventCommunityIdsOrEmpty(viewer));
   eventDashboardCache.set(cacheKey, {
     expiresAt: Date.now() + EVENTS_DASHBOARD_CACHE_TTL_MS,
     value: clone(dashboard)
@@ -1132,6 +1189,10 @@ export async function getEventForViewer(viewer: DevSession, eventId: string): Pr
     return null;
   }
 
+  if (!canReadStoredEvent(event, viewer, await getViewerEventCommunityIdsOrEmpty(viewer))) {
+    return null;
+  }
+
   if (event.status !== "published" && event.host.userId !== viewer.userId) {
     return null;
   }
@@ -1142,6 +1203,10 @@ export async function getEventForViewer(viewer: DevSession, eventId: string): Pr
 export async function getViewerCampusEventRegistration(viewer: DevSession, eventId: string) {
   const store = await ensureTenantSeeded(viewer.tenantId);
   const event = getStoredEventOrThrow(store, viewer, eventId);
+
+  if (!canReadStoredEvent(event, viewer, await getViewerEventCommunityIdsOrEmpty(viewer))) {
+    throw new Error("This event could not be found.");
+  }
 
   if (event.host.userId === viewer.userId) {
     throw new Error("Hosts do not have attendee registrations for their own event.");
@@ -1175,6 +1240,7 @@ export async function createCampusEvent(
   identity: EventViewerIdentity,
   payload: CreateCampusEventRequest
 ): Promise<CreateCampusEventResponse> {
+  const communityId = await requireCommunityEventMembership(viewer, payload.communityId);
   const eventId = makeId("event");
   const createdAt = new Date().toISOString();
   const { store } = await transactStore(viewer.tenantId, (store) => {
@@ -1182,6 +1248,7 @@ export async function createCampusEvent(
     store.events.unshift({
       id: eventId,
       tenantId: viewer.tenantId,
+      communityId,
       host: {
         userId: identity.userId,
         username: identity.username,
@@ -1215,12 +1282,14 @@ export async function createCampusEvent(
   });
 
   return {
-    dashboard: buildDashboard(store, viewer),
+    dashboard: buildDashboard(store, viewer, await getViewerEventCommunityIdsOrEmpty(viewer)),
     eventId
   };
 }
 
 export async function updateCampusEvent(viewer: DevSession, payload: UpdateCampusEventRequest): Promise<UpdateCampusEventResponse> {
+  const nextCommunityId =
+    payload.communityId === undefined ? undefined : await requireCommunityEventMembership(viewer, payload.communityId);
   let removable: CampusEventMediaAsset[] = [];
   const { store } = await transactStore(viewer.tenantId, (store) => {
     seedTenantStoreIfEmpty(store, viewer.tenantId);
@@ -1243,6 +1312,9 @@ export async function updateCampusEvent(viewer: DevSession, payload: UpdateCampu
     event.responseMode = payload.responseMode;
     event.registrationConfig = buildRegistrationConfig(payload);
     event.media = [...event.media.filter((media) => keepIds.has(media.id)), ...(payload.media ?? [])];
+    if (nextCommunityId !== undefined) {
+      event.communityId = nextCommunityId;
+    }
 
     return {
       result: event.id
@@ -1254,17 +1326,18 @@ export async function updateCampusEvent(viewer: DevSession, payload: UpdateCampu
   }
 
   return {
-    dashboard: buildDashboard(store, viewer),
+    dashboard: buildDashboard(store, viewer, await getViewerEventCommunityIdsOrEmpty(viewer)),
     eventId: payload.eventId
   };
 }
 
 export async function toggleCampusEventSave(viewer: DevSession, eventId: string): Promise<ToggleCampusEventSaveResponse> {
+  const communityIds = await getViewerEventCommunityIdsOrEmpty(viewer);
   const { store, result: isSaved } = await transactStore(viewer.tenantId, (store) => {
     seedTenantStoreIfEmpty(store, viewer.tenantId);
     const event = store.events.find((candidate) => candidate.id === eventId && candidate.tenantId === viewer.tenantId && candidate.status === "published");
 
-    if (!event) {
+    if (!event || !canReadStoredEvent(event, viewer, communityIds)) {
       throw new Error("Choose a valid event to save.");
     }
 
@@ -1277,18 +1350,19 @@ export async function toggleCampusEventSave(viewer: DevSession, eventId: string)
   });
 
   return {
-    dashboard: buildDashboard(store, viewer),
+    dashboard: buildDashboard(store, viewer, communityIds),
     eventId,
     isSaved
   };
 }
 
 export async function toggleCampusEventInterest(viewer: DevSession, eventId: string): Promise<ToggleCampusEventInterestResponse> {
+  const communityIds = await getViewerEventCommunityIdsOrEmpty(viewer);
   const { store, result: isInterested } = await transactStore(viewer.tenantId, (store) => {
     seedTenantStoreIfEmpty(store, viewer.tenantId);
     const event = store.events.find((candidate) => candidate.id === eventId && candidate.tenantId === viewer.tenantId && candidate.status === "published");
 
-    if (!event) {
+    if (!event || !canReadStoredEvent(event, viewer, communityIds)) {
       throw new Error("Choose a valid event before updating your RSVP.");
     }
 
@@ -1307,7 +1381,7 @@ export async function toggleCampusEventInterest(viewer: DevSession, eventId: str
   });
 
   return {
-    dashboard: buildDashboard(store, viewer),
+    dashboard: buildDashboard(store, viewer, communityIds),
     eventId,
     isInterested
   };
@@ -1318,6 +1392,7 @@ export async function upsertCampusEventRegistration(
   identity: EventViewerIdentity,
   payload: UpsertCampusEventRegistrationRequest
 ): Promise<UpsertCampusEventRegistrationResponse> {
+  const communityIds = await getViewerEventCommunityIdsOrEmpty(viewer);
   let removableAttachments: CampusEventMediaAsset[] = [];
   let updatedEvent: StoredEvent | null = null;
   let nextRegistration: StoredRegistration | null = null;
@@ -1326,6 +1401,10 @@ export async function upsertCampusEventRegistration(
   const { store } = await transactStore(viewer.tenantId, (store) => {
     seedTenantStoreIfEmpty(store, viewer.tenantId);
     const event = getStoredEventOrThrow(store, viewer, payload.eventId);
+
+    if (!canReadStoredEvent(event, viewer, communityIds)) {
+      throw new Error("This event could not be found.");
+    }
 
     if (event.host.userId === viewer.userId) {
       throw new Error("Hosts cannot register for their own event.");
@@ -1403,7 +1482,7 @@ export async function upsertCampusEventRegistration(
   }
 
   return {
-    dashboard: buildDashboard(store, viewer),
+    dashboard: buildDashboard(store, viewer, communityIds),
     event: toCampusEvent(updatedEvent, viewer),
     registration: toViewerRegistrationSummary(nextRegistration)!
   };
@@ -1434,6 +1513,7 @@ export async function manageCampusEventRegistration(
   registrationId: string,
   payload: ManageCampusEventRegistrationRequest
 ): Promise<ManageCampusEventRegistrationResponse> {
+  const communityIds = await getViewerEventCommunityIdsOrEmpty(viewer);
   let managedEvent: StoredEvent | null = null;
   let nextStatus: CampusEventRegistrationStatus | null = null;
   const { store } = await transactStore(viewer.tenantId, (store) => {
@@ -1477,7 +1557,7 @@ export async function manageCampusEventRegistration(
   );
 
   return {
-    dashboard: buildDashboard(store, viewer),
+    dashboard: buildDashboard(store, viewer, communityIds),
     event: toCampusEvent(finalizedEvent, viewer),
     registrations: sortedRegistrations,
     registrationId,
@@ -1503,6 +1583,7 @@ export async function exportCampusEventRegistrationsCsv(
 }
 
 async function manageEvent(viewer: DevSession, eventId: string, action: "cancelled" | "deleted"): Promise<ManageCampusEventResponse> {
+  const communityIds = await getViewerEventCommunityIdsOrEmpty(viewer);
   let removableMedia: CampusEventMediaAsset[] = [];
   const { store } = await transactStore(viewer.tenantId, (store) => {
     seedTenantStoreIfEmpty(store, viewer.tenantId);
@@ -1522,7 +1603,7 @@ async function manageEvent(viewer: DevSession, eventId: string, action: "cancell
   }
 
   return {
-    dashboard: buildDashboard(store, viewer),
+    dashboard: buildDashboard(store, viewer, communityIds),
     eventId,
     action
   };

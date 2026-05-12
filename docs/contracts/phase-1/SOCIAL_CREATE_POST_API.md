@@ -1,8 +1,8 @@
 # API Contract
 
 Owner: Architecture Team
-Last Updated: 2026-04-22
-Change Summary: Updated the create-post contract for the live campus-social flow with direct publish behavior, media payloads, vibe placement support, and companion edit/delete/repost writes.
+Last Updated: 2026-05-12
+Change Summary: Added explicit Community Connect posting and target-post authorization for `communityId` writes.
 
 ## 1. Metadata
 
@@ -25,7 +25,9 @@ Change Summary: Updated the create-post contract for the live campus-social flow
 
 - Auth mechanism: backend edge verified identity
 - Required roles: verified membership
-- Tenant checks: membership must be valid for target tenant/community
+- Tenant checks: membership must be valid for target tenant
+- Community checks: when `communityId` is present, the viewer must have an active `community_memberships` row for that community in the same tenant
+- Identity checks: when `communityId` is present, anonymous posting is rejected and anonymous comments are disabled on the created post
 - Rate limit policy: moderate with burst protection
 
 ## 4. Request Schema
@@ -34,6 +36,7 @@ Change Summary: Updated the create-post contract for the live campus-social flow
 - Path params: none
 - Query params: none
 - Body: `tenantId`, optional `communityId`, `membershipId`, `kind`, optional `placement`, optional `title`, `body`, optional `mediaUrl`, optional `location`
+- Community Connect note: `/messages/community/{slug}` posts send `communityId`, `placement: "feed"`, `kind: "text"`, and no anonymous flag in V1
 - Upload note: media is expected to be uploaded to Firebase Storage before this publish request is issued
 
 ## 5. Response Schema
@@ -46,7 +49,8 @@ Change Summary: Updated the create-post contract for the live campus-social flow
 
 - Validation errors: missing content, invalid kind, invalid media payload
 - Auth errors: unauthenticated
-- Authorization errors: invalid tenant/community scope
+- Authorization errors: invalid tenant/community scope, viewer is not a member of the target community
+- Throttle errors: `RATE_LIMITED` with `retry-after` when publish or companion-write bursts exceed policy
 - Domain errors: referenced community not found
 - Retryable errors: media registration or moderation handoff failure
 
@@ -65,7 +69,7 @@ Change Summary: Updated the create-post contract for the live campus-social flow
 
 ## 9. Observability
 
-- Logs: post create attempt, validation failure, publish status
+- Logs: post create attempt, validation failure, community authorization failure, publish status
 - Metrics: create success rate and vibe publish rate
 - Alerts: create failure spike
 
@@ -80,3 +84,4 @@ Change Summary: Updated the create-post contract for the live campus-social flow
 - `PATCH /v1/posts/{postId}` updates author-owned `title`, `body`, or `location`
 - `DELETE /v1/posts/{postId}` soft-deletes an author-owned post or vibe
 - `POST /v1/posts/{postId}/repost` creates a direct repost or quote repost in `feed` or `vibe` placement
+- Companion writes against an existing community-scoped post must verify the viewer still belongs to that post's community before applying author edits, deletes, reposts, comments, or reactions.

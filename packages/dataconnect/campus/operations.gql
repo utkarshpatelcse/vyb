@@ -92,6 +92,76 @@ query ListCommunitiesForMembership($membershipId: UUID!) @auth(level: NO_ACCESS)
   }
 }
 
+query ListCommunityMembers($communityId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  communityMemberships(
+    where: { communityId: { eq: $communityId }, deletedAt: { isNull: true } }
+    orderBy: [{ joinedAt: ASC }]
+    limit: $limit
+  ) {
+    id
+    membershipId
+    role
+    joinedAt
+    membership {
+      id
+      userId
+      role
+      verificationStatus
+      username
+      firstName
+      lastName
+      fullName
+      course
+      branch
+      batchYear
+      hostel
+      section
+      profileCompleted
+      user {
+        id
+        displayName
+        primaryEmail
+        avatarUrl
+      }
+    }
+  }
+}
+
+query ListCommunityMembersAfterJoinedAt($communityId: UUID!, $joinedAfter: Timestamp!, $limit: Int!) @auth(level: NO_ACCESS) {
+  communityMemberships(
+    where: { communityId: { eq: $communityId }, joinedAt: { gt: $joinedAfter }, deletedAt: { isNull: true } }
+    orderBy: [{ joinedAt: ASC }]
+    limit: $limit
+  ) {
+    id
+    membershipId
+    role
+    joinedAt
+    membership {
+      id
+      userId
+      role
+      verificationStatus
+      username
+      firstName
+      lastName
+      fullName
+      course
+      branch
+      batchYear
+      hostel
+      section
+      profileCompleted
+      user {
+        id
+        displayName
+        primaryEmail
+        avatarUrl
+      }
+    }
+  }
+}
+
 query GetTenantMembershipProfileByUserAndTenant($tenantId: UUID!, $userId: UUID!) @auth(level: NO_ACCESS) {
   tenantMemberships(
     where: {

@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { CampusMessagesShell } from "../../../src/components/campus-messages-shell";
-import { getChatConversation, getChatInbox, getViewerProfile } from "../../../src/lib/backend";
+import { getChatConversation, getChatInbox, getMyCampusCommunities, getViewerProfile } from "../../../src/lib/backend";
 import { getDisplayCollegeName } from "../../../src/lib/college-access";
 import { readDevSessionFromCookieStore } from "../../../src/lib/dev-session";
 
@@ -18,7 +18,7 @@ export default async function ConversationPage({
 
   const { conversationId } = await params;
 
-  const [profile, inboxResult, conversationResult] = await Promise.all([
+  const [profile, inboxResult, conversationResult, communitiesResult] = await Promise.all([
     getViewerProfile(viewer).catch(() => null),
     getChatInbox(viewer)
       .then((value) => ({ value, error: null }))
@@ -38,6 +38,12 @@ export default async function ConversationPage({
       .catch((error) => ({
         value: null,
         error: error instanceof Error ? error.message : "We could not open that chat right now."
+      })),
+    getMyCampusCommunities(viewer)
+      .then((value) => ({ value, error: null }))
+      .catch((error) => ({
+        value: { tenant: { id: viewer.tenantId, name: "", slug: "" }, communities: [] },
+        error: error instanceof Error ? error.message : "We could not load your campus communities right now."
       }))
   ]);
 
@@ -60,6 +66,8 @@ export default async function ConversationPage({
       collegeName={displayCollegeName}
       initialItems={inboxResult.value.items}
       loadError={inboxResult.error}
+      initialCommunities={communitiesResult.value.communities}
+      communityLoadError={communitiesResult.error}
       initialConversationId={conversationId}
       initialConversation={conversationResult.value?.conversation ?? null}
       activeConversationError={conversationResult.error}

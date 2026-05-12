@@ -359,6 +359,79 @@ export interface ListCommunitiesForMembershipVariables {
   membershipId: UUIDString;
 }
 
+export interface ListCommunityMembersAfterJoinedAtData {
+  communityMemberships: ({
+    id: UUIDString;
+    membershipId: UUIDString;
+    role: string;
+    joinedAt: TimestampString;
+    membership: {
+      id: UUIDString;
+      userId: UUIDString;
+      role: string;
+      verificationStatus: string;
+      username?: string | null;
+      firstName?: string | null;
+      lastName?: string | null;
+      fullName?: string | null;
+      course?: string | null;
+      branch?: string | null;
+      batchYear?: number | null;
+      hostel?: string | null;
+      section?: string | null;
+      profileCompleted: boolean;
+      user: {
+        id: UUIDString;
+        displayName?: string | null;
+        primaryEmail: string;
+        avatarUrl?: string | null;
+      } & User_Key;
+    } & TenantMembership_Key;
+  } & CommunityMembership_Key)[];
+}
+
+export interface ListCommunityMembersAfterJoinedAtVariables {
+  communityId: UUIDString;
+  joinedAfter: TimestampString;
+  limit: number;
+}
+
+export interface ListCommunityMembersData {
+  communityMemberships: ({
+    id: UUIDString;
+    membershipId: UUIDString;
+    role: string;
+    joinedAt: TimestampString;
+    membership: {
+      id: UUIDString;
+      userId: UUIDString;
+      role: string;
+      verificationStatus: string;
+      username?: string | null;
+      firstName?: string | null;
+      lastName?: string | null;
+      fullName?: string | null;
+      course?: string | null;
+      branch?: string | null;
+      batchYear?: number | null;
+      hostel?: string | null;
+      section?: string | null;
+      profileCompleted: boolean;
+      user: {
+        id: UUIDString;
+        displayName?: string | null;
+        primaryEmail: string;
+        avatarUrl?: string | null;
+      } & User_Key;
+    } & TenantMembership_Key;
+  } & CommunityMembership_Key)[];
+}
+
+export interface ListCommunityMembersVariables {
+  communityId: UUIDString;
+  limit: number;
+}
+
 export interface ListTenantMembershipProfilesByTenantData {
   tenantMemberships: ({
     id: UUIDString;
@@ -581,6 +654,16 @@ export function getCommunityBySlug(vars: GetCommunityBySlugVariables, options?: 
 export function listCommunitiesForMembership(dc: DataConnect, vars: ListCommunitiesForMembershipVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListCommunitiesForMembershipData>>;
 /** Generated Node Admin SDK operation action function for the 'ListCommunitiesForMembership' Query. Allow users to pass in custom DataConnect instances. */
 export function listCommunitiesForMembership(vars: ListCommunitiesForMembershipVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListCommunitiesForMembershipData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListCommunityMembers' Query. Allow users to execute without passing in DataConnect. */
+export function listCommunityMembers(dc: DataConnect, vars: ListCommunityMembersVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListCommunityMembersData>>;
+/** Generated Node Admin SDK operation action function for the 'ListCommunityMembers' Query. Allow users to pass in custom DataConnect instances. */
+export function listCommunityMembers(vars: ListCommunityMembersVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListCommunityMembersData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListCommunityMembersAfterJoinedAt' Query. Allow users to execute without passing in DataConnect. */
+export function listCommunityMembersAfterJoinedAt(dc: DataConnect, vars: ListCommunityMembersAfterJoinedAtVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListCommunityMembersAfterJoinedAtData>>;
+/** Generated Node Admin SDK operation action function for the 'ListCommunityMembersAfterJoinedAt' Query. Allow users to pass in custom DataConnect instances. */
+export function listCommunityMembersAfterJoinedAt(vars: ListCommunityMembersAfterJoinedAtVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListCommunityMembersAfterJoinedAtData>>;
 
 /** Generated Node Admin SDK operation action function for the 'GetTenantMembershipProfileByUserAndTenant' Query. Allow users to execute without passing in DataConnect. */
 export function getTenantMembershipProfileByUserAndTenant(dc: DataConnect, vars: GetTenantMembershipProfileByUserAndTenantVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetTenantMembershipProfileByUserAndTenantData>>;

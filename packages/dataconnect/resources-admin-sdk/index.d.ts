@@ -111,6 +111,7 @@ export interface CreateResourceFileVariables {
 export interface CreateResourceVariables {
   tenantId: UUIDString;
   courseId?: UUIDString | null;
+  communityId?: UUIDString | null;
   membershipId: UUIDString;
   type: string;
   title: string;
@@ -132,6 +133,7 @@ export interface GetResourceDetailData {
     id: UUIDString;
     tenantId: UUIDString;
     courseId?: UUIDString | null;
+    communityId?: UUIDString | null;
     membershipId: UUIDString;
     type: string;
     title: string;
@@ -172,11 +174,55 @@ export interface ListCoursesByTenantVariables {
   limit: number;
 }
 
+export interface ListResourcesByCommunityCourseData {
+  resources: ({
+    id: UUIDString;
+    tenantId: UUIDString;
+    courseId?: UUIDString | null;
+    communityId?: UUIDString | null;
+    membershipId: UUIDString;
+    type: string;
+    title: string;
+    description?: string | null;
+    status: string;
+    createdAt: TimestampString;
+  } & Resource_Key)[];
+}
+
+export interface ListResourcesByCommunityCourseVariables {
+  tenantId: UUIDString;
+  communityId: UUIDString;
+  courseId: UUIDString;
+  limit: number;
+}
+
+export interface ListResourcesByCommunityData {
+  resources: ({
+    id: UUIDString;
+    tenantId: UUIDString;
+    courseId?: UUIDString | null;
+    communityId?: UUIDString | null;
+    membershipId: UUIDString;
+    type: string;
+    title: string;
+    description?: string | null;
+    status: string;
+    createdAt: TimestampString;
+  } & Resource_Key)[];
+}
+
+export interface ListResourcesByCommunityVariables {
+  tenantId: UUIDString;
+  communityId: UUIDString;
+  limit: number;
+}
+
 export interface ListResourcesByCourseData {
   resources: ({
     id: UUIDString;
     tenantId: UUIDString;
     courseId?: UUIDString | null;
+    communityId?: UUIDString | null;
     membershipId: UUIDString;
     type: string;
     title: string;
@@ -196,6 +242,7 @@ export interface ListResourcesByTenantData {
     id: UUIDString;
     tenantId: UUIDString;
     courseId?: UUIDString | null;
+    communityId?: UUIDString | null;
     membershipId: UUIDString;
     type: string;
     title: string;
@@ -339,6 +386,16 @@ export function listResourcesByTenant(vars: ListResourcesByTenantVariables, opti
 export function listResourcesByCourse(dc: DataConnect, vars: ListResourcesByCourseVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListResourcesByCourseData>>;
 /** Generated Node Admin SDK operation action function for the 'ListResourcesByCourse' Query. Allow users to pass in custom DataConnect instances. */
 export function listResourcesByCourse(vars: ListResourcesByCourseVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListResourcesByCourseData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListResourcesByCommunity' Query. Allow users to execute without passing in DataConnect. */
+export function listResourcesByCommunity(dc: DataConnect, vars: ListResourcesByCommunityVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListResourcesByCommunityData>>;
+/** Generated Node Admin SDK operation action function for the 'ListResourcesByCommunity' Query. Allow users to pass in custom DataConnect instances. */
+export function listResourcesByCommunity(vars: ListResourcesByCommunityVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListResourcesByCommunityData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListResourcesByCommunityCourse' Query. Allow users to execute without passing in DataConnect. */
+export function listResourcesByCommunityCourse(dc: DataConnect, vars: ListResourcesByCommunityCourseVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListResourcesByCommunityCourseData>>;
+/** Generated Node Admin SDK operation action function for the 'ListResourcesByCommunityCourse' Query. Allow users to pass in custom DataConnect instances. */
+export function listResourcesByCommunityCourse(vars: ListResourcesByCommunityCourseVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListResourcesByCommunityCourseData>>;
 
 /** Generated Node Admin SDK operation action function for the 'GetResourceDetail' Query. Allow users to execute without passing in DataConnect. */
 export function getResourceDetail(dc: DataConnect, vars: GetResourceDetailVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetResourceDetailData>>;

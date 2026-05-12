@@ -1,8 +1,8 @@
 # Vyb High Level Design
 
 Owner: Architecture Team
-Last Updated: 2026-04-29
-Change Summary: Added the server-side Vibe video processing path with adaptive variants and durable media metadata.
+Last Updated: 2026-05-12
+Change Summary: Added the Community Connect V1 surface decision while preserving the Phase 1 modular monolith and private chat E2EE boundary.
 
 ## 1. Document Purpose
 
@@ -25,6 +25,7 @@ Vyb should become the digital HQ of campus life. The platform must balance:
 
 - verified authentication
 - college and community onboarding
+- Community Connect V1 with community as the primary Connect tab and private one-to-one E2EE chats as the secondary tab
 - admin-reviewed college join requests for unknown domains
 - Campus Square feed with text and image posts, immersive vibes, and responsive comment interactions
 - campus user IDs, profile search, follows, and time-limited stories with embedded-audio playback support
@@ -131,6 +132,7 @@ vyb/
 
 - `apps/web` is the Phase 1 shipping client using Next.js and PWA capabilities.
 - `apps/web` contains a public SSR landing at `/`, an authenticated home-feed landing at `/home`, and a separate profile/dashboard surface.
+- `apps/web` uses the existing `/messages` route family as the V1 Connect surface during compatibility rollout: Community is the default tab, while one-to-one E2EE chats continue to use the existing chat URLs.
 - `apps/mobile` is a future React Native / Expo client and must be considered in architecture decisions from the start.
 - `apps/backend` is the only Phase 1 backend deployable.
 - Shared logic should live in `packages/contracts`, `packages/validation`, and `packages/app-core`.
@@ -148,6 +150,7 @@ vyb/
 - server-rendered routes where useful
 - public marketing and auth entry routes plus an authenticated home-feed route after onboarding
 - direct upload UX for media and resources
+- community-first Connect surface with official circles, community detail, scoped feed, resources, members, and event previews
 - web-edge story-music proxying plus client-side ffmpeg.wasm composition for single-asset music stories
 - installable app shell with manifest and service worker
 - no privileged business logic
@@ -203,6 +206,7 @@ Owns:
 - college join requests and admin review decisions
 - memberships
 - communities such as batch, branch, hostel, club, and general
+- community visibility and membership authorization for Connect, feed, resources, and member list surfaces
 
 ### 8.3 Social Module
 
@@ -215,6 +219,8 @@ Owns:
 - public profile discovery by campus user ID
 - comments
 - reactions
+- community-scoped interaction authorization for comments, reactions, reposts, likers, and author mutations
+- backend burst limits for high-frequency community social actions
 - social ranking metadata
 
 ### 8.4 Resources Module
@@ -223,6 +229,7 @@ Owns:
 
 - academic resources
 - course mapping
+- optional community ownership for community-scoped vault records
 - file metadata
 - vault permissions
 
@@ -257,6 +264,8 @@ These remain module candidates first. They become separate services only through
 
 ```text
 Client -> Backend edge layer -> Target module -> Data Connect Admin SDK -> PostgreSQL
+Client -> Backend edge layer -> Campus module -> Community Connect reads -> Data Connect Admin SDK -> PostgreSQL
+Client -> Backend edge layer -> Social module -> community membership check -> post write -> Data Connect Admin SDK -> PostgreSQL
 Client -> Firebase Storage -> Backend media registration flow -> Moderation / worker logic
 Client -> apps/web /api/story-music -> Openverse audio catalog -> client-side ffmpeg.wasm composition -> Firebase Storage -> Backend story publish
 Client -> Backend edge layer -> Chat module -> Data Connect Admin SDK -> PostgreSQL
@@ -280,7 +289,8 @@ Unknown-domain user -> Backend edge layer -> Campus module -> college join reque
 | Tenant membership | Campus | Identity, Social, Resources, Moderation | Campus |
 | Communities | Campus | Social, Resources | Campus |
 | College join requests | Campus | Identity, Admin surfaces | Campus |
-| Posts | Social | Moderation, Analytics | Social |
+| Community Connect reads | Campus | Social, Resources, Chat | Campus |
+| Posts | Social | Moderation, Analytics | Social, with Campus membership context for community scope |
 | Comments | Social | Moderation | Social |
 | Reactions | Social | Analytics | Social |
 | Direct chats | Chat | Identity, Market | Chat |
@@ -365,6 +375,7 @@ Recommended when relevant:
 - `reactions (post_id)`
 - `resources (tenant_id, created_at desc)`
 - `resources (course_id, created_at desc)`
+- `resources (community_id, created_at desc)`
 - `tenant_memberships (tenant_id, user_id)`
 - `college_join_requests (status, created_at desc)`
 - `college_join_requests (normalized_primary_domain)`
@@ -414,6 +425,7 @@ tenants/{tenantId}/users/{userId}/resources/{resourceId}/{fileName}
 - In Phase 1 the WebSocket hubs are in-process because the backend is one Cloud Run service. If horizontal scale requires multiple live instances, the hub must move behind Redis Pub/Sub, managed Pub/Sub, or an equivalent documented fanout layer before relying on cross-instance delivery.
 - The backend stores encrypted message payloads and encrypted attachment references only; decryption happens in approved clients through the Web Crypto API.
 - Phase 1 E2EE is scoped to one-to-one chats and starts with one active browser-held device key per account until secure multi-device key sync is designed and approved.
+- Community V1 content is not end-to-end encrypted and is not stored in chat-owned tables. Community moderation, reports, and emergency controls require reviewable content and campus-owned permission checks.
 
 ## 14. Observability
 
@@ -477,3 +489,5 @@ Wallet is intentionally excluded from Phase 1. When introduced later:
 - whether search is deferred fully or basic metadata search is introduced in Phase 1
 - whether faculty and alumni onboarding use the same verification workflow
 - whether approved college join requests auto-seed a default community template or require admin template choice
+- when to rename the user-facing navigation label from Chats to Connect across all app surfaces
+- what exact official community template each onboarded college should receive at tenant bootstrap
