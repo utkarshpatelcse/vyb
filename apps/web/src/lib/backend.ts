@@ -243,6 +243,10 @@ async function requestBackendResponse(
       }
 
       lastConnectionError = error;
+      if (error instanceof Error && error.name === "AbortError") {
+        break;
+      }
+
       if (attempt < maxAttempts - 1) {
         await delay(250 * (attempt + 1));
       }
