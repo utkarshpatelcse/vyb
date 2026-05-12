@@ -247,7 +247,7 @@ function CampusNavigationLink({
 }
 
 export function buildPrimaryCampusNav(
-  activeSection: CampusSection,
+  activeSection: CampusSection | null,
   options?: { unreadCount?: number; profileHref?: string }
 ): CampusNavItem[] {
   const profileHref = options?.profileHref ?? "/dashboard";

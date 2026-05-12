@@ -51,6 +51,7 @@ apps/backend/src/data/social-store.json
 apps/backend/data/*.bak
 apps/backend/data/*.tmp
 data/events-store.json
+data/notifications-store.json
 data/connect-levels.json
 data/queens-levels.json
 scripts/generate-connect-levels.mjs

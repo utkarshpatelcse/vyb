@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { readDevSessionFromCookieStore } from "../lib/dev-session";
 import { ChatPresenceHeartbeat } from "./chat-presence-heartbeat";
+import { NotificationLiveModeHeartbeat } from "./notification-live-mode-heartbeat";
 
 export async function AuthenticatedChatPresenceHeartbeat() {
   const viewer = readDevSessionFromCookieStore(await cookies());
@@ -9,5 +10,10 @@ export async function AuthenticatedChatPresenceHeartbeat() {
     return null;
   }
 
-  return <ChatPresenceHeartbeat />;
+  return (
+    <>
+      <ChatPresenceHeartbeat />
+      <NotificationLiveModeHeartbeat />
+    </>
+  );
 }

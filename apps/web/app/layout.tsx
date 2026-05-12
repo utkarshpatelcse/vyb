@@ -6,6 +6,7 @@ import { AppMaintenanceGate } from "../src/components/app-maintenance-gate";
 import { AppNavigationStateProvider } from "../src/components/app-navigation-state-provider";
 import { AuthenticatedChatPresenceHeartbeat } from "../src/components/authenticated-chat-presence-heartbeat";
 import { BackgroundPublishManager } from "../src/components/background-publish-manager";
+import { NotificationDeviceRegistrar } from "../src/components/notification-device-registrar";
 import { ServiceWorkerRegister } from "../src/components/service-worker-register";
 
 const themeBootScript = `
@@ -48,6 +49,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
       </head>
       <body>
         <ServiceWorkerRegister />
+        <NotificationDeviceRegistrar />
         <AuthenticatedChatPresenceHeartbeat />
         <BackgroundPublishManager />
         <Suspense fallback={null}>

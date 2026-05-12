@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createChatDevicePairing, getChatDevicePairingByCode, isBackendRequestError } from "../../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../../src/lib/dev-session";
+import { notifyChatSecurityEvent } from "../../../../src/lib/notification-events";
 
 function buildError(status: number, code: string, message: string) {
   return NextResponse.json({ error: { code, message } }, { status });
@@ -20,7 +21,19 @@ export async function POST(request: Request) {
   }
 
   try {
-    return NextResponse.json(await createChatDevicePairing(viewer, payload), { status: 201 });
+    const result = await createChatDevicePairing(viewer, payload);
+    await notifyChatSecurityEvent(viewer, {
+      eventKey: "chat.security.device_pairing_requested",
+      entityId: result.pairing.id,
+      title: "Device pairing started",
+      body: "A new browser requested access to secure chat."
+    }).catch((notificationError) => {
+      console.warn("[notifications] chat.security.device_pairing_requested failed", {
+        pairingId: result.pairing.id,
+        message: notificationError instanceof Error ? notificationError.message : "unknown"
+      });
+    });
+    return NextResponse.json(result, { status: 201 });
   } catch (error) {
     if (isBackendRequestError(error)) {
       return buildError(error.statusCode, error.code, error.message);

@@ -47,6 +47,7 @@ type CampusEventsShellProps = {
     leaderboard: QueensLeaderboardEntry[];
   } | null;
   initialTab?: "games" | "events";
+  initialEventId?: string | null;
 };
 
 type ResizeSide = "left" | "right";
@@ -436,7 +437,8 @@ export function CampusEventsShell({
   initialDashboard,
   connectSummary,
   queensSummary,
-  initialTab = "events"
+  initialTab = "events",
+  initialEventId = null
 }: CampusEventsShellProps) {
   const [dashboard, setDashboard] = useState(initialDashboard ?? buildEmptyDashboard(viewerUsername));
   const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH);
@@ -445,7 +447,7 @@ export function CampusEventsShell({
   const [searchValue, setSearchValue] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
   const [activeScope, setActiveScope] = useState<CampusEventScope>("for-you");
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(initialEventId);
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);

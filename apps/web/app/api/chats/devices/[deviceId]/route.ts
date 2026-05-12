@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { isBackendRequestError, revokeChatTrustedDevice } from "../../../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../../../src/lib/dev-session";
+import { notifyChatSecurityEvent } from "../../../../../src/lib/notification-events";
 
 function buildError(status: number, code: string, message: string) {
   return NextResponse.json({ error: { code, message } }, { status });
@@ -27,7 +28,19 @@ export async function DELETE(
   }
 
   try {
-    return NextResponse.json(await revokeChatTrustedDevice(viewer, deviceId));
+    const result = await revokeChatTrustedDevice(viewer, deviceId);
+    await notifyChatSecurityEvent(viewer, {
+      eventKey: "chat.security.trusted_device_revoked",
+      entityId: deviceId,
+      title: "Trusted chat device removed",
+      body: "A trusted device was removed from secure chat."
+    }).catch((notificationError) => {
+      console.warn("[notifications] chat.security.trusted_device_revoked failed", {
+        deviceId,
+        message: notificationError instanceof Error ? notificationError.message : "unknown"
+      });
+    });
+    return NextResponse.json(result);
   } catch (error) {
     if (isBackendRequestError(error)) {
       return buildError(error.statusCode, error.code, error.message);

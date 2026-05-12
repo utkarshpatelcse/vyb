@@ -2028,9 +2028,9 @@ export function CampusHomeShell({
             <Link href="/search" className="vyb-campus-top-icon vyb-campus-top-link" aria-label="Search campus users">
               <SearchIcon />
             </Link>
-            <button type="button" className="vyb-campus-top-icon" aria-label="Notifications">
+            <Link href="/notifications" className="vyb-campus-top-icon vyb-campus-top-link" aria-label="Open notifications">
               <BellIcon />
-            </button>
+            </Link>
             <button
               type="button"
               className="vyb-campus-post-trigger"
@@ -2071,6 +2071,9 @@ export function CampusHomeShell({
             ) : null}
             <Link href="/search" className="vyb-campus-top-icon vyb-campus-top-link" aria-label="Search campus users">
               <SearchIcon />
+            </Link>
+            <Link href="/notifications" className="vyb-campus-top-icon vyb-campus-top-link" aria-label="Open notifications">
+              <BellIcon />
             </Link>
             <button type="button" className="vyb-campus-post-trigger vyb-campus-post-trigger-mobile" onClick={() => navigateWithOrigin(createPostHref)}>
               <AddPostIcon />

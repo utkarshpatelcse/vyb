@@ -4,13 +4,24 @@ import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 
 const HEARTBEAT_INTERVAL_MS = 45 * 1000;
-const PRESENCE_DISABLED_PATHS = new Set(["/", "/login"]);
+
+function isChatPath(pathname: string | null) {
+  return pathname === "/messages" || Boolean(pathname?.startsWith("/messages/"));
+}
+
+function getActivePath() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return `${window.location.pathname}${window.location.search}`;
+}
 
 export function ChatPresenceHeartbeat() {
   const pathname = usePathname();
 
   useEffect(() => {
-    if (pathname && PRESENCE_DISABLED_PATHS.has(pathname)) {
+    if (!isChatPath(pathname)) {
       return;
     }
 
@@ -39,7 +50,7 @@ export function ChatPresenceHeartbeat() {
         const response = await fetch("/api/chats/presence/heartbeat", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({}),
+          body: JSON.stringify({ path: getActivePath() }),
           cache: "no-store",
           credentials: "same-origin",
           keepalive: true

@@ -1153,6 +1153,23 @@ export async function getViewerCampusEventRegistration(viewer: DevSession, event
   };
 }
 
+export async function getCampusEventNotificationAudience(viewer: DevSession, eventId: string) {
+  const store = await ensureTenantSeeded(viewer.tenantId);
+  const event = getStoredEventOrThrow(store, viewer, eventId);
+  const audienceUserIds = [
+    ...new Set([
+      ...event.savedByUserIds,
+      ...event.interestedUserIds,
+      ...event.registrations.map((registration) => registration.attendee.userId)
+    ])
+  ].filter((userId) => userId && userId !== event.host.userId);
+
+  return {
+    event: toCampusEvent(event, viewer),
+    audienceUserIds
+  };
+}
+
 export async function createCampusEvent(
   viewer: DevSession,
   identity: EventViewerIdentity,

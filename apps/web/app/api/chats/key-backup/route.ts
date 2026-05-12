@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getChatKeyBackup, isBackendRequestError, upsertChatKeyBackup } from "../../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../../src/lib/dev-session";
+import { notifyChatSecurityEvent } from "../../../../src/lib/notification-events";
 
 function buildError(status: number, code: string, message: string) {
   return NextResponse.json({ error: { code, message } }, { status });
@@ -42,7 +43,18 @@ export async function PUT(request: Request) {
   }
 
   try {
-    return NextResponse.json(await upsertChatKeyBackup(viewer, payload));
+    const result = await upsertChatKeyBackup(viewer, payload);
+    await notifyChatSecurityEvent(viewer, {
+      eventKey: "chat.security.backup_updated",
+      entityId: `backup:${viewer.userId}`,
+      title: "Chat backup updated",
+      body: "Your encrypted chat recovery backup was updated."
+    }).catch((notificationError) => {
+      console.warn("[notifications] chat.security.backup_updated failed", {
+        message: notificationError instanceof Error ? notificationError.message : "unknown"
+      });
+    });
+    return NextResponse.json(result);
   } catch (error) {
     if (isBackendRequestError(error)) {
       return buildError(error.statusCode, error.code, error.message);

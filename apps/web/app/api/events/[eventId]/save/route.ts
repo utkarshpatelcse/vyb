@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { readDevSessionFromCookieStore } from "../../../../../src/lib/dev-session";
 import { toggleCampusEventSave } from "../../../../../src/lib/events-data";
+import { scheduleEventLiveNowNotification } from "../../../../../src/lib/notification-events";
 
 function buildError(status: number, code: string, message: string) {
   return NextResponse.json({ error: { code, message } }, { status });
@@ -17,7 +18,17 @@ export async function POST(_: Request, context: { params: Promise<{ eventId: str
   const { eventId } = await context.params;
 
   try {
-    return NextResponse.json(await toggleCampusEventSave(viewer, eventId));
+    const result = await toggleCampusEventSave(viewer, eventId);
+    const event = result.dashboard.events.find((candidate) => candidate.id === eventId);
+    if (result.isSaved && event) {
+      await scheduleEventLiveNowNotification(viewer, event).catch((notificationError) => {
+        console.warn("[notifications] event.live_now schedule failed", {
+          eventId,
+          message: notificationError instanceof Error ? notificationError.message : "unknown"
+        });
+      });
+    }
+    return NextResponse.json(result);
   } catch (error) {
     return buildError(400, "EVENT_SAVE_FAILED", error instanceof Error ? error.message : "We could not update your saved events.");
   }

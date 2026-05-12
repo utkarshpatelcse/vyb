@@ -6,6 +6,7 @@ import {
   registerChatTrustedDevice
 } from "../../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../../src/lib/dev-session";
+import { notifyChatSecurityEvent } from "../../../../src/lib/notification-events";
 
 function buildError(status: number, code: string, message: string) {
   return NextResponse.json({ error: { code, message } }, { status });
@@ -48,7 +49,19 @@ export async function PUT(request: Request) {
   }
 
   try {
-    return NextResponse.json(await registerChatTrustedDevice(viewer, payload));
+    const result = await registerChatTrustedDevice(viewer, payload);
+    await notifyChatSecurityEvent(viewer, {
+      eventKey: "chat.security.trusted_device_added",
+      entityId: result.item.id,
+      title: "Trusted chat device added",
+      body: `${result.item.label || "A device"} can now unlock secure chat.`
+    }).catch((notificationError) => {
+      console.warn("[notifications] chat.security.trusted_device_added failed", {
+        deviceId: result.item.id,
+        message: notificationError instanceof Error ? notificationError.message : "unknown"
+      });
+    });
+    return NextResponse.json(result);
   } catch (error) {
     if (isBackendRequestError(error)) {
       return buildError(error.statusCode, error.code, error.message);

@@ -22,6 +22,7 @@ import {
   exportCampusEventRegistrationsCsv as exportCampusEventRegistrationsCsvFallback,
   getCampusEventRegistrations as getCampusEventRegistrationsFallback,
   getCampusEventRegistrationsFiltered as getCampusEventRegistrationsFilteredFallback,
+  getCampusEventNotificationAudience as getCampusEventNotificationAudienceFallback,
   getEventForViewer as getEventForViewerFallback,
   getEventsDashboard as getEventsDashboardFallback,
   getViewerCampusEventRegistration as getViewerCampusEventRegistrationFallback,
@@ -44,6 +45,10 @@ export async function getEventForViewer(viewer: DevSession, eventId: string) {
 
 export async function getViewerCampusEventRegistration(viewer: DevSession, eventId: string): Promise<CampusEventViewerRegistrationResponse> {
   return getViewerCampusEventRegistrationFallback(viewer, eventId);
+}
+
+export async function getCampusEventNotificationAudience(viewer: DevSession, eventId: string) {
+  return getCampusEventNotificationAudienceFallback(viewer, eventId);
 }
 
 export async function createCampusEvent(

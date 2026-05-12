@@ -1,4 +1,4 @@
-const CACHE_NAME = "vyb-shell-v5";
+const CACHE_NAME = "vyb-shell-v6";
 const STATIC_PATHS = [
   "/manifest.webmanifest",
   "/icons/icon.png",
@@ -129,5 +129,50 @@ self.addEventListener("fetch", (event) => {
         const cache = await caches.open(CACHE_NAME);
         return cache.match(event.request) || Response.error();
       })
+  );
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    payload = {};
+  }
+
+  const title = typeof payload.title === "string" && payload.title.trim() ? payload.title : "Vyb update";
+  const body = typeof payload.body === "string" ? payload.body : "Open Vyb to check the latest update.";
+  const href = typeof payload.href === "string" && payload.href.startsWith("/") ? payload.href : "/home";
+
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      tag: typeof payload.collapseKey === "string" ? payload.collapseKey : undefined,
+      data: {
+        href
+      },
+      icon: "/icons/icon.png",
+      badge: "/icons/maskable-icon.png"
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const href = event.notification.data?.href || "/home";
+  const targetUrl = new URL(href, self.location.origin).href;
+
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ("focus" in client) {
+          client.navigate(targetUrl);
+          return client.focus();
+        }
+      }
+
+      return self.clients.openWindow(targetUrl);
+    })
   );
 });

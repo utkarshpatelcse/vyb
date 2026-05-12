@@ -1322,6 +1322,15 @@ export function ScribbleMultiplayerGame({
         messageKind
       });
 
+      if (activeShareMode === "invite") {
+        sendSocketMessage({
+          type: "scribble.room.inviteTarget",
+          payload: {
+            userId: target.userId
+          }
+        });
+      }
+
       setShareMode(null);
       setShareQuery("");
       setNotice(activeShareMode === "invite" ? `Invite sent to ${target.displayName}.` : `Results sent to ${target.displayName}.`);

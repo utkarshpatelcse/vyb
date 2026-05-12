@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { sendChatMessage } from "../../../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../../../src/lib/dev-session";
+import { notifyChatMessageCreated } from "../../../../../src/lib/notification-events";
 
 function buildError(status: number, code: string, message: string) {
   return NextResponse.json({ error: { code, message } }, { status });
@@ -57,6 +58,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ con
 
   try {
     const result = await sendChatMessage(viewer, conversationId, payload);
+    await notifyChatMessageCreated(viewer, conversationId, result).catch((notificationError) => {
+      console.warn("[notifications] chat.message.created failed", {
+        conversationId,
+        messageId: result.item?.id ?? null,
+        message: notificationError instanceof Error ? notificationError.message : "unknown"
+      });
+    });
     console.info("[chat-send-debug]", {
       stage: "next-api.send.success",
       at: new Date().toISOString(),

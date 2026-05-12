@@ -601,6 +601,117 @@ export interface ActivityListResponse {
   items: ActivityItem[];
 }
 
+export type NotificationRecipientScope =
+  | "user"
+  | "tenant_user"
+  | "content_owner"
+  | "content_participants"
+  | "conversation"
+  | "event_host"
+  | "event_audience"
+  | "market_watchers"
+  | "course_audience"
+  | "role_audience"
+  | "tenant_broadcast"
+  | "platform_broadcast"
+  | "device_security"
+  | "local_only";
+
+export type NotificationChannel = "in_app" | "push" | "email" | "local_toast";
+export type NotificationPriorityScore = 1 | 3 | 5 | 7 | 10;
+export type NotificationStateFilter = "all" | "unread" | "read" | "archived";
+
+export interface NotificationActor {
+  user_id: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+}
+
+export interface NotificationEntity {
+  type: string;
+  id: string;
+  parent_type: string | null;
+  parent_id: string | null;
+}
+
+export interface NotificationDeliveryPolicy {
+  collapse_key: string;
+  dedupe_key: string;
+  ttl_seconds: number;
+  respect_quiet_mode: boolean;
+  silent: boolean;
+}
+
+export interface NotificationCopy {
+  title: string;
+  body: string;
+  cta_label: string;
+  href: string;
+}
+
+export interface NotificationPrivacy {
+  contains_plaintext: boolean;
+  push_body_safe: boolean;
+}
+
+export interface NotificationReadState {
+  read_at: string | null;
+  seen_at: string | null;
+  archived_at: string | null;
+}
+
+export interface NotificationRecord {
+  id: string;
+  event_key: string;
+  tenant_id: string;
+  recipient_scope: NotificationRecipientScope;
+  recipient_user_ids: string[];
+  actor: NotificationActor;
+  entity: NotificationEntity;
+  priority_score: NotificationPriorityScore;
+  channels: NotificationChannel[];
+  delivery_policy: NotificationDeliveryPolicy;
+  copy: NotificationCopy;
+  privacy: NotificationPrivacy;
+  state: NotificationReadState;
+  category: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface ListNotificationsResponse {
+  tenantId: string;
+  items: NotificationRecord[];
+  unreadCount: number;
+  nextCursor: string | null;
+}
+
+export interface RegisterNotificationDeviceRequest {
+  deviceId: string;
+  platform: "web" | "ios" | "android" | "desktop" | "unknown";
+  endpoint?: string | null;
+  pushSubscription?: Record<string, unknown> | null;
+}
+
+export interface RegisterNotificationDeviceResponse {
+  deviceId: string;
+  registered: boolean;
+  updatedAt: string;
+}
+
+export interface MarkNotificationReadResponse {
+  item: NotificationRecord;
+}
+
+export interface MarkAllNotificationsReadRequest {
+  category?: string | null;
+}
+
+export interface MarkAllNotificationsReadResponse {
+  updatedCount: number;
+  readAt: string;
+}
+
 export type ChatConversationKind = "direct";
 export type ChatMessageKind =
   | "text"

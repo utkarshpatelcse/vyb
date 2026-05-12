@@ -121,6 +121,55 @@ function createCsrfToken() {
   return randomBytes(32).toString("base64url");
 }
 
+function readCsvEnv(...names: string[]) {
+  return names
+    .flatMap((name) => process.env[name]?.split(",") ?? [])
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function getRequestIp(request: Request) {
+  return (
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip")?.trim() ||
+    request.headers.get("cf-connecting-ip")?.trim() ||
+    null
+  );
+}
+
+function getRequestCountry(request: Request) {
+  return (
+    request.headers.get("x-vercel-ip-country")?.trim().toLowerCase() ||
+    request.headers.get("cf-ipcountry")?.trim().toLowerCase() ||
+    null
+  );
+}
+
+function getBlockedLoginSignal(request: Request) {
+  const country = getRequestCountry(request);
+  const ip = getRequestIp(request);
+  const blockedCountries = new Set(readCsvEnv("VYB_BLOCKED_LOGIN_COUNTRIES", "VYB_SECURITY_BLOCKED_COUNTRIES"));
+  const blockedIps = new Set(readCsvEnv("VYB_BLOCKED_LOGIN_IPS", "VYB_SECURITY_BLOCKED_IPS"));
+
+  if (country && blockedCountries.has(country)) {
+    return {
+      country,
+      ip,
+      reason: "blocked_country"
+    };
+  }
+
+  if (ip && blockedIps.has(ip.toLowerCase())) {
+    return {
+      country,
+      ip,
+      reason: "blocked_ip"
+    };
+  }
+
+  return null;
+}
+
 function isSameOriginRequest(request: Request) {
   const origin = request.headers.get("origin");
   if (!origin) {
@@ -172,7 +221,7 @@ async function verifySessionBootstrapRequest(request: Request) {
   return null;
 }
 
-async function finalizeBootstrapResponse(bootstrap: SessionBootstrapResponse, idToken: string) {
+async function finalizeBootstrapResponse(bootstrap: SessionBootstrapResponse, idToken: string, request: Request) {
   const session = createViewerSession({
     userId: bootstrap.session.userId,
     email: bootstrap.session.email,
@@ -205,6 +254,17 @@ async function finalizeBootstrapResponse(bootstrap: SessionBootstrapResponse, id
     profileCompleted: bootstrap.profileCompleted,
     firebaseBearerSource: firebaseBearer.source
   });
+
+  const blockedSignal = getBlockedLoginSignal(request);
+  if (blockedSignal) {
+    const { notifySuspiciousLoginAttempt } = await import("../../../../src/lib/notification-events");
+    await notifySuspiciousLoginAttempt(session, blockedSignal).catch((notificationError) => {
+      console.warn("[notifications] security.blocklisted_login_attempt failed", {
+        reason: blockedSignal.reason,
+        message: notificationError instanceof Error ? notificationError.message : "unknown"
+      });
+    });
+  }
 
   return NextResponse.json({
     session: {
@@ -289,7 +349,7 @@ async function handleSessionPost(request: Request) {
       idToken: payload.idToken.trim(),
       displayName: payload.displayName?.trim()
     });
-    return finalizeBootstrapResponse(bootstrap, payload.idToken.trim());
+    return finalizeBootstrapResponse(bootstrap, payload.idToken.trim(), request);
   } catch (error) {
     const fallbackMessage = "Unable to create an authenticated session.";
 

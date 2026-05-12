@@ -15,6 +15,8 @@ const ROOM_IDLE_TTL_MS = 24 * 60 * 60 * 1000;
 const CHOOSE_WORD_TIMEOUT_MS = 15 * 1000;
 const ROUND_WRAP_MS = 3500;
 const PUBLIC_ROOM_RESET_MS = 5500;
+const SQUAD_ACTIVE_THRESHOLD = 3;
+const TURN_LIVE_NOTIFICATION_COOLDOWN_MS = 5 * 60 * 1000;
 const MAX_DRAWING_STEPS = 5000;
 const MAX_PUBLIC_CHAT = 70;
 const WORD_BANK_PATH = path.join(getWorkspaceRoot(), "data", "scribble-words.json");
@@ -80,6 +82,7 @@ function summarizeRoom(room) {
     currentDrawerMembershipId: room.currentDrawerMembershipId,
     connectedPlayers: connectedMembershipIds.length,
     totalPlayers: room.players.size,
+    invitedUsers: room.invitedUserIds?.size ?? 0,
     socketGroups: room.socketsByMembership.size,
     order: [...room.order],
     round: room.round,
@@ -122,6 +125,12 @@ function summarizePayload(type, payload) {
     };
   }
 
+  if (type === "scribble.room.inviteTarget") {
+    return {
+      userId: typeof payload.userId === "string" ? payload.userId : null
+    };
+  }
+
   if (type === "scribble.word.choose") {
     return {
       choiceId: payload.choiceId
@@ -134,6 +143,10 @@ function summarizePayload(type, payload) {
 function getWorkspaceRoot() {
   const cwd = process.cwd();
   return path.basename(cwd) === "backend" && path.basename(path.dirname(cwd)) === "apps" ? path.resolve(cwd, "../..") : cwd;
+}
+
+function getWebInternalOrigin() {
+  return (process.env.VYB_WEB_ORIGIN ?? process.env.VYB_APP_ORIGIN ?? "http://localhost:3000").replace(/\/+$/u, "");
 }
 
 async function loadWordBank() {
@@ -364,6 +377,15 @@ function normalizeClientId(value) {
   return normalized.length >= 6 && normalized.length <= 80 ? normalized : null;
 }
 
+function normalizeUserId(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized.length >= 3 && normalized.length <= 160 ? normalized : null;
+}
+
 function getConnectionAuth(auth, clientId) {
   const normalizedClientId = normalizeClientId(clientId);
   if (!normalizedClientId) {
@@ -445,6 +467,7 @@ function createRoom(auth, rawSettings) {
     hostMembershipId: auth.membershipId,
     systemPublic: false,
     players: new Map(),
+    invitedUserIds: new Set(),
     order: [],
     socketsByMembership: new Map(),
     currentDrawerMembershipId: null,
@@ -463,6 +486,8 @@ function createRoom(auth, rawSettings) {
     roundResult: null,
     startedAt: null,
     lastActiveAt: Date.now(),
+    squadActiveNotifiedAt: null,
+    turnLiveNotifiedAt: null,
     chooseTimer: null,
     roundTimer: null,
     nextTimer: null,
@@ -500,6 +525,7 @@ function createSystemPublicRoom(tenantId) {
     hostMembershipId: SYSTEM_HOST_MEMBERSHIP_ID,
     systemPublic: true,
     players: new Map(),
+    invitedUserIds: new Set(),
     order: [],
     socketsByMembership: new Map(),
     currentDrawerMembershipId: null,
@@ -518,6 +544,8 @@ function createSystemPublicRoom(tenantId) {
     roundResult: null,
     startedAt: null,
     lastActiveAt: Date.now(),
+    squadActiveNotifiedAt: null,
+    turnLiveNotifiedAt: null,
     chooseTimer: null,
     roundTimer: null,
     nextTimer: null,
@@ -657,8 +685,128 @@ function getConnectedMembershipIds(room) {
   return room.order.filter((membershipId) => room.players.get(membershipId)?.connected);
 }
 
+function getConnectedUserIds(room) {
+  return new Set(getConnectedMembershipIds(room).map((membershipId) => room.players.get(membershipId)?.userId).filter(Boolean));
+}
+
+function getRoomLinkedNotificationRecipients(room, excludeUserIds = []) {
+  const connectedUserIds = getConnectedUserIds(room);
+  const excluded = new Set([...connectedUserIds, ...excludeUserIds.filter(Boolean)]);
+  const candidates = new Set([...(room.invitedUserIds ?? [])]);
+
+  for (const player of room.players.values()) {
+    if (!player.connected) {
+      candidates.add(player.userId);
+    }
+  }
+
+  return [...candidates].filter((userId) => !excluded.has(userId));
+}
+
 function getTotalTurns(room) {
   return Math.max(1, getConnectedMembershipIds(room).length) * room.settings.rounds;
+}
+
+async function emitGameNotification(eventKey, actor, room, payload = {}) {
+  const internalKey = getConfiguredInternalApiKey();
+  if (!internalKey || !actor || room.systemPublic) {
+    return;
+  }
+
+  const recipientUserIds = Array.isArray(payload.recipientUserIds) ? payload.recipientUserIds.filter(Boolean) : [];
+  if (recipientUserIds.length === 0) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`${getWebInternalOrigin()}/api/internal/notifications/game`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-vyb-internal-key": internalKey
+      },
+      body: JSON.stringify({
+        eventKey,
+        actor: {
+          tenantId: actor.tenantId,
+          userId: actor.userId,
+          membershipId: actor.baseMembershipId ?? actor.membershipId,
+          displayName: actor.displayName || actor.username,
+          email: actor.email ?? `${actor.userId}@internal.vyb`,
+          role: "student"
+        },
+        roomId: room.roomId,
+        gameSlug: "scribble",
+        ...payload,
+        recipientUserIds
+      })
+    });
+
+    if (!response.ok) {
+      scribbleLog("notification.emit.failed", {
+        eventKey,
+        status: response.status,
+        room: summarizeRoom(room)
+      }, "warn");
+    }
+  } catch (error) {
+    scribbleLog("notification.emit.error", {
+      eventKey,
+      message: error instanceof Error ? error.message : String(error),
+      room: summarizeRoom(room)
+    }, "warn");
+  }
+}
+
+function maybeNotifySquadActive(room, actor) {
+  const activeCount = getConnectedMembershipIds(room).length;
+  if (room.systemPublic || activeCount < SQUAD_ACTIVE_THRESHOLD || room.squadActiveNotifiedAt) {
+    return;
+  }
+
+  const recipientUserIds = getRoomLinkedNotificationRecipients(room, [actor?.userId]);
+  if (recipientUserIds.length === 0) {
+    return;
+  }
+
+  room.squadActiveNotifiedAt = new Date().toISOString();
+  void emitGameNotification("game.squad_active", actor, room, {
+    recipientUserIds,
+    activeCount
+  });
+}
+
+function maybeNotifyTurnLive(room, drawer) {
+  if (room.systemPublic || !drawer) {
+    return;
+  }
+
+  const lastNotifiedAt = room.turnLiveNotifiedAt ? new Date(room.turnLiveNotifiedAt).getTime() : 0;
+  if (Date.now() - lastNotifiedAt < TURN_LIVE_NOTIFICATION_COOLDOWN_MS) {
+    return;
+  }
+
+  const recipientUserIds = getRoomLinkedNotificationRecipients(room, [drawer.userId]);
+  if (recipientUserIds.length === 0) {
+    return;
+  }
+
+  room.turnLiveNotifiedAt = new Date().toISOString();
+  void emitGameNotification(
+    "game.turn_live",
+    {
+      tenantId: room.tenantId,
+      userId: drawer.userId,
+      membershipId: drawer.membershipId,
+      displayName: drawer.displayName,
+      username: drawer.username
+    },
+    room,
+    {
+      recipientUserIds,
+      drawerName: drawer.displayName
+    }
+  );
 }
 
 function pickOne(values, used) {
@@ -1173,6 +1321,7 @@ async function chooseWord(room, choiceId, automatic = false) {
   room.dislikeMembershipIds.clear();
 
   const drawer = room.players.get(room.currentDrawerMembershipId);
+  maybeNotifyTurnLive(room, drawer);
   addChat(room, {
     kind: "system",
     membershipId: room.currentDrawerMembershipId,
@@ -1651,6 +1800,26 @@ function updateRoomSettings(room, auth, payload) {
   });
 }
 
+function recordRoomInviteTarget(room, auth, targetUserId) {
+  const normalizedUserId = normalizeUserId(targetUserId);
+  if (!normalizedUserId || normalizedUserId === auth.userId) {
+    scribbleLog("room.invite-target.ignored", {
+      reason: !normalizedUserId ? "invalid-user-id" : "self",
+      auth: summarizeAuth(auth),
+      room: summarizeRoom(room)
+    }, "warn");
+    return;
+  }
+
+  room.invitedUserIds.add(normalizedUserId);
+  scribbleLog("room.invite-target.recorded", {
+    targetUserId: normalizedUserId,
+    auth: summarizeAuth(auth),
+    room: summarizeRoom(room)
+  });
+  maybeNotifySquadActive(room, auth);
+}
+
 function handleJoinRoom(ws, auth, roomId) {
   scribbleLog("room.join.requested", {
     requestedRoomId: roomId,
@@ -1693,6 +1862,7 @@ function handleJoinRoom(ws, auth, roomId) {
   }
 
   addSocketToRoom(room, ws, auth);
+  maybeNotifySquadActive(room, auth);
   if (maybeStartSystemPublicRoom(room)) {
     scribbleLog("room.join.accepted-autostarted", {
       normalizedRoomId,
@@ -1718,6 +1888,7 @@ function handleCreateRoom(ws, auth, settings) {
   const room = createRoom(auth, settings);
   addOrUpdatePlayer(room, auth);
   addSocketToRoom(room, ws, auth);
+  maybeNotifySquadActive(room, auth);
   emitState(room);
   scribbleLog("room.create.accepted", {
     auth: summarizeAuth(auth),
@@ -1797,6 +1968,11 @@ async function handleClientMessage(ws, auth, rawMessage) {
   }
 
   touchRoom(room);
+
+  if (type === "scribble.room.inviteTarget") {
+    recordRoomInviteTarget(room, auth, payload.userId);
+    return;
+  }
 
   if (type === "scribble.room.updateSettings") {
     updateRoomSettings(room, auth, payload.settings);

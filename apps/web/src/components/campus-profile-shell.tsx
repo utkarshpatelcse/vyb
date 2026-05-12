@@ -1718,9 +1718,9 @@ export function CampusProfileShell({
                 <BackIcon />
               </button>
             ) : null}
-            <button type="button" className="vyb-campus-top-icon" aria-label="Notifications" onClick={() => setSettingsOpen(true)}>
+            <Link href="/notifications" className="vyb-campus-top-icon vyb-campus-top-link" aria-label="Open notifications">
               <BellIcon />
-            </button>
+            </Link>
             {isOwnProfile ? (
               <>
                 <button type="button" className="vyb-campus-top-icon" aria-label="Profile settings" onClick={() => setSettingsOpen(true)}>

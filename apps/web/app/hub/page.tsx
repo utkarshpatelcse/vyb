@@ -24,6 +24,8 @@ export default async function HubPage({ searchParams }: HubPageProps) {
 
   const resolvedSearchParams = (await searchParams) ?? {};
   const initialGame = getSearchParamValue(resolvedSearchParams.game);
+  const initialTabParam = getSearchParamValue(resolvedSearchParams.tab);
+  const initialEventId = getSearchParamValue(resolvedSearchParams.eventId)?.trim() || null;
   const initialScribbleCode = getSearchParamValue(resolvedSearchParams.code)
     ?.trim()
     .toUpperCase()
@@ -62,7 +64,8 @@ export default async function HubPage({ searchParams }: HubPageProps) {
       role={me?.membershipSummary.role ?? viewer.role}
       initialDashboard={dashboard}
       connectSummary={connectSummary}
-      initialTab="games"
+      initialTab={initialEventId || initialTabParam === "events" ? "events" : "games"}
+      initialEventId={initialEventId}
     />
   );
 }

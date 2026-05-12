@@ -7,6 +7,7 @@ import {
   recordChatKeyBackupPinAttempt
 } from "../../../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../../../src/lib/dev-session";
+import { notifyChatSecurityEvent } from "../../../../../src/lib/notification-events";
 
 function buildError(status: number, code: string, message: string) {
   return NextResponse.json({ error: { code, message } }, { status });
@@ -42,7 +43,26 @@ export async function PUT() {
   }
 
   try {
-    return NextResponse.json(await recordChatKeyBackupPinAttempt(viewer));
+    const result = await recordChatKeyBackupPinAttempt(viewer);
+    if (result.attemptState.isLocked || result.attemptState.remainingAttempts <= 1) {
+      await notifyChatSecurityEvent(viewer, {
+        eventKey: "chat.security.backup_pin_risk",
+        entityId: `pin-attempts:${viewer.userId}:${result.attemptState.updatedAt}`,
+        title: "Chat backup PIN risk",
+        body: result.attemptState.isLocked
+          ? "Secure chat recovery was temporarily locked after failed PIN attempts."
+          : "Secure chat recovery has one PIN attempt remaining.",
+        metadata: {
+          attempts: result.attemptState.attempts,
+          locked_until: result.attemptState.lockedUntil
+        }
+      }).catch((notificationError) => {
+        console.warn("[notifications] chat.security.backup_pin_risk failed", {
+          message: notificationError instanceof Error ? notificationError.message : "unknown"
+        });
+      });
+    }
+    return NextResponse.json(result);
   } catch (error) {
     if (isBackendRequestError(error)) {
       return buildError(error.statusCode, error.code, error.message);

@@ -10,6 +10,10 @@ import { getViewerProfile } from "../../../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../../../src/lib/dev-session";
 import { getViewerCampusEventRegistration, upsertCampusEventRegistration } from "../../../../../src/lib/events-data";
 import { deleteEventMediaAssets, persistEventRegistrationAssets } from "../../../../../src/lib/events-media-server";
+import {
+  notifyEventRegistrationSubmitted,
+  scheduleEventLiveNowNotification
+} from "../../../../../src/lib/notification-events";
 import { toSafeApiErrorMessage } from "../../../../../src/lib/safe-api-error";
 
 type RegistrationBody = Omit<UpsertCampusEventRegistrationRequest, "answers" | "teamMembers" | "attachments" | "keepAttachmentIds"> & {
@@ -142,8 +146,7 @@ export async function POST(request: Request, context: { params: Promise<unknown>
       files: parsedBody.files
     });
 
-    return NextResponse.json(
-      await upsertCampusEventRegistration(
+    const result = await upsertCampusEventRegistration(
         viewer,
         {
           userId: viewer.userId,
@@ -161,8 +164,19 @@ export async function POST(request: Request, context: { params: Promise<unknown>
           keepAttachmentIds: parsedBody.payload.keepAttachmentIds ?? [],
           attachments: uploadedAttachments
         }
-      )
-    );
+      );
+    await Promise.all([
+      scheduleEventLiveNowNotification(viewer, result.event),
+      notifyEventRegistrationSubmitted(viewer, result.event, result.registration.id)
+    ]).catch((notificationError) => {
+      console.warn("[notifications] event registration notification failed", {
+        eventId,
+        registrationId: result.registration.id,
+        message: notificationError instanceof Error ? notificationError.message : "unknown"
+      });
+    });
+
+    return NextResponse.json(result);
   } catch (error) {
     if (uploadedAttachments.length > 0) {
       await deleteEventMediaAssets(uploadedAttachments).catch(() => undefined);

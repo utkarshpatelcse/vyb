@@ -3,8 +3,9 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import type { CampusEventEntryMode, CampusEventFormField, CampusEventPassKind, CampusEventResponseMode, UpdateCampusEventRequest } from "@vyb/contracts";
 import { readDevSessionFromCookieStore } from "../../../../src/lib/dev-session";
-import { deleteCampusEvent, getEventForViewer, updateCampusEvent } from "../../../../src/lib/events-data";
+import { deleteCampusEvent, getCampusEventNotificationAudience, getEventForViewer, updateCampusEvent } from "../../../../src/lib/events-data";
 import { deleteEventMediaAssets, persistEventMediaAssets } from "../../../../src/lib/events-media-server";
+import { notifyEventMaterialUpdate, scheduleEventLiveNowNotification } from "../../../../src/lib/notification-events";
 import { toSafeApiErrorMessage } from "../../../../src/lib/safe-api-error";
 
 type ParsedUpdatePayload = Omit<Partial<UpdateCampusEventRequest>, "capacity" | "teamSizeMin" | "teamSizeMax" | "formFields"> & {
@@ -265,6 +266,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ event
   let uploadedMedia = [] as Awaited<ReturnType<typeof persistEventMediaAssets>>;
 
   try {
+    const audience = await getCampusEventNotificationAudience(viewer, eventId).catch(() => null);
+    const changedFields = audience
+      ? [
+          audience.event.title !== title ? "title" : null,
+          audience.event.location !== location ? "location" : null,
+          audience.event.startsAt !== new Date(startsAt).toISOString() ? "start time" : null
+        ].filter((field): field is string => Boolean(field))
+      : [];
     uploadedMedia = await persistEventMediaAssets({
       tenantId: viewer.tenantId,
       userId: viewer.userId,
@@ -295,6 +304,21 @@ export async function PATCH(request: Request, context: { params: Promise<{ event
       keepMediaIds: payload.keepMediaIds ?? [],
       media: uploadedMedia
     });
+
+    const updatedEvent = response.dashboard.events.find((candidate) => candidate.id === eventId) ?? null;
+    if (updatedEvent && new Date(updatedEvent.startsAt).getTime() > Date.now()) {
+      for (const userId of audience?.audienceUserIds ?? []) {
+        await scheduleEventLiveNowNotification({ ...viewer, userId }, updatedEvent).catch(() => undefined);
+      }
+    }
+    if (audience && updatedEvent && changedFields.length > 0) {
+      await notifyEventMaterialUpdate(viewer, updatedEvent, audience.audienceUserIds, changedFields).catch((notificationError) => {
+        console.warn("[notifications] event.updated failed", {
+          eventId,
+          message: notificationError instanceof Error ? notificationError.message : "unknown"
+        });
+      });
+    }
 
     return NextResponse.json(response);
   } catch (error) {

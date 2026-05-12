@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import type { ManageCampusEventRegistrationRequest } from "@vyb/contracts";
 import { manageCampusEventRegistration } from "../../../../../../src/lib/events-data";
 import { readDevSessionFromCookieStore } from "../../../../../../src/lib/dev-session";
+import { notifyEventRegistrationDecision } from "../../../../../../src/lib/notification-events";
 
 function buildError(status: number, code: string, message: string) {
   return NextResponse.json({ error: { code, message } }, { status });
@@ -29,12 +30,23 @@ export async function PATCH(request: Request, context: { params: Promise<unknown
   const { eventId, registrationId } = (await context.params) as { eventId: string; registrationId: string };
 
   try {
-    return NextResponse.json(
-      await manageCampusEventRegistration(viewer, eventId, registrationId, {
+    const result = await manageCampusEventRegistration(viewer, eventId, registrationId, {
         status,
         reviewNote: typeof body?.reviewNote === "string" ? body.reviewNote : null
-      })
-    );
+      });
+    const registration = result.registrations.find((candidate) => candidate.id === registrationId);
+    if (registration) {
+      await notifyEventRegistrationDecision(viewer, result.event, registrationId, registration.attendee.userId, result.status).catch(
+        (notificationError) => {
+          console.warn("[notifications] event.registration.decided failed", {
+            eventId,
+            registrationId,
+            message: notificationError instanceof Error ? notificationError.message : "unknown"
+          });
+        }
+      );
+    }
+    return NextResponse.json(result);
   } catch (error) {
     return buildError(400, "EVENT_REGISTRATION_MANAGE_FAILED", error instanceof Error ? error.message : "We could not update this registration.");
   }
