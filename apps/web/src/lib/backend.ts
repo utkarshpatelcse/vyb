@@ -106,6 +106,7 @@ export type UploadedSocialMediaAsset = {
 
 const API_BASE_URL =
   process.env.VYB_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+const BACKEND_REQUEST_TIMEOUT_MS = Number(process.env.VYB_BACKEND_REQUEST_TIMEOUT_MS ?? 8000);
 
 export class BackendRequestError extends Error {
   statusCode: number;
@@ -205,12 +206,18 @@ async function requestBackendResponse(
   let lastConnectionError: Error | null = null;
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = Number.isFinite(BACKEND_REQUEST_TIMEOUT_MS) && BACKEND_REQUEST_TIMEOUT_MS > 0
+      ? setTimeout(() => controller.abort(), BACKEND_REQUEST_TIMEOUT_MS)
+      : null;
+
     try {
       const response = await fetch(`${API_BASE_URL}${path}`, {
         method,
         headers,
         body,
-        cache: "no-store"
+        cache: "no-store",
+        signal: controller.signal
       });
 
       if (response.status >= 500 && allowBridgeFallback && method === "GET") {
@@ -238,6 +245,10 @@ async function requestBackendResponse(
       lastConnectionError = error;
       if (attempt < maxAttempts - 1) {
         await delay(250 * (attempt + 1));
+      }
+    } finally {
+      if (timeout) {
+        clearTimeout(timeout);
       }
     }
   }

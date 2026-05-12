@@ -168,7 +168,10 @@ async function loadBackendModules() {
 }
 
 export function isBackendConnectionError(error: unknown): error is Error {
-  return error instanceof Error && /fetch failed|econnrefused|enotfound|etimedout|socket hang up/i.test(error.message);
+  return error instanceof Error && (
+    error.name === "AbortError" ||
+    /fetch failed|econnrefused|enotfound|etimedout|socket hang up|aborted/i.test(error.message)
+  );
 }
 
 export async function invokeBackendRoute(requestInit: BackendBridgeRequest) {
