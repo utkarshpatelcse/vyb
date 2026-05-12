@@ -270,9 +270,10 @@ export function CampusCommunityDetailShell({
   const [memberVisibleCount, setMemberVisibleCount] = useState(12);
   const visibleMembers = memberItems.slice(0, memberVisibleCount);
   const canPost = detail.viewer.isMember;
+  const displayMemberCount = Math.max(community.memberCount, memberItems.length);
   const tabCounts: Record<CommunityDetailTab, string> = {
     feed: detail.summary.postCount === null ? formatNumber(engagement.posts.length) : formatNumber(detail.summary.postCount),
-    members: formatNumber(Math.max(community.memberCount, memberItems.length)),
+    members: formatNumber(displayMemberCount),
     resources: detail.summary.resourceCount === null ? formatNumber(resources.length) : formatNumber(detail.summary.resourceCount),
     events: detail.summary.eventCount === null ? formatNumber(events.length) : formatNumber(detail.summary.eventCount)
   };
@@ -473,7 +474,7 @@ export function CampusCommunityDetailShell({
             </div>
             <div className="ccd-hero-stats" aria-label="Community stats">
               <span>
-                <strong>{formatNumber(community.memberCount)}</strong>
+                <strong>{formatNumber(displayMemberCount)}</strong>
                 members
               </span>
               <span>
@@ -684,7 +685,7 @@ export function CampusCommunityDetailShell({
         <aside className="ccd-side" aria-label="Community members preview">
           <div className="ccd-side-head">
             <span>MEMBERS</span>
-            <strong>{formatNumber(Math.max(community.memberCount, memberItems.length))}</strong>
+            <strong>{formatNumber(displayMemberCount)}</strong>
           </div>
           <div className="ccd-member-list ccd-member-list-compact">
             {visibleMembers.length > 0 ? (
