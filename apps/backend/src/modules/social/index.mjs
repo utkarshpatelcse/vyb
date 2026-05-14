@@ -1924,6 +1924,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
     }
 
     let parentCommentId = null;
+    let parentCommentForNotification = null;
     if (requireNonEmptyString(payload.parentCommentId)) {
       const parentComment = await findCommentById(payload.parentCommentId.trim(), {
         tenantId: post.tenantId,
@@ -1935,6 +1936,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       }
 
       parentCommentId = parentComment.id;
+      parentCommentForNotification = parentComment;
     }
 
     const authorProfile = await getProfileByUserId({
@@ -1986,7 +1988,16 @@ export async function handleSocialRoute({ request, response, url, context }) {
       excludeMembershipId: membershipId
     });
 
-    sendJson(response, 201, { item: enrichedItem });
+    sendJson(response, 201, {
+      item: enrichedItem,
+      notificationContext: {
+        postId: post.id,
+        postTitle: post.title,
+        communityId: post.communityId ?? null,
+        postAuthorUserId: post.author?.userId ?? post.userId ?? null,
+        parentCommentAuthorUserId: parentCommentForNotification?.authorUserId ?? parentCommentForNotification?.author?.userId ?? null
+      }
+    });
     return true;
   }
 
@@ -2178,7 +2189,17 @@ export async function handleSocialRoute({ request, response, url, context }) {
       excludeMembershipId: getRealtimeActorMembershipId(resolvedMembershipId, context)
     });
 
-    sendJson(response, 200, item);
+    sendJson(response, 200, {
+      ...item,
+      notificationContext: {
+        postId: post.id,
+        postTitle: post.title,
+        communityId: post.communityId ?? null,
+        postAuthorUserId: post.authorUserId ?? null,
+        commentId: comment.id,
+        commentAuthorUserId: comment.authorUserId ?? comment.author?.userId ?? null
+      }
+    });
     return true;
   }
 
@@ -2237,7 +2258,15 @@ export async function handleSocialRoute({ request, response, url, context }) {
       },
       excludeMembershipId: getRealtimeActorMembershipId(resolvedMembershipId, context)
     });
-    sendJson(response, 200, item);
+    sendJson(response, 200, {
+      ...item,
+      notificationContext: {
+        postId: post.id,
+        postTitle: post.title,
+        communityId: post.communityId ?? null,
+        postAuthorUserId: post.author?.userId ?? post.userId ?? null
+      }
+    });
     return true;
   }
 

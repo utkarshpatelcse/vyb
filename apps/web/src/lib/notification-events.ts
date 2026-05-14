@@ -5,9 +5,15 @@ import type {
   CampusEventRegistrationStatus,
   ChatConversationPreview,
   ChatMessageRecord,
+  CommentItem,
+  CommentReactionResponse,
+  FeedCard,
   MarketListing,
-  MarketRequest
+  MarketRequest,
+  ReactionResponse,
+  ResourceItem
 } from "@vyb/contracts";
+import { getCommunityMembers, getMyCampusCommunities } from "./backend";
 import type { DevSession } from "./dev-session";
 import {
   buildViewerNotificationActor,
@@ -18,6 +24,24 @@ import {
 } from "./notifications";
 
 type MarketTarget = MarketListing | MarketRequest;
+export type SocialPostNotificationContext = {
+  postId: string;
+  postTitle: string;
+  communityId: string | null;
+  postAuthorUserId: string | null;
+  parentCommentAuthorUserId?: string | null;
+};
+export type SocialCommentNotificationContext = SocialPostNotificationContext & {
+  commentId: string;
+  commentAuthorUserId: string | null;
+};
+
+type CommunityNotificationContext = {
+  id: string;
+  name: string;
+  slug: string;
+  memberUserIds: string[];
+};
 
 function actor(viewer: DevSession) {
   return buildViewerNotificationActor(viewer);
@@ -33,6 +57,69 @@ function eventHref(eventId: string) {
 
 function scribbleRoomHref(roomId: string) {
   return `/join/scribble?code=${encodeURIComponent(roomId)}`;
+}
+
+function communityHref(slug: string, params?: Record<string, string | null | undefined>) {
+  const searchParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(params ?? {})) {
+    if (value) {
+      searchParams.set(key, value);
+    }
+  }
+
+  const query = searchParams.toString();
+  return `/messages/community/${encodeURIComponent(slug)}${query ? `?${query}` : ""}`;
+}
+
+function fallbackSocialHref(context: SocialPostNotificationContext | null | undefined) {
+  return context?.postId ? `/home?postId=${encodeURIComponent(context.postId)}` : "/home";
+}
+
+async function resolveCommunityNotificationContext(
+  viewer: DevSession,
+  communityId: string | null | undefined
+): Promise<CommunityNotificationContext | null> {
+  const normalizedCommunityId = communityId?.trim();
+  if (!normalizedCommunityId) {
+    return null;
+  }
+
+  const communities = await getMyCampusCommunities(viewer);
+  const community = communities.communities.find((item) => item.id === normalizedCommunityId) ?? null;
+  if (!community?.slug) {
+    return null;
+  }
+
+  const members = await getCommunityMembers(viewer, community.slug, 50).catch(() => null);
+
+  return {
+    id: community.id,
+    name: community.name,
+    slug: community.slug,
+    memberUserIds: uniqueNotificationRecipients(members?.items.map((member) => member.userId) ?? [viewer.userId])
+  };
+}
+
+async function resolveSocialHref(viewer: DevSession, context: SocialPostNotificationContext | null | undefined) {
+  const community = await resolveCommunityNotificationContext(viewer, context?.communityId ?? null).catch(() => null);
+  if (!community) {
+    return {
+      href: fallbackSocialHref(context),
+      community
+    };
+  }
+
+  return {
+    href: communityHref(community.slug, {
+      postId: context?.postId
+    }),
+    community
+  };
+}
+
+function shortenTitle(value: string | null | undefined, fallback: string) {
+  const trimmed = value?.trim() || fallback;
+  return trimmed.length > 72 ? `${trimmed.slice(0, 69)}...` : trimmed;
 }
 
 export async function notifyChatMessageCreated(
@@ -169,6 +256,243 @@ export async function notifySuspiciousLoginAttempt(
       push_body_safe: true
     },
     metadata: signals
+  });
+}
+
+export async function notifySocialPostCreated(viewer: DevSession, post: FeedCard) {
+  const community = await resolveCommunityNotificationContext(viewer, post.communityId);
+  if (!community) {
+    return;
+  }
+
+  await emitNotification({
+    eventKey: "social.post.created",
+    tenantId: viewer.tenantId,
+    recipientScope: "content_participants",
+    recipientUserIds: community.memberUserIds,
+    actor: actor(viewer),
+    entity: {
+      type: "social_post",
+      id: post.id,
+      parent_type: "community",
+      parent_id: community.id
+    },
+    priorityScore: 5,
+    channels: ["in_app", "push"],
+    deliveryPolicy: {
+      collapse_key: `community:${community.id}:posts`,
+      dedupe_key: `social.post.created:${post.id}`,
+      ttl_seconds: 60 * 60 * 24 * 7,
+      respect_quiet_mode: true
+    },
+    copy: {
+      title: `New post in ${community.name}`,
+      body: `${viewer.displayName} posted ${shortenTitle(post.title, "a campus update")}.`,
+      cta_label: "Open",
+      href: communityHref(community.slug, { postId: post.id })
+    },
+    privacy: {
+      contains_plaintext: true,
+      push_body_safe: true
+    },
+    metadata: {
+      community_id: community.id,
+      post_id: post.id
+    }
+  });
+}
+
+export async function notifySocialCommentCreated(
+  viewer: DevSession,
+  comment: CommentItem,
+  context: SocialPostNotificationContext | null | undefined
+) {
+  const recipientUserIds = uniqueNotificationRecipients([context?.postAuthorUserId, context?.parentCommentAuthorUserId]);
+  if (recipientUserIds.length === 0) {
+    return;
+  }
+
+  const { href, community } = await resolveSocialHref(viewer, context);
+
+  await emitNotification({
+    eventKey: "social.comment.created",
+    tenantId: viewer.tenantId,
+    recipientScope: "content_participants",
+    recipientUserIds,
+    actor: actor(viewer),
+    entity: {
+      type: "social_comment",
+      id: comment.id,
+      parent_type: "social_post",
+      parent_id: context?.postId ?? comment.postId
+    },
+    priorityScore: 7,
+    channels: ["in_app", "push"],
+    deliveryPolicy: {
+      collapse_key: `post:${context?.postId ?? comment.postId}:comments`,
+      dedupe_key: `social.comment.created:${comment.id}`,
+      ttl_seconds: 60 * 60 * 24 * 7,
+      respect_quiet_mode: true
+    },
+    copy: {
+      title: "New comment",
+      body: `${viewer.displayName} commented on ${shortenTitle(context?.postTitle, "your post")}.`,
+      cta_label: "Open",
+      href
+    },
+    privacy: {
+      contains_plaintext: true,
+      push_body_safe: true
+    },
+    metadata: {
+      community_id: community?.id ?? context?.communityId ?? null,
+      post_id: context?.postId ?? comment.postId,
+      comment_id: comment.id
+    }
+  });
+}
+
+export async function notifySocialPostReactionUpdated(
+  viewer: DevSession,
+  reaction: ReactionResponse,
+  context: SocialPostNotificationContext | null | undefined
+) {
+  if (!reaction.active || !context?.postAuthorUserId) {
+    return;
+  }
+
+  const { href, community } = await resolveSocialHref(viewer, context);
+
+  await emitNotification({
+    eventKey: "social.reaction.post",
+    tenantId: viewer.tenantId,
+    recipientScope: "content_participants",
+    recipientUserIds: uniqueNotificationRecipients([context.postAuthorUserId]),
+    actor: actor(viewer),
+    entity: {
+      type: "social_post_reaction",
+      id: `${reaction.postId}:${reaction.membershipId}`,
+      parent_type: "social_post",
+      parent_id: reaction.postId
+    },
+    priorityScore: 3,
+    channels: ["in_app"],
+    deliveryPolicy: {
+      collapse_key: `post:${reaction.postId}:reactions`,
+      dedupe_key: `social.reaction.post:${reaction.postId}:${reaction.membershipId}:${reaction.reactionType ?? "like"}`,
+      ttl_seconds: 60 * 60 * 24 * 3,
+      respect_quiet_mode: true
+    },
+    copy: {
+      title: "New reaction",
+      body: `${viewer.displayName} reacted to ${shortenTitle(context.postTitle, "your post")}.`,
+      cta_label: "Open",
+      href
+    },
+    privacy: {
+      contains_plaintext: true,
+      push_body_safe: true
+    },
+    metadata: {
+      community_id: community?.id ?? context.communityId,
+      post_id: reaction.postId,
+      reaction_type: reaction.reactionType
+    }
+  });
+}
+
+export async function notifySocialCommentReactionUpdated(
+  viewer: DevSession,
+  reaction: CommentReactionResponse,
+  context: SocialCommentNotificationContext | null | undefined
+) {
+  if (!reaction.active || !context?.commentAuthorUserId) {
+    return;
+  }
+
+  const { href, community } = await resolveSocialHref(viewer, context);
+
+  await emitNotification({
+    eventKey: "social.reaction.comment",
+    tenantId: viewer.tenantId,
+    recipientScope: "content_participants",
+    recipientUserIds: uniqueNotificationRecipients([context.commentAuthorUserId]),
+    actor: actor(viewer),
+    entity: {
+      type: "social_comment_reaction",
+      id: `${reaction.commentId}:${reaction.membershipId}`,
+      parent_type: "social_comment",
+      parent_id: reaction.commentId
+    },
+    priorityScore: 3,
+    channels: ["in_app"],
+    deliveryPolicy: {
+      collapse_key: `comment:${reaction.commentId}:reactions`,
+      dedupe_key: `social.reaction.comment:${reaction.commentId}:${reaction.membershipId}`,
+      ttl_seconds: 60 * 60 * 24 * 3,
+      respect_quiet_mode: true
+    },
+    copy: {
+      title: "New reaction",
+      body: `${viewer.displayName} liked your comment on ${shortenTitle(context.postTitle, "a post")}.`,
+      cta_label: "Open",
+      href
+    },
+    privacy: {
+      contains_plaintext: true,
+      push_body_safe: true
+    },
+    metadata: {
+      community_id: community?.id ?? context.communityId,
+      post_id: context.postId,
+      comment_id: reaction.commentId
+    }
+  });
+}
+
+export async function notifyCommunityResourceCreated(viewer: DevSession, resource: Pick<ResourceItem, "id" | "communityId" | "title">) {
+  const community = await resolveCommunityNotificationContext(viewer, resource.communityId);
+  if (!community) {
+    return;
+  }
+
+  await emitNotification({
+    eventKey: "resource.created",
+    tenantId: viewer.tenantId,
+    recipientScope: "content_participants",
+    recipientUserIds: community.memberUserIds,
+    actor: actor(viewer),
+    entity: {
+      type: "resource",
+      id: resource.id,
+      parent_type: "community",
+      parent_id: community.id
+    },
+    priorityScore: 5,
+    channels: ["in_app", "push"],
+    deliveryPolicy: {
+      collapse_key: `community:${community.id}:resources`,
+      dedupe_key: `resource.created:${resource.id}`,
+      ttl_seconds: 60 * 60 * 24 * 7,
+      respect_quiet_mode: true
+    },
+    copy: {
+      title: `New resource in ${community.name}`,
+      body: `${viewer.displayName} shared ${shortenTitle(resource.title, "a campus resource")}.`,
+      cta_label: "Open",
+      href: communityHref(community.slug, {
+        tab: "resources",
+        resourceId: resource.id
+      })
+    },
+    privacy: {
+      contains_plaintext: true,
+      push_body_safe: true
+    },
+    metadata: {
+      community_id: community.id,
+      resource_id: resource.id
+    }
   });
 }
 

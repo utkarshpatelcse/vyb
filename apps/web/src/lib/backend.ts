@@ -87,7 +87,10 @@ import type {
   ClearChatKeyBackupPinAttemptResponse,
   CommunitiesMyResponse,
   CommunityDetailResponse,
+  CommunityInviteResponse,
   CommunityMembersResponse,
+  CommunityViewerStateResponse,
+  UpdateCommunityViewerStateRequest,
   UpdateUsernameRequest,
   UpdateUsernameResponse,
   UserSearchResponse
@@ -95,6 +98,7 @@ import type {
 import type { DevSession } from "./dev-session";
 import { invokeBackendRoute, isBackendConnectionError } from "./backend-bridge";
 import { getInternalApiKey } from "./internal-api-key";
+import { buildResourceFileDownloadUrl } from "./resource-files-server";
 
 export type UploadedSocialMediaAsset = {
   mediaType: "image" | "video";
@@ -732,7 +736,18 @@ export async function getCampusResources(
     params.set("communityId", options.communityId);
   }
 
-  return fetchBackendJson<ListResourcesResponse>(`/v1/resources?${params.toString()}`, viewer);
+  const response = await fetchBackendJson<ListResourcesResponse>(`/v1/resources?${params.toString()}`, viewer);
+
+  return {
+    ...response,
+    items: response.items.map((item) => ({
+      ...item,
+      files: (item.files ?? []).map((file) => ({
+        ...file,
+        url: file.url ?? (file.storagePath ? buildResourceFileDownloadUrl(file.storagePath) : null)
+      }))
+    }))
+  };
 }
 
 export async function getMyCampusCommunities(viewer: DevSession) {
@@ -754,6 +769,33 @@ export async function getCommunityMembers(viewer: DevSession, slug: string, limi
 
   return fetchBackendJson<CommunityMembersResponse>(
     `/v1/communities/${encodeURIComponent(slug)}/members?${params.toString()}`,
+    viewer
+  );
+}
+
+export async function getCommunityViewerState(viewer: DevSession, slug: string) {
+  return fetchBackendJson<CommunityViewerStateResponse>(`/v1/communities/${encodeURIComponent(slug)}/me`, viewer);
+}
+
+export async function updateCommunityViewerState(
+  viewer: DevSession,
+  slug: string,
+  payload: UpdateCommunityViewerStateRequest
+) {
+  return mutateBackendJson<CommunityViewerStateResponse>(
+    `/v1/communities/${encodeURIComponent(slug)}/me`,
+    "PATCH",
+    payload,
+    viewer
+  );
+}
+
+export async function createCommunityInvite(viewer: DevSession, slug: string, origin?: string | null) {
+  return postBackendJson<CommunityInviteResponse>(
+    `/v1/communities/${encodeURIComponent(slug)}/invites`,
+    {
+      origin: origin ?? null
+    },
     viewer
   );
 }

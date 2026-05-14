@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import http from "node:http";
+import { loadRootEnv } from "../packages/config/src/index.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,8 +14,11 @@ const backendEntry = path.join(backendRoot, "src", "index.mjs");
 const requireFromWeb = createRequire(path.join(webRoot, "package.json"));
 const nextBin = requireFromWeb.resolve("next/dist/bin/next");
 const LOCAL_HOST = "127.0.0.1";
+const WEB_BIND_HOST = process.env.VYB_WEB_HOST ?? "0.0.0.0";
 const WEB_PORT = 3000;
 const BACKEND_PORT = 4000;
+
+loadRootEnv();
 
 function wait(ms) {
   return new Promise((resolve) => {
@@ -66,11 +70,13 @@ async function getExistingWebServerStatus() {
   const poweredBy = String(response.headers["x-powered-by"] ?? "").toLowerCase();
   const contentType = String(response.headers["content-type"] ?? "").toLowerCase();
   const body = response.body.toLowerCase();
+  const authIsMissing = body.includes("authentication is not configured");
   const isNextServer = poweredBy.includes("next.js");
   const looksLikeHtml = contentType.includes("text/html");
   const isVybWeb =
     isNextServer &&
     looksLikeHtml &&
+    !authIsMissing &&
     (body.includes("trusted campus access starts with a verified college identity") ||
       body.includes("verified campus network") ||
       body.includes("welcome back to vyb"));
@@ -151,7 +157,7 @@ async function ensureWeb() {
   }
 
   console.log(`[dev:web] starting Next.js dev server on http://localhost:${WEB_PORT}`);
-  webProcess = spawnProcess(process.execPath, [nextBin, "dev", "--hostname", LOCAL_HOST, "--port", String(WEB_PORT)], webRoot);
+  webProcess = spawnProcess(process.execPath, [nextBin, "dev", "--hostname", WEB_BIND_HOST, "--port", String(WEB_PORT)], webRoot);
 
   webProcess.on("exit", (code) => {
     if (backendProcess && !backendProcess.killed) {

@@ -38,6 +38,7 @@ export default async function NotificationsPage() {
       viewerUsername={profile.profile?.username ?? viewer.email.split("@")[0] ?? "vyb-student"}
       collegeName={getDisplayCollegeName(profile.collegeName)}
       initialNotifications={notifications}
+      initialNow={new Date().toISOString()}
     />
   );
 }

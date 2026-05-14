@@ -14,9 +14,11 @@ import { readDevSessionFromCookieStore } from "../../../../src/lib/dev-session";
 import { getEventsDashboard } from "../../../../src/lib/events-data";
 
 export default async function CommunityDetailPage({
-  params
+  params,
+  searchParams
 }: {
   params: Promise<{ slug: string }>;
+  searchParams?: Promise<{ tab?: string | string[]; postId?: string | string[] }>;
 }) {
   const viewer = readDevSessionFromCookieStore(await cookies());
 
@@ -25,6 +27,13 @@ export default async function CommunityDetailPage({
   }
 
   const { slug } = await params;
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const requestedTab = typeof resolvedSearchParams.tab === "string" ? resolvedSearchParams.tab : null;
+  const initialTab =
+    requestedTab === "members" || requestedTab === "resources" || requestedTab === "events" || requestedTab === "feed"
+      ? requestedTab
+      : "feed";
+  const initialPostId = typeof resolvedSearchParams.postId === "string" ? resolvedSearchParams.postId.trim() || null : null;
 
   const [profile, detail] = await Promise.all([
     getViewerProfile(viewer).catch(() => null),
@@ -128,6 +137,8 @@ export default async function CommunityDetailPage({
         .filter((event) => event.status === "published" && event.communityId === detail.community.id)
         .slice(0, 4)}
       eventsLoadError={eventsResult.error}
+      initialTab={initialPostId ? "feed" : initialTab}
+      initialPostId={initialPostId}
     />
   );
 }

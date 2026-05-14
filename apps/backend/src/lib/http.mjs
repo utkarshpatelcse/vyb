@@ -39,7 +39,7 @@ export function attachCorsContext(response, request) {
 
 export function buildCorsHeaders(allowOrigin = null) {
   const headers = {
-    "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
+    "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
     "access-control-allow-headers":
       "authorization,content-type,x-demo-user-id,x-demo-email,x-demo-display-name,x-request-id,x-vyb-internal-key"
   };

@@ -24,6 +24,11 @@ export interface CommunityLink {
   joinedAt?: string;
   isOfficial?: boolean;
   isMember?: boolean;
+  muted?: boolean;
+  pinned?: boolean;
+  membershipStatus?: "member" | "not_member" | "requested" | "left";
+  requestedAt?: string | null;
+  leftAt?: string | null;
   latestActivityAt?: string | null;
 }
 
@@ -204,6 +209,12 @@ export interface CommunityDetailResponse {
   viewer: {
     isMember: boolean;
     role: string | null;
+    muted?: boolean;
+    pinned?: boolean;
+    membershipStatus?: "member" | "not_member" | "requested" | "left";
+    requestedAt?: string | null;
+    requestId?: string | null;
+    leftAt?: string | null;
   };
   summary: {
     postCount: number | null;
@@ -238,6 +249,34 @@ export interface CommunityMembersResponse {
   };
   items: CommunityMemberItem[];
   nextCursor: string | null;
+}
+
+export interface CommunityViewerState {
+  muted: boolean;
+  pinned: boolean;
+  membershipStatus: "member" | "not_member" | "requested" | "left";
+  requestedAt: string | null;
+  requestId: string | null;
+  leftAt: string | null;
+  updatedAt: string;
+}
+
+export interface CommunityViewerStateResponse {
+  state: CommunityViewerState;
+}
+
+export interface UpdateCommunityViewerStateRequest {
+  muted?: boolean;
+  pinned?: boolean;
+  membershipAction?: "leave" | "request_join" | "cancel_request";
+}
+
+export interface CommunityInviteResponse {
+  invite: {
+    inviteCode: string;
+    inviteUrl: string;
+    expiresAt: string;
+  };
 }
 
 export interface FeedCard {
@@ -616,6 +655,16 @@ export interface ResourceItem {
   downloads: number;
   status: PublishStatus;
   createdAt: string;
+  files?: ResourceFileSummary[];
+}
+
+export interface ResourceFileSummary {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  storagePath: string | null;
+  url?: string | null;
 }
 
 export interface ListResourcesResponse {
@@ -634,6 +683,12 @@ export interface CreateResourceRequest {
   title: string;
   description: string;
   type: ResourceType;
+  files?: Array<{
+    storagePath: string;
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+  }>;
 }
 
 export interface CreateResourceResponse {
@@ -642,12 +697,7 @@ export interface CreateResourceResponse {
 
 export interface ResourceDetailResponse {
   item: ResourceItem & {
-    files: Array<{
-      id: string;
-      fileName: string;
-      mimeType: string;
-      sizeBytes: number;
-    }>;
+    files: ResourceFileSummary[];
   };
 }
 

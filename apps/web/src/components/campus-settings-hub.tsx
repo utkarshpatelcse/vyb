@@ -14,6 +14,7 @@ import { splitDisplayName } from "../lib/college-access";
 import { clearChatVault } from "../lib/chat-e2ee";
 import { getFirebaseClientAuth, isFirebaseClientConfigured } from "../lib/firebase-client";
 import { queueAppRouteOrigin } from "../lib/app-navigation-state";
+import { registerWebPushDevice } from "../lib/notification-push-client";
 import { persistStoredAvatarUrl } from "./campus-avatar";
 import {
   CAMPUS_SOCIAL_LINK_KEYS,
@@ -640,81 +641,30 @@ export function CampusSettingsHub({
     }
   }
 
-  function getOrCreateNotificationDeviceId() {
-    const key = "vyb.notificationDeviceId";
-    const existing = window.localStorage.getItem(key);
-    if (existing) {
-      return existing;
-    }
-
-    const next = `web-${crypto.randomUUID()}`;
-    window.localStorage.setItem(key, next);
-    return next;
-  }
-
-  function urlBase64ToUint8Array(value: string) {
-    const padding = "=".repeat((4 - (value.length % 4)) % 4);
-    const base64 = `${value}${padding}`.replace(/-/g, "+").replace(/_/g, "/");
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-
-    for (let index = 0; index < rawData.length; index += 1) {
-      outputArray[index] = rawData.charCodeAt(index);
-    }
-
-    return outputArray;
-  }
-
   async function handleEnablePushNotifications() {
-    if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+    const result = await registerWebPushDevice({ requestPermission: true });
+
+    if (result.status === "registered") {
+      showFeedback("success", "Push notifications enabled on this device.");
+      return;
+    }
+
+    if (result.status === "unsupported") {
       showFeedback("error", "Push notifications are not supported on this browser.");
       return;
     }
 
-    const keyResponse = await fetch("/api/notifications/vapid-public-key", {
-      cache: "no-store",
-      credentials: "same-origin"
-    });
-    const keyPayload = (await keyResponse.json().catch(() => null)) as { publicKey?: string | null; enabled?: boolean } | null;
-    if (!keyPayload?.enabled || !keyPayload.publicKey) {
+    if (result.status === "vapid_unavailable") {
       showFeedback("error", "Push notifications need VAPID keys configured on this environment.");
       return;
     }
 
-    const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
-    if (permission !== "granted") {
+    if (result.status === "permission_denied" || result.status === "permission_needed") {
       showFeedback("info", "Push notifications were not enabled on this device.");
       return;
     }
 
-    try {
-      const registration = await navigator.serviceWorker.ready;
-      const existingSubscription = await registration.pushManager.getSubscription();
-      const subscription =
-        existingSubscription ??
-        (await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(keyPayload.publicKey)
-        }));
-
-      const response = await fetch("/api/notifications/register-device", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({
-          deviceId: getOrCreateNotificationDeviceId(),
-          platform: "web",
-          endpoint: subscription.endpoint,
-          pushSubscription: subscription.toJSON()
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error("Device registration failed.");
-      }
-
-      showFeedback("success", "Push notifications enabled on this device.");
-    } catch {
+    if (result.status === "registration_failed") {
       showFeedback("error", "We could not enable push notifications on this device.");
     }
   }

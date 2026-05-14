@@ -5,8 +5,14 @@ import {
   listCommunityMembersAfterJoinedAt,
   listCommunityMembers as listCommunityMembersQuery
 } from "../../../../../packages/dataconnect/campus-admin-sdk/esm/index.esm.js";
-import { sendError, sendJson } from "../../lib/http.mjs";
+import { readJson, sendError, sendJson } from "../../lib/http.mjs";
 import { resolveLiveContext } from "../shared/viewer-context.mjs";
+import {
+  createCommunityInvite,
+  getCommunityViewerState,
+  listCommunityViewerStatesForMembership,
+  updateCommunityViewerState
+} from "./community-state-store.mjs";
 
 const fallbackCommunities = [
   {
@@ -159,6 +165,65 @@ function buildCommunityDetailResponse({ tenant, community, membershipRow = null,
   };
 }
 
+function buildCommunityStateInput({ tenant, community, actor, live = null, membershipRow = null }) {
+  return {
+    tenantId: tenant.id,
+    communityId: community.id,
+    communitySlug: community.slug,
+    communityName: community.name,
+    membershipId: live?.membership?.id ?? actor?.id ?? null,
+    userId: live?.user?.id ?? actor?.id ?? null,
+    displayName: live?.user?.displayName ?? actor?.displayName ?? null,
+    isLiveMember: Boolean(membershipRow)
+  };
+}
+
+function applyViewerStateToCommunitySummary(summary, state) {
+  const isMember = state.membershipStatus === "member";
+  return {
+    ...summary,
+    isMember,
+    muted: state.muted,
+    pinned: state.pinned,
+    membershipStatus: state.membershipStatus,
+    requestedAt: state.requestedAt,
+    leftAt: state.leftAt
+  };
+}
+
+function applyViewerStateToDetail(detail, state) {
+  const isMember = state.membershipStatus === "member";
+  return {
+    ...detail,
+    community: applyViewerStateToCommunitySummary(detail.community, state),
+    viewer: {
+      ...detail.viewer,
+      isMember,
+      role: isMember ? detail.viewer.role : null,
+      muted: state.muted,
+      pinned: state.pinned,
+      membershipStatus: state.membershipStatus,
+      requestedAt: state.requestedAt,
+      requestId: state.requestId,
+      leftAt: state.leftAt
+    }
+  };
+}
+
+function sortCommunitiesForViewer(left, right) {
+  if (left.pinned !== right.pinned) {
+    return left.pinned ? -1 : 1;
+  }
+
+  const leftActivity = left.latestActivityAt ? Date.parse(left.latestActivityAt) : 0;
+  const rightActivity = right.latestActivityAt ? Date.parse(right.latestActivityAt) : 0;
+  if (leftActivity !== rightActivity) {
+    return rightActivity - leftActivity;
+  }
+
+  return String(left.name).localeCompare(String(right.name));
+}
+
 function toDisplayName(membership) {
   return (
     membership?.fullName?.trim() ||
@@ -244,6 +309,12 @@ export function getCampusModuleHealth() {
 export async function handleCampusRoute({ request, response, url, context }) {
   const communityMembersMatch =
     request.method === "GET" ? url.pathname.match(/^\/v1\/communities\/([^/]+)\/members$/) : null;
+  const communityViewerStateMatch =
+    request.method === "GET" || request.method === "PATCH"
+      ? url.pathname.match(/^\/v1\/communities\/([^/]+)\/me$/)
+      : null;
+  const communityInviteMatch =
+    request.method === "POST" ? url.pathname.match(/^\/v1\/communities\/([^/]+)\/invites$/) : null;
   const communityDetailMatch =
     request.method === "GET" ? url.pathname.match(/^\/v1\/communities\/([^/]+)$/) : null;
 
@@ -255,6 +326,32 @@ export async function handleCampusRoute({ request, response, url, context }) {
 
     const resolved = await resolveLiveContext(context.actor);
     if (resolved?.live?.tenant && resolved.live.membership) {
+      const stateByCommunityId = await listCommunityViewerStatesForMembership({
+        tenantId: resolved.live.tenant.id,
+        membershipId: resolved.live.membership.id,
+        userId: resolved.live.user?.id ?? context.actor.id
+      });
+      const communities = resolved.live.communities
+        .map((item) => {
+          const base = {
+            id: item.community.id,
+            name: item.community.name,
+            slug: item.community.slug,
+            type: item.community.type,
+            visibility: item.community.visibility,
+            memberCount: 1,
+            membershipRole: item.role,
+            joinedAt: item.joinedAt,
+            isOfficial: officialCommunityTypes.has(item.community.type),
+            isMember: true,
+            latestActivityAt: null
+          };
+          const state = stateByCommunityId.get(item.community.id);
+          return state ? applyViewerStateToCommunitySummary(base, state) : base;
+        })
+        .filter((item) => item.membershipStatus !== "left")
+        .sort(sortCommunitiesForViewer);
+
       sendJson(response, 200, {
         tenant: {
           id: resolved.live.tenant.id,
@@ -266,19 +363,7 @@ export async function handleCampusRoute({ request, response, url, context }) {
           role: resolved.live.membership.role,
           verificationStatus: resolved.live.membership.verificationStatus
         },
-        communities: resolved.live.communities.map((item) => ({
-          id: item.community.id,
-          name: item.community.name,
-          slug: item.community.slug,
-          type: item.community.type,
-          visibility: item.community.visibility,
-          memberCount: 1,
-          membershipRole: item.role,
-          joinedAt: item.joinedAt,
-          isOfficial: officialCommunityTypes.has(item.community.type),
-          isMember: true,
-          latestActivityAt: null
-        }))
+        communities
       });
       return true;
     }
@@ -294,13 +379,13 @@ export async function handleCampusRoute({ request, response, url, context }) {
     return true;
   }
 
-  if (communityDetailMatch || communityMembersMatch) {
+  if (communityDetailMatch || communityMembersMatch || communityViewerStateMatch || communityInviteMatch) {
     if (!context.actor) {
       sendError(response, 401, "UNAUTHENTICATED", "Viewer context is required.");
       return true;
     }
 
-    const slug = normalizeCommunitySlug((communityDetailMatch ?? communityMembersMatch)[1]);
+    const slug = normalizeCommunitySlug((communityDetailMatch ?? communityMembersMatch ?? communityViewerStateMatch ?? communityInviteMatch)[1]);
     if (!slug) {
       sendError(response, 400, "INVALID_COMMUNITY_SLUG", "Community slug is invalid.");
       return true;
@@ -327,22 +412,78 @@ export async function handleCampusRoute({ request, response, url, context }) {
         return true;
       }
 
+      const fallbackStateInput = buildCommunityStateInput({
+        tenant: {
+          id: "tenant-demo",
+          name: "Vyb Demo Institute",
+          slug: "vyb-demo"
+        },
+        community,
+        actor: context.actor,
+        membershipRow: {
+          role: community.membershipRole,
+          joinedAt: community.joinedAt
+        }
+      });
+
+      if (communityViewerStateMatch) {
+        if (request.method === "GET") {
+          sendJson(response, 200, {
+            state: await getCommunityViewerState(fallbackStateInput)
+          });
+          return true;
+        }
+
+        const payload = await readJson(request);
+        if (!payload || typeof payload !== "object") {
+          sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+          return true;
+        }
+
+        sendJson(response, 200, {
+          state: await updateCommunityViewerState(fallbackStateInput, payload)
+        });
+        return true;
+      }
+
+      if (communityInviteMatch) {
+        const payload = await readJson(request);
+        if (!payload || typeof payload !== "object") {
+          sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+          return true;
+        }
+
+        sendJson(response, 201, {
+          invite: await createCommunityInvite({
+            ...fallbackStateInput,
+            origin: payload.origin
+          })
+        });
+        return true;
+      }
+
+      const fallbackState = await getCommunityViewerState(fallbackStateInput);
       sendJson(
         response,
         200,
-        buildCommunityDetailResponse({
-          tenant: {
-            id: "tenant-demo",
-            name: "Vyb Demo Institute",
-            slug: "vyb-demo"
-          },
-          community,
-          membershipRow: {
-            role: community.membershipRole,
-            joinedAt: community.joinedAt
-          },
-          memberCount: community.memberCount
-        })
+        applyViewerStateToDetail(
+          buildCommunityDetailResponse({
+            tenant: {
+              id: "tenant-demo",
+              name: "Vyb Demo Institute",
+              slug: "vyb-demo"
+            },
+            community,
+            membershipRow: fallbackState.membershipStatus === "member"
+              ? {
+                  role: community.membershipRole,
+                  joinedAt: community.joinedAt
+                }
+              : null,
+            memberCount: community.memberCount
+          }),
+          fallbackState
+        )
       );
       return true;
     }
@@ -372,6 +513,56 @@ export async function handleCampusRoute({ request, response, url, context }) {
     const membershipRow = findLiveCommunityMembership(resolved.live, community.id);
     if (!canReadCommunity(resolved.live, community, membershipRow)) {
       sendError(response, 403, "FORBIDDEN_COMMUNITY", "You do not have access to this community.");
+      return true;
+    }
+
+    const stateInput = buildCommunityStateInput({
+      tenant: resolved.live.tenant,
+      community,
+      actor: context.actor,
+      live: resolved.live,
+      membershipRow
+    });
+
+    if (communityViewerStateMatch) {
+      if (request.method === "GET") {
+        sendJson(response, 200, {
+          state: await getCommunityViewerState(stateInput)
+        });
+        return true;
+      }
+
+      const payload = await readJson(request);
+      if (!payload || typeof payload !== "object") {
+        sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+        return true;
+      }
+
+      sendJson(response, 200, {
+        state: await updateCommunityViewerState(stateInput, payload)
+      });
+      return true;
+    }
+
+    if (communityInviteMatch) {
+      const currentState = await getCommunityViewerState(stateInput);
+      if (currentState.membershipStatus !== "member") {
+        sendError(response, 403, "FORBIDDEN_COMMUNITY", "Only current community members can create invites.");
+        return true;
+      }
+
+      const payload = await readJson(request);
+      if (!payload || typeof payload !== "object") {
+        sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+        return true;
+      }
+
+      sendJson(response, 201, {
+        invite: await createCommunityInvite({
+          ...stateInput,
+          origin: payload.origin
+        })
+      });
       return true;
     }
 
@@ -463,12 +654,15 @@ export async function handleCampusRoute({ request, response, url, context }) {
     sendJson(
       response,
       200,
-      buildCommunityDetailResponse({
-        tenant: resolved.live.tenant,
-        community,
-        membershipRow,
-        memberCount: membershipRow ? 1 : 0
-      })
+      applyViewerStateToDetail(
+        buildCommunityDetailResponse({
+          tenant: resolved.live.tenant,
+          community,
+          membershipRow,
+          memberCount: membershipRow ? 1 : 0
+        }),
+        await getCommunityViewerState(stateInput)
+      )
     );
     return true;
   }

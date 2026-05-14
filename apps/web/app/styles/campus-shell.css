@@ -1269,6 +1269,14 @@
   gap: 0.55rem;
 }
 
+.vyb-notifications-summary-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
 .vyb-notifications-summary-stats span {
   min-width: 5.9rem;
   min-height: 3rem;
@@ -1318,6 +1326,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 0.4rem;
   flex: 0 0 auto;
   padding: 0 0.9rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1339,6 +1348,58 @@
   border-color: rgba(20, 184, 166, 0.36);
   background: rgba(20, 184, 166, 0.1);
   color: #ffffff;
+}
+
+.vyb-notifications-filter-badge {
+  min-width: 1.15rem;
+  height: 1.15rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.28rem;
+  border-radius: 999px;
+  background: rgba(20, 184, 166, 0.22);
+  color: #ffffff;
+  font-size: 0.66rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.vyb-notifications-action {
+  min-height: 2.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(255, 255, 255, 0.86);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 850;
+  cursor: pointer;
+  transition:
+    background-color var(--cl-motion-fast),
+    border-color var(--cl-motion-fast),
+    color var(--cl-motion-fast);
+}
+
+.vyb-notifications-action:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.vyb-notifications-action.is-primary {
+  border-color: rgba(20, 184, 166, 0.32);
+  background: rgba(20, 184, 166, 0.12);
+  color: #ecfeff;
+}
+
+.vyb-notifications-action:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
 }
 
 .vyb-notifications-message {
@@ -1399,6 +1460,18 @@
 
 .vyb-notification-icon.is-chat {
   color: #8bd3ff;
+}
+
+.vyb-notification-icon.is-community {
+  color: #99f6e4;
+}
+
+.vyb-notification-icon.is-social {
+  color: #f0abfc;
+}
+
+.vyb-notification-icon.is-resource {
+  color: #fde68a;
 }
 
 .vyb-notification-icon.is-event,
@@ -1500,6 +1573,25 @@
 @media (max-width: 899px) {
   .vyb-notifications-shell {
     padding: 0.85rem clamp(0.8rem, 3vw, 1rem) calc(5.9rem + env(safe-area-inset-bottom));
+  }
+
+  .vyb-notifications-summary {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.8rem;
+  }
+
+  .vyb-notifications-summary-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .vyb-notifications-summary-stats {
+    width: 100%;
+  }
+
+  .vyb-notifications-summary-stats span {
+    flex: 1 1 0;
   }
 }
 

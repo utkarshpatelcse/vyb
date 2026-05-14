@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import type { CreateCommentResponse } from "@vyb/contracts";
 import { createPostComment, getPostComments, isBackendRequestError } from "../../../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../../../src/lib/dev-session";
+import {
+  notifySocialCommentCreated,
+  type SocialPostNotificationContext
+} from "../../../../../src/lib/notification-events";
 
 export async function GET(
   request: Request,
@@ -100,8 +105,7 @@ export async function POST(
   const { postId } = await context.params;
 
   try {
-    return NextResponse.json(
-      await createPostComment(viewer, postId, {
+    const result = (await createPostComment(viewer, postId, {
         body: payload.body,
         parentCommentId: payload.parentCommentId ?? null,
         mediaUrl: payload.mediaUrl ?? null,
@@ -109,9 +113,27 @@ export async function POST(
         mediaMimeType: payload.mediaMimeType ?? null,
         mediaSizeBytes: payload.mediaSizeBytes ?? null,
         isAnonymous: payload.isAnonymous === true
-      }),
-      { status: 201 }
-    );
+      })) as CreateCommentResponse & {
+      notificationContext?: SocialPostNotificationContext & {
+        parentCommentAuthorUserId?: string | null;
+      };
+    };
+    const notificationRecipients = [
+      result.notificationContext?.postAuthorUserId,
+      result.notificationContext?.parentCommentAuthorUserId
+    ].filter(Boolean);
+
+    if (notificationRecipients.length > 0) {
+      await notifySocialCommentCreated(viewer, result.item, result.notificationContext ?? null).catch((notificationError) => {
+        console.warn("[notifications] social.comment.created failed", {
+          postId,
+          commentId: result.item.id,
+          message: notificationError instanceof Error ? notificationError.message : "unknown"
+        });
+      });
+    }
+
+    return NextResponse.json(result, { status: 201 });
   } catch (error) {
     if (isBackendRequestError(error)) {
       return NextResponse.json(

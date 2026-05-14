@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import type { ReactionResponse } from "@vyb/contracts";
 import { isBackendRequestError, reactToPost } from "../../../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../../../src/lib/dev-session";
+import {
+  notifySocialPostReactionUpdated,
+  type SocialPostNotificationContext
+} from "../../../../../src/lib/notification-events";
 
 export async function PUT(
   request: Request,
@@ -33,7 +38,18 @@ export async function PUT(
   const { postId } = await context.params;
 
   try {
-    return NextResponse.json(await reactToPost(viewer, postId, payload?.reactionType ?? "like"));
+    const result = (await reactToPost(viewer, postId, payload?.reactionType ?? "like")) as ReactionResponse & {
+      notificationContext?: SocialPostNotificationContext;
+    };
+
+    await notifySocialPostReactionUpdated(viewer, result, result.notificationContext ?? null).catch((notificationError) => {
+      console.warn("[notifications] social.reaction.post failed", {
+        postId,
+        message: notificationError instanceof Error ? notificationError.message : "unknown"
+      });
+    });
+
+    return NextResponse.json(result);
   } catch (error) {
     if (isBackendRequestError(error)) {
       return NextResponse.json(

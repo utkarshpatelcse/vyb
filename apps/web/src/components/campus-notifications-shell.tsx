@@ -1,6 +1,6 @@
 "use client";
 
-import type { ListNotificationsResponse, NotificationRecord } from "@vyb/contracts";
+import type { ListNotificationsResponse, NotificationRecord, NotificationStateFilter } from "@vyb/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -15,13 +15,39 @@ import {
 } from "react";
 import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
 import { VybLogoMark } from "./vyb-logo";
+import { getNotificationPushClientState, registerWebPushDevice } from "../lib/notification-push-client";
 
 type CampusNotificationsShellProps = {
   viewerName: string;
   viewerUsername: string;
   collegeName: string;
   initialNotifications: ListNotificationsResponse;
+  initialNow: string;
 };
+
+const ALL_CATEGORIES = "all";
+
+const STATE_FILTERS: Array<{ id: NotificationStateFilter; label: string }> = [
+  { id: "all", label: "All" },
+  { id: "unread", label: "Unread" },
+  { id: "read", label: "Read" },
+  { id: "archived", label: "Archived" }
+];
+
+const PREFERRED_CATEGORY_FILTERS: Array<{ id: string; label: string }> = [
+  { id: ALL_CATEGORIES, label: "All types" },
+  { id: "community", label: "Communities" },
+  { id: "social", label: "Social" },
+  { id: "resource", label: "Resources" },
+  { id: "chat", label: "Chats" },
+  { id: "event", label: "Events" },
+  { id: "market", label: "Market" },
+  { id: "game", label: "Games" },
+  { id: "security", label: "Security" },
+  { id: "system", label: "System" }
+];
+
+type PushPromptState = "checking" | "available" | "hidden" | "busy";
 
 function layoutStyle() {
   return {
@@ -46,9 +72,9 @@ function BellIcon() {
   );
 }
 
-function formatNotificationTime(dateString: string) {
+function formatNotificationTime(dateString: string, nowMs: number) {
   const date = new Date(dateString);
-  const diffSeconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  const diffSeconds = Math.floor((nowMs - date.getTime()) / 1000);
 
   if (!Number.isFinite(diffSeconds)) {
     return "";
@@ -62,10 +88,53 @@ function formatNotificationTime(dateString: string) {
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d ago`;
 
-  return date.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  return date.toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
 }
 
+function formatCategoryLabel(category: string) {
+  const known = PREFERRED_CATEGORY_FILTERS.find((item) => item.id === category);
+  if (known) {
+    return known.label;
+  }
 
+  return category
+    .split(/[\s._-]+/u)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+}
+
+function toNotificationCategoryClass(category: string) {
+  return category.toLowerCase().replace(/[^a-z0-9_-]/gu, "-") || "system";
+}
+
+function getEmptyNotificationCopy(stateFilter: NotificationStateFilter, categoryFilter: string) {
+  if (stateFilter === "unread") {
+    return {
+      title: "No unread notifications",
+      body: categoryFilter === ALL_CATEGORIES ? "You are caught up across campus." : `No unread ${formatCategoryLabel(categoryFilter).toLowerCase()} updates.`
+    };
+  }
+
+  if (stateFilter === "read") {
+    return {
+      title: "No read notifications yet",
+      body: "Open updates from your inbox and they will move here."
+    };
+  }
+
+  if (stateFilter === "archived") {
+    return {
+      title: "No archived notifications",
+      body: "Archived updates will appear here when that flow is available."
+    };
+  }
+
+  return {
+    title: "No notifications here",
+    body: categoryFilter === ALL_CATEGORIES ? "You are all caught up." : `No ${formatCategoryLabel(categoryFilter).toLowerCase()} updates yet.`
+  };
+}
 
 function mergeNotificationItems(items: NotificationRecord[]) {
   const seen = new Set<string>();
@@ -107,18 +176,45 @@ export function CampusNotificationsShell({
   viewerName,
   viewerUsername,
   collegeName,
-  initialNotifications
+  initialNotifications,
+  initialNow
 }: CampusNotificationsShellProps) {
   const router = useRouter();
+  const initialNowMs = useMemo(() => {
+    const parsed = new Date(initialNow).getTime();
+    return Number.isFinite(parsed) ? parsed : Date.now();
+  }, [initialNow]);
   const [items, setItems] = useState(initialNotifications.items);
   const [unreadCount, setUnreadCount] = useState(initialNotifications.unreadCount);
   const [nextCursor, setNextCursor] = useState(initialNotifications.nextCursor);
+  const [stateFilter, setStateFilter] = useState<NotificationStateFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState(ALL_CATEGORIES);
   const [loading, setLoading] = useState(false);
+  const [markingAllRead, setMarkingAllRead] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [pushPromptState, setPushPromptState] = useState<PushPromptState>("checking");
+  const [relativeNowMs, setRelativeNowMs] = useState(initialNowMs);
   const firstFilterLoad = useRef(true);
   const navItems = useMemo(() => buildPrimaryCampusNav(null), []);
 
   const visibleItems = items;
+  const emptyCopy = useMemo(() => getEmptyNotificationCopy(stateFilter, categoryFilter), [categoryFilter, stateFilter]);
+  const categoryFilters = useMemo(() => {
+    const byId = new Map(PREFERRED_CATEGORY_FILTERS.map((item) => [item.id, item]));
+
+    for (const item of items) {
+      const category = item.category.trim();
+      if (category && !byId.has(category)) {
+        byId.set(category, { id: category, label: formatCategoryLabel(category) });
+      }
+    }
+
+    if (categoryFilter !== ALL_CATEGORIES && !byId.has(categoryFilter)) {
+      byId.set(categoryFilter, { id: categoryFilter, label: formatCategoryLabel(categoryFilter) });
+    }
+
+    return Array.from(byId.values());
+  }, [categoryFilter, items]);
 
   const fetchNotifications = useCallback(
     async ({ cursor = null }: { cursor?: string | null } = {}) => {
@@ -126,9 +222,12 @@ export function CampusNotificationsShell({
       setMessage(null);
 
       const params = new URLSearchParams({
-        state: "all",
+        state: stateFilter,
         limit: "40"
       });
+      if (categoryFilter !== ALL_CATEGORIES) {
+        params.set("category", categoryFilter);
+      }
 
       if (cursor) {
         params.set("cursor", cursor);
@@ -154,7 +253,7 @@ export function CampusNotificationsShell({
         setLoading(false);
       }
     },
-    []
+    [categoryFilter, stateFilter]
   );
 
   useEffect(() => {
@@ -166,9 +265,44 @@ export function CampusNotificationsShell({
     void fetchNotifications();
   }, [fetchNotifications]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function preparePushPrompt() {
+      const state = await getNotificationPushClientState().catch(() => ({ status: "unsupported" as const }));
+      if (cancelled) {
+        return;
+      }
+
+      if (state.status === "available") {
+        setPushPromptState("available");
+        return;
+      }
+
+      setPushPromptState("hidden");
+
+      if (state.status === "granted") {
+        void registerWebPushDevice({ requestPermission: false });
+      }
+    }
+
+    void preparePushPrompt();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    setRelativeNowMs(Date.now());
+    const intervalId = window.setInterval(() => setRelativeNowMs(Date.now()), 60_000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
   async function markItemRead(item: NotificationRecord) {
     if (item.state.read_at) {
-      return;
+      return true;
     }
 
     try {
@@ -182,11 +316,117 @@ export function CampusNotificationsShell({
       }
 
       const payload = (await response.json()) as { item: NotificationRecord };
-      setItems((current) => current.map((candidate) => (candidate.id === item.id ? payload.item : candidate)));
+      setItems((current) =>
+        stateFilter === "unread"
+          ? current.filter((candidate) => candidate.id !== item.id)
+          : current.map((candidate) => (candidate.id === item.id ? payload.item : candidate))
+      );
       setUnreadCount((current) => Math.max(0, current - 1));
+      return true;
     } catch {
       setMessage("Could not update the read state. Opening the notification anyway.");
+      return false;
     }
+  }
+
+  async function handleMarkAllRead() {
+    if (markingAllRead || unreadCount === 0) {
+      return;
+    }
+
+    setMarkingAllRead(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch("/api/notifications/read-all", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          category: categoryFilter === ALL_CATEGORIES ? null : categoryFilter
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error("Notifications read-all request failed.");
+      }
+
+      const payload = (await response.json()) as { updatedCount: number; readAt: string };
+      if (payload.updatedCount > 0) {
+        setUnreadCount((current) => Math.max(0, current - payload.updatedCount));
+        setItems((current) => {
+          const matchesSelectedCategory = (item: NotificationRecord) => categoryFilter === ALL_CATEGORIES || item.category === categoryFilter;
+
+          if (stateFilter === "unread") {
+            return current.filter((item) => !matchesSelectedCategory(item));
+          }
+
+          return current.map((item) =>
+            matchesSelectedCategory(item) && item.state.read_at === null
+              ? {
+                  ...item,
+                  state: {
+                    ...item.state,
+                    read_at: payload.readAt,
+                    seen_at: item.state.seen_at ?? payload.readAt
+                  }
+                }
+              : item
+          );
+        });
+      }
+
+      setMessage(
+        payload.updatedCount > 0
+          ? `Marked ${payload.updatedCount} ${payload.updatedCount === 1 ? "notification" : "notifications"} as read.`
+          : "No unread notifications matched this filter."
+      );
+    } catch {
+      setMessage("Could not mark notifications as read. Please try again.");
+    } finally {
+      setMarkingAllRead(false);
+    }
+  }
+
+  async function handleEnablePushNotifications() {
+    if (pushPromptState === "busy") {
+      return;
+    }
+
+    setPushPromptState("busy");
+    setMessage(null);
+
+    const result = await registerWebPushDevice({ requestPermission: true });
+
+    if (result.status === "registered") {
+      setPushPromptState("hidden");
+      setMessage("Push notifications are enabled on this device.");
+      return;
+    }
+
+    if (result.status === "permission_needed") {
+      setPushPromptState("available");
+      setMessage("Choose Enable push when you are ready to allow browser notifications.");
+      return;
+    }
+
+    setPushPromptState(result.status === "registration_failed" ? "available" : "hidden");
+    if (result.status === "permission_denied") {
+      setMessage("Push notifications are blocked for this browser. You can change that in browser settings.");
+      return;
+    }
+
+    if (result.status === "unsupported") {
+      setMessage("This browser does not support web push notifications.");
+      return;
+    }
+
+    if (result.status === "vapid_unavailable") {
+      setMessage("Push notifications are not configured for this environment yet.");
+      return;
+    }
+
+    setMessage("We could not enable push notifications on this device.");
   }
 
   async function handleNotificationOpen(item: NotificationRecord, event: MouseEvent<HTMLAnchorElement>) {
@@ -235,6 +475,77 @@ export function CampusNotificationsShell({
         </header>
 
         <div className="vyb-notifications-shell">
+          <section className="vyb-notifications-summary" aria-label="Notification inbox summary">
+            <div>
+              <span>{collegeName}</span>
+              <strong>Inbox</strong>
+            </div>
+
+            <div className="vyb-notifications-summary-actions">
+              <div className="vyb-notifications-summary-stats" aria-label="Notification counts">
+                <span>
+                  Unread
+                  <strong>{unreadCount}</strong>
+                </span>
+                <span>
+                  Showing
+                  <strong>{visibleItems.length}</strong>
+                </span>
+              </div>
+
+              {pushPromptState === "available" || pushPromptState === "busy" ? (
+                <button
+                  type="button"
+                  className="vyb-notifications-action"
+                  disabled={pushPromptState === "busy"}
+                  onClick={() => void handleEnablePushNotifications()}
+                >
+                  {pushPromptState === "busy" ? "Enabling..." : "Enable push"}
+                </button>
+              ) : null}
+
+              <button
+                type="button"
+                className="vyb-notifications-action is-primary"
+                disabled={loading || markingAllRead || unreadCount === 0}
+                onClick={() => void handleMarkAllRead()}
+              >
+                {markingAllRead ? "Updating..." : categoryFilter === ALL_CATEGORIES ? "Mark all read" : "Mark type read"}
+              </button>
+            </div>
+          </section>
+
+          <section className="vyb-notifications-toolbar" aria-label="Notification filters">
+            <div className="vyb-notifications-filter-row" role="list" aria-label="Read state">
+              {STATE_FILTERS.map((filter) => (
+                <button
+                  key={filter.id}
+                  type="button"
+                  className={`vyb-notifications-filter${stateFilter === filter.id ? " is-active" : ""}`}
+                  aria-pressed={stateFilter === filter.id}
+                  onClick={() => setStateFilter(filter.id)}
+                >
+                  <span>{filter.label}</span>
+                  {filter.id === "unread" && unreadCount > 0 ? <span className="vyb-notifications-filter-badge">{unreadCount > 99 ? "99+" : unreadCount}</span> : null}
+                </button>
+              ))}
+            </div>
+
+            <div className="vyb-notifications-filter-row is-category" role="list" aria-label="Notification type">
+              {categoryFilters.map((filter) => (
+                <button
+                  key={filter.id}
+                  type="button"
+                  className={`vyb-notifications-filter${categoryFilter === filter.id ? " is-active" : ""}`}
+                  aria-pressed={categoryFilter === filter.id}
+                  onClick={() => setCategoryFilter(filter.id)}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+          </section>
+
           {message ? <p className="vyb-notifications-message">{message}</p> : null}
 
           <section className="vyb-notifications-list" aria-live="polite" aria-busy={loading}>
@@ -243,8 +554,8 @@ export function CampusNotificationsShell({
                 <span className="vyb-notification-icon">
                   <BellIcon />
                 </span>
-                <strong>{loading ? "Loading notifications..." : "No notifications here"}</strong>
-                <p>{loading ? "Loading the latest updates." : "You are all caught up."}</p>
+                <strong>{loading ? "Loading notifications..." : emptyCopy.title}</strong>
+                <p>{loading ? "Loading the latest updates." : emptyCopy.body}</p>
               </div>
             ) : (
               visibleItems.map((item) => {
@@ -258,13 +569,13 @@ export function CampusNotificationsShell({
                     className={`vyb-notification-card${isUnread ? " is-unread" : ""}${isSilent ? " is-silent" : ""}`}
                     onClick={(event) => void handleNotificationOpen(item, event)}
                   >
-                    <span className={`vyb-notification-icon is-${item.category}`}>
+                    <span className={`vyb-notification-icon is-${toNotificationCategoryClass(item.category)}`}>
                       <BellIcon />
                     </span>
 
                     <span className="vyb-notification-copy">
                       <span className="vyb-notification-text">
-                        <strong>{item.copy.title}</strong> {item.copy.body} <span className="vyb-notification-time">{formatNotificationTime(item.created_at)}</span>
+                        <strong>{item.copy.title}</strong> {item.copy.body} <span className="vyb-notification-time">{formatNotificationTime(item.created_at, relativeNowMs)}</span>
                       </span>
                     </span>
 

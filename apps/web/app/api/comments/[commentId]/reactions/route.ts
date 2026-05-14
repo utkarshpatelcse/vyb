@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import type { CommentReactionResponse } from "@vyb/contracts";
 import { isBackendRequestError, reactToComment } from "../../../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../../../src/lib/dev-session";
+import {
+  notifySocialCommentReactionUpdated,
+  type SocialCommentNotificationContext
+} from "../../../../../src/lib/notification-events";
 
 export async function PUT(
   _request: Request,
@@ -28,7 +33,18 @@ export async function PUT(
   const { commentId } = await context.params;
 
   try {
-    return NextResponse.json(await reactToComment(viewer, commentId));
+    const result = (await reactToComment(viewer, commentId)) as CommentReactionResponse & {
+      notificationContext?: SocialCommentNotificationContext;
+    };
+
+    await notifySocialCommentReactionUpdated(viewer, result, result.notificationContext ?? null).catch((notificationError) => {
+      console.warn("[notifications] social.reaction.comment failed", {
+        commentId,
+        message: notificationError instanceof Error ? notificationError.message : "unknown"
+      });
+    });
+
+    return NextResponse.json(result);
   } catch (error) {
     if (isBackendRequestError(error)) {
       return NextResponse.json(

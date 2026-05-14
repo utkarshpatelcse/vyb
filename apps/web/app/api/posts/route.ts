@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import type { CreatePostResponse } from "@vyb/contracts";
 import { readDevSessionFromCookieStore } from "../../../src/lib/dev-session";
 import { proxyBackendMutation } from "../../../src/lib/backend";
+import { notifySocialPostCreated } from "../../../src/lib/notification-events";
 
 export async function POST(request: Request) {
   const requestId = request.headers.get("x-vyb-debug-task-id") ?? `post-${randomUUID()}`;
@@ -114,6 +116,26 @@ export async function POST(request: Request) {
       });
     }
 
+    const responseText = await upstream.text();
+    let responsePayload: CreatePostResponse | null = null;
+
+    try {
+      responsePayload = JSON.parse(responseText) as CreatePostResponse;
+    } catch {
+      responsePayload = null;
+    }
+
+    const createdPost = responsePayload?.item ?? null;
+    if (createdPost?.communityId) {
+      await notifySocialPostCreated(viewer, createdPost).catch((notificationError) => {
+        console.warn("[notifications] social.post.created failed", {
+          postId: createdPost.id,
+          communityId: createdPost.communityId,
+          message: notificationError instanceof Error ? notificationError.message : "unknown"
+        });
+      });
+    }
+
     console.info("[web/posts] create-success", {
       requestId,
       debugStage,
@@ -121,7 +143,12 @@ export async function POST(request: Request) {
       membershipId: viewer.membershipId,
       status: upstream.status
     });
-    return upstream;
+    return new Response(responseText, {
+      status: upstream.status,
+      headers: {
+        "content-type": upstream.headers.get("content-type") ?? "application/json; charset=utf-8"
+      }
+    });
   } catch (error) {
     console.error("[web/posts] create-failed", {
       requestId,

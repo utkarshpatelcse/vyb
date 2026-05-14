@@ -54,7 +54,18 @@ function getLiveCommunityMembership(live, communityId, tenantId) {
   );
 }
 
-function mapResourceItem(item) {
+function mapResourceFile(file) {
+  return {
+    id: file.id,
+    resourceId: file.resourceId,
+    fileName: file.fileName,
+    mimeType: file.mimeType,
+    sizeBytes: Number(file.sizeBytes),
+    storagePath: file.storagePath
+  };
+}
+
+function mapResourceItem(item, files = []) {
   return {
     id: item.id,
     tenantId: item.tenantId,
@@ -66,8 +77,36 @@ function mapResourceItem(item) {
     type: item.type,
     downloads: 0,
     status: item.status,
-    createdAt: item.createdAt
+    createdAt: item.createdAt,
+    files
   };
+}
+
+async function mapResourceItemsWithFiles(dataConnect, resources) {
+  if (resources.length === 0) {
+    return [];
+  }
+
+  const fileEntries = await Promise.all(
+    resources.map(async (item) => {
+      try {
+        const detail = await getResourceDetailQuery(dataConnect, {
+          resourceId: item.id
+        });
+
+        return [item.id, detail.data.resourceFiles.map(mapResourceFile)];
+      } catch (error) {
+        console.warn("[resources] list-file-hydration-skipped", {
+          resourceId: item.id,
+          message: error instanceof Error ? error.message : "unknown"
+        });
+        return [item.id, []];
+      }
+    })
+  );
+  const filesByResourceId = new Map(fileEntries);
+
+  return resources.map((item) => mapResourceItem(item, filesByResourceId.get(item.id) ?? []));
 }
 
 export function getResourcesModuleHealth() {
@@ -217,11 +256,14 @@ export async function handleResourcesRoute({ request, response, url, context }) 
         resources = data.data.resources;
       }
 
+      const visibleResources = resources.filter((item) => item.tenantId === resolved.live.tenant.id);
+      const items = await mapResourceItemsWithFiles(dataConnect, visibleResources);
+
       sendJson(response, 200, {
         tenantId: resolved.live.tenant.id,
         courseId,
         communityId,
-        items: resources.filter((item) => item.tenantId === resolved.live.tenant.id).map(mapResourceItem),
+        items,
         nextCursor: null
       });
       return true;
@@ -278,13 +320,7 @@ export async function handleResourcesRoute({ request, response, url, context }) 
           downloads: 0,
           status: data.data.resource.status,
           createdAt: data.data.resource.createdAt,
-          files: data.data.resourceFiles.map((file) => ({
-            id: file.id,
-            resourceId: file.resourceId,
-            fileName: file.fileName,
-            mimeType: file.mimeType,
-            sizeBytes: Number(file.sizeBytes)
-          }))
+          files: data.data.resourceFiles.map(mapResourceFile)
         }
       });
       return true;
@@ -372,9 +408,9 @@ export async function handleResourcesRoute({ request, response, url, context }) 
         type: payload.type ?? "notes"
       });
 
-      await Promise.all(
-        files.map((file, index) =>
-          createResourceFileMutation(getFirebaseDataConnect(resourcesConnectorConfig), {
+      const createdFiles = await Promise.all(
+        files.map(async (file, index) => {
+          const createdFile = await createResourceFileMutation(getFirebaseDataConnect(resourcesConnectorConfig), {
             resourceFileKey: `${created.data.resource_insert.id}:${file.storagePath}:${index}`,
             tenantId: resolved.live.tenant.id,
             resourceId: created.data.resource_insert.id,
@@ -382,8 +418,14 @@ export async function handleResourcesRoute({ request, response, url, context }) 
             fileName: file.fileName,
             mimeType: file.mimeType,
             sizeBytes: String(file.sizeBytes)
-          })
-        )
+          });
+
+          return {
+            id: createdFile.data.resourceFile_insert.id,
+            resourceId: created.data.resource_insert.id,
+            ...file
+          };
+        })
       );
 
       await trackActivity({
@@ -413,7 +455,8 @@ export async function handleResourcesRoute({ request, response, url, context }) 
           type: payload.type ?? "notes",
           downloads: 0,
           status: "pending",
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          files: createdFiles
         }
       });
       return true;

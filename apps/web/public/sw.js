@@ -144,13 +144,15 @@ self.addEventListener("push", (event) => {
   const title = typeof payload.title === "string" && payload.title.trim() ? payload.title : "Vyb update";
   const body = typeof payload.body === "string" ? payload.body : "Open Vyb to check the latest update.";
   const href = typeof payload.href === "string" && payload.href.startsWith("/") ? payload.href : "/home";
+  const notificationId = typeof payload.notificationId === "string" && payload.notificationId.trim() ? payload.notificationId : null;
 
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
       tag: typeof payload.collapseKey === "string" ? payload.collapseKey : undefined,
       data: {
-        href
+        href,
+        notificationId
       },
       icon: "/icons/icon.png",
       badge: "/icons/maskable-icon.png"
@@ -161,10 +163,19 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const href = event.notification.data?.href || "/home";
+  const notificationId = event.notification.data?.notificationId;
   const targetUrl = new URL(href, self.location.origin).href;
 
   event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+    (async () => {
+      if (typeof notificationId === "string" && notificationId.trim()) {
+        await fetch(`/api/notifications/${encodeURIComponent(notificationId)}/read`, {
+          method: "PATCH",
+          credentials: "include"
+        }).catch(() => undefined);
+      }
+
+      const clientList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       for (const client of clientList) {
         if ("focus" in client) {
           client.navigate(targetUrl);
@@ -173,6 +184,6 @@ self.addEventListener("notificationclick", (event) => {
       }
 
       return self.clients.openWindow(targetUrl);
-    })
+    })()
   );
 });
