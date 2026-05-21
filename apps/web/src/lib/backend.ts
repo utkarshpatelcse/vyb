@@ -88,6 +88,7 @@ import type {
   CommunitiesMyResponse,
   CommunityDetailResponse,
   CommunityInviteResponse,
+  CommunityInviteRedemptionResponse,
   CommunityMembersResponse,
   CommunityViewerStateResponse,
   UpdateCommunityViewerStateRequest,
@@ -795,6 +796,16 @@ export async function createCommunityInvite(viewer: DevSession, slug: string, or
     `/v1/communities/${encodeURIComponent(slug)}/invites`,
     {
       origin: origin ?? null
+    },
+    viewer
+  );
+}
+
+export async function redeemCommunityInvite(viewer: DevSession, slug: string, inviteCode: string) {
+  return postBackendJson<CommunityInviteRedemptionResponse>(
+    `/v1/communities/${encodeURIComponent(slug)}/invites/redeem`,
+    {
+      inviteCode
     },
     viewer
   );

@@ -25,7 +25,7 @@ function loadWorkspaceRootEnv() {
     }
 
     const key = trimmed.slice(0, separatorIndex).trim();
-    if (!key || process.env[key] !== undefined) {
+    if (!key || (process.env[key] !== undefined && process.env[key] !== "")) {
       continue;
     }
 

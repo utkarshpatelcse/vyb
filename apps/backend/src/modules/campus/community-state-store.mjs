@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { getWorkspaceRoot } from "../../../../../packages/config/src/index.mjs";
 
-const directoryName = path.dirname(fileURLToPath(import.meta.url));
-const storePath = path.resolve(directoryName, "../../data/community-state-store.json");
+const storePath = path.resolve(
+  process.env.VYB_COMMUNITY_STATE_STORE_PATH?.trim() ||
+    path.join(getWorkspaceRoot(), ".tmp", "runtime", "community-state-store.json")
+);
 
 const defaultStore = {
   preferences: [],
@@ -102,6 +104,23 @@ function findPendingJoinRequest(store, input) {
         item.communityId === input.communityId &&
         (item.membershipId === input.membershipId || item.userId === input.userId) &&
         item.status === "pending"
+    ) ?? null
+  );
+}
+
+function findInvite(store, input) {
+  const code = typeof input.inviteCode === "string" ? input.inviteCode.trim() : "";
+  if (!code) {
+    return null;
+  }
+
+  return (
+    store.invites.find(
+      (item) =>
+        item.code === code &&
+        item.tenantId === input.tenantId &&
+        item.communityId === input.communityId &&
+        item.communitySlug === input.communitySlug
     ) ?? null
   );
 }
@@ -270,5 +289,82 @@ export async function createCommunityInvite(input) {
     inviteCode: invite.code,
     inviteUrl: invite.inviteUrl,
     expiresAt: invite.expiresAt
+  };
+}
+
+export async function redeemCommunityInvite(input) {
+  const store = await ensureStore();
+  const now = new Date();
+  const invite = findInvite(store, input);
+
+  if (!invite) {
+    return {
+      status: "invalid",
+      state: buildViewerState(store, input)
+    };
+  }
+
+  if (invite.expiresAt && Date.parse(invite.expiresAt) <= now.getTime()) {
+    return {
+      status: "expired",
+      state: buildViewerState(store, input)
+    };
+  }
+
+  const preference = ensurePreference(store, input, now);
+  const requiresApproval = input.requiresApproval === true;
+
+  if (requiresApproval) {
+    const pending = findPendingJoinRequest(store, input);
+    if (!pending) {
+      store.joinRequests.unshift({
+        id: `community-request-${randomUUID()}`,
+        tenantId: input.tenantId,
+        communityId: input.communityId,
+        communitySlug: input.communitySlug,
+        communityName: input.communityName,
+        membershipId: input.membershipId ?? null,
+        userId: input.userId ?? null,
+        requesterName: input.displayName ?? null,
+        previousMembershipStatus: preference.membershipStatus === "left" ? "left" : input.isLiveMember ? "member" : "not_member",
+        source: "invite",
+        inviteCode: invite.code,
+        status: "pending",
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString()
+      });
+    }
+
+    preference.membershipStatus = "requested";
+    preference.leftAt = null;
+    preference.updatedAt = now.toISOString();
+    await persistStore();
+
+    return {
+      status: "requested",
+      state: buildViewerState(store, input)
+    };
+  }
+
+  for (const request of store.joinRequests) {
+    if (
+      request.tenantId === input.tenantId &&
+      request.communityId === input.communityId &&
+      (request.membershipId === input.membershipId || request.userId === input.userId) &&
+      request.status === "pending"
+    ) {
+      request.status = "approved";
+      request.updatedAt = now.toISOString();
+    }
+  }
+
+  preference.membershipStatus = "member";
+  preference.leftAt = null;
+  preference.updatedAt = now.toISOString();
+  await persistStore();
+
+  return {
+    status: "joined",
+    state: buildViewerState(store, input)
   };
 }

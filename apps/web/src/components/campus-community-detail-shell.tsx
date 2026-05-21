@@ -50,6 +50,7 @@ type CampusCommunityDetailShellProps = {
   eventsLoadError?: string | null;
   initialTab?: CommunityDetailTab;
   initialPostId?: string | null;
+  inviteRedemptionMessage?: string | null;
 };
 
 type CommunityIconName =
@@ -627,7 +628,8 @@ export function CampusCommunityDetailShell({
   events,
   eventsLoadError,
   initialTab = "feed",
-  initialPostId = null
+  initialPostId = null,
+  inviteRedemptionMessage = null
 }: CampusCommunityDetailShellProps) {
   const router = useRouter();
   const [activePanel, setActivePanel] = useState<CommunityPanel>(initialTab === "feed" ? "chat" : initialTab);
@@ -638,7 +640,7 @@ export function CampusCommunityDetailShell({
   const [selectedMedia, setSelectedMedia] = useState<ComposerMediaItem[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [communityState, setCommunityState] = useState<CommunityViewerState>(() => buildInitialViewerState(detail));
-  const [communityActionMessage, setCommunityActionMessage] = useState<string | null>(null);
+  const [communityActionMessage, setCommunityActionMessage] = useState<string | null>(inviteRedemptionMessage);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [memberItems, setMemberItems] = useState(members);
   const [memberCursor, setMemberCursor] = useState<string | null>(membersNextCursor);
@@ -720,6 +722,10 @@ export function CampusCommunityDetailShell({
   useEffect(() => {
     setCommunityState(buildInitialViewerState(detail));
   }, [detail]);
+
+  useEffect(() => {
+    setCommunityActionMessage(inviteRedemptionMessage);
+  }, [inviteRedemptionMessage]);
 
   useEffect(() => {
     selectedMediaRef.current = selectedMedia;

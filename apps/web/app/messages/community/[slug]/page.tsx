@@ -7,7 +7,8 @@ import {
   getCommunityDetail,
   getCommunityMembers,
   getViewerProfile,
-  isBackendRequestError
+  isBackendRequestError,
+  redeemCommunityInvite
 } from "../../../../src/lib/backend";
 import { getDisplayCollegeName } from "../../../../src/lib/college-access";
 import { readDevSessionFromCookieStore } from "../../../../src/lib/dev-session";
@@ -18,7 +19,7 @@ export default async function CommunityDetailPage({
   searchParams
 }: {
   params: Promise<{ slug: string }>;
-  searchParams?: Promise<{ tab?: string | string[]; postId?: string | string[] }>;
+  searchParams?: Promise<{ tab?: string | string[]; postId?: string | string[]; invite?: string | string[]; inviteError?: string | string[] }>;
 }) {
   const viewer = readDevSessionFromCookieStore(await cookies());
 
@@ -29,11 +30,23 @@ export default async function CommunityDetailPage({
   const { slug } = await params;
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const requestedTab = typeof resolvedSearchParams.tab === "string" ? resolvedSearchParams.tab : null;
+  const inviteCode = typeof resolvedSearchParams.invite === "string" ? resolvedSearchParams.invite.trim() : null;
+  const inviteError = typeof resolvedSearchParams.inviteError === "string" ? resolvedSearchParams.inviteError.trim() : null;
   const initialTab =
     requestedTab === "members" || requestedTab === "resources" || requestedTab === "events" || requestedTab === "feed"
       ? requestedTab
       : "feed";
   const initialPostId = typeof resolvedSearchParams.postId === "string" ? resolvedSearchParams.postId.trim() || null : null;
+
+  if (inviteCode) {
+    try {
+      await redeemCommunityInvite(viewer, slug, inviteCode);
+      redirect(`/messages/community/${encodeURIComponent(slug)}`);
+    } catch (error) {
+      const code = isBackendRequestError(error) ? error.code : "COMMUNITY_INVITE_REDEMPTION_UNAVAILABLE";
+      redirect(`/messages/community/${encodeURIComponent(slug)}?inviteError=${encodeURIComponent(code)}`);
+    }
+  }
 
   const [profile, detail] = await Promise.all([
     getViewerProfile(viewer).catch(() => null),
@@ -139,6 +152,19 @@ export default async function CommunityDetailPage({
       eventsLoadError={eventsResult.error}
       initialTab={initialPostId ? "feed" : initialTab}
       initialPostId={initialPostId}
+      inviteRedemptionMessage={inviteError ? getInviteRedemptionErrorMessage(inviteError) : null}
     />
   );
+}
+
+function getInviteRedemptionErrorMessage(code: string) {
+  if (code === "COMMUNITY_INVITE_EXPIRED") {
+    return "This invite link has expired.";
+  }
+
+  if (code === "COMMUNITY_INVITE_NOT_FOUND" || code === "INVALID_INVITE_CODE") {
+    return "This invite link is not valid for this community.";
+  }
+
+  return "We could not redeem this invite right now.";
 }

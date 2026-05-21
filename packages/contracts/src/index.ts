@@ -279,6 +279,11 @@ export interface CommunityInviteResponse {
   };
 }
 
+export interface CommunityInviteRedemptionResponse {
+  status: "joined" | "requested";
+  state: CommunityViewerState;
+}
+
 export interface FeedCard {
   id: string;
   tenantId: string;

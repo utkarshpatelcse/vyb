@@ -11,6 +11,7 @@ import {
   createCommunityInvite,
   getCommunityViewerState,
   listCommunityViewerStatesForMembership,
+  redeemCommunityInvite,
   updateCommunityViewerState
 } from "./community-state-store.mjs";
 
@@ -126,6 +127,10 @@ function canReadCommunity(live, community, membershipRow) {
   }
 
   return true;
+}
+
+function requiresJoinApproval(community) {
+  return memberOnlyVisibility.has(String(community.visibility ?? "").toLowerCase());
 }
 
 function toCommunitySummary(community, membershipRow = null, memberCount = 1) {
@@ -315,6 +320,8 @@ export async function handleCampusRoute({ request, response, url, context }) {
       : null;
   const communityInviteMatch =
     request.method === "POST" ? url.pathname.match(/^\/v1\/communities\/([^/]+)\/invites$/) : null;
+  const communityInviteRedemptionMatch =
+    request.method === "POST" ? url.pathname.match(/^\/v1\/communities\/([^/]+)\/invites\/redeem$/) : null;
   const communityDetailMatch =
     request.method === "GET" ? url.pathname.match(/^\/v1\/communities\/([^/]+)$/) : null;
 
@@ -379,13 +386,13 @@ export async function handleCampusRoute({ request, response, url, context }) {
     return true;
   }
 
-  if (communityDetailMatch || communityMembersMatch || communityViewerStateMatch || communityInviteMatch) {
+  if (communityDetailMatch || communityMembersMatch || communityViewerStateMatch || communityInviteMatch || communityInviteRedemptionMatch) {
     if (!context.actor) {
       sendError(response, 401, "UNAUTHENTICATED", "Viewer context is required.");
       return true;
     }
 
-    const slug = normalizeCommunitySlug((communityDetailMatch ?? communityMembersMatch ?? communityViewerStateMatch ?? communityInviteMatch)[1]);
+    const slug = normalizeCommunitySlug((communityDetailMatch ?? communityMembersMatch ?? communityViewerStateMatch ?? communityInviteMatch ?? communityInviteRedemptionMatch)[1]);
     if (!slug) {
       sendError(response, 400, "INVALID_COMMUNITY_SLUG", "Community slug is invalid.");
       return true;
@@ -462,6 +469,39 @@ export async function handleCampusRoute({ request, response, url, context }) {
         return true;
       }
 
+      if (communityInviteRedemptionMatch) {
+        const payload = await readJson(request);
+        if (!payload || typeof payload !== "object") {
+          sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+          return true;
+        }
+
+        const inviteCode = typeof payload.inviteCode === "string" ? payload.inviteCode.trim() : "";
+        if (!inviteCode) {
+          sendError(response, 400, "INVALID_INVITE_CODE", "Invite code is required.");
+          return true;
+        }
+
+        const redemption = await redeemCommunityInvite({
+          ...fallbackStateInput,
+          inviteCode,
+          requiresApproval: requiresJoinApproval(community)
+        });
+
+        if (redemption.status === "invalid") {
+          sendError(response, 404, "COMMUNITY_INVITE_NOT_FOUND", "This invite link is not valid for this community.");
+          return true;
+        }
+
+        if (redemption.status === "expired") {
+          sendError(response, 410, "COMMUNITY_INVITE_EXPIRED", "This invite link has expired.");
+          return true;
+        }
+
+        sendJson(response, 200, redemption);
+        return true;
+      }
+
       const fallbackState = await getCommunityViewerState(fallbackStateInput);
       sendJson(
         response,
@@ -511,11 +551,6 @@ export async function handleCampusRoute({ request, response, url, context }) {
     }
 
     const membershipRow = findLiveCommunityMembership(resolved.live, community.id);
-    if (!canReadCommunity(resolved.live, community, membershipRow)) {
-      sendError(response, 403, "FORBIDDEN_COMMUNITY", "You do not have access to this community.");
-      return true;
-    }
-
     const stateInput = buildCommunityStateInput({
       tenant: resolved.live.tenant,
       community,
@@ -524,10 +559,51 @@ export async function handleCampusRoute({ request, response, url, context }) {
       membershipRow
     });
 
+    if (communityInviteRedemptionMatch) {
+      const payload = await readJson(request);
+      if (!payload || typeof payload !== "object") {
+        sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+        return true;
+      }
+
+      const inviteCode = typeof payload.inviteCode === "string" ? payload.inviteCode.trim() : "";
+      if (!inviteCode) {
+        sendError(response, 400, "INVALID_INVITE_CODE", "Invite code is required.");
+        return true;
+      }
+
+      const redemption = await redeemCommunityInvite({
+        ...stateInput,
+        inviteCode,
+        requiresApproval: requiresJoinApproval(community)
+      });
+
+      if (redemption.status === "invalid") {
+        sendError(response, 404, "COMMUNITY_INVITE_NOT_FOUND", "This invite link is not valid for this community.");
+        return true;
+      }
+
+      if (redemption.status === "expired") {
+        sendError(response, 410, "COMMUNITY_INVITE_EXPIRED", "This invite link has expired.");
+        return true;
+      }
+
+      sendJson(response, 200, redemption);
+      return true;
+    }
+
+    const currentState = await getCommunityViewerState(stateInput);
+    const canReadProtectedCommunity = canReadCommunity(resolved.live, community, membershipRow) || currentState.membershipStatus === "member";
+    const canReadPendingShell = currentState.membershipStatus === "requested" && (communityDetailMatch || communityViewerStateMatch);
+    if (!canReadProtectedCommunity && !canReadPendingShell) {
+      sendError(response, 403, "FORBIDDEN_COMMUNITY", "You do not have access to this community.");
+      return true;
+    }
+
     if (communityViewerStateMatch) {
       if (request.method === "GET") {
         sendJson(response, 200, {
-          state: await getCommunityViewerState(stateInput)
+          state: currentState
         });
         return true;
       }
@@ -545,7 +621,6 @@ export async function handleCampusRoute({ request, response, url, context }) {
     }
 
     if (communityInviteMatch) {
-      const currentState = await getCommunityViewerState(stateInput);
       if (currentState.membershipStatus !== "member") {
         sendError(response, 403, "FORBIDDEN_COMMUNITY", "Only current community members can create invites.");
         return true;
@@ -658,10 +733,10 @@ export async function handleCampusRoute({ request, response, url, context }) {
         buildCommunityDetailResponse({
           tenant: resolved.live.tenant,
           community,
-          membershipRow,
-          memberCount: membershipRow ? 1 : 0
+          membershipRow: currentState.membershipStatus === "member" ? membershipRow ?? { role: "member", joinedAt: currentState.updatedAt } : null,
+          memberCount: currentState.membershipStatus === "member" ? 1 : 0
         }),
-        await getCommunityViewerState(stateInput)
+        currentState
       )
     );
     return true;

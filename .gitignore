@@ -48,6 +48,7 @@ pnpm-debug.log*
 *.sqlite3
 *.db
 apps/backend/src/data/social-store.json
+apps/backend/src/data/community-state-store.json
 apps/backend/data/*.bak
 apps/backend/data/*.tmp
 data/events-store.json
